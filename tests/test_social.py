@@ -419,7 +419,7 @@ class TestReviewDraft:
 
     def test_returns_verdict_dict(self):
         """review_draft() returns a dict with verdict, feedback, scores."""
-        mock_output = json.dumps({
+        mock_result = {
             "verdict": "APPROVED",
             "feedback": "Looks good",
             "scores": {
@@ -427,9 +427,9 @@ class TestReviewDraft:
                 "platform_fit": 9,
                 "engagement_potential": 7,
             },
-        })
+        }
 
-        with patch("social.critics.run_claude_prompt", return_value=(mock_output, 0)):
+        with patch("social.critics.run_agent_with_files", return_value=mock_result):
             from social.critics import review_draft
 
             result = review_draft("x", "Some test draft")
@@ -437,6 +437,18 @@ class TestReviewDraft:
         assert result["verdict"] == "APPROVED"
         assert "feedback" in result
         assert "scores" in result
+
+    def test_returns_revise_on_agent_failure(self):
+        """review_draft() returns REVISE with zero scores when agent fails."""
+        with patch("social.critics.run_agent_with_files", return_value=None):
+            from social.critics import review_draft
+
+            result = review_draft("x", "Some test draft")
+
+        assert result["verdict"] == "REVISE"
+        assert result["scores"]["voice_authenticity"] == 0
+        assert result["scores"]["platform_fit"] == 0
+        assert result["scores"]["engagement_potential"] == 0
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -447,9 +459,9 @@ class TestReviewDraft:
 class TestExpedite:
     """Tests for expedite()."""
 
-    def test_returns_fail_on_claude_error(self):
-        """expedite() returns FAIL verdict (not auto-pass) when claude call fails."""
-        with patch("social.critics.run_claude_prompt", return_value=("", 1)):
+    def test_returns_fail_on_agent_failure(self):
+        """expedite() returns FAIL verdict (not auto-pass) when agent fails."""
+        with patch("social.critics.run_agent_with_files", return_value=None):
             from social.critics import expedite
 
             result = expedite(
@@ -459,7 +471,43 @@ class TestExpedite:
             )
 
         assert result["verdict"] == "FAIL"
-        assert "failed" in result["notes"].lower() or "fail" in result["notes"].lower()
+        assert "failed" in result["feedback"].lower() or "fail" in result["feedback"].lower()
+        assert result["platform_verdicts"]["x"] == "FAIL"
+
+    def test_returns_pass_with_platform_verdicts(self):
+        """expedite() returns PASS with per-platform verdicts on success."""
+        mock_result = {
+            "verdict": "PASS",
+            "feedback": "All drafts look good.",
+            "platform_verdicts": {"x": "PASS", "linkedin": "PASS"},
+            "scores": {
+                "voice_match": 8,
+                "framing_authenticity": 7,
+                "platform_genre_fit": 9,
+                "epistemic_calibration": 8,
+                "structural_variation": 7,
+                "rhetorical_framework": 8,
+            },
+        }
+
+        with patch("social.critics.run_agent_with_files", return_value=mock_result):
+            from social.critics import expedite
+
+            result = expedite(
+                drafts={
+                    "x": {"content": "test x post"},
+                    "linkedin": {"content": "test linkedin post"},
+                },
+                brief={"topic": "test"},
+                images={},
+            )
+
+        assert result["verdict"] == "PASS"
+        assert result["platform_verdicts"]["x"] == "PASS"
+        assert result["platform_verdicts"]["linkedin"] == "PASS"
+        assert result["scores"]["voice_match"] == 8
+        # Legacy key preserved for pipeline compatibility
+        assert "notes" in result
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -533,9 +581,9 @@ class TestWriteDrafts:
              patch("social.writers._load_voice_guide", return_value="Voice guide."), \
              patch("memory.get_db", return_value=mock_db), \
              patch("memory.corrections.recent_corrections", return_value=[]), \
-             patch("social.critics.run_claude_prompt", return_value=(
-                 json.dumps({"verdict": "APPROVED", "feedback": "", "scores": {}}), 0
-             )), \
+             patch("social.critics.run_agent_with_files", return_value={
+                 "verdict": "APPROVED", "feedback": "", "scores": {},
+             }), \
              patch("social.critics.PolicyEngine") as MockPolicy:
 
             mock_policy = MagicMock()
