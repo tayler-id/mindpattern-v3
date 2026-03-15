@@ -193,9 +193,11 @@ class TestEmbeddings:
         emb0 = serialize_f32(list(np.ones(384, dtype=np.float32) / np.sqrt(384)))
         # embedding 1: orthogonal (zeros — sim should be ~0)
         emb1 = serialize_f32([0.0] * 384)
-        # embedding 2: partially similar
-        vec2 = np.random.randn(384).astype(np.float32)
+        # embedding 2: partially similar (seeded for determinism)
+        rng = np.random.RandomState(42)
+        vec2 = rng.randn(384).astype(np.float32)
         vec2[:192] = 1.0 / np.sqrt(384)  # half-match
+        vec2 = vec2 / np.linalg.norm(vec2)  # normalize so sim stays in [-1, 1]
         emb2 = serialize_f32(list(vec2))
         # embedding 3: opposite direction
         emb3 = serialize_f32(list(-np.ones(384, dtype=np.float32) / np.sqrt(384)))
