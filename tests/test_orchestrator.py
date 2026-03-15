@@ -349,10 +349,12 @@ class TestRouter:
 # ═══════════════════════════════════════════════════════════════════════
 
 from orchestrator.agents import (
+    SOCIAL_DRAFTS_DIR,
     _parse_findings,
     build_agent_prompt,
     get_agent_list,
     load_global_config,
+    run_agent_with_files,
 )
 
 
@@ -1096,3 +1098,133 @@ class TestPromptTrackerRecordVersion:
         assert row is not None
         assert row["content_hash"] is not None
         assert row["quality_snapshot"] == 0.85
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 9. orchestrator/agents.py — run_agent_with_files()
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestRunAgentWithFiles:
+    """run_agent_with_files() dispatches claude CLI and reads file-based output."""
+
+    @pytest.fixture()
+    def output_dir(self, tmp_path):
+        return tmp_path / "output"
+
+    def _output_file(self, output_dir, ext=".json"):
+        return str(output_dir / f"test-output{ext}")
+
+    @patch("orchestrator.agents.subprocess.run")
+    def test_returns_parsed_json_when_agent_writes_file(self, mock_run, output_dir):
+        expected = {"stories": [{"title": "Test Story"}]}
+        out_file = self._output_file(output_dir, ".json")
+
+        def side_effect(*args, **kwargs):
+            Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(out_file).write_text(json.dumps(expected))
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        mock_run.side_effect = side_effect
+
+        result = run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt="test prompt",
+            output_file=out_file,
+        )
+        assert result == expected
+
+    @patch("orchestrator.agents.subprocess.run")
+    def test_returns_none_when_no_output_file(self, mock_run, output_dir):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+        out_file = self._output_file(output_dir)
+
+        result = run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt="test prompt",
+            output_file=out_file,
+        )
+        assert result is None
+
+    @patch("orchestrator.agents.subprocess.run")
+    def test_deletes_stale_output_file(self, mock_run, output_dir):
+        out_file = self._output_file(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        Path(out_file).write_text('{"stale": true}')
+        assert Path(out_file).exists()
+
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+
+        result = run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt="test prompt",
+            output_file=out_file,
+        )
+        assert result is None
+
+    @patch("orchestrator.agents.subprocess.run")
+    def test_md_output_returns_text_dict(self, mock_run, output_dir):
+        out_file = self._output_file(output_dir, ".md")
+        md_content = "# Editorial Plan\n\nHere are the stories."
+
+        def side_effect(*args, **kwargs):
+            Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(out_file).write_text(md_content)
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+
+        mock_run.side_effect = side_effect
+
+        result = run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt="test prompt",
+            output_file=out_file,
+        )
+        assert result == {"text": md_content}
+
+    @patch("orchestrator.agents.subprocess.run")
+    def test_builds_correct_claude_command(self, mock_run, output_dir):
+        out_file = self._output_file(output_dir)
+
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt="test prompt",
+            output_file=out_file,
+        )
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert "--append-system-prompt-file" in cmd
+        assert "agents/eic.md" in cmd
+        assert "--allowedTools" in cmd
+        assert "--model" in cmd
+        assert "--max-turns" in cmd
+        assert "--output-format" in cmd
+
+    @patch("orchestrator.agents.SOCIAL_DRAFTS_DIR")
+    @patch("orchestrator.agents.subprocess.run")
+    def test_writes_debug_log(self, mock_run, mock_drafts_dir, tmp_path, output_dir):
+        # Point SOCIAL_DRAFTS_DIR to tmp_path
+        mock_drafts_dir.__truediv__ = lambda self, name: tmp_path / name
+        mock_drafts_dir.mkdir = MagicMock()
+
+        out_file = self._output_file(output_dir)
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="agent stdout", stderr="agent stderr"
+        )
+
+        run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt="test prompt",
+            output_file=out_file,
+            task_type="eic",
+        )
+
+        debug_log = tmp_path / "eic-debug.log"
+        assert debug_log.exists()
+        content = debug_log.read_text()
+        assert "agent stdout" in content
+        assert "agent stderr" in content
+        assert "exit_code: 0" in content

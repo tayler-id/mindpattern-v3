@@ -19,6 +19,7 @@ from . import router
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+SOCIAL_DRAFTS_DIR = PROJECT_ROOT / "data" / "social-drafts"
 
 # Tools each agent is allowed to use
 AGENT_ALLOWED_TOOLS = [
@@ -349,6 +350,93 @@ def dispatch_research_agents(
     )
 
     return results
+
+
+def run_agent_with_files(
+    system_prompt_file: str,
+    prompt: str,
+    output_file: str,
+    allowed_tools: list[str] | None = None,
+    task_type: str = "eic",
+) -> dict | None:
+    """Run a claude -p call that writes its output to a file.
+
+    Unlike run_claude_prompt() which returns stdout text, this function
+    expects the agent to write structured output (JSON or markdown) to
+    output_file. Returns parsed dict or None on failure.
+    """
+    if allowed_tools is None:
+        allowed_tools = ["Read", "Write", "Bash", "Glob", "Grep"]
+
+    model = router.get_model(task_type)
+    max_turns = router.get_max_turns(task_type)
+    timeout = router.get_timeout(task_type)
+
+    output_path = Path(output_file)
+
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Delete stale output file if it exists
+    if output_path.exists():
+        output_path.unlink()
+
+    cmd = [
+        "claude", "-p", prompt,
+        "--model", model,
+        "--max-turns", str(max_turns),
+        "--output-format", "text",
+        "--append-system-prompt-file", system_prompt_file,
+    ]
+    for tool in allowed_tools:
+        cmd.extend(["--allowedTools", tool])
+
+    proc = None
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(PROJECT_ROOT),
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Agent {task_type} timed out after {timeout}s")
+        proc = None
+
+    # Write debug log
+    SOCIAL_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    debug_log_path = SOCIAL_DRAFTS_DIR / f"{task_type}-debug.log"
+    exit_code = proc.returncode if proc else -1
+    stdout = proc.stdout if proc else ""
+    stderr = proc.stderr if proc else ""
+    debug_log_path.write_text(
+        f"exit_code: {exit_code}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n"
+    )
+
+    # Read and parse output file
+    if not output_path.exists():
+        return None
+
+    content = output_path.read_text().strip()
+    if not content:
+        return None
+
+    if output_path.suffix == ".md":
+        return {"text": content}
+
+    if output_path.suffix == ".json":
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse JSON from {output_file}")
+            return None
+
+    # Unknown extension — try JSON, fall back to text dict
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {"text": content}
 
 
 def run_claude_prompt(
