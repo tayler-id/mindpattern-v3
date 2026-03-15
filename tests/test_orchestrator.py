@@ -288,11 +288,11 @@ class TestRouter:
         assert get_model("research_agent") == "sonnet"
 
     def test_get_model_synthesis(self):
-        assert get_model("synthesis_pass1") == "opus"
-        assert get_model("synthesis_pass2") == "opus"
+        assert get_model("synthesis_pass1") == "claude-opus-4-6[1m]"
+        assert get_model("synthesis_pass2") == "claude-opus-4-6[1m]"
 
     def test_get_model_social_tasks(self):
-        assert get_model("eic") == "opus"
+        assert get_model("eic") == "claude-opus-4-6[1m]"
         assert get_model("writer") == "sonnet"
         assert get_model("critic") == "sonnet"
 
@@ -308,7 +308,7 @@ class TestRouter:
 
     def test_get_timeout_known(self):
         assert get_timeout("trend_scan") == 60
-        assert get_timeout("research_agent") == 300
+        assert get_timeout("research_agent") == 1200
 
     def test_get_timeout_unknown_defaults_to_300(self):
         assert get_timeout("unknown_task") == 300
