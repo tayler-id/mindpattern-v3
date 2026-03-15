@@ -1,0 +1,39 @@
+<div class="card">
+    <h2>Agent Prompts</h2>
+    <p style="color:#94a3b8;font-size:0.8125rem;margin-bottom:1rem;">
+        Select an agent to view its prompt version history.
+    </p>
+
+    {% if agents %}
+    <table>
+        <thead>
+            <tr>
+                <th>Agent</th>
+                <th>Latest Version</th>
+                <th>Captured</th>
+                <th>Versions</th>
+                <th>Total Runs</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for agent in agents %}
+            <tr style="cursor:pointer;"
+                hx-get="/prompts/{{ agent.agent_name }}"
+                hx-target="#main-content" hx-swap="innerHTML"
+                hx-push-url="/prompts/{{ agent.agent_name }}">
+                <td>{{ agent.agent_name }}</td>
+                <td style="font-family:monospace;font-size:0.75rem;">{{ agent.latest_hash[:8] }}</td>
+                <td>{{ agent.latest_captured_at[:10] if agent.latest_captured_at else "---" }}</td>
+                <td>{{ agent.version_count }}</td>
+                <td>{{ agent.total_runs }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No prompt versions captured yet.</p>
+        <p style="margin-top:0.5rem;font-size:0.8125rem;">Prompt versions are captured automatically when the orchestrator runs.</p>
+    </div>
+    {% endif %}
+</div>

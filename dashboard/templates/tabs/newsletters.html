@@ -1,0 +1,47 @@
+<div>
+    <!-- Summary stats bar -->
+    <div class="card">
+        <h2>Newsletters</h2>
+        <div class="meta">
+            <div class="meta-item">
+                <span class="meta-label">Total Newsletters</span><br>
+                <span class="meta-value" style="font-size:1.25rem;">{{ total_count }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Date Range</span><br>
+                <span class="meta-value">{{ date_min }} &mdash; {{ date_max }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="card">
+        {% if newsletters %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Title</th>
+                    <th>Size</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for n in newsletters %}
+                <tr style="cursor:pointer;"
+                    hx-get="/newsletters/{{ n.date }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/newsletters/{{ n.date }}">
+                    <td style="white-space:nowrap;">{{ n.date }}</td>
+                    <td>{{ n.title[:100] }}{% if n.title and n.title|length > 100 %}...{% endif %}</td>
+                    <td style="white-space:nowrap;color:#64748b;">{{ n.size }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <p>No newsletters found.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

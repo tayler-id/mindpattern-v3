@@ -1,0 +1,53 @@
+<div class="card" style="opacity:0.85;margin-bottom:0.75rem;">
+    <!-- Header: topic + quality score + status badge -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.5rem;">
+        <div>
+            <h3 style="font-size:1rem;margin-bottom:0.125rem;">{{ pkg.topic or "Untitled" }}</h3>
+            <span style="font-size:0.6875rem;color:#64748b;">
+                Reviewed {{ pkg.reviewed_at[:16] if pkg.reviewed_at else "" }}
+            </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+            {% if pkg.quality_score is not none %}
+            <div style="text-align:center;">
+                <span style="font-size:0.625rem;color:#64748b;display:block;">Quality</span>
+                <span style="font-size:1.125rem;font-weight:700;color:{% if pkg.quality_score >= 7 %}#4ade80{% elif pkg.quality_score >= 5 %}#fbbf24{% else %}#f87171{% endif %};">
+                    {{ "%.1f"|format(pkg.quality_score) }}
+                </span>
+            </div>
+            {% endif %}
+            <span style="font-size:0.75rem;font-weight:500;padding:0.125rem 0.5rem;border-radius:9999px;{% if pkg.status == 'posted' %}background:#14532d;color:#4ade80;{% elif pkg.status == 'approved' %}background:#14532d;color:#4ade80;{% elif pkg.status == 'partially_posted' %}background:#78350f;color:#fbbf24;{% elif pkg.status == 'rejected' %}background:#7f1d1d;color:#f87171;{% elif pkg.status == 'revision' %}background:#78350f;color:#fbbf24;{% elif pkg.status == 'failed' %}background:#7f1d1d;color:#f87171;{% endif %}">
+                {{ pkg.status|replace('_', ' ') }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Reviewer notes -->
+    {% if pkg.reviewer_notes %}
+    <div style="margin-bottom:0.5rem;background:#1c1917;border:1px solid #78350f;border-radius:0.375rem;padding:0.5rem;">
+        <span style="font-size:0.6875rem;color:#fbbf24;display:block;margin-bottom:0.125rem;">Reviewer Notes</span>
+        <p style="font-size:0.8125rem;color:#e2e8f0;margin:0;">{{ pkg.reviewer_notes }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Post results (for approved packages) -->
+    {% if pkg.post_results_parsed %}
+    <div style="margin-bottom:0.5rem;">
+        <span style="font-size:0.6875rem;color:#64748b;display:block;margin-bottom:0.125rem;">Post Results</span>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            {% for platform_name, result in pkg.post_results_parsed.items() %}
+            <div style="font-size:0.75rem;">
+                <span style="font-weight:500;">{{ platform_name }}:</span>
+                {% if result.get('success') or result.get('status') == 'posted' %}
+                <span style="color:#4ade80;">Posted{% if result.get('post_id') %} ({{ result.post_id[:12] }}){% endif %}</span>
+                {% elif result.get('status') == 'skipped' %}
+                <span style="color:#94a3b8;">Skipped ({{ result.get('reason', 'N/A') }})</span>
+                {% else %}
+                <span style="color:#f87171;">Failed: {{ (result.get('error', 'Unknown')|string)[:50] }}</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>

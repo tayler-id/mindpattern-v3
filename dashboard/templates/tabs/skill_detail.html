@@ -1,0 +1,86 @@
+<div>
+    <div style="margin-bottom:1rem;">
+        <a hx-get="/skills" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/skills"
+           style="color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            &larr; Back to Skills
+        </a>
+    </div>
+
+    {% if skill %}
+    <div class="card">
+        <h2>{{ skill.title or 'Untitled Skill' }}</h2>
+        <div class="meta">
+            <div class="meta-item">
+                <span class="meta-label">Domain</span>
+                <span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;">{{ skill.domain or '---' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Difficulty</span>
+                {% if skill.difficulty == 'beginner' %}
+                <span class="badge" style="background:rgba(74,222,128,0.15);color:#4ade80;">beginner</span>
+                {% elif skill.difficulty == 'intermediate' %}
+                <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">intermediate</span>
+                {% elif skill.difficulty == 'advanced' %}
+                <span class="badge" style="background:rgba(248,113,113,0.15);color:#f87171;">advanced</span>
+                {% else %}
+                <span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8;">{{ skill.difficulty or '---' }}</span>
+                {% endif %}
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Date</span>
+                <span class="meta-value">{{ skill.run_date or '---' }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Description</h2>
+        <p style="line-height:1.6;color:#cbd5e1;white-space:pre-wrap;">{{ skill.description or 'No description available.' }}</p>
+    </div>
+
+    {% if steps_list %}
+    <div class="card">
+        <h2>Steps</h2>
+        <ol style="margin:0;padding-left:1.5rem;color:#cbd5e1;line-height:1.8;">
+            {% for step in steps_list %}
+            <li style="margin-bottom:0.5rem;">{{ step }}</li>
+            {% endfor %}
+        </ol>
+    </div>
+    {% endif %}
+
+    {% if skill.source_url or skill.source_name %}
+    <div class="card">
+        <h2>Source</h2>
+        <div class="meta">
+            {% if skill.source_name %}
+            <div class="meta-item">
+                <span class="meta-label">Name</span>
+                <span class="meta-value">{{ skill.source_name }}</span>
+            </div>
+            {% endif %}
+            {% if skill.source_url %}
+            <div class="meta-item">
+                <span class="meta-label">URL</span>
+                <a href="{{ skill.source_url }}" target="_blank" rel="noopener"
+                   style="color:#38bdf8;text-decoration:none;word-break:break-all;">
+                    {{ skill.source_url }}
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if skill.created_at %}
+    <div style="text-align:right;font-size:0.75rem;color:#475569;margin-top:0.5rem;">
+        Stored: {{ skill.created_at }}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="card empty-state">
+        <p>Skill not found.</p>
+    </div>
+    {% endif %}
+</div>

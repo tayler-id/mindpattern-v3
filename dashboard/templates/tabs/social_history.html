@@ -1,0 +1,233 @@
+<!-- Summary Stats -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1rem;">
+    <div class="card" style="text-align:center;">
+        <div class="meta-label">Total Posts</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#f8fafc;">{{ stats.total_posts }}</div>
+    </div>
+    <div class="card" style="text-align:center;">
+        <div class="meta-label">Posted</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#4ade80;">{{ stats.posted_count }}</div>
+    </div>
+    <div class="card" style="text-align:center;">
+        <div class="meta-label">Platforms</div>
+        <div style="margin-top:0.25rem;">
+            {% for plat, cnt in stats.platforms.items() %}
+            <span class="badge" style="background:{% if plat == 'x' %}rgba(29,161,242,0.15);color:#1DA1F2{% elif plat == 'linkedin' %}rgba(10,102,194,0.15);color:#0A66C2{% elif plat == 'bluesky' %}rgba(0,133,255,0.15);color:#0085FF{% else %}#3f3f46;color:#a1a1aa{% endif %};">
+                {{ plat }} {{ cnt }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="card" style="text-align:center;">
+        <div class="meta-label">Feedback Records</div>
+        <div style="font-size:1.75rem;font-weight:700;color:#fbbf24;">{{ stats.feedback_count }}</div>
+    </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="card">
+    <h2>Social History</h2>
+    <div style="display:flex;gap:1rem;align-items:end;margin-bottom:1rem;flex-wrap:wrap;">
+        <div>
+            <label class="meta-label" for="platform-filter">Platform</label><br>
+            <select id="platform-filter" name="platform"
+                    hx-get="/social-history"
+                    hx-include="[name='posted'],[name='date_from'],[name='date_to']"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                <option value="" {% if not filter_platform %}selected{% endif %}>All Platforms</option>
+                <option value="x" {% if filter_platform == 'x' %}selected{% endif %}>X (Twitter)</option>
+                <option value="linkedin" {% if filter_platform == 'linkedin' %}selected{% endif %}>LinkedIn</option>
+                <option value="bluesky" {% if filter_platform == 'bluesky' %}selected{% endif %}>Bluesky</option>
+            </select>
+        </div>
+        <div>
+            <label class="meta-label" for="posted-filter">Status</label><br>
+            <select id="posted-filter" name="posted"
+                    hx-get="/social-history"
+                    hx-include="[name='platform'],[name='date_from'],[name='date_to']"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                <option value="" {% if not filter_posted %}selected{% endif %}>All</option>
+                <option value="posted" {% if filter_posted == 'posted' %}selected{% endif %}>Posted</option>
+                <option value="draft" {% if filter_posted == 'draft' %}selected{% endif %}>Draft</option>
+            </select>
+        </div>
+        <div>
+            <label class="meta-label" for="date-from">From</label><br>
+            <input type="date" id="date-from" name="date_from" value="{{ filter_from }}"
+                   hx-get="/social-history"
+                   hx-include="[name='platform'],[name='posted'],[name='date_to']"
+                   hx-target="#main-content" hx-swap="innerHTML"
+                   style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+        </div>
+        <div>
+            <label class="meta-label" for="date-to">To</label><br>
+            <input type="date" id="date-to" name="date_to" value="{{ filter_to }}"
+                   hx-get="/social-history"
+                   hx-include="[name='platform'],[name='posted'],[name='date_from']"
+                   hx-target="#main-content" hx-swap="innerHTML"
+                   style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div x-data="{
+    charts: {},
+    async loadCharts() {
+        const endpoints = [
+            { key: 'platform', ref: 'platformCanvas', type: 'doughnut', url: '/social-history/data/by-platform' },
+            { key: 'timeline', ref: 'timelineCanvas', type: 'line', url: '/social-history/data/by-date' },
+        ];
+        for (const ep of endpoints) {
+            if (this.charts[ep.key]) this.charts[ep.key].destroy();
+            try {
+                const resp = await fetch(ep.url);
+                const data = await resp.json();
+                const opts = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8' } },
+                    },
+                };
+                if (ep.type === 'line') {
+                    opts.scales = {
+                        x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                        y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, beginAtZero: true },
+                    };
+                }
+                this.charts[ep.key] = new Chart(this.$refs[ep.ref], {
+                    type: ep.type,
+                    data: data,
+                    options: opts,
+                });
+            } catch (e) {
+                console.error('Failed to load chart:', ep.key, e);
+            }
+        }
+    }
+}" x-init="loadCharts()">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+        <div class="card">
+            <h2>Posts by Platform</h2>
+            <div style="height:250px;display:flex;justify-content:center;"><canvas x-ref="platformCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Posts Over Time</h2>
+            <div style="height:250px;"><canvas x-ref="timelineCanvas"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Table -->
+{% if posts %}
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+        <h2>Posts ({{ total }})</h2>
+        <span class="meta-label">Page {{ page }} of {{ total_pages }}</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Platform</th>
+                <th>Content</th>
+                <th>Type</th>
+                <th>Gate 2</th>
+                <th>Posted</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in posts %}
+            <tr style="cursor:pointer;"
+                hx-get="/social-history/{{ post.id }}"
+                hx-target="#main-content" hx-swap="innerHTML"
+                hx-push-url="/social-history/{{ post.id }}">
+                <td style="white-space:nowrap;">{{ post.date or "—" }}</td>
+                <td>
+                    {% if post.platform == 'x' %}
+                    <span class="badge" style="background:rgba(29,161,242,0.15);color:#1DA1F2;">x</span>
+                    {% elif post.platform == 'linkedin' %}
+                    <span class="badge" style="background:rgba(10,102,194,0.15);color:#0A66C2;">linkedin</span>
+                    {% elif post.platform == 'bluesky' %}
+                    <span class="badge" style="background:rgba(0,133,255,0.15);color:#0085FF;">bluesky</span>
+                    {% else %}
+                    <span class="badge badge-pending">{{ post.platform or "—" }}</span>
+                    {% endif %}
+                </td>
+                <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    {{ post.content[:100] if post.content else "—" }}{% if post.content and post.content|length > 100 %}...{% endif %}
+                </td>
+                <td>
+                    {% if post.post_type %}
+                    <span class="badge badge-pending">{{ post.post_type }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if post.gate2_action == 'approve' or post.gate2_action == 'approved' %}
+                    <span class="badge badge-completed">{{ post.gate2_action }}</span>
+                    {% elif post.gate2_action == 'reject' or post.gate2_action == 'rejected' %}
+                    <span class="badge badge-failed">{{ post.gate2_action }}</span>
+                    {% elif post.gate2_action == 'rewrite' %}
+                    <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">{{ post.gate2_action }}</span>
+                    {% elif post.gate2_action %}
+                    <span class="badge badge-pending">{{ post.gate2_action }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td style="text-align:center;">
+                    {% if post.posted %}
+                    <span style="color:#4ade80;font-size:1.1rem;">&#10003;</span>
+                    {% else %}
+                    <span style="color:#64748b;">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div style="display:flex;justify-content:center;gap:0.5rem;margin-top:1rem;">
+        {% if page > 1 %}
+        <a hx-get="/social-history?page={{ page - 1 }}{% if filter_platform %}&platform={{ filter_platform }}{% endif %}{% if filter_posted %}&posted={{ filter_posted }}{% endif %}{% if filter_from %}&date_from={{ filter_from }}{% endif %}{% if filter_to %}&date_to={{ filter_to }}{% endif %}"
+           hx-target="#main-content" hx-swap="innerHTML"
+           style="padding:0.375rem 0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;color:#e2e8f0;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            &larr; Prev
+        </a>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+        <span style="padding:0.375rem 0.75rem;background:#38bdf8;border-radius:0.25rem;color:#0f172a;font-size:0.8125rem;font-weight:600;">{{ p }}</span>
+        {% elif p <= 3 or p >= total_pages - 1 or (p >= page - 1 and p <= page + 1) %}
+        <a hx-get="/social-history?page={{ p }}{% if filter_platform %}&platform={{ filter_platform }}{% endif %}{% if filter_posted %}&posted={{ filter_posted }}{% endif %}{% if filter_from %}&date_from={{ filter_from }}{% endif %}{% if filter_to %}&date_to={{ filter_to }}{% endif %}"
+           hx-target="#main-content" hx-swap="innerHTML"
+           style="padding:0.375rem 0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;color:#e2e8f0;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            {{ p }}
+        </a>
+        {% elif p == 4 or p == total_pages - 2 %}
+        <span style="padding:0.375rem 0.25rem;color:#64748b;font-size:0.8125rem;">...</span>
+        {% endif %}
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <a hx-get="/social-history?page={{ page + 1 }}{% if filter_platform %}&platform={{ filter_platform }}{% endif %}{% if filter_posted %}&posted={{ filter_posted }}{% endif %}{% if filter_from %}&date_from={{ filter_from }}{% endif %}{% if filter_to %}&date_to={{ filter_to }}{% endif %}"
+           hx-target="#main-content" hx-swap="innerHTML"
+           style="padding:0.375rem 0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;color:#e2e8f0;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            Next &rarr;
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="card empty-state">
+    <p>No social posts found{% if filter_platform %} for platform "{{ filter_platform }}"{% endif %}{% if filter_posted %} with status "{{ filter_posted }}"{% endif %}.</p>
+    {% if not stats.total_posts %}
+    <p style="margin-top:0.5rem;font-size:0.8125rem;">The memory.db database has no social_posts records yet.</p>
+    {% endif %}
+</div>
+{% endif %}

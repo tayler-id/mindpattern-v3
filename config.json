@@ -1,0 +1,15 @@
+{
+  "model": "opus",
+  "max_turns": 50,
+  "report_dir": "reports",
+  "memory_db": "data/ramsay/memory.db",
+  "schedule_hour": 7,
+  "schedule_minute": 0,
+  "email": {
+    "to": "ramsay.tayler@gmail.com",
+    "from": "Ramsay Research Agent <feedback@tayler.id>",
+    "reply_to": "feedback@tayler.id",
+    "subject_prefix": "Ramsay Research Agent"
+  },
+  "analytics_id": "G-8LJHFECK25"
+}

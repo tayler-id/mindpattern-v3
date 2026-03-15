@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Agent Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@2.0.8"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.4.0/sse.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; }
+        nav { background: #1e293b; border-bottom: 1px solid #334155; padding: 0 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+        nav h1 { font-size: 1rem; font-weight: 600; color: #f8fafc; padding: 0.75rem 0; margin-right: 1.5rem; white-space: nowrap; }
+        .tab { padding: 0.75rem 1rem; color: #94a3b8; text-decoration: none; border-bottom: 2px solid transparent; cursor: pointer; font-size: 0.875rem; transition: color 0.15s; }
+        .tab:hover { color: #e2e8f0; }
+        .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; }
+        #main-content { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+        .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; margin-bottom: 1rem; }
+        .card h2 { font-size: 1.125rem; margin-bottom: 0.75rem; color: #f8fafc; }
+        .meta { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .meta-item { font-size: 0.8125rem; }
+        .meta-label { color: #64748b; }
+        .meta-value { color: #e2e8f0; font-weight: 500; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th { text-align: left; padding: 0.5rem 0.75rem; color: #64748b; font-weight: 500; border-bottom: 1px solid #334155; }
+        td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e293b; }
+        .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+        .badge-running { background: #1e3a5f; color: #38bdf8; }
+        .badge-completed { background: #14532d; color: #4ade80; }
+        .badge-failed { background: #7f1d1d; color: #f87171; }
+        .badge-pending { background: #3f3f46; color: #a1a1aa; }
+        .badge-orchestrator { background: #312e81; color: #a78bfa; }
+        .badge-agent { background: #1e3a5f; color: #38bdf8; }
+        .badge-llm_call { background: #3f3f46; color: #e2e8f0; }
+        .badge-tool_call { background: #365314; color: #a3e635; }
+        .empty-state { text-align: center; color: #64748b; padding: 3rem 1rem; }
+        .error-text { color: #f87171; font-size: 0.8125rem; }
+        [x-cloak] { display: none !important; }
+        .dropdown { position: relative; }
+        .dropdown-trigger { padding: 0.75rem 1rem; color: #94a3b8; cursor: pointer; font-size: 0.875rem; transition: color 0.15s; border-bottom: 2px solid transparent; user-select: none; }
+        .dropdown-trigger:hover { color: #e2e8f0; }
+        .dropdown-trigger.has-active { color: #38bdf8; border-bottom-color: #38bdf8; }
+        .dropdown-trigger::after { content: ' ▾'; font-size: 0.625rem; }
+        .dropdown-menu { display: none; position: absolute; top: 100%; left: 0; background: #1e293b; border: 1px solid #334155; border-radius: 0 0 0.5rem 0.5rem; min-width: 10rem; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .dropdown:hover .dropdown-menu { display: block; }
+        .dropdown-menu a { display: block; padding: 0.5rem 1rem; color: #94a3b8; text-decoration: none; font-size: 0.875rem; border-bottom: none; cursor: pointer; }
+        .dropdown-menu a:hover { color: #e2e8f0; background: #334155; }
+        .dropdown-menu a.active { color: #38bdf8; }
+    </style>
+</head>
+<body hx-boost="true">
+    <nav>
+        <h1>Research Agent</h1>
+        <a class="tab {% if active_tab == 'editors-desk' %}active{% endif %}"
+           hx-get="/editors-desk" hx-target="#main-content" hx-swap="innerHTML"
+           hx-push-url="/editors-desk"
+           onclick="document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">
+            Editor's Desk
+        </a>
+        <a class="tab {% if active_tab == 'pipeline-status' %}active{% endif %}"
+           hx-get="/pipeline-status" hx-target="#main-content" hx-swap="innerHTML"
+           hx-push-url="/pipeline-status"
+           onclick="document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">
+            Pipeline Status
+        </a>
+        <a class="tab {% if active_tab == 'run-history' %}active{% endif %}"
+           hx-get="/run-history" hx-target="#main-content" hx-swap="innerHTML"
+           hx-push-url="/run-history"
+           onclick="document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">
+            Run History
+        </a>
+        <div class="dropdown">
+            <span class="dropdown-trigger {% if active_tab in ['traces', 'metrics', 'performance', 'prompts'] %}has-active{% endif %}">Observability</span>
+            <div class="dropdown-menu">
+                <a {% if active_tab == 'traces' %}class="active"{% endif %}
+                   hx-get="/traces" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/traces"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Traces
+                </a>
+                <a {% if active_tab == 'metrics' %}class="active"{% endif %}
+                   hx-get="/metrics" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/metrics"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Metrics
+                </a>
+                <a {% if active_tab == 'performance' %}class="active"{% endif %}
+                   hx-get="/performance" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/performance"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Performance
+                </a>
+                <a {% if active_tab == 'prompts' %}class="active"{% endif %}
+                   hx-get="/prompts" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/prompts"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Prompts
+                </a>
+            </div>
+        </div>
+        <div class="dropdown">
+            <span class="dropdown-trigger {% if active_tab in ['findings', 'newsletters', 'skills'] %}has-active{% endif %}">Data</span>
+            <div class="dropdown-menu">
+                <a {% if active_tab == 'findings' %}class="active"{% endif %}
+                   hx-get="/findings" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/findings"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Findings
+                </a>
+                <a {% if active_tab == 'newsletters' %}class="active"{% endif %}
+                   hx-get="/newsletters" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/newsletters"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Newsletters
+                </a>
+                <a {% if active_tab == 'skills' %}class="active"{% endif %}
+                   hx-get="/skills" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/skills"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Skills
+                </a>
+            </div>
+        </div>
+        <div class="dropdown">
+            <span class="dropdown-trigger {% if active_tab in ['social-history', 'engagement-history'] %}has-active{% endif %}">Activity</span>
+            <div class="dropdown-menu">
+                <a {% if active_tab == 'social-history' %}class="active"{% endif %}
+                   hx-get="/social-history" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/social-history"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Social History
+                </a>
+                <a {% if active_tab == 'engagement-history' %}class="active"{% endif %}
+                   hx-get="/engagement-history" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/engagement-history"
+                   onclick="document.querySelectorAll('.tab,.dropdown-menu a').forEach(t=>t.classList.remove('active'));this.classList.add('active');this.closest('.dropdown').querySelector('.dropdown-trigger').classList.add('has-active')">
+                    Engagement History
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div id="main-content">
+        {% block content %}
+        {% if tab_template %}
+        {% include tab_template %}
+        {% else %}
+        {% include "tabs/pipeline_status.html" %}
+        {% endif %}
+        {% endblock %}
+    </div>
+</body>
+</html>

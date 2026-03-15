@@ -1,0 +1,106 @@
+<div style="margin-bottom:1rem;">
+    <a hx-get="/run-history" hx-target="#main-content" hx-swap="innerHTML"
+       hx-push-url="/run-history"
+       style="color:#38bdf8;cursor:pointer;font-size:0.875rem;text-decoration:none;">
+        &larr; Back to Run History
+    </a>
+</div>
+
+{% if pipeline_run %}
+<div class="card">
+    <h2>Pipeline Run Detail</h2>
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Run ID</span><br>
+            <span class="meta-value">{{ pipeline_run.id }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Type</span><br>
+            <span class="meta-value">{{ pipeline_run.pipeline_type }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Status</span><br>
+            <span class="badge badge-{{ pipeline_run.status }}">{{ pipeline_run.status }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Started</span><br>
+            <span class="meta-value">{{ pipeline_run.started_at[:19] if pipeline_run.started_at else "—" }}</span>
+        </div>
+        {% if pipeline_run.completed_at %}
+        <div class="meta-item">
+            <span class="meta-label">Completed</span><br>
+            <span class="meta-value">{{ pipeline_run.completed_at[:19] }}</span>
+        </div>
+        {% endif %}
+        <div class="meta-item">
+            <span class="meta-label">Trigger</span><br>
+            <span class="meta-value">{{ pipeline_run.trigger or "—" }}</span>
+        </div>
+    </div>
+    {% if pipeline_run.error %}
+    <p class="error-text">Error: {{ pipeline_run.error }}</p>
+    {% endif %}
+</div>
+
+{% if agent_runs %}
+<div class="card">
+    <h2>Agent Runs ({{ agent_runs|length }})</h2>
+    <div x-data="{ expanded: {} }">
+    <table>
+        <thead>
+            <tr>
+                <th></th>
+                <th>Agent</th>
+                <th>Status</th>
+                <th>Latency</th>
+                <th>Tokens (in/out)</th>
+                <th>Prompt Ver.</th>
+                <th>Quality</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for agent in agent_runs %}
+            <tr style="cursor:pointer;" @click="expanded['{{ loop.index }}'] = !expanded['{{ loop.index }}']">
+                <td style="width:1.5rem;">
+                    <span x-text="expanded['{{ loop.index }}'] ? '&#9660;' : '&#9654;'" style="font-size:0.75rem;color:#64748b;"></span>
+                </td>
+                <td>{{ agent.agent_name }}</td>
+                <td><span class="badge badge-{{ agent.status }}">{{ agent.status }}</span></td>
+                <td>{{ "%.1f"|format(agent.latency_ms / 1000) ~ "s" if agent.latency_ms else "—" }}</td>
+                <td>{{ agent.input_tokens or "—" }} / {{ agent.output_tokens or "—" }}</td>
+                <td style="font-family:monospace;font-size:0.75rem;">{{ agent.prompt_version[:8] if agent.prompt_version else "—" }}</td>
+                <td>{{ "%.1f"|format(agent.quality_score) if agent.quality_score is not none else "—" }}</td>
+                <td>{% if agent.error %}<span class="error-text" title="{{ agent.error }}">{{ agent.error[:60] }}{% if agent.error|length > 60 %}...{% endif %}</span>{% else %}—{% endif %}</td>
+            </tr>
+            <tr x-show="expanded['{{ loop.index }}']" x-cloak>
+                <td colspan="8" style="padding:0.75rem;background:#0f172a;">
+                    {% if agent.output %}
+                    <div style="margin-bottom:0.5rem;">
+                        <span class="meta-label">Output:</span>
+                        <pre style="margin-top:0.25rem;padding:0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;overflow-x:auto;max-height:300px;overflow-y:auto;font-size:0.8125rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ agent.output }}</pre>
+                    </div>
+                    {% endif %}
+                    {% if agent.error %}
+                    <div>
+                        <span class="meta-label">Error detail:</span>
+                        <pre style="margin-top:0.25rem;padding:0.75rem;background:#1e293b;border:1px solid #7f1d1d;border-radius:0.25rem;overflow-x:auto;max-height:200px;overflow-y:auto;font-size:0.8125rem;color:#f87171;white-space:pre-wrap;word-break:break-word;">{{ agent.error }}</pre>
+                    </div>
+                    {% endif %}
+                    {% if not agent.output and not agent.error %}
+                    <span style="color:#64748b;font-size:0.8125rem;">No output or error recorded.</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card empty-state">
+    <p>Pipeline run not found.</p>
+</div>
+{% endif %}

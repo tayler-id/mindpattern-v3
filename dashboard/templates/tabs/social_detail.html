@@ -1,0 +1,188 @@
+<div style="margin-bottom:1rem;">
+    <a hx-get="/social-history" hx-target="#main-content" hx-swap="innerHTML"
+       hx-push-url="/social-history"
+       style="color:#38bdf8;cursor:pointer;font-size:0.875rem;text-decoration:none;">
+        &larr; Back to Social History
+    </a>
+</div>
+
+{% if post %}
+<div class="card">
+    <h2>Social Post Detail</h2>
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">ID</span><br>
+            <span class="meta-value">{{ post.id }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Date</span><br>
+            <span class="meta-value">{{ post.date or "—" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Platform</span><br>
+            {% if post.platform == 'x' %}
+            <span class="badge" style="background:rgba(29,161,242,0.15);color:#1DA1F2;">x</span>
+            {% elif post.platform == 'linkedin' %}
+            <span class="badge" style="background:rgba(10,102,194,0.15);color:#0A66C2;">linkedin</span>
+            {% elif post.platform == 'bluesky' %}
+            <span class="badge" style="background:rgba(0,133,255,0.15);color:#0085FF;">bluesky</span>
+            {% else %}
+            <span class="badge badge-pending">{{ post.platform or "—" }}</span>
+            {% endif %}
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Type</span><br>
+            <span class="meta-value">{{ post.post_type or "—" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Gate 2 Action</span><br>
+            {% if post.gate2_action == 'approve' or post.gate2_action == 'approved' %}
+            <span class="badge badge-completed">{{ post.gate2_action }}</span>
+            {% elif post.gate2_action == 'reject' or post.gate2_action == 'rejected' %}
+            <span class="badge badge-failed">{{ post.gate2_action }}</span>
+            {% elif post.gate2_action == 'rewrite' %}
+            <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">{{ post.gate2_action }}</span>
+            {% else %}
+            <span class="meta-value">{{ post.gate2_action or "—" }}</span>
+            {% endif %}
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Iterations</span><br>
+            <span class="meta-value">{{ post.iterations if post.iterations is not none else "—" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Posted</span><br>
+            {% if post.posted %}
+            <span style="color:#4ade80;font-weight:600;">Yes</span>
+            {% else %}
+            <span style="color:#64748b;">No</span>
+            {% endif %}
+        </div>
+        {% if post.platform_post_id %}
+        <div class="meta-item">
+            <span class="meta-label">Platform Post ID</span><br>
+            <span class="meta-value" style="font-family:monospace;font-size:0.75rem;">{{ post.platform_post_id }}</span>
+        </div>
+        {% endif %}
+        <div class="meta-item">
+            <span class="meta-label">Created</span><br>
+            <span class="meta-value">{{ post.created_at[:19] if post.created_at else "—" }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Full Content -->
+<div class="card">
+    <h2>Content</h2>
+    {% if post.content %}
+    <pre style="padding:0.75rem;background:#0f172a;border:1px solid #334155;border-radius:0.25rem;overflow-x:auto;max-height:400px;overflow-y:auto;font-size:0.875rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ post.content }}</pre>
+    {% else %}
+    <p style="color:#64748b;">No content recorded.</p>
+    {% endif %}
+</div>
+
+<!-- Anchor Text -->
+{% if post.anchor_text %}
+<div class="card">
+    <h2>Anchor Text</h2>
+    <pre style="padding:0.75rem;background:#0f172a;border:1px solid #334155;border-radius:0.25rem;overflow-x:auto;max-height:200px;overflow-y:auto;font-size:0.875rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ post.anchor_text }}</pre>
+</div>
+{% endif %}
+
+<!-- Brief -->
+{% if brief %}
+<div class="card">
+    <h2>Brief</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem;">
+        {% for key, value in brief.items() %}
+        <div>
+            <span class="meta-label">{{ key }}</span><br>
+            <span class="meta-value" style="font-size:0.8125rem;">
+                {% if value is string %}{{ value }}{% else %}{{ value }}{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Feedback Records -->
+{% if feedback %}
+<div class="card">
+    <h2>Feedback Records ({{ feedback|length }})</h2>
+    <div x-data="{ expanded: {} }">
+    <table>
+        <thead>
+            <tr>
+                <th></th>
+                <th>Date</th>
+                <th>Action</th>
+                <th>Edit Type</th>
+                <th>User Feedback</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for fb in feedback %}
+            <tr style="cursor:pointer;" @click="expanded['{{ loop.index }}'] = !expanded['{{ loop.index }}']">
+                <td style="width:1.5rem;">
+                    <span x-text="expanded['{{ loop.index }}'] ? '&#9660;' : '&#9654;'" style="font-size:0.75rem;color:#64748b;"></span>
+                </td>
+                <td style="white-space:nowrap;">{{ fb.date or "—" }}</td>
+                <td>
+                    {% if fb.action == 'approve' %}
+                    <span class="badge badge-completed">{{ fb.action }}</span>
+                    {% elif fb.action == 'reject' %}
+                    <span class="badge badge-failed">{{ fb.action }}</span>
+                    {% elif fb.action == 'rewrite' %}
+                    <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">{{ fb.action }}</span>
+                    {% else %}
+                    <span class="badge badge-pending">{{ fb.action or "—" }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ fb.edit_type or "—" }}</td>
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    {{ fb.user_feedback[:80] if fb.user_feedback else "—" }}{% if fb.user_feedback and fb.user_feedback|length > 80 %}...{% endif %}
+                </td>
+            </tr>
+            <tr x-show="expanded['{{ loop.index }}']" x-cloak>
+                <td colspan="5" style="padding:0.75rem;background:#0f172a;">
+                    {% if fb.original_draft %}
+                    <div style="margin-bottom:0.75rem;">
+                        <span class="meta-label">Original Draft:</span>
+                        <pre style="margin-top:0.25rem;padding:0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;overflow-x:auto;max-height:200px;overflow-y:auto;font-size:0.8125rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ fb.original_draft }}</pre>
+                    </div>
+                    {% endif %}
+                    {% if fb.final_draft %}
+                    <div style="margin-bottom:0.75rem;">
+                        <span class="meta-label">Final Draft:</span>
+                        <pre style="margin-top:0.25rem;padding:0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;overflow-x:auto;max-height:200px;overflow-y:auto;font-size:0.8125rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ fb.final_draft }}</pre>
+                    </div>
+                    {% endif %}
+                    {% if fb.user_feedback %}
+                    <div>
+                        <span class="meta-label">Full Feedback:</span>
+                        <pre style="margin-top:0.25rem;padding:0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;overflow-x:auto;max-height:200px;overflow-y:auto;font-size:0.8125rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ fb.user_feedback }}</pre>
+                    </div>
+                    {% endif %}
+                    {% if not fb.original_draft and not fb.final_draft and not fb.user_feedback %}
+                    <span style="color:#64748b;font-size:0.8125rem;">No additional detail recorded.</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <h2>Feedback</h2>
+    <p style="color:#64748b;font-size:0.875rem;">No feedback records found for this post.</p>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card empty-state">
+    <p>Social post not found.</p>
+</div>
+{% endif %}

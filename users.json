@@ -1,0 +1,30 @@
+{
+  "users": [
+    {
+      "id": "ramsay",
+      "email": "ramsay.tayler@gmail.com",
+      "name": "Tayler Ramsay",
+      "vertical": "ai-tech",
+      "custom_topics": [],
+      "deprioritize": [],
+      "schedule_hour": 7,
+      "newsletter_title": "Ramsay Research Agent",
+      "active": true,
+      "created_at": "2026-02-12",
+      "reply_to": "feedback@tayler.id"
+    },
+    {
+      "id": "healthtest",
+      "email": "test+health@tayler.id",
+      "name": "Health Test User",
+      "vertical": "health-wellness",
+      "custom_topics": ["longevity research", "zone 2 cardio"],
+      "deprioritize": [],
+      "schedule_hour": 7,
+      "newsletter_title": "Health Research Digest",
+      "active": false,
+      "created_at": "2026-02-13",
+      "reply_to": "feedback@tayler.id"
+    }
+  ]
+}

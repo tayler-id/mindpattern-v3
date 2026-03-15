@@ -1,0 +1,225 @@
+<div x-data="{
+    charts: {},
+    async loadCharts() {
+        const endpoints = [
+            { key: 'byAgent', ref: 'byAgentCanvas', type: 'bar', url: '/findings/data/by-agent' },
+            { key: 'byDate', ref: 'byDateCanvas', type: 'line', url: '/findings/data/by-date' },
+        ];
+        for (const ep of endpoints) {
+            if (this.charts[ep.key]) this.charts[ep.key].destroy();
+            try {
+                const resp = await fetch(ep.url);
+                const data = await resp.json();
+                this.charts[ep.key] = new Chart(this.$refs[ep.ref], {
+                    type: ep.type,
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: { mode: 'index', intersect: false },
+                            legend: { display: false },
+                        },
+                        scales: {
+                            x: { ticks: { color: '#64748b', maxRotation: 45 }, grid: { color: '#1e293b' } },
+                            y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, beginAtZero: true },
+                        },
+                    },
+                });
+            } catch (e) {
+                console.error('Failed to load chart:', ep.key, e);
+            }
+        }
+    }
+}" x-init="loadCharts()">
+
+    <!-- Summary stats bar -->
+    <div class="card">
+        <h2>Findings Browser</h2>
+        <div class="meta">
+            <div class="meta-item">
+                <span class="meta-label">Total Findings</span><br>
+                <span class="meta-value" style="font-size:1.25rem;">{{ stats.total }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Unique Agents</span><br>
+                <span class="meta-value" style="font-size:1.25rem;">{{ stats.unique_agents }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Date Range</span><br>
+                <span class="meta-value">{{ stats.date_min }} &mdash; {{ stats.date_max }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="card">
+        <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;">
+            <div>
+                <label class="meta-label" for="filter-agent">Agent</label><br>
+                <select id="filter-agent" name="agent"
+                        hx-get="/findings"
+                        hx-include="[name='category'],[name='importance'],[name='date_from'],[name='date_to'],[name='q']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="">All Agents</option>
+                    {% for a in agents %}
+                    <option value="{{ a }}" {% if filter_agent == a %}selected{% endif %}>{{ a }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="filter-category">Category</label><br>
+                <select id="filter-category" name="category"
+                        hx-get="/findings"
+                        hx-include="[name='agent'],[name='importance'],[name='date_from'],[name='date_to'],[name='q']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="">All Categories</option>
+                    {% for c in categories %}
+                    <option value="{{ c }}" {% if filter_category == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="filter-importance">Importance</label><br>
+                <select id="filter-importance" name="importance"
+                        hx-get="/findings"
+                        hx-include="[name='agent'],[name='category'],[name='date_from'],[name='date_to'],[name='q']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="">All</option>
+                    <option value="high" {% if filter_importance == 'high' %}selected{% endif %}>High</option>
+                    <option value="medium" {% if filter_importance == 'medium' %}selected{% endif %}>Medium</option>
+                    <option value="low" {% if filter_importance == 'low' %}selected{% endif %}>Low</option>
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="filter-date-from">From</label><br>
+                <input type="date" id="filter-date-from" name="date_from" value="{{ filter_date_from }}"
+                       hx-get="/findings"
+                       hx-include="[name='agent'],[name='category'],[name='importance'],[name='date_to'],[name='q']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+            </div>
+            <div>
+                <label class="meta-label" for="filter-date-to">To</label><br>
+                <input type="date" id="filter-date-to" name="date_to" value="{{ filter_date_to }}"
+                       hx-get="/findings"
+                       hx-include="[name='agent'],[name='category'],[name='importance'],[name='date_from'],[name='q']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+            </div>
+            <div>
+                <label class="meta-label" for="filter-q">Search</label><br>
+                <input type="text" id="filter-q" name="q" value="{{ filter_q }}" placeholder="Search titles &amp; summaries..."
+                       hx-get="/findings"
+                       hx-include="[name='agent'],[name='category'],[name='importance'],[name='date_from'],[name='date_to']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       hx-trigger="keyup changed delay:400ms"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;min-width:200px;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="card">
+            <h2>Findings by Agent</h2>
+            <div style="height: 220px;"><canvas x-ref="byAgentCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Findings by Date</h2>
+            <div style="height: 220px;"><canvas x-ref="byDateCanvas"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+            <h2>Results</h2>
+            <span style="font-size:0.8125rem;color:#64748b;">
+                {{ total_count }} finding{{ 's' if total_count != 1 else '' }}
+                &middot; Page {{ page }} of {{ total_pages }}
+            </span>
+        </div>
+
+        {% if findings %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Agent</th>
+                    <th>Title</th>
+                    <th>Importance</th>
+                    <th>Category</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in findings %}
+                <tr style="cursor:pointer;"
+                    hx-get="/findings/{{ f.id }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/findings/{{ f.id }}">
+                    <td style="white-space:nowrap;">{{ f.run_date or '—' }}</td>
+                    <td style="white-space:nowrap;">{{ f.agent or '—' }}</td>
+                    <td>{{ f.title[:80] }}{% if f.title and f.title|length > 80 %}...{% endif %}</td>
+                    <td>
+                        {% if f.importance == 'high' %}
+                        <span class="badge" style="background:rgba(248,113,113,0.15);color:#f87171;">high</span>
+                        {% elif f.importance == 'medium' %}
+                        <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">medium</span>
+                        {% elif f.importance == 'low' %}
+                        <span class="badge" style="background:rgba(74,222,128,0.15);color:#4ade80;">low</span>
+                        {% else %}
+                        <span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8;">{{ f.importance or '—' }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ f.category or '—' }}</td>
+                    <td>
+                        {% if f.source_url %}
+                        <a href="{{ f.source_url }}" target="_blank" rel="noopener"
+                           style="color:#38bdf8;text-decoration:none;font-size:0.8125rem;"
+                           onclick="event.stopPropagation();">
+                            {{ f.source_name or 'link' }}
+                        </a>
+                        {% else %}
+                        {{ f.source_name or '—' }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div style="display:flex;justify-content:center;gap:0.5rem;margin-top:1rem;">
+            {% if page > 1 %}
+            <a hx-get="/findings?page={{ page - 1 }}&agent={{ filter_agent }}&category={{ filter_category }}&importance={{ filter_importance }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_q }}"
+               hx-target="#main-content" hx-swap="innerHTML"
+               style="color:#38bdf8;cursor:pointer;padding:0.375rem 0.75rem;border:1px solid #334155;border-radius:0.25rem;font-size:0.8125rem;text-decoration:none;">
+                &laquo; Previous
+            </a>
+            {% endif %}
+
+            <span style="padding:0.375rem 0.75rem;font-size:0.8125rem;color:#64748b;">
+                Page {{ page }} / {{ total_pages }}
+            </span>
+
+            {% if page < total_pages %}
+            <a hx-get="/findings?page={{ page + 1 }}&agent={{ filter_agent }}&category={{ filter_category }}&importance={{ filter_importance }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_q }}"
+               hx-target="#main-content" hx-swap="innerHTML"
+               style="color:#38bdf8;cursor:pointer;padding:0.375rem 0.75rem;border:1px solid #334155;border-radius:0.25rem;font-size:0.8125rem;text-decoration:none;">
+                Next &raquo;
+            </a>
+            {% endif %}
+        </div>
+
+        {% else %}
+        <div class="empty-state">
+            <p>No findings match the current filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

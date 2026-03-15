@@ -1,0 +1,77 @@
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+        <h2>{{ agent_name }} &mdash; Version Detail</h2>
+        <a style="font-size:0.8125rem;color:#38bdf8;cursor:pointer;text-decoration:none;"
+           hx-get="/prompts/{{ agent_name }}" hx-target="#main-content" hx-swap="innerHTML"
+           hx-push-url="/prompts/{{ agent_name }}">&larr; Back to history</a>
+    </div>
+
+    {% if detail %}
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Full Git Hash</span><br>
+            <span class="meta-value" style="font-family:monospace;font-size:0.75rem;">{{ detail.git_hash }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">File Path</span><br>
+            <span class="meta-value" style="font-size:0.8125rem;">{{ detail.file_path }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Captured</span><br>
+            <span class="meta-value">{{ detail.captured_at[:19] if detail.captured_at else "---" }}</span>
+        </div>
+    </div>
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Total Runs</span><br>
+            <span class="meta-value">{{ detail.total_runs }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">First Run</span><br>
+            <span class="meta-value">{{ detail.first_run_at[:19] if detail.first_run_at else "---" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Last Run</span><br>
+            <span class="meta-value">{{ detail.last_run_at[:19] if detail.last_run_at else "---" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Avg Quality Score</span><br>
+            <span class="meta-value">{% if detail.avg_quality_score is not none %}{{ "%.2f"|format(detail.avg_quality_score) }}{% else %}---{% endif %}</span>
+        </div>
+    </div>
+    <!-- Revert to this version (only shown for non-latest versions) -->
+    {% if not is_latest %}
+    <div x-data="{ showConfirm: false }" style="margin-top:1rem;">
+        <button @click="showConfirm = true"
+                style="padding:0.375rem 0.75rem;background:#f59e0b;color:#0f172a;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.8125rem;font-weight:600;">
+            Revert to this version
+        </button>
+        <div x-show="showConfirm" x-cloak
+             style="margin-top:0.75rem;padding:1rem;background:#1a1a2e;border:1px solid #f59e0b;border-radius:0.375rem;">
+            <p style="font-size:0.875rem;margin-bottom:0.75rem;">
+                Revert <strong>{{ agent_name }}</strong> to version
+                <code style="font-family:monospace;font-size:0.75rem;">{{ detail.git_hash[:8] }}</code>
+                from {{ detail.captured_at[:10] if detail.captured_at else "unknown" }}?
+                <strong>This will modify the file on disk.</strong>
+            </p>
+            <div style="display:flex;gap:0.5rem;">
+                <button hx-post="/prompts/{{ agent_name }}/revert"
+                        hx-vals='{"version_id": {{ detail.id }}}'
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="padding:0.375rem 0.75rem;background:#f87171;color:#fff;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.8125rem;font-weight:600;">
+                    Confirm Revert
+                </button>
+                <button @click="showConfirm = false"
+                        style="padding:0.375rem 0.75rem;background:#334155;color:#e2e8f0;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.8125rem;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state">
+        <p>Version not found.</p>
+    </div>
+    {% endif %}
+</div>

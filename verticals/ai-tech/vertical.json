@@ -1,0 +1,108 @@
+{
+  "name": "AI & Technology",
+  "id": "ai-tech",
+  "canonical_domains": [
+    "vibe-coding", "prompt-engineering", "agent-patterns",
+    "ai-productivity", "ml-ops", "agent-security", "saas-disruption"
+  ],
+  "skill_domain_keywords": {
+    "vibe-coding": [
+      "claude code", "cursor", "windsurf", "copilot", "claude.md",
+      "hooks", "worktree", "context engineering", "mcp server",
+      "coding agent", "code generation", "vibe coding", "vibe-coding",
+      "forked context", "skills file", "context window"
+    ],
+    "prompt-engineering": [
+      "prompt", "chain-of-thought", "few-shot", "system prompt",
+      "meta-prompt", "self-consistency", "cot", "metaprompt",
+      "prompting", "instruction tuning", "zero-shot"
+    ],
+    "agent-patterns": [
+      "multi-agent", "orchestrat", "memory architect", "tool use",
+      "human-in-the-loop", "agent pattern", "observational memory",
+      "agent framework", "mastra", "langgraph", "crewai",
+      "plan-and-execute", "reflection"
+    ],
+    "ai-productivity": [
+      "voice coding", "ci/cd", "code review", "automated test",
+      "workflow", "productivity", "wispr", "playwright agent",
+      "security review", "devops"
+    ],
+    "ml-ops": [
+      "fine-tun", "dpo", "rlhf", "grpo", "rag", "graphrag",
+      "embedding", "deploy", "evaluation", "distillat",
+      "model serving", "inference", "training pipeline"
+    ],
+    "agent-security": [
+      "security", "sandbox", "injection", "jailbreak", "audit",
+      "owasp", "mcp security", "credential", "identity",
+      "access control", "defense-in-depth", "vulnerability"
+    ],
+    "saas-disruption": [
+      "saas", "subscription", "seat-based", "usage-based", "pricing model",
+      "ai-native", "vertical saas", "horizontal saas", "moat", "commodity",
+      "product hunt", "launch", "pivot", "cannibalize", "replacement",
+      "outcome-based", "churn", "nrr", "saaspocalypse"
+    ]
+  },
+  "section_agent_map": {
+    "breaking news & industry": "news-researcher",
+    "breaking news": "news-researcher",
+    "vibe coding & ai development": "vibe-coding-researcher",
+    "vibe coding": "vibe-coding-researcher",
+    "what leaders are saying": "thought-leaders-researcher",
+    "thought leaders": "thought-leaders-researcher",
+    "ai agent ecosystem": "agents-researcher",
+    "agent ecosystem": "agents-researcher",
+    "hot projects & repos": "projects-researcher",
+    "hot projects": "projects-researcher",
+    "best content this week": "sources-researcher",
+    "best content": "sources-researcher",
+    "saas disruption & builder moves": "saas-disruption-researcher",
+    "saas disruption": "saas-disruption-researcher",
+    "hacker news pulse": "hn-researcher",
+    "hacker news": "hn-researcher",
+    "research papers": "arxiv-researcher",
+    "arxiv": "arxiv-researcher",
+    "oss momentum": "github-pulse-researcher",
+    "github pulse": "github-pulse-researcher",
+    "newsletters & blogs": "rss-researcher",
+    "newsletters and blogs": "rss-researcher",
+    "community pulse": "reddit-researcher",
+    "reddit": "reddit-researcher"
+  },
+  "agents": [
+    "news-researcher",
+    "vibe-coding-researcher",
+    "thought-leaders-researcher",
+    "agents-researcher",
+    "projects-researcher",
+    "sources-researcher",
+    "saas-disruption-researcher",
+    "skill-finder",
+    "hn-researcher",
+    "arxiv-researcher",
+    "github-pulse-researcher",
+    "rss-researcher",
+    "reddit-researcher"
+  ],
+  "coordinator_searches": [
+    "AI news today {date}",
+    "Hacker News front page AI",
+    "AI trending Twitter today"
+  ],
+  "report_sections": [
+    {"heading": "Breaking News & Industry", "agent": "news-researcher"},
+    {"heading": "SaaS Disruption & Builder Moves", "agent": "saas-disruption-researcher"},
+    {"heading": "Vibe Coding & AI Development", "agent": "vibe-coding-researcher"},
+    {"heading": "What Leaders Are Saying", "agent": "thought-leaders-researcher"},
+    {"heading": "AI Agent Ecosystem", "agent": "agents-researcher"},
+    {"heading": "Hot Projects & Repos", "agent": "projects-researcher"},
+    {"heading": "Best Content This Week", "agent": "sources-researcher"},
+    {"heading": "Hacker News Pulse", "agent": "hn-researcher"},
+    {"heading": "Research Papers", "agent": "arxiv-researcher"},
+    {"heading": "OSS Momentum", "agent": "github-pulse-researcher"},
+    {"heading": "Newsletters & Blogs", "agent": "rss-researcher"},
+    {"heading": "Community Pulse", "agent": "reddit-researcher"}
+  ]
+}

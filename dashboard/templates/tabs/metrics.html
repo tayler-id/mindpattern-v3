@@ -1,0 +1,79 @@
+<div x-data="{
+    dateFrom: '{{ date_from }}',
+    dateTo: '{{ date_to }}',
+    charts: {},
+    async loadCharts() {
+        const qs = (this.dateFrom || this.dateTo)
+            ? '?date_from=' + (this.dateFrom || '') + '&date_to=' + (this.dateTo || '')
+            : '';
+
+        const endpoints = [
+            { key: 'tokens', ref: 'tokensCanvas', type: 'line', url: '/metrics/data/tokens' + qs },
+            { key: 'latency', ref: 'latencyCanvas', type: 'bar', url: '/metrics/data/latency' + qs },
+            { key: 'rates', ref: 'ratesCanvas', type: 'line', url: '/metrics/data/success-rates' + qs },
+            { key: 'completion', ref: 'completionCanvas', type: 'line', url: '/metrics/data/pipeline-completion' + qs },
+        ];
+
+        for (const ep of endpoints) {
+            if (this.charts[ep.key]) this.charts[ep.key].destroy();
+            try {
+                const resp = await fetch(ep.url);
+                const data = await resp.json();
+                this.charts[ep.key] = new Chart(this.$refs[ep.ref], {
+                    type: ep.type,
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: { mode: 'index', intersect: false },
+                            legend: { labels: { color: '#94a3b8' } },
+                        },
+                        scales: {
+                            x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                            y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                        },
+                    },
+                });
+            } catch (e) {
+                console.error('Failed to load chart:', ep.key, e);
+            }
+        }
+    }
+}" x-init="loadCharts()">
+
+    <div class="card">
+        <h2>Aggregate Metrics</h2>
+        <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+            <label style="font-size: 0.8125rem; color: #64748b;">
+                From:
+                <input type="date" x-model="dateFrom" @change="loadCharts()"
+                       style="background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">
+            </label>
+            <label style="font-size: 0.8125rem; color: #64748b;">
+                To:
+                <input type="date" x-model="dateTo" @change="loadCharts()"
+                       style="background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">
+            </label>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="card">
+            <h2>Tokens per Day</h2>
+            <div style="height: 250px;"><canvas x-ref="tokensCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Avg Latency per Agent</h2>
+            <div style="height: 250px;"><canvas x-ref="latencyCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Success / Failure Rates</h2>
+            <div style="height: 250px;"><canvas x-ref="ratesCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Pipeline Completion Rate</h2>
+            <div style="height: 250px;"><canvas x-ref="completionCanvas"></canvas></div>
+        </div>
+    </div>
+</div>

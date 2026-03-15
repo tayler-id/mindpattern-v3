@@ -1,0 +1,131 @@
+<div x-data="{
+    selectedAgent: '{{ selected_agent }}',
+    dateFrom: '{{ date_from }}',
+    dateTo: '{{ date_to }}',
+    qualityChart: null,
+    driftWarnings: [],
+    async loadQualityChart() {
+        if (!this.selectedAgent) return;
+        if (this.qualityChart) this.qualityChart.destroy();
+
+        const qs = '?agent=' + encodeURIComponent(this.selectedAgent)
+            + (this.dateFrom ? '&date_from=' + this.dateFrom : '')
+            + (this.dateTo ? '&date_to=' + this.dateTo : '');
+
+        try {
+            const resp = await fetch('/performance/data/quality' + qs);
+            const data = await resp.json();
+            this.qualityChart = new Chart(this.$refs.qualityCanvas, {
+                type: 'line',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        annotation: { annotations: data.annotations || {} },
+                        tooltip: { mode: 'index', intersect: false },
+                        legend: { labels: { color: '#94a3b8' } },
+                    },
+                    scales: {
+                        x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                        y: {
+                            ticks: { color: '#64748b' },
+                            grid: { color: '#1e293b' },
+                            suggestedMin: 0,
+                            suggestedMax: 10,
+                        },
+                    },
+                },
+            });
+        } catch (e) {
+            console.error('Failed to load quality chart:', e);
+        }
+    },
+    async loadDrift() {
+        try {
+            const resp = await fetch('/performance/data/drift');
+            this.driftWarnings = await resp.json();
+        } catch (e) {
+            console.error('Failed to load drift data:', e);
+        }
+    }
+}" x-init="loadQualityChart(); loadDrift()">
+
+    <div class="card">
+        <h2>Agent Performance &amp; Quality Correlation</h2>
+        <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+            <label style="font-size: 0.8125rem; color: #64748b;">
+                Agent:
+                <select x-model="selectedAgent" @change="loadQualityChart()"
+                        style="background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">
+                    {% for agent in agents %}
+                    <option value="{{ agent }}" {% if agent == selected_agent %}selected{% endif %}>{{ agent }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label style="font-size: 0.8125rem; color: #64748b;">
+                From:
+                <input type="date" x-model="dateFrom" @change="loadQualityChart()"
+                       style="background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">
+            </label>
+            <label style="font-size: 0.8125rem; color: #64748b;">
+                To:
+                <input type="date" x-model="dateTo" @change="loadQualityChart()"
+                       style="background: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">
+            </label>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Quality Scores Over Time</h2>
+        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.5rem;">
+            Dashed vertical lines indicate prompt version changes.
+        </p>
+        <div style="height: 300px;"><canvas x-ref="qualityCanvas"></canvas></div>
+    </div>
+
+    <!-- Drift Warning Section -->
+    <div class="card" id="drift-warnings">
+        <h2>Prompt Drift Warnings</h2>
+        <template x-if="driftWarnings.length === 0">
+            <p style="color: #64748b; font-size: 0.875rem;">No prompt drift detected. All agents are within acceptable quality thresholds.</p>
+        </template>
+        <template x-if="driftWarnings.length > 0">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Agent</th>
+                        <th>Previous Version</th>
+                        <th>Current Version</th>
+                        <th>Pass Rate Drop</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="w in driftWarnings" :key="w.agent_name">
+                        <tr>
+                            <td x-text="w.agent_name"></td>
+                            <td>
+                                <span class="badge badge-completed" x-text="w.previous_hash.slice(0, 7)"></span>
+                                <span class="meta-label" x-text="(w.previous_rate * 100).toFixed(0) + '% pass'"></span>
+                            </td>
+                            <td>
+                                <span class="badge badge-failed" x-text="w.current_hash.slice(0, 7)"></span>
+                                <span class="meta-label" x-text="(w.current_rate * 100).toFixed(0) + '% pass'"></span>
+                            </td>
+                            <td style="color: #f87171; font-weight: 600;">
+                                <span x-text="'-' + w.drop_pct + '%'"></span>
+                            </td>
+                            <td>
+                                <a :href="w.diff_link" style="color: #38bdf8; text-decoration: underline; font-size: 0.8125rem;"
+                                   @click.prevent="htmx.ajax('GET', w.diff_link, '#main-content')">
+                                    View Diff
+                                </a>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </template>
+    </div>
+</div>

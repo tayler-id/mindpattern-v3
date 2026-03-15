@@ -1,0 +1,93 @@
+<div class="card" x-data="{ selected: [], get canCompare() { return this.selected.length === 2; }, revertId: null, revertHash: '', revertDate: '' }">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+        <h2>{{ agent_name }} &mdash; Version History</h2>
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+            <button x-show="canCompare"
+                    x-cloak
+                    @click="htmx.ajax('GET', '/prompts/{{ agent_name }}/diff?from=' + Math.min(...selected) + '&to=' + Math.max(...selected), {target: '#main-content', swap: 'innerHTML'})"
+                    style="padding:0.375rem 0.75rem;background:#38bdf8;color:#0f172a;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.8125rem;font-weight:600;">
+                Compare Selected
+            </button>
+            <a style="font-size:0.8125rem;color:#38bdf8;cursor:pointer;text-decoration:none;"
+               hx-get="/prompts" hx-target="#main-content" hx-swap="innerHTML"
+               hx-push-url="/prompts">&larr; Back to agents</a>
+        </div>
+    </div>
+
+    {% if versions %}
+    <table>
+        <thead>
+            <tr>
+                <th style="width:2.5rem;">Diff</th>
+                <th>Git Hash</th>
+                <th>Captured</th>
+                <th>Runs</th>
+                <th style="width:5rem;">Revert</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in versions %}
+            <tr>
+                <td>
+                    <input type="checkbox" :value="{{ v.id }}"
+                           @change="if ($el.checked) { if (selected.length >= 2) { selected.shift(); } selected.push({{ v.id }}); } else { selected = selected.filter(s => s !== {{ v.id }}); }"
+                           :checked="selected.includes({{ v.id }})"
+                           style="cursor:pointer;">
+                </td>
+                <td style="cursor:pointer;"
+                    hx-get="/prompts/{{ agent_name }}/{{ v.id }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/prompts/{{ agent_name }}/{{ v.id }}">
+                    <span style="font-family:monospace;font-size:0.75rem;">{{ v.git_hash[:8] }}</span>
+                </td>
+                <td style="cursor:pointer;"
+                    hx-get="/prompts/{{ agent_name }}/{{ v.id }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/prompts/{{ agent_name }}/{{ v.id }}">
+                    {{ v.captured_at[:10] if v.captured_at else "---" }}
+                </td>
+                <td style="cursor:pointer;"
+                    hx-get="/prompts/{{ agent_name }}/{{ v.id }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/prompts/{{ agent_name }}/{{ v.id }}">
+                    {{ v.run_count }}
+                </td>
+                <td>
+                    {% if not loop.first %}
+                    <button @click="revertId = {{ v.id }}; revertHash = '{{ v.git_hash[:8] }}'; revertDate = '{{ v.captured_at[:10] if v.captured_at else 'unknown' }}'"
+                            style="padding:0.1875rem 0.5rem;background:#f59e0b;color:#0f172a;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.6875rem;font-weight:600;">
+                        Revert
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Revert confirmation dialog (shared, shown when revertId is set) -->
+    <div x-show="revertId !== null" x-cloak
+         style="margin-top:0.75rem;padding:1rem;background:#1a1a2e;border:1px solid #f59e0b;border-radius:0.375rem;">
+        <p style="font-size:0.875rem;margin-bottom:0.75rem;">
+            Revert <strong>{{ agent_name }}</strong> to version
+            <code x-text="revertHash" style="font-family:monospace;font-size:0.75rem;"></code>
+            from <span x-text="revertDate"></span>?
+            <strong>This will modify the file on disk.</strong>
+        </p>
+        <div style="display:flex;gap:0.5rem;">
+            <button @click="htmx.ajax('POST', '/prompts/{{ agent_name }}/revert', {target: '#main-content', swap: 'innerHTML', values: {version_id: revertId}}); revertId = null;"
+                    style="padding:0.375rem 0.75rem;background:#f87171;color:#fff;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.8125rem;font-weight:600;">
+                Confirm Revert
+            </button>
+            <button @click="revertId = null"
+                    style="padding:0.375rem 0.75rem;background:#334155;color:#e2e8f0;border:none;border-radius:0.25rem;cursor:pointer;font-size:0.8125rem;">
+                Cancel
+            </button>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No versions captured for {{ agent_name }}.</p>
+    </div>
+    {% endif %}
+</div>

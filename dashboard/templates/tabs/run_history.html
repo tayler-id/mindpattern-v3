@@ -1,0 +1,68 @@
+<div class="card">
+    <h2>Run History</h2>
+    <div style="display:flex;gap:1rem;align-items:end;margin-bottom:1rem;flex-wrap:wrap;">
+        <div>
+            <label class="meta-label" for="status-filter">Status</label><br>
+            <select id="status-filter" name="status"
+                    hx-get="/run-history"
+                    hx-include="[name='date_from'],[name='date_to']"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                <option value="" {% if not filter_status %}selected{% endif %}>All</option>
+                <option value="completed" {% if filter_status == 'completed' %}selected{% endif %}>Completed</option>
+                <option value="failed" {% if filter_status == 'failed' %}selected{% endif %}>Failed</option>
+                <option value="active" {% if filter_status == 'active' %}selected{% endif %}>Active</option>
+            </select>
+        </div>
+        <div>
+            <label class="meta-label" for="date-from">From</label><br>
+            <input type="date" id="date-from" name="date_from" value="{{ filter_from }}"
+                   hx-get="/run-history"
+                   hx-include="[name='status'],[name='date_to']"
+                   hx-target="#main-content" hx-swap="innerHTML"
+                   style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+        </div>
+        <div>
+            <label class="meta-label" for="date-to">To</label><br>
+            <input type="date" id="date-to" name="date_to" value="{{ filter_to }}"
+                   hx-get="/run-history"
+                   hx-include="[name='status'],[name='date_from']"
+                   hx-target="#main-content" hx-swap="innerHTML"
+                   style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+        </div>
+    </div>
+
+    {% if runs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Agents</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr style="cursor:pointer;"
+                hx-get="/run-history/{{ run.id }}"
+                hx-target="#main-content" hx-swap="innerHTML"
+                hx-push-url="/run-history/{{ run.id }}">
+                <td>{{ run.id[:12] }}{% if run.id|length > 12 %}...{% endif %}</td>
+                <td>{{ run.pipeline_type }}</td>
+                <td><span class="badge badge-{{ run.status }}">{{ run.status }}</span></td>
+                <td>{{ run.started_at[:16] if run.started_at else "—" }}</td>
+                <td>{% if run.duration_seconds is not none %}{{ "%.0f"|format(run.duration_seconds) }}s{% else %}—{% endif %}</td>
+                <td>{{ run.agent_count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No pipeline runs found{% if filter_status %} with status "{{ filter_status }}"{% endif %}.</p>
+    </div>
+    {% endif %}
+</div>

@@ -1,0 +1,220 @@
+<div x-data="{
+    charts: {},
+    async loadCharts() {
+        const endpoints = [
+            { key: 'platform', ref: 'platformCanvas', type: 'doughnut', url: '/engagement-history/data/by-platform' },
+            { key: 'activity', ref: 'activityCanvas', type: 'line', url: '/engagement-history/data/by-date' },
+        ];
+        for (const ep of endpoints) {
+            if (this.charts[ep.key]) this.charts[ep.key].destroy();
+            try {
+                const resp = await fetch(ep.url);
+                const data = await resp.json();
+                const opts = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#94a3b8' } },
+                    },
+                };
+                if (ep.type !== 'doughnut') {
+                    opts.scales = {
+                        x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                        y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, beginAtZero: true },
+                    };
+                }
+                this.charts[ep.key] = new Chart(this.$refs[ep.ref], {
+                    type: ep.type,
+                    data: data,
+                    options: opts,
+                });
+            } catch (e) {
+                console.error('Failed to load chart:', ep.key, e);
+            }
+        }
+    }
+}" x-init="loadCharts()">
+
+    <!-- Summary Stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1rem;">
+        <div class="card" style="text-align:center;">
+            <div style="font-size:2rem;font-weight:700;color:#38bdf8;">{{ stats.total }}</div>
+            <div style="font-size:0.8125rem;color:#64748b;">Total Engagements</div>
+        </div>
+        {% for etype, ecount in stats.by_type.items() %}
+        <div class="card" style="text-align:center;">
+            <div style="font-size:2rem;font-weight:700;color:#a78bfa;">{{ ecount }}</div>
+            <div style="font-size:0.8125rem;color:#64748b;">{{ etype|capitalize }}</div>
+        </div>
+        {% endfor %}
+        <div class="card" style="text-align:center;">
+            <div style="font-size:2rem;font-weight:700;color:{% if stats.success_rate >= 80 %}#4ade80{% elif stats.success_rate >= 50 %}#fbbf24{% else %}#f87171{% endif %};">{{ stats.success_rate }}%</div>
+            <div style="font-size:0.8125rem;color:#64748b;">Success Rate</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card">
+        <h2>Engagement History</h2>
+        <div style="display:flex;gap:1rem;align-items:end;margin-bottom:1rem;flex-wrap:wrap;">
+            <div>
+                <label class="meta-label" for="eh-platform">Platform</label><br>
+                <select id="eh-platform" name="platform"
+                        hx-get="/engagement-history"
+                        hx-include="[name='engagement_type'],[name='status'],[name='date_from'],[name='date_to']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="" {% if not filter_platform %}selected{% endif %}>All Platforms</option>
+                    <option value="x" {% if filter_platform == 'x' %}selected{% endif %}>X / Twitter</option>
+                    <option value="bluesky" {% if filter_platform == 'bluesky' %}selected{% endif %}>Bluesky</option>
+                    <option value="linkedin" {% if filter_platform == 'linkedin' %}selected{% endif %}>LinkedIn</option>
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="eh-type">Type</label><br>
+                <select id="eh-type" name="engagement_type"
+                        hx-get="/engagement-history"
+                        hx-include="[name='platform'],[name='status'],[name='date_from'],[name='date_to']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="" {% if not filter_type %}selected{% endif %}>All Types</option>
+                    <option value="reply" {% if filter_type == 'reply' %}selected{% endif %}>Reply</option>
+                    <option value="follow" {% if filter_type == 'follow' %}selected{% endif %}>Follow</option>
+                    <option value="like" {% if filter_type == 'like' %}selected{% endif %}>Like</option>
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="eh-status">Status</label><br>
+                <select id="eh-status" name="status"
+                        hx-get="/engagement-history"
+                        hx-include="[name='platform'],[name='engagement_type'],[name='date_from'],[name='date_to']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="" {% if not filter_status %}selected{% endif %}>All Statuses</option>
+                    <option value="posted" {% if filter_status == 'posted' %}selected{% endif %}>Posted</option>
+                    <option value="failed" {% if filter_status == 'failed' %}selected{% endif %}>Failed</option>
+                    <option value="pending" {% if filter_status == 'pending' %}selected{% endif %}>Pending</option>
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="eh-from">From</label><br>
+                <input type="date" id="eh-from" name="date_from" value="{{ filter_from }}"
+                       hx-get="/engagement-history"
+                       hx-include="[name='platform'],[name='engagement_type'],[name='status'],[name='date_to']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+            </div>
+            <div>
+                <label class="meta-label" for="eh-to">To</label><br>
+                <input type="date" id="eh-to" name="date_to" value="{{ filter_to }}"
+                       hx-get="/engagement-history"
+                       hx-include="[name='platform'],[name='engagement_type'],[name='status'],[name='date_from']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts: 2-column grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+        <div class="card">
+            <h2>Engagements by Platform</h2>
+            <div style="height:250px;"><canvas x-ref="platformCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Engagement Activity</h2>
+            <div style="height:250px;"><canvas x-ref="activityCanvas"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Results Table -->
+    {% if engagements %}
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Platform</th>
+                    <th>Type</th>
+                    <th>Author</th>
+                    <th>Our Reply</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in engagements %}
+                <tr style="cursor:pointer;"
+                    hx-get="/engagement-history/{{ e.id }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/engagement-history/{{ e.id }}">
+                    <td style="white-space:nowrap;font-size:0.8125rem;">{{ e.created_at[:16] if e.created_at else "---" }}</td>
+                    <td>
+                        {% set plat = e.platform|lower if e.platform else '' %}
+                        {% if plat == 'x' or plat == 'twitter' %}
+                        <span class="badge" style="background:#1e3a5f;color:#1DA1F2;">{{ e.platform }}</span>
+                        {% elif plat == 'linkedin' %}
+                        <span class="badge" style="background:#0a2540;color:#0A66C2;">{{ e.platform }}</span>
+                        {% elif plat == 'bluesky' %}
+                        <span class="badge" style="background:#0a2540;color:#0085FF;">{{ e.platform }}</span>
+                        {% else %}
+                        <span class="badge badge-pending">{{ e.platform or "---" }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge badge-orchestrator">{{ e.engagement_type or "---" }}</span>
+                    </td>
+                    <td style="font-size:0.8125rem;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ e.target_author or "---" }}</td>
+                    <td style="font-size:0.8125rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8;">
+                        {% if e.our_reply %}{{ e.our_reply[:80] }}{% if e.our_reply|length > 80 %}...{% endif %}{% else %}---{% endif %}
+                    </td>
+                    <td>
+                        {% set st = e.status|lower if e.status else '' %}
+                        {% if st == 'posted' %}
+                        <span class="badge badge-completed">{{ e.status }}</span>
+                        {% elif st == 'failed' %}
+                        <span class="badge badge-failed">{{ e.status }}</span>
+                        {% elif st == 'pending' %}
+                        <span class="badge" style="background:#3f3212;color:#fbbf24;">{{ e.status }}</span>
+                        {% else %}
+                        <span class="badge badge-pending">{{ e.status or "---" }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div style="display:flex;justify-content:center;gap:0.5rem;margin-top:1rem;align-items:center;">
+        {% if current_page > 1 %}
+        <a hx-get="/engagement-history?page={{ current_page - 1 }}&platform={{ filter_platform }}&engagement_type={{ filter_type }}&status={{ filter_status }}&date_from={{ filter_from }}&date_to={{ filter_to }}"
+           hx-target="#main-content" hx-swap="innerHTML"
+           style="padding:0.375rem 0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            &larr; Prev
+        </a>
+        {% endif %}
+
+        <span style="font-size:0.8125rem;color:#94a3b8;">
+            Page {{ current_page }} of {{ total_pages }} ({{ total_count }} total)
+        </span>
+
+        {% if current_page < total_pages %}
+        <a hx-get="/engagement-history?page={{ current_page + 1 }}&platform={{ filter_platform }}&engagement_type={{ filter_type }}&status={{ filter_status }}&date_from={{ filter_from }}&date_to={{ filter_to }}"
+           hx-target="#main-content" hx-swap="innerHTML"
+           style="padding:0.375rem 0.75rem;background:#1e293b;border:1px solid #334155;border-radius:0.25rem;color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            Next &rarr;
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="card empty-state">
+        <p>No engagements found{% if filter_platform or filter_type or filter_status %} matching the selected filters{% endif %}.</p>
+        <p style="margin-top:0.5rem;font-size:0.8125rem;color:#64748b;">Engagement records will appear after the social pipeline runs.</p>
+    </div>
+    {% endif %}
+
+</div>

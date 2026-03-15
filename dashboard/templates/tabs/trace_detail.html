@@ -1,0 +1,106 @@
+<div style="margin-bottom:1rem;">
+    <a hx-get="/traces" hx-target="#main-content" hx-swap="innerHTML"
+       hx-push-url="/traces"
+       style="color:#38bdf8;cursor:pointer;font-size:0.875rem;text-decoration:none;">
+        &larr; Back to Traces
+    </a>
+</div>
+
+{% if pipeline_run %}
+<div class="card">
+    <h2>Trace Tree</h2>
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Run ID</span><br>
+            <span class="meta-value" style="font-family:monospace;font-size:0.8125rem;">{{ pipeline_run.id }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Type</span><br>
+            <span class="meta-value">{{ pipeline_run.pipeline_type }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Status</span><br>
+            <span class="badge badge-{{ pipeline_run.status }}">{{ pipeline_run.status }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Started</span><br>
+            <span class="meta-value">{{ pipeline_run.started_at[:19] if pipeline_run.started_at else "—" }}</span>
+        </div>
+        {% if pipeline_run.completed_at %}
+        <div class="meta-item">
+            <span class="meta-label">Completed</span><br>
+            <span class="meta-value">{{ pipeline_run.completed_at[:19] }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if spans_pruned %}
+<div class="card" style="border-color:#f59e0b;">
+    <p style="color:#f59e0b;font-size:0.875rem;">
+        Spans pruned &mdash; trace data for this run has been removed per the 30-day retention policy.
+    </p>
+</div>
+{% elif tree %}
+<div class="card">
+    <h2>Execution Tree ({{ tree | length }} root span{{ "s" if tree | length != 1 else "" }})</h2>
+    <div style="margin-top:0.75rem;">
+        {% for span in tree recursive %}
+            {% set depth = loop.depth0 %}
+            <details style="margin-left: {{ depth * 1.5 }}rem; margin-bottom: 0.25rem;" {% if depth == 0 %}open{% endif %}>
+                <summary style="cursor:pointer;padding:0.25rem 0;">
+                    <span class="badge badge-{{ span.span_type }}" style="font-size:0.6875rem;">{{ span.span_type }}</span>
+                    <span style="font-weight:500;">{{ span.name }}</span>
+                    {% if span.duration_ms is not none %}
+                    <span class="meta-label" style="margin-left:0.5rem;">{{ span.duration_ms }}ms</span>
+                    {% endif %}
+                </summary>
+                <div style="margin: 0.25rem 0 0.5rem {{ depth * 1.5 + 1.5 }}rem; padding:0.75rem; background:#0f172a; border:1px solid #334155; border-radius:0.25rem; font-size:0.8125rem;">
+                    {% if span.input %}
+                    <div x-data="{ showFull: false }" style="margin-bottom:0.5rem;">
+                        <span class="meta-label">Input:</span>
+                        <pre x-show="!showFull" style="margin-top:0.25rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ span.input[:200] }}{% if span.input|length > 200 %}...{% endif %}</pre>
+                        <pre x-show="showFull" x-cloak style="margin-top:0.25rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ span.input[:10240] }}</pre>
+                        {% if span.input|length > 200 %}
+                        <button @click="showFull = !showFull"
+                                x-text="showFull ? 'Show less' : 'Show full'"
+                                style="color:#38bdf8;cursor:pointer;font-size:0.75rem;background:none;border:none;padding:0;margin-top:0.25rem;">
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if span.output %}
+                    <div x-data="{ showFull: false }">
+                        <span class="meta-label">Output:</span>
+                        <pre x-show="!showFull" style="margin-top:0.25rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ span.output[:200] }}{% if span.output|length > 200 %}...{% endif %}</pre>
+                        <pre x-show="showFull" x-cloak style="margin-top:0.25rem;color:#cbd5e1;white-space:pre-wrap;word-break:break-word;">{{ span.output[:10240] }}</pre>
+                        {% if span.output|length > 200 %}
+                        <button @click="showFull = !showFull"
+                                x-text="showFull ? 'Show less' : 'Show full'"
+                                style="color:#38bdf8;cursor:pointer;font-size:0.75rem;background:none;border:none;padding:0;margin-top:0.25rem;">
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if not span.input and not span.output %}
+                    <span style="color:#64748b;">No input/output recorded.</span>
+                    {% endif %}
+                </div>
+                {% if span.children %}
+                    {{ loop(span.children) }}
+                {% endif %}
+            </details>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card empty-state">
+    <p>No trace spans found for this pipeline run.</p>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card empty-state">
+    <p>Pipeline run not found.</p>
+</div>
+{% endif %}
