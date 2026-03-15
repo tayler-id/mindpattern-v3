@@ -69,15 +69,9 @@ class ApprovalGateway:
                 "score": t.get("score", 0),
             })
 
-        # Try dashboard first
-        web_result = self._web_approval(items, "topic")
-        if web_result is not None:
-            return web_result
-
-        # Fall back to iMessage
+        # iMessage-only approval (no dashboard)
         message = self._format_topic_message(topics)
         reply = self._imessage_approval(message, self.gate_timeout)
-
         return self._parse_topic_reply(reply, len(topics))
 
     def request_draft_approval(self, drafts: dict, images: dict) -> dict:
@@ -111,15 +105,9 @@ class ApprovalGateway:
                 "image_url": images.get(platform),
             })
 
-        # Try dashboard first
-        web_result = self._web_approval(items, "draft")
-        if web_result is not None:
-            return web_result
-
-        # Fall back to iMessage
+        # iMessage-only approval (no dashboard)
         message = self._format_draft_message(drafts, images)
         reply = self._imessage_approval(message, self.gate_timeout)
-
         return self._parse_draft_reply(reply, list(drafts.keys()))
 
     def request_engagement_approval(self, candidates: list[dict]) -> dict:
@@ -144,12 +132,7 @@ class ApprovalGateway:
                 "our_reply": c.get("our_reply", ""),
             })
 
-        # Try dashboard first
-        web_result = self._web_approval(items, "engagement")
-        if web_result is not None:
-            return web_result
-
-        # Fall back to iMessage
+        # iMessage-only approval (no dashboard)
         message = self._format_engagement_message(candidates)
         reply = self._imessage_approval(message, self.gate_timeout)
 
@@ -398,8 +381,10 @@ class ApprovalGateway:
                 conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
 
-                # Query for new messages from this phone number
-                # Join through chat_message_join and chat to find the right conversation
+                # Query for new messages in this conversation
+                # Match by phone number OR email-based chat identifier
+                # (iMessage conversations can be associated with either)
+                phone_pattern = f"%{normalized_phone[-10:]}%"
                 rows = conn.execute(
                     """
                     SELECT m.ROWID, m.text, m.is_from_me, m.date
@@ -407,13 +392,17 @@ class ApprovalGateway:
                     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
                     JOIN chat c ON c.ROWID = cmj.chat_id
                     WHERE m.ROWID > ?
-                      AND m.is_from_me = 0
                       AND m.text IS NOT NULL
                       AND m.text != ''
-                      AND c.chat_identifier LIKE ?
+                      AND c.ROWID IN (
+                          SELECT cmj2.chat_id FROM chat_message_join cmj2
+                          JOIN message m2 ON m2.ROWID = cmj2.message_id
+                          JOIN handle h ON h.ROWID = m2.handle_id
+                          WHERE h.id LIKE ?
+                      )
                     ORDER BY m.ROWID ASC
                     """,
-                    (min_rowid, f"%{normalized_phone[-10:]}%"),
+                    (min_rowid, phone_pattern),
                 ).fetchall()
 
                 conn.close()
