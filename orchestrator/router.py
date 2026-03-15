@@ -47,7 +47,7 @@ MAX_TURNS: dict[str, int] = {
     "creative_brief": 10,
     "art_director": 10,
     "illustrator": 5,
-    "writer": 10,
+    "writer": 15,
     "critic": 5,
     "expeditor": 5,
     "humanizer": 5,
