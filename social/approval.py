@@ -427,7 +427,17 @@ class ApprovalGateway:
                     return reply_text
 
             except sqlite3.OperationalError as e:
-                logger.debug(f"Messages.db poll error (will retry): {e}")
+                err_str = str(e).lower()
+                if "unable to open" in err_str or "authorization denied" in err_str or "readonly" in err_str:
+                    if not getattr(self, "_fda_warned", False):
+                        logger.error(
+                            f"Cannot read Messages.db — likely Full Disk Access issue. "
+                            f"Grant FDA to Python in System Settings → Privacy & Security → "
+                            f"Full Disk Access. Error: {e}"
+                        )
+                        self._fda_warned = True
+                else:
+                    logger.debug(f"Messages.db poll error (will retry): {e}")
             except Exception as e:
                 logger.warning(f"Unexpected error polling Messages.db: {e}")
 
