@@ -467,56 +467,53 @@ class TestExpedite:
 # ────────────────────────────────────────────────────────────────────────
 
 
-class TestBuildWriterPrompt:
-    """Tests for _build_writer_prompt()."""
+class TestBuildWriterAgentPrompt:
+    """Tests for _build_writer_agent_prompt()."""
 
-    def test_includes_voice_exemplars_and_corrections(self):
-        """Prompt includes exemplars and corrections sections."""
-        from social.writers import _build_writer_prompt
+    def test_includes_brief_and_voice_guide(self):
+        """Prompt includes the brief JSON and voice guide content."""
+        from social.writers import _build_writer_agent_prompt
 
-        exemplars = [
-            {"date": "2026-01-01", "content": "Great example post about AI agents."},
-        ]
-        corrections = [
-            {
-                "original_text": "This is transformative",
-                "approved_text": "This changes how we build agents",
-                "reason": "Banned word",
-            },
-        ]
+        with patch("social.writers._load_voice_guide", return_value="Be authentic."):
+            prompt = _build_writer_agent_prompt(
+                platform="x",
+                brief={"anchor": "Test topic", "reaction": "Interesting."},
+                iteration=1,
+            )
 
-        prompt = _build_writer_prompt(
-            platform="x",
-            brief={"anchor": "Test topic", "reaction": "Interesting."},
-            exemplars=exemplars,
-            corrections=corrections,
-            voice_guide="Be authentic.",
-            iteration=1,
-        )
-
-        assert "Voice Exemplars" in prompt
-        assert "Great example post" in prompt
-        assert "Editorial Corrections" in prompt
-        assert "transformative" in prompt
-        assert "changes how we build" in prompt
+        assert "Test topic" in prompt
+        assert "Be authentic." in prompt
+        assert "memory_cli.py get-exemplars --platform x" in prompt
+        assert "memory_cli.py recent-corrections --platform x" in prompt
 
     def test_includes_feedback_on_iteration_gt_1(self):
         """When iteration > 1, prompt includes critic feedback section."""
-        from social.writers import _build_writer_prompt
+        from social.writers import _build_writer_agent_prompt
 
-        prompt = _build_writer_prompt(
-            platform="x",
-            brief={"anchor": "Test"},
-            exemplars=[],
-            corrections=[],
-            voice_guide="Be real.",
-            iteration=2,
-            feedback="The post was too long and used banned words.",
-        )
+        with patch("social.writers._load_voice_guide", return_value="Be real."):
+            prompt = _build_writer_agent_prompt(
+                platform="x",
+                brief={"anchor": "Test"},
+                iteration=2,
+                feedback="The post was too long and used banned words.",
+            )
 
         assert "Critic Feedback" in prompt
         assert "too long" in prompt
         assert "iteration 2" in prompt.lower()
+
+    def test_includes_output_file_path(self):
+        """Prompt tells agent where to write the draft file."""
+        from social.writers import _build_writer_agent_prompt
+
+        with patch("social.writers._load_voice_guide", return_value="Voice."):
+            prompt = _build_writer_agent_prompt(
+                platform="linkedin",
+                brief={"anchor": "Test"},
+                iteration=1,
+            )
+
+        assert "linkedin-draft.md" in prompt
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -531,8 +528,10 @@ class TestWriteDrafts:
         """write_drafts() processes multiple platforms (mocked)."""
         mock_db = MagicMock()
 
-        with patch("social.writers.run_claude_prompt", return_value=("Draft text", 0)), \
-             patch("memory.social.get_exemplars", return_value=[]), \
+        with patch("social.writers.run_agent_with_files", return_value={"text": "Draft text"}), \
+             patch("social.writers.run_claude_prompt", return_value=("Draft text", 0)), \
+             patch("social.writers._load_voice_guide", return_value="Voice guide."), \
+             patch("memory.get_db", return_value=mock_db), \
              patch("memory.corrections.recent_corrections", return_value=[]), \
              patch("social.critics.run_claude_prompt", return_value=(
                  json.dumps({"verdict": "APPROVED", "feedback": "", "scores": {}}), 0
