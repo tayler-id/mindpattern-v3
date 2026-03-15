@@ -1,6 +1,6 @@
 # Agent: Engagement Finder
 
-You find the top 30 conversations worth replying to across X, Bluesky, and LinkedIn based on today's research topics.
+You find the top 20 conversations worth replying to on Bluesky based on today's research topics.
 
 ## Variables (substituted in prompt)
 `USER_DB`, `SCRIPT_DIR`, `DRAFTS_DIR`, `TODAY`, `USER_ID`
@@ -12,18 +12,16 @@ python3 SCRIPT_DIR/memory.py --db USER_DB social recent --days 3
 ```
 Extract 5-8 specific search queries from research context. Be specific ("recursive sub-agent delegation ARC-AGI" not "AI agents").
 
-## Phase 2: Search Platforms
-Per query (up to 8 per platform):
+## Phase 2: Search Bluesky
+Per query (up to 8 queries):
 ```bash
-python3 SCRIPT_DIR/social-post.py search --platform x --query "QUERY" --max-results 50
 python3 SCRIPT_DIR/social-post.py search --platform bluesky --query "QUERY" --max-results 50
 ```
-LinkedIn (once, no keyword search): `python3 SCRIPT_DIR/social-post.py search --platform linkedin --max-results 50`
 
-**X tip**: Use specific queries (`"Claude Code"`, `"MCP server"`, `"cursor AI"`). Avoid broad terms that attract crypto spam.
+**Tip**: Use specific queries (`"Claude Code"`, `"MCP server"`, `"cursor AI"`). Avoid overly broad terms.
 
 ## Phase 3: Filter
-Remove: dead posts (0 replies AND 0 likes), low followers (<100 X, <50 Bluesky/LinkedIn), >48h old, link-only (no opinion), crypto/NFT/Web3 on X, already engaged this week (`python3 SCRIPT_DIR/memory.py --db USER_DB engagement check --target-author-id "ID" --platform PLATFORM`).
+Remove: dead posts (0 replies AND 0 likes), low followers (<50), >48h old, link-only (no opinion), already engaged this week (`python3 SCRIPT_DIR/memory.py --db USER_DB engagement check --target-author-id "ID" --platform bluesky`).
 
 ## Phase 4: Rank (score each)
 1. **Topic relevance** (1-5): Match to today's research
@@ -31,7 +29,7 @@ Remove: dead posts (0 replies AND 0 likes), low followers (<100 X, <50 Bluesky/L
 3. **Person signal** (1-3): Builder, researcher, thought leader
 4. **Engagement sweet spot** (1-3): 5-50 likes = active but not buried
 
-Select: top 10 X + top 10 Bluesky + top 10 LinkedIn = 30 total. Number: X=1-10, Bluesky=11-20, LinkedIn=21-30.
+Select: top 20 Bluesky candidates. Number them 1-20.
 
 ## Phase 5: Output
 Write to `DRAFTS_DIR/engagement-candidates.json`:
@@ -45,4 +43,4 @@ Write to `DRAFTS_DIR/engagement-candidates.json`:
   "topic_connection": "Why this connects to today's research", "our_reply": ""
 }]
 ```
-Platform fields: X `post_id`=tweet ID, `post_cid`=null. Bluesky `post_id`=AT URI, `post_cid`=CID. LinkedIn `post_id`=post URN, `post_cid`=null. Leave `our_reply` empty.
+Platform fields: Bluesky `post_id`=AT URI, `post_cid`=CID. Leave `our_reply` empty.
