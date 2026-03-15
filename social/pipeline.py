@@ -21,7 +21,7 @@ from policies.engine import PolicyEngine
 from social.approval import ApprovalGateway
 from social.art import create_art
 from social.eic import select_topic, create_brief
-from social.writers import write_drafts
+from social.writers import write_drafts, _humanize
 from social.critics import review_draft, deterministic_validate, expedite
 from social.posting import XClient, BlueskyClient, LinkedInClient
 
@@ -327,14 +327,11 @@ class SocialPipeline:
                 else:
                     text = content
 
-                humanized_output, exit_code = run_claude_prompt(
-                    prompt=self._build_humanize_prompt(platform, text),
-                    task_type="humanizer",
-                )
-                if exit_code == 0 and humanized_output.strip():
-                    drafts[platform] = humanized_output.strip()
+                humanized = _humanize(text, platform, self.db)
+                if humanized and humanized.strip():
+                    drafts[platform] = humanized.strip()
                 else:
-                    logger.warning(f"Humanizer returned empty or failed for {platform}")
+                    logger.warning(f"Humanizer returned empty for {platform}")
             except Exception as e:
                 logger.warning(f"Humanize failed for {platform} (non-fatal): {e}")
 
@@ -584,42 +581,3 @@ class SocialPipeline:
                         f"Failed to store correction for {platform}: {e}"
                     )
 
-    def _build_humanize_prompt(self, platform: str, content: str) -> str:
-        """Build prompt for the humanizer agent.
-
-        Includes editorial corrections from memory for voice calibration.
-        """
-        corrections = memory.recent_corrections(self.db, platform=platform, limit=5)
-        corrections_section = ""
-        if corrections:
-            examples = []
-            for c in corrections:
-                examples.append(
-                    f"BEFORE: {c['original_text'][:200]}\n"
-                    f"AFTER: {c['approved_text'][:200]}"
-                )
-            corrections_section = (
-                "\n\n## Recent Editorial Corrections (learn from these):\n"
-                + "\n---\n".join(examples)
-            )
-
-        return f"""You are a humanizer for social media posts. Your job is to remove
-AI-sounding patterns while preserving the core message and voice.
-
-## Rules
-- Remove em dashes, replace with commas or periods
-- Remove filler phrases ("It's worth noting", "Interestingly", "Let's dive in")
-- Remove rhetorical questions at the end
-- Keep the length approximately the same
-- Do NOT add hashtags
-- Do NOT add emojis unless the original had them
-- Keep technical accuracy intact
-- Match the casual, knowledgeable voice of a senior developer
-
-## Platform: {platform}
-## Content to humanize:
-
-{content}
-{corrections_section}
-
-Output ONLY the humanized post text. No commentary, no explanation."""
