@@ -21,6 +21,7 @@ Any of these = automatic REVISE verdict:
 - Rhetorical question used as a transition device
 - Summary or conclusion closing (wrapping up the thought neatly)
 - mindpattern as the grammatical subject of any main clause
+- Any mention of "my agents", "my pipeline", "12 agents", "cron job", "research agents", or the automation system
 - Multiple findings stacked as evidence (the brief said ONE thing)
 - Chronological walkthrough of events ("First... Then... Finally...")
 - Any snappy triad ("Simple. Powerful. Effective.")

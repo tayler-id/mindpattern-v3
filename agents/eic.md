@@ -156,7 +156,7 @@ Output a JSON array of brief objects ranked by composite score (rank 1 = best):
 - **do_not_include**: Explicitly list findings you considered but are keeping out. Prevents writers from stacking.
 - **confidence**: Be honest. Most things are MEDIUM or SPECULATIVE. HIGH is rare.
 - **emotional_register**: Pick one. Calibrates the writer's tone.
-- **mindpattern_context**: Only fill if mindpattern genuinely relates. "none today" is right most days.
+- **mindpattern_context**: Set to "none today" unless there is an extremely specific and genuine connection. Do NOT use this to mention "my agents", "my pipeline", or "I build AI". The social posts should never reference the automation system.
 - **editorial_scores**: The scoring breakdown. Novelty, broad_appeal, thread_potential (each 0-10), and composite (weighted average).
 
 ## Rules
