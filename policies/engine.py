@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from memory.social import recent_posts
+
 try:
     import unicodedata
 
@@ -229,7 +231,46 @@ class PolicyEngine:
 
         return errors
 
-    # ── Rate limit validation ────────────────────────────────────────
+    # ── Post rate limit (social_posts table) ────────────────────────
+
+    def validate_post_rate_limit(
+        self, platform: str, db: sqlite3.Connection
+    ) -> str | None:
+        """Check if posting is allowed based on today's actual post history.
+
+        Loads max_posts_per_day from social.json rate_limits, then queries
+        memory.social.recent_posts(db, days=1, platform) to count how many
+        posts with posted=1 exist for today.
+
+        Args:
+            platform: Platform name (x, bluesky, linkedin).
+            db: SQLite database connection with a social_posts table.
+
+        Returns:
+            Error string if at or over the limit, None if within limit.
+        """
+        rate_limits = self.rules.get("rate_limits", {})
+
+        if platform not in rate_limits:
+            return (
+                f"Unknown platform '{platform}' "
+                f"(valid: {list(rate_limits.keys())})"
+            )
+
+        max_per_day = rate_limits[platform].get("max_posts_per_day", 3)
+
+        posts_today = recent_posts(db, days=1, platform=platform, limit=max_per_day + 10)
+        posted_count = sum(1 for p in posts_today if p.get("posted"))
+
+        if posted_count >= max_per_day:
+            return (
+                f"Post limit reached for {platform}: "
+                f"{posted_count}/{max_per_day} today"
+            )
+
+        return None
+
+    # ── Rate limit validation (engagements table) ─────────────────
 
     def validate_rate_limits(
         self, db: sqlite3.Connection, platform: str, action_type: str
