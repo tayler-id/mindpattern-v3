@@ -33,7 +33,15 @@ class PipelineMonitor:
         self._ensure_tables()
 
     def _ensure_tables(self):
-        """Create monitoring-specific tables if they don't exist."""
+        """Create monitoring-specific tables if they don't exist.
+
+        Also migrates tables from older schemas when column mismatches are
+        detected (e.g. ``cost`` → ``cost_usd``, row-per-dimension
+        ``quality_history`` → row-per-date with individual dimension columns).
+        """
+        self._migrate_agent_metrics()
+        self._migrate_quality_history()
+
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS phase_tracking (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +98,145 @@ class PipelineMonitor:
             CREATE INDEX IF NOT EXISTS idx_quality_history_date ON quality_history(run_date);
         """)
         self.conn.commit()
+
+    # ── Schema migrations ──────────────────────────────────────────────
+
+    def _migrate_agent_metrics(self):
+        """Migrate agent_metrics from v1 schema if needed.
+
+        v1 had ``cost REAL`` instead of ``cost_usd REAL`` and was missing
+        ``created_at`` and the UNIQUE(agent_name, run_date) constraint.
+        We detect this by checking whether the ``cost_usd`` column exists.
+        If the old table is present with the wrong schema, we rename it and
+        let _ensure_tables() recreate the correct version, then copy data over.
+        """
+        columns = self._get_column_names("agent_metrics")
+        if columns is None:
+            return  # table doesn't exist yet — will be created fresh
+
+        if "cost_usd" in columns:
+            return  # already on current schema
+
+        # Old schema detected — migrate
+        self.conn.executescript("""
+            ALTER TABLE agent_metrics RENAME TO _agent_metrics_v1;
+            DROP INDEX IF EXISTS idx_agent_metrics_date;
+        """)
+
+        # Create new table
+        self.conn.execute("""
+            CREATE TABLE agent_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_name TEXT NOT NULL,
+                run_date TEXT NOT NULL,
+                findings_count INTEGER DEFAULT 0,
+                tokens_used INTEGER DEFAULT 0,
+                cost_usd REAL DEFAULT 0.0,
+                duration_ms INTEGER DEFAULT 0,
+                model_used TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(agent_name, run_date)
+            )
+        """)
+
+        # Copy data from old table (mapping cost → cost_usd)
+        self.conn.execute("""
+            INSERT OR IGNORE INTO agent_metrics
+                (agent_name, run_date, findings_count, tokens_used, cost_usd, duration_ms, model_used)
+            SELECT agent_name, run_date, findings_count, tokens_used,
+                   COALESCE(cost, 0.0), duration_ms, model_used
+            FROM _agent_metrics_v1
+        """)
+
+        self.conn.execute("DROP TABLE _agent_metrics_v1")
+        self.conn.commit()
+
+    def _migrate_quality_history(self):
+        """Migrate quality_history from v1 schema if needed.
+
+        v1 stored one row per (run_date, dimension) pair with columns:
+            id, run_date, dimension, score, delta_from_avg
+        v2 stores one row per run_date with individual dimension columns:
+            id, run_date, overall_score, coverage, dedup, sources,
+            actionability, length_score, topic_balance, created_at
+        We detect v1 by checking for the ``dimension`` column.
+        """
+        columns = self._get_column_names("quality_history")
+        if columns is None:
+            return  # table doesn't exist yet — will be created fresh
+
+        if "overall_score" in columns:
+            return  # already on current schema
+
+        # Old schema detected — migrate
+        self.conn.executescript("""
+            ALTER TABLE quality_history RENAME TO _quality_history_v1;
+            DROP INDEX IF EXISTS idx_quality_history_date;
+        """)
+
+        # Create new table
+        self.conn.execute("""
+            CREATE TABLE quality_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_date TEXT UNIQUE NOT NULL,
+                overall_score REAL NOT NULL,
+                coverage REAL DEFAULT 0.0,
+                dedup REAL DEFAULT 0.0,
+                sources REAL DEFAULT 0.0,
+                actionability REAL DEFAULT 0.0,
+                length_score REAL DEFAULT 0.0,
+                topic_balance REAL DEFAULT 0.0,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+
+        # Pivot old row-per-dimension data into new row-per-date format.
+        # Only migrate dates that have an 'overall' dimension row.
+        if "dimension" in columns:
+            dates = self.conn.execute(
+                "SELECT DISTINCT run_date FROM _quality_history_v1"
+            ).fetchall()
+
+            for (run_date,) in dates:
+                rows = self.conn.execute(
+                    "SELECT dimension, score FROM _quality_history_v1 WHERE run_date = ?",
+                    (run_date,),
+                ).fetchall()
+                dim_map = {r["dimension"]: r["score"] for r in rows} if rows else {}
+                # Only insert if there's meaningful data
+                if dim_map:
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO quality_history "
+                        "(run_date, overall_score, coverage, dedup, sources, "
+                        "actionability, length_score, topic_balance) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            run_date,
+                            dim_map.get("overall", 0.0),
+                            dim_map.get("coverage", 0.0),
+                            dim_map.get("dedup", 0.0),
+                            dim_map.get("sources", 0.0),
+                            dim_map.get("actionability", 0.0),
+                            dim_map.get("length", 0.0),
+                            dim_map.get("topic_balance", 0.0),
+                        ),
+                    )
+
+        self.conn.execute("DROP TABLE _quality_history_v1")
+        self.conn.commit()
+
+    def _get_column_names(self, table_name: str) -> list[str] | None:
+        """Return column names for a table, or None if it doesn't exist."""
+        try:
+            rows = self.conn.execute(
+                f"PRAGMA table_info({table_name})"
+            ).fetchall()
+            if not rows:
+                return None
+            # Handle both tuple and Row results
+            return [r[1] if isinstance(r, tuple) else r["name"] for r in rows]
+        except Exception:
+            return None
 
     def start_phase(self, pipeline_run_id: str, phase_name: str) -> int:
         """Record phase start.
