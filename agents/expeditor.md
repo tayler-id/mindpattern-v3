@@ -49,6 +49,7 @@ Check ALL drafts against the voice guide (`agents/voice-guide.md`). Any of these
 - **Rhetorical questions as transition device**: "But what does this mean?" or similar
 - **Summary/conclusion closing**: "In conclusion", "In summary", "In essence"
 - **mindpattern as grammatical subject**: "mindpattern found..." (it's a tool, not a person)
+- **Pipeline/automation self-reference**: Any mention of "my agents", "my pipeline", "12 agents", "cron job", "I build AI", "research agents", "I run agents", or similar. Posts must read as a human's own voice — NEVER as someone showcasing their AI system.
 - **Multiple findings stacked**: More than 2 distinct findings listed without a connecting thread
 - **Snappy triads**: "Simple. Powerful. Effective." pattern
 - **Broetry**: One sentence per line, double-spaced
