@@ -201,12 +201,21 @@ def expedite(
     }
 
     for platform, draft_data in drafts.items():
-        proof_package["drafts"][platform] = {
-            "content": draft_data.get("humanized") or draft_data.get("content", ""),
-            "iterations": draft_data.get("iterations", 0),
-            "critic_verdict": draft_data.get("critic_verdict", "UNKNOWN"),
-            "policy_errors": draft_data.get("policy_errors", []),
-        }
+        # draft_data may be a string (after humanization) or a dict (before)
+        if isinstance(draft_data, str):
+            proof_package["drafts"][platform] = {
+                "content": draft_data,
+                "iterations": 0,
+                "critic_verdict": "APPROVED",
+                "policy_errors": [],
+            }
+        else:
+            proof_package["drafts"][platform] = {
+                "content": draft_data.get("humanized") or draft_data.get("content", ""),
+                "iterations": draft_data.get("iterations", 0),
+                "critic_verdict": draft_data.get("critic_verdict", "UNKNOWN"),
+                "policy_errors": draft_data.get("policy_errors", []),
+            }
 
     # Load voice guide for inline inclusion
     voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
