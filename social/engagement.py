@@ -48,16 +48,24 @@ class EngagementPipeline:
         self._platform_clients = self._init_platform_clients()
 
     def _init_platform_clients(self) -> dict:
-        """Initialize API clients for each enabled platform."""
+        """Initialize API clients for engagement-enabled platforms only.
+
+        Uses engagement.platforms list from config if present,
+        otherwise falls back to all enabled platforms.
+        """
         clients = {}
         platforms = self.config.get("platforms", {})
+        engagement_platforms = self.engagement_config.get("platforms")
 
         if platforms.get("x", {}).get("enabled"):
-            clients["x"] = XClient(platforms["x"])
+            if engagement_platforms is None or "x" in engagement_platforms:
+                clients["x"] = XClient(platforms["x"])
         if platforms.get("bluesky", {}).get("enabled"):
-            clients["bluesky"] = BlueskyClient(platforms["bluesky"])
+            if engagement_platforms is None or "bluesky" in engagement_platforms:
+                clients["bluesky"] = BlueskyClient(platforms["bluesky"])
         if platforms.get("linkedin", {}).get("enabled"):
-            clients["linkedin"] = LinkedInClient(platforms["linkedin"])
+            if engagement_platforms is None or "linkedin" in engagement_platforms:
+                clients["linkedin"] = LinkedInClient(platforms["linkedin"])
 
         return clients
 
