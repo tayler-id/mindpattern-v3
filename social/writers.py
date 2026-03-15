@@ -1,10 +1,14 @@
 """Per-platform writing orchestration with the Ralph Loop.
 
 Writer <-> Critic feedback cycle for each platform. Writers get voice exemplars
-(RAG) and editorial corrections (DPO) from memory. Critics are BLIND -- they
-see only the draft text and platform rules, never the brief or creative
-direction. Deterministic policy validation via PolicyEngine runs after the
-LLM loop. A final humanizer pass strips residual AI patterns.
+(RAG) and editorial corrections (DPO) from memory via the Bash tool
+(memory_cli.py). Critics are BLIND -- they see only the draft text and platform
+rules, never the brief or creative direction. Deterministic policy validation
+via PolicyEngine runs after the LLM loop. A final humanizer pass strips
+residual AI patterns.
+
+Agents use file-based I/O: run_agent_with_files() writes drafts to
+data/social-drafts/{platform}-draft.md; Python reads the result back.
 """
 
 import json
@@ -12,12 +16,26 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from orchestrator.agents import run_claude_prompt
+from orchestrator.agents import run_agent_with_files, run_claude_prompt
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 PLATFORMS = ["x", "linkedin", "bluesky"]
+
+# Voice guide is loaded once at module level (immutable reference text)
+_VOICE_GUIDE_PATH = PROJECT_ROOT / "agents" / "voice-guide.md"
+_VOICE_GUIDE: str | None = None
+
+
+def _load_voice_guide() -> str:
+    """Lazy-load the voice guide (cached after first call)."""
+    global _VOICE_GUIDE
+    if _VOICE_GUIDE is None:
+        _VOICE_GUIDE = (
+            _VOICE_GUIDE_PATH.read_text() if _VOICE_GUIDE_PATH.exists() else ""
+        )
+    return _VOICE_GUIDE
 
 
 # ── Public API ───────────────────────────────────────────────────────────
@@ -33,28 +51,24 @@ def write_drafts(
     """Write drafts for all platforms in parallel.
 
     For each platform:
-    1. Load voice exemplars from memory (approved posts for this platform)
-    2. Load editorial corrections from memory (learn from past edits)
-    3. Build writer prompt with: brief, voice guide, exemplars, corrections,
-       platform constraints
-    4. Run writer (Sonnet)
-    5. Run critic BLIND (sees only draft text + platform rules, NOT the brief)
-    6. If critic says REVISE and iteration < max_iterations: loop with feedback
-    7. Run deterministic policy validation (PolicyEngine)
-    8. Run humanizer pass (remove AI patterns)
+    1. Build agent prompt with brief, voice guide, memory-CLI instructions
+    2. Run writer agent via run_agent_with_files() (writes to .md file)
+    3. Run blind critic (sees only draft text + platform rules)
+    4. If critic says REVISE and iteration < max_iterations: loop with feedback
+    5. Run deterministic policy validation (PolicyEngine)
+    6. Run humanizer pass (remove AI patterns, include editorial corrections)
 
     Returns: {platform: {content, iterations, critic_verdict, policy_errors,
-              humanized}}
+              humanized, error}}
     """
     targets = platforms or PLATFORMS
     max_workers = config.get("social", {}).get("max_writer_workers", len(targets))
 
-    # Each thread needs its own DB connection (SQLite thread safety)
-    import memory as _memory
-
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_write_single_platform, None, platform, brief, config): platform
+            executor.submit(
+                _write_single_platform, platform, brief, config
+            ): platform
             for platform in targets
         }
         results: dict[str, dict] = {}
@@ -80,7 +94,6 @@ def write_drafts(
 
 
 def _write_single_platform(
-    db,
     platform: str,
     brief: dict,
     config: dict,
@@ -94,64 +107,48 @@ def _write_single_platform(
 
     max_iterations = config.get("social", {}).get("max_iterations", 3)
 
-    # Open a fresh DB connection for this thread (SQLite thread safety)
-    import memory as _mem
-    thread_db = _mem.get_db()
-
-    # Load voice context from memory
-    from memory.social import get_exemplars
-    from memory.corrections import recent_corrections
-
-    try:
-        exemplars = get_exemplars(thread_db, platform=platform, limit=5)
-        corrections = recent_corrections(thread_db, platform=platform, limit=5)
-    except Exception:
-        exemplars = []
-        corrections = []
-    finally:
-        thread_db.close()
-
-    # Load voice guide once
-    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
-    voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
-
     content = ""
     critic_verdict = "REVISE"
     critic_feedback = None
     iteration = 0
 
+    output_file = str(
+        PROJECT_ROOT / "data" / "social-drafts" / f"{platform}-draft.md"
+    )
+
     for iteration in range(1, max_iterations + 1):
-        # ── Writer ───────────────────────────────────────────────────
-        writer_prompt = _build_writer_prompt(
+        # ── Writer (agent with file I/O) ──────────────────────────
+        writer_prompt = _build_writer_agent_prompt(
             platform=platform,
             brief=brief,
-            exemplars=exemplars,
-            corrections=corrections,
-            voice_guide=voice_guide,
             iteration=iteration,
             feedback=critic_feedback,
         )
 
-        raw_output, exit_code = run_claude_prompt(
-            writer_prompt,
+        result = run_agent_with_files(
+            system_prompt_file=f"agents/{platform}-writer.md",
+            prompt=writer_prompt,
+            output_file=output_file,
+            allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
             task_type="writer",
-            system_prompt_file=str(PROJECT_ROOT / "agents" / f"{platform}-writer.md"),
         )
 
-        if exit_code != 0:
-            logger.warning(f"Writer call failed for {platform} (iteration {iteration})")
+        if result is None:
+            logger.warning(
+                f"Writer call failed for {platform} (iteration {iteration})"
+            )
             return {
                 "content": content,
                 "iterations": iteration,
                 "critic_verdict": "ERROR",
                 "policy_errors": [],
                 "humanized": "",
-                "error": f"Writer exited {exit_code} on iteration {iteration}",
+                "error": f"Writer returned no output on iteration {iteration}",
             }
 
-        content = _extract_draft_text(raw_output)
+        content = result.get("text", "").strip()
 
-        # ── Critic (blind) ───────────────────────────────────────────
+        # ── Critic (blind) ────────────────────────────────────────
         review = review_draft(platform, content)
         critic_verdict = review.get("verdict", "REVISE")
         critic_feedback = review.get("feedback", "")
@@ -174,7 +171,14 @@ def _write_single_platform(
         )
 
     # ── Humanizer pass ───────────────────────────────────────────────
-    humanized = _humanize(content, platform) if content else ""
+    # Open a fresh DB connection for this thread (SQLite thread safety)
+    import memory as _mem
+
+    thread_db = _mem.get_db()
+    try:
+        humanized = _humanize(content, platform, thread_db) if content else ""
+    finally:
+        thread_db.close()
 
     # If humanizer returned empty (call failed), fall back to pre-humanized
     if not humanized and content:
@@ -182,11 +186,11 @@ def _write_single_platform(
         humanized = content
 
     return {
-        "content": content,
+        "content": humanized,
         "iterations": iteration,
         "critic_verdict": critic_verdict,
         "policy_errors": policy_errors,
-        "humanized": humanized,
+        "humanized": True,
         "error": None,
     }
 
@@ -194,48 +198,27 @@ def _write_single_platform(
 # ── Prompt builders ─────────────────────────────────────────────────────
 
 
-def _build_writer_prompt(
+def _build_writer_agent_prompt(
     platform: str,
     brief: dict,
-    exemplars: list[dict],
-    corrections: list[dict],
-    voice_guide: str,
     iteration: int = 1,
     feedback: str | None = None,
 ) -> str:
-    """Build writer prompt with context.
+    """Build writer agent prompt with memory-CLI instructions.
 
-    Includes: brief, voice exemplars (RAG), editorial corrections (DPO),
-    platform constraints. If iteration > 1, includes critic feedback.
+    The agent is told to:
+    1. Use Bash to call memory_cli.py for exemplars and corrections
+    2. Read the voice guide (inlined)
+    3. Write the draft to the output file via the Write tool
+
+    On iteration > 1, critic feedback is included in the prompt.
     """
-    # Brief context
-    brief_section = json.dumps(brief, indent=2)
+    brief_json = json.dumps(brief, indent=2)
+    voice_guide = _load_voice_guide()
 
-    # Voice exemplars (RAG)
-    exemplars_section = ""
-    if exemplars:
-        exemplars_section = "\n## Voice Exemplars (Real Approved Posts)\n\n"
-        exemplars_section += "Study these carefully. Match their rhythm and tone.\n\n"
-        for i, ex in enumerate(exemplars, 1):
-            exemplars_section += f"### Exemplar {i} ({ex.get('date', 'unknown')})\n"
-            exemplars_section += f"{ex.get('content', '')}\n\n"
-
-    # Editorial corrections (DPO)
-    corrections_section = ""
-    if corrections:
-        corrections_section = "\n## Editorial Corrections (Learn From Past Edits)\n\n"
-        corrections_section += (
-            "These are before/after pairs from past edits. "
-            "The 'approved' version is what the human preferred. "
-            "Learn from the pattern.\n\n"
-        )
-        for i, corr in enumerate(corrections, 1):
-            corrections_section += f"### Correction {i}\n"
-            corrections_section += f"**Original**: {corr.get('original_text', '')}\n"
-            corrections_section += f"**Approved**: {corr.get('approved_text', '')}\n"
-            if corr.get("reason"):
-                corrections_section += f"**Reason**: {corr['reason']}\n"
-            corrections_section += "\n"
+    output_file = str(
+        PROJECT_ROOT / "data" / "social-drafts" / f"{platform}-draft.md"
+    )
 
     # Feedback section (Ralph Loop iteration > 1)
     feedback_section = ""
@@ -258,23 +241,38 @@ Do NOT just shuffle the problems around. Fix them directly.
             f"Previous drafts were rejected. Read the feedback above carefully.\n"
         )
 
-    prompt = f"""Write a {platform} post based on the creative brief below.
+    prompt = f"""You are a social media writer for the mindpattern brand. Write a {platform} post.
 
-## Creative Brief
+## Step 1: Gather Context from Memory
 
-```json
-{brief_section}
+Run these commands with the Bash tool to get voice exemplars and editorial corrections:
+
+```
+python3 memory_cli.py get-exemplars --platform {platform} --limit 5
 ```
 
-## Voice Guide
+```
+python3 memory_cli.py recent-corrections --platform {platform}
+```
+
+Study the exemplars carefully. Match their rhythm and tone.
+Learn from the corrections — the "approved" version is what the human preferred.
+
+## Step 2: Creative Brief
+
+```json
+{brief_json}
+```
+
+## Step 3: Voice Guide
 
 {voice_guide}
-{exemplars_section}
-{corrections_section}
 {feedback_section}
 {iteration_section}
 
-## Instructions
+## Step 4: Write the Post
+
+Follow these instructions exactly:
 
 1. React to the brief's `anchor` + `reaction`. ONE thing, not a synthesis.
 2. Follow the voice guide strictly. No banned words, no banned phrases, no em dashes.
@@ -282,17 +280,49 @@ Do NOT just shuffle the problems around. Fix them directly.
 4. Include "https://mindpattern.ai" at the end of the post.
 5. Do NOT reference anything in the `do_not_include` list.
 
-Output ONLY the post text. No headers, no metadata, no explanation.
+## Step 5: Save Your Draft
+
+Use the Write tool to save ONLY the post text (no headers, no metadata, no
+explanation) to this file:
+
+{output_file}
 """
     return prompt
 
 
-def _humanize(content: str, platform: str) -> str:
+def _humanize(content: str, platform: str, db=None) -> str:
     """Remove AI writing patterns via one Sonnet call.
 
     Patterns to remove: em dashes, rhetorical questions, 'delve', 'landscape',
     'it's worth noting', 'in conclusion', excessive hedging.
+
+    If a db connection is provided, editorial corrections from memory are
+    included in the prompt so the humanizer can learn from past edits.
     """
+    # Build corrections section from memory (if db available)
+    corrections_section = ""
+    if db is not None:
+        try:
+            from memory.corrections import recent_corrections
+
+            corrections = recent_corrections(db, platform=platform, limit=5)
+            if corrections:
+                examples = []
+                for c in corrections:
+                    entry = (
+                        f"BEFORE: {c['original_text'][:200]}\n"
+                        f"AFTER: {c['approved_text'][:200]}"
+                    )
+                    if c.get("reason"):
+                        entry += f"\nREASON: {c['reason']}"
+                    examples.append(entry)
+                corrections_section = (
+                    "\n\n## Recent Editorial Corrections (learn from these)\n\n"
+                    + "\n---\n".join(examples)
+                )
+        except Exception as e:
+            logger.warning(f"Failed to load corrections for humanizer: {e}")
+
     prompt = f"""You are a copy editor removing AI writing artifacts from a {platform} post.
 
 ## The Draft
@@ -319,6 +349,7 @@ Remove or rewrite ANY of these if present:
 - Do NOT change the meaning or angle.
 - Keep the same approximate length.
 - Preserve "https://mindpattern.ai" at the end.
+{corrections_section}
 
 Output ONLY the cleaned post text. No explanation, no headers.
 """
@@ -331,34 +362,3 @@ Output ONLY the cleaned post text. No explanation, no headers.
 
     cleaned = output.strip()
     return cleaned if cleaned else content
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-
-def _extract_draft_text(raw_output: str) -> str:
-    """Extract the draft text from writer output.
-
-    Writers are instructed to output only the post text, but may include
-    markdown fences or header noise. Strip it down to just the content.
-    """
-    text = raw_output.strip()
-
-    # If wrapped in markdown code fences, extract inner content
-    if text.startswith("```") and text.endswith("```"):
-        lines = text.split("\n")
-        # Drop first and last fence lines
-        inner = "\n".join(lines[1:-1]).strip()
-        if inner:
-            text = inner
-
-    # If the output has PLATFORM/TYPE header format, extract content between --- markers
-    if "PLATFORM:" in text and "---" in text:
-        parts = text.split("---")
-        if len(parts) >= 3:
-            # Content is between the first and second --- markers
-            text = parts[1].strip()
-        elif len(parts) == 2:
-            text = parts[1].strip()
-
-    return text
