@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -17,6 +18,15 @@ from dashboard.routes import (
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 app = FastAPI(title="Research Agent Dashboard")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://mindpattern.fly.dev"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_credentials=True,
+    allow_headers=["Authorization", "Content-Type"],
+)
+
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 app.include_router(editors_desk.router)
