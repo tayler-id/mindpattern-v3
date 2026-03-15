@@ -278,3 +278,86 @@ class TestRateLimits:
         assert result["current"] == 3
         assert result["limit"] == 3
         assert "limit" in result["reason"].lower() or "reached" in result["reason"].lower()
+
+
+class TestPostRateLimit:
+    """PolicyEngine.validate_post_rate_limit checks social_posts history."""
+
+    def test_rejects_4th_post_when_x_limit_is_3(self, social_engine):
+        """Mock memory DB returns 3 posted today; 4th post must be rejected."""
+        db = MagicMock()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # Simulate 3 already-posted entries for today on X
+        mock_posts = [
+            {"id": i, "date": today, "platform": "x", "content": f"post {i}",
+             "anchor_text": f"anchor {i}", "gate2_action": "approved", "posted": 1}
+            for i in range(1, 4)
+        ]
+
+        with patch("policies.engine.recent_posts", return_value=mock_posts):
+            error = social_engine.validate_post_rate_limit("x", db)
+
+        assert error is not None
+        assert "x" in error.lower()
+        assert "3" in error  # mentions the limit or count
+
+    def test_allows_post_when_under_limit(self, social_engine):
+        """When only 1 post exists today, a new post should be allowed."""
+        db = MagicMock()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        mock_posts = [
+            {"id": 1, "date": today, "platform": "x", "content": "post 1",
+             "anchor_text": "anchor 1", "gate2_action": "approved", "posted": 1}
+        ]
+
+        with patch("policies.engine.recent_posts", return_value=mock_posts):
+            error = social_engine.validate_post_rate_limit("x", db)
+
+        assert error is None
+
+    def test_linkedin_rejects_2nd_post(self, social_engine):
+        """LinkedIn has max_posts_per_day=1; a 2nd post must be rejected."""
+        db = MagicMock()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        mock_posts = [
+            {"id": 1, "date": today, "platform": "linkedin", "content": "post 1",
+             "anchor_text": "anchor", "gate2_action": "approved", "posted": 1}
+        ]
+
+        with patch("policies.engine.recent_posts", return_value=mock_posts):
+            error = social_engine.validate_post_rate_limit("linkedin", db)
+
+        assert error is not None
+        assert "linkedin" in error.lower()
+
+    def test_unknown_platform_returns_error(self, social_engine):
+        """Unknown platform returns an error string."""
+        db = MagicMock()
+        with patch("policies.engine.recent_posts", return_value=[]):
+            error = social_engine.validate_post_rate_limit("tiktok", db)
+        assert error is not None
+        assert "tiktok" in error.lower()
+
+    def test_only_counts_posted_entries(self, social_engine):
+        """Only posts with posted=1 should count against the limit."""
+        db = MagicMock()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # 3 posts returned but only 2 have posted=1
+        mock_posts = [
+            {"id": 1, "date": today, "platform": "x", "content": "p1",
+             "anchor_text": "a1", "gate2_action": "approved", "posted": 1},
+            {"id": 2, "date": today, "platform": "x", "content": "p2",
+             "anchor_text": "a2", "gate2_action": "approved", "posted": 1},
+            {"id": 3, "date": today, "platform": "x", "content": "p3",
+             "anchor_text": "a3", "gate2_action": "skip", "posted": 0},
+        ]
+
+        with patch("policies.engine.recent_posts", return_value=mock_posts):
+            error = social_engine.validate_post_rate_limit("x", db)
+
+        # 2 posted < 3 limit, so should be allowed
+        assert error is None
