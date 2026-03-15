@@ -14,7 +14,10 @@ from pathlib import Path
 import memory
 from . import agents as agent_dispatch
 from .checkpoint import Checkpoint
+from .evaluator import NewsletterEvaluator
+from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
+from .prompt_tracker import PromptTracker
 from .traces_db import (
     get_db as get_traces_db,
     create_pipeline_run,
@@ -45,6 +48,11 @@ class ResearchPipeline:
         # Traces DB for observability
         self.traces_conn = get_traces_db()
         self.checkpoint = Checkpoint(self.traces_conn)
+        self.monitor = PipelineMonitor(self.traces_conn)
+
+        # Prompt tracking — initialized in _phase_init(), stored here for _phase_learn()
+        self.prompt_tracker: PromptTracker | None = None
+        self.prompt_changes: dict[str, dict] = {}
 
         # Create pipeline run in traces.db so dashboard can see it
         self.pipeline = PipelineRun("research", user_id, self.date_str)
@@ -84,6 +92,7 @@ class ResearchPipeline:
                 break
 
             phase_start = time.monotonic()
+            monitor_phase_id = None
 
             try:
                 # Skip transition if we're already at this phase (e.g. INIT at start)
@@ -94,6 +103,13 @@ class ResearchPipeline:
                 # Log phase start to traces.db
                 log_event(self.traces_conn, self.traces_run_id,
                           f"phase_{phase.value}_start", "{}")
+
+                # Track phase in PipelineMonitor
+                try:
+                    monitor_phase_id = self.monitor.start_phase(
+                        self.pipeline.run_id, phase.value)
+                except Exception as e:
+                    logger.warning(f"Monitor start_phase failed: {e}")
 
                 handler = self._get_phase_handler(phase)
                 if handler:
@@ -112,6 +128,13 @@ class ResearchPipeline:
                           f"phase_{phase.value}_complete",
                           json.dumps({"duration_ms": duration_ms, "result": str(result)[:500]}))
 
+                # End phase tracking in PipelineMonitor
+                if monitor_phase_id is not None:
+                    try:
+                        self.monitor.end_phase(monitor_phase_id, "completed")
+                    except Exception as e:
+                        logger.warning(f"Monitor end_phase failed: {e}")
+
             except Exception as e:
                 error_msg = f"{phase.value}: {e}"
                 duration_ms = int((time.monotonic() - phase_start) * 1000)
@@ -120,6 +143,14 @@ class ResearchPipeline:
                 log_event(self.traces_conn, self.traces_run_id,
                           f"phase_{phase.value}_failed",
                           json.dumps({"error": str(e)[:500], "duration_ms": duration_ms}))
+
+                # End phase tracking as failed in PipelineMonitor
+                if monitor_phase_id is not None:
+                    try:
+                        self.monitor.end_phase(
+                            monitor_phase_id, "failed", error=str(e)[:500])
+                    except Exception as me:
+                        logger.warning(f"Monitor end_phase (failed) failed: {me}")
 
                 if phase in CRITICAL_PHASES:
                     self.pipeline.fail(error_msg)
@@ -144,6 +175,15 @@ class ResearchPipeline:
             logger.warning(f"Completed with {len(warnings)} warnings")
         else:
             complete_pipeline_run(self.traces_conn, self.traces_run_id, status="completed")
+
+        # Generate and log pipeline summary from PipelineMonitor
+        try:
+            summary = self.monitor.generate_summary(self.date_str)
+            logger.info(f"Pipeline summary: {summary}")
+            log_event(self.traces_conn, self.traces_run_id,
+                      "pipeline_summary", json.dumps({"summary": summary}))
+        except Exception as e:
+            logger.warning(f"Monitor summary generation failed: {e}")
 
         logger.info(f"Pipeline {self.pipeline.run_id} completed")
         return 0
@@ -184,7 +224,33 @@ class ResearchPipeline:
         if failures:
             logger.info(f"Loaded {len(failures)} recent failure lessons")
 
-        return {"preferences_count": len(prefs), "failures_loaded": len(failures)}
+        # ── Prompt tracking: detect changes since last run ──────────
+        self.prompt_tracker = PromptTracker(self.traces_conn)
+        self.prompt_changes = self.prompt_tracker.scan_for_changes()
+
+        changed_files = {p: info for p, info in self.prompt_changes.items() if info["changed"]}
+        if changed_files:
+            logger.info(f"Prompt changes detected: {len(changed_files)} file(s)")
+            for path, info in changed_files.items():
+                old = info["old_hash"][:12] if info["old_hash"] else "NEW"
+                new = info["new_hash"][:12]
+                logger.info(f"  {path}: {old} → {new}")
+                self.prompt_tracker.record_version(path)
+
+            log_event(
+                self.traces_conn, self.traces_run_id,
+                "prompt_changes_detected",
+                json.dumps({p: {"old": i["old_hash"], "new": i["new_hash"]}
+                            for p, i in changed_files.items()}),
+            )
+        else:
+            logger.info("No prompt file changes detected")
+
+        return {
+            "preferences_count": len(prefs),
+            "failures_loaded": len(failures),
+            "prompt_changes": len(changed_files),
+        }
 
     def _phase_trend_scan(self) -> dict:
         """Phase 2: Trend Scan (Haiku).
@@ -239,8 +305,18 @@ class ResearchPipeline:
         """Phase 3: Research (13x Sonnet, parallel)."""
         memory.clear_claims(self.db, self.date_str)
 
+        # Get cross-pipeline signal context to enrich agent dispatch
+        signal_context = ""
+        try:
+            signal_context = memory.get_signal_context(self.db)
+        except Exception as e:
+            logger.warning(f"Signal context retrieval failed: {e}")
+
         def context_fn(agent_name, date_str):
-            return memory.get_context(self.db, agent_name, date_str)
+            ctx = memory.get_context(self.db, agent_name, date_str)
+            if signal_context and "No cross-pipeline signals" not in signal_context:
+                ctx = ctx + "\n\n" + signal_context if ctx else signal_context
+            return ctx
 
         current_claims = [c["topic_hash"] for c in memory.list_claims(self.db, self.date_str)]
 
@@ -306,6 +382,37 @@ class ResearchPipeline:
                 self.db, result.agent_name, self.date_str,
                 findings_count=len(result.findings),
             )
+
+            # Record per-agent metrics in PipelineMonitor
+            try:
+                self.monitor.record_agent_metrics(
+                    result.agent_name,
+                    self.date_str,
+                    findings_count=len(result.findings),
+                    duration_ms=result.duration_ms,
+                )
+            except Exception as e:
+                logger.warning(f"Monitor record_agent_metrics failed for {result.agent_name}: {e}")
+
+        # Validate findings with PolicyEngine (if research.json exists)
+        try:
+            from policies.engine import PolicyEngine
+            policy = PolicyEngine.load_research()
+            for result in self.agent_results:
+                if result.error and not result.findings:
+                    continue
+                errors = policy.validate_agent_output(
+                    result.agent_name, {"findings": result.findings})
+                if errors:
+                    logger.warning(
+                        f"Policy violations for {result.agent_name}: "
+                        f"{len(errors)} issue(s)")
+                    for err in errors[:5]:  # Log first 5 only
+                        logger.warning(f"  {err}")
+        except FileNotFoundError:
+            logger.debug("No research.json policy file, skipping validation")
+        except Exception as e:
+            logger.warning(f"Policy validation failed (non-critical): {e}")
 
         successful = sum(1 for r in self.agent_results if not r.error)
         logger.info(f"Research: {successful} agents succeeded, {total_stored} findings stored")
@@ -433,7 +540,38 @@ class ResearchPipeline:
         word_count = len(self.newsletter_text.split())
         logger.info(f"Newsletter written: {word_count} words → {report_path}")
 
-        return {"word_count": word_count, "report_path": str(report_path)}
+        # Evaluate newsletter quality with NewsletterEvaluator
+        eval_scores = {}
+        try:
+            evaluator = NewsletterEvaluator(self.db)
+            agent_reports = [
+                {"agent": f["agent"], "title": f["title"],
+                 "importance": f["importance"]}
+                for f in today_findings
+            ]
+            user_prefs = memory.list_preferences(self.db, effective=True)
+            eval_scores = evaluator.evaluate(
+                self.newsletter_text, agent_reports, user_prefs)
+            logger.info(
+                f"Newsletter evaluation: overall={eval_scores.get('overall', 'N/A')}, "
+                f"coverage={eval_scores.get('coverage', 'N/A')}, "
+                f"dedup={eval_scores.get('dedup', 'N/A')}, "
+                f"sources={eval_scores.get('sources', 'N/A')}")
+
+            # Store quality scores in PipelineMonitor
+            try:
+                self.monitor.record_quality(self.date_str, eval_scores)
+            except Exception as e:
+                logger.warning(f"Monitor record_quality failed: {e}")
+
+            # Log to traces
+            log_event(self.traces_conn, self.traces_run_id,
+                      "newsletter_evaluation", json.dumps(eval_scores))
+        except Exception as e:
+            logger.warning(f"Newsletter evaluation failed (non-critical): {e}")
+
+        return {"word_count": word_count, "report_path": str(report_path),
+                "eval_scores": eval_scores}
 
     def _phase_deliver(self) -> dict:
         """Phase 5: Deliver (Python only). Convert to HTML, send via Resend."""
@@ -483,6 +621,61 @@ class ResearchPipeline:
                 f"Overall score {quality['overall_score']:.3f} vs 7-day avg {quality.get('7day_avg', 'N/A')}"
             )
 
+        # ── Prompt regression check ────────────────────────────────
+        regressions = []
+        changed_files = {p: i for p, i in self.prompt_changes.items() if i["changed"]}
+        if changed_files and self.prompt_tracker:
+            # Update quality snapshots for changed prompts now that we have a score
+            overall_score = quality.get("overall_score")
+            if overall_score is not None:
+                for path in changed_files:
+                    self.prompt_tracker.record_version(
+                        path, quality_snapshot=float(overall_score),
+                    )
+
+            regressions = self.prompt_tracker.check_regression(self.date_str)
+            if regressions:
+                for reg in regressions:
+                    logger.warning(
+                        "PROMPT REGRESSION: %s — quality dropped %.1f%% "
+                        "(%.4f → %.4f). Review before rollback.",
+                        reg["file"], reg["regression_pct"] * 100,
+                        reg["quality_before"], reg["quality_after"],
+                    )
+                log_event(
+                    self.traces_conn, self.traces_run_id,
+                    "prompt_regression_detected",
+                    json.dumps(regressions),
+                )
+
+        # Extract entity relationships from high-importance findings
+        entity_relationships_stored = 0
+        try:
+            high_findings = self.db.execute(
+                "SELECT id, title, summary, source_name FROM findings "
+                "WHERE run_date = ? AND importance = 'high'",
+                (self.date_str,),
+            ).fetchall()
+            for finding in high_findings:
+                # Simple heuristic: if source_name exists, link it to key terms in title
+                source = finding["source_name"]
+                title = finding["title"] or ""
+                if source and title:
+                    memory.store_relationship(
+                        self.db,
+                        entity_a=source,
+                        relationship="reported_on",
+                        entity_b=title[:100],
+                        entity_a_type="source",
+                        entity_b_type="topic",
+                        finding_id=finding["id"],
+                    )
+                    entity_relationships_stored += 1
+            if entity_relationships_stored:
+                logger.info(f"Entity graph: {entity_relationships_stored} relationships stored")
+        except Exception as e:
+            logger.warning(f"Entity graph extraction failed (non-critical): {e}")
+
         consolidate_result = memory.consolidate(self.db)
         promote_result = memory.promote(self.db)
         prune_result = memory.prune(self.db)
@@ -512,6 +705,8 @@ class ResearchPipeline:
             "consolidated": consolidate_result,
             "promoted": promote_result,
             "pruned": prune_result,
+            "prompt_regressions": regressions,
+            "entity_relationships_stored": entity_relationships_stored,
         }
 
     def _phase_social(self) -> dict:
@@ -535,6 +730,36 @@ class ResearchPipeline:
             logger.info(f"Social: posted to {platforms}")
         else:
             logger.info(f"Social: completed with result: {list(result.keys())}")
+
+        # Store engagement signals from social pipeline results
+        try:
+            if result.get("posts"):
+                for post in result["posts"]:
+                    topic = post.get("topic") or post.get("title") or "social_post"
+                    platform = post.get("platform", "unknown")
+                    memory.store_signal(
+                        self.db,
+                        pipeline="social",
+                        signal_type="posted",
+                        topic=topic,
+                        strength=1.0,
+                        evidence=f"Posted to {platform}",
+                        run_date=self.date_str,
+                    )
+                logger.info(f"Signals: stored {len(result['posts'])} social post signals")
+            elif result.get("kill_day"):
+                topic = result.get("topic") or "social_content"
+                memory.store_signal(
+                    self.db,
+                    pipeline="social",
+                    signal_type="kill_day",
+                    topic=topic,
+                    strength=-0.5,
+                    evidence="Kill day — no good topics found",
+                    run_date=self.date_str,
+                )
+        except Exception as e:
+            logger.warning(f"Signal storage failed (non-critical): {e}")
 
         return result
 
