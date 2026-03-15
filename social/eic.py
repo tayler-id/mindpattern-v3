@@ -4,6 +4,10 @@ Merged Editor-in-Chief + Social Curator roles. Selects the best topic from
 today's research findings, deduplicates against recent posts, and expands
 the chosen topic into a creative brief via the Creative Director agent.
 
+Uses file-based I/O: agents write structured JSON to output files via
+run_agent_with_files(). Python reads the files back and handles the
+retry/dedup loop.
+
 All functions take a `db` (sqlite3.Connection) parameter and return data
 structures. No print statements, no CLI.
 """
@@ -15,8 +19,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from orchestrator.agents import run_claude_prompt
-from orchestrator.router import get_model
+from orchestrator.agents import run_agent_with_files
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
@@ -55,141 +58,97 @@ def _get_recent_findings(
     return [dict(r) for r in rows]
 
 
-def _get_recent_post_anchors(db: sqlite3.Connection, days: int = 14) -> list[dict]:
-    """Load recent post anchors for dedup context."""
-    from memory.social import recent_posts
-
-    posts = recent_posts(db, days=days, limit=30)
-    return [
-        {"date": p["date"], "platform": p["platform"], "anchor_text": p.get("anchor_text", "")}
-        for p in posts
-        if p.get("anchor_text")
-    ]
-
-
-def _get_user_preferences(db: sqlite3.Connection) -> list[dict]:
-    """Load active user preferences for topic weighting."""
-    from memory.feedback import list_preferences
-
-    return list_preferences(db, effective=True)
-
-
-def _build_eic_prompt(
-    findings: list[dict],
-    recent_posts: list[dict],
-    preferences: list[dict],
+def _build_eic_agent_prompt(
     date_str: str,
+    quality_threshold: float,
+    max_topics: int,
+    rejected_anchors: list[str] | None = None,
 ) -> str:
-    """Build the EIC prompt with context.
+    """Build prompt for the EIC agent that uses memory_cli.py via Bash tool.
 
-    Includes: today's findings summaries, recent post anchors (for dedup),
-    user preferences.
-    Output schema: {topic, anchor_text, angle, importance_score, source_urls, reasoning}
+    Instead of inlining all findings/posts in the prompt, the agent is
+    instructed to query them itself using memory_cli.py.
     """
-    # Format findings into a readable block
-    findings_block = []
-    for f in findings:
-        tag = "[TODAY]" if f["run_date"] == date_str else f"[{f['run_date']}]"
-        findings_block.append(
-            f"- {tag} [{f['importance'].upper()}] **{f['title']}** ({f['agent']})\n"
-            f"  {f['summary']}\n"
-            f"  Source: {f.get('source_name', 'unknown')} | {f.get('source_url', 'N/A')}"
-        )
+    rejected_section = ""
+    if rejected_anchors:
+        rejected_lines = "\n".join(f"- {a}" for a in rejected_anchors)
+        rejected_section = f"""
+## Rejected Anchors (DO NOT select these or closely related angles)
 
-    # Format recent anchors for dedup
-    dedup_block = []
-    for p in recent_posts:
-        dedup_block.append(f"- [{p['date']}] {p['platform']}: {p['anchor_text']}")
+{rejected_lines}
+"""
 
-    # Format preferences
-    pref_block = []
-    for p in preferences:
-        weight = p.get("effective_weight", p.get("weight", 1.0))
-        pref_block.append(f"- {p['topic']} (weight: {weight:.1f})")
+    output_file = "data/social-drafts/eic-topic.json"
 
-    # Load the EIC agent definition for the scoring rubric
-    eic_md_path = PROJECT_ROOT / "agents" / "eic.md"
-    eic_instructions = ""
-    if eic_md_path.exists():
-        eic_instructions = eic_md_path.read_text()
+    prompt = f"""You are the Editor-in-Chief for mindpattern. Today is {date_str}.
 
-    config = _load_social_config()
-    quality_threshold = config.get("eic", {}).get("quality_threshold", 5.0)
-    max_topics = config.get("eic", {}).get("max_topics", 3)
+## Step 1: Load context using memory_cli.py
 
-    prompt = f"""Pick the best topic from today's research findings for social media posts.
-Date: {date_str}. Quality threshold: {quality_threshold}. Max topics: {max_topics}.
+Run these commands to gather today's findings and recent posts:
+
+```bash
+python3 memory_cli.py search-findings --days 1 --limit 50
+```
+
+```bash
+python3 memory_cli.py search-findings --days 7 --min-importance high --limit 20
+```
+
+```bash
+python3 memory_cli.py recent-posts --days 30
+```
+
+## Step 2: Score and select topics
+
+Quality threshold: {quality_threshold}. Max topics: {max_topics}.
 
 Score on: Novelty (0-10), Broad Appeal (0-10), Thread Potential (0-10).
-Composite = (Novelty × 0.35) + (Broad Appeal × 0.40) + (Thread Potential × 0.25).
+Composite = (Novelty x 0.35) + (Broad Appeal x 0.40) + (Thread Potential x 0.25).
 Only topics with composite >= {quality_threshold} qualify.
+{rejected_section}
+## Step 3: Write output
 
-## Today's Findings ({len(findings)} total)
+Write your output as valid JSON to `{output_file}` using the Write tool.
 
-{chr(10).join(findings_block[:20]) if findings_block else "No findings."}
+### Normal output (1+ topics passed threshold):
 
-## Recent Posts (DO NOT repeat)
+Write a JSON array:
+```json
+[
+  {{
+    "rank": 1,
+    "anchor": "The thread, one coherent thought with real numbers and sources",
+    "anchor_source": "Primary source name + URL",
+    "connection": "Supporting context from a different angle, or null",
+    "connection_source": "Source name + URL, or null",
+    "reaction": "First-person honest reaction",
+    "open_questions": ["What I genuinely don't know"],
+    "do_not_include": ["Other findings to explicitly keep out"],
+    "confidence": "HIGH | MEDIUM | LOW | SPECULATIVE",
+    "emotional_register": "curious | surprised | skeptical | frustrated | amused | worried",
+    "mindpattern_context": "How mindpattern relates, or 'none today'",
+    "mindpattern_link": "https://mindpattern.ai",
+    "editorial_scores": {{
+      "novelty": 8,
+      "broad_appeal": 7,
+      "thread_potential": 6,
+      "composite": 7.2
+    }},
+    "source_urls": ["url1", "url2"]
+  }}
+]
+```
 
-{chr(10).join(dedup_block[:10]) if dedup_block else "None."}
+### Zero-topic output (nothing passed threshold):
 
-## User Preferences
-
-{chr(10).join(pref_block) if pref_block else "None."}
-
----
-
-Output ONLY a JSON array. No markdown, no explanation, no code fences.
-Each element: {{"anchor": "topic name", "angle": "specific angle", "editorial_scores": {{"novelty": N, "broad_appeal": N, "thread_potential": N, "composite": N}}, "source_urls": ["url1"], "key_points": ["p1", "p2", "p3"]}}
-
-If nothing qualifies: {{"topics": [], "kill_explanation": "why"}}
+```json
+{{
+  "topics": [],
+  "kill_explanation": "Why nothing qualified today"
+}}
+```
 """
     return prompt
-
-
-def _parse_eic_response(raw: str) -> list[dict] | dict:
-    """Parse JSON from the EIC agent response.
-
-    Returns either a list of topic dicts (normal output) or a dict with
-    'topics' key (kill-day output).
-    """
-    text = raw.strip()
-
-    # Try direct parse
-    try:
-        data = json.loads(text)
-        return data
-    except json.JSONDecodeError:
-        pass
-
-    # Try to find JSON array
-    array_match = re.search(r'\[[\s\S]*\]', text)
-    if array_match:
-        try:
-            data = json.loads(array_match.group())
-            if isinstance(data, list):
-                return data
-        except json.JSONDecodeError:
-            pass
-
-    # Try to find JSON object with "topics" key
-    obj_match = re.search(r'\{[\s\S]*"topics"[\s\S]*\}', text)
-    if obj_match:
-        try:
-            data = json.loads(obj_match.group())
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
-
-    # Check if the text response is an intentional kill (no JSON, just explanation)
-    lower = text.lower()
-    kill_phrases = ["no topics", "kill", "threshold", "none of", "no candidate", "no finding"]
-    if any(phrase in lower for phrase in kill_phrases):
-        logger.info(f"EIC kill day (text response, {len(text)} chars)")
-        return {"topics": [], "kill_explanation": text[:500]}
-
-    logger.warning(f"Could not parse EIC response ({len(text)} chars)")
-    return {"topics": [], "kill_explanation": "Failed to parse EIC response."}
 
 
 def select_topic(
@@ -202,47 +161,53 @@ def select_topic(
     """Select a topic for today's social posts.
 
     Steps:
-    1. Load recent findings from memory (today + last 7 days high-importance)
-    2. Check recent social posts for dedup (memory.check_duplicate)
-    3. Build EIC prompt with context
-    4. Run claude -p with Opus model
-    5. Parse JSON response: {topic, anchor_text, angle, importance_score, source_urls}
-    6. Validate: importance_score >= quality_threshold (from config)
-    7. Dedup check against recent posts
-    8. Retry up to max_retries if topic is duplicate or below threshold
-    9. Return topic dict or None if no good topic found (kill day)
+    1. Check for any findings (early exit if none)
+    2. Build EIC prompt that tells agent to query memory_cli.py
+    3. Run agent via run_agent_with_files() with agents/eic.md system prompt
+    4. Read JSON output from data/social-drafts/eic-topic.json
+    5. Validate: composite score >= quality_threshold
+    6. Dedup check against recent posts (memory.social.check_duplicate)
+    7. Retry up to max_retries if topic is duplicate or below threshold
+    8. Return topic dict or None if no good topic found (kill day)
     """
     from memory.social import check_duplicate
 
     config = _load_social_config()
     quality_threshold = config.get("eic", {}).get("quality_threshold", 5.0)
+    max_topics = config.get("eic", {}).get("max_topics", 3)
 
     findings = _get_recent_findings(db, date_str)
-    recent_posts = _get_recent_post_anchors(db)
-    preferences = _get_user_preferences(db)
 
     if not findings:
         logger.warning("No findings available for EIC — kill day")
         return None
 
+    output_file = str(PROJECT_ROOT / "data" / "social-drafts" / "eic-topic.json")
+    rejected_anchors: list[str] = []
+
     for attempt in range(max_retries):
         logger.info(f"EIC topic selection attempt {attempt + 1}/{max_retries}")
 
-        prompt = _build_eic_prompt(findings, recent_posts, preferences, date_str)
-
-        raw_output, exit_code = run_claude_prompt(
-            prompt,
-            task_type="eic",
-            allowed_tools=[],  # No tools needed — all context is in the prompt
+        prompt = _build_eic_agent_prompt(
+            date_str=date_str,
+            quality_threshold=quality_threshold,
+            max_topics=max_topics,
+            rejected_anchors=rejected_anchors or None,
         )
 
-        if exit_code != 0:
-            logger.error(f"EIC claude call failed (exit {exit_code}), attempt {attempt + 1}")
+        parsed = run_agent_with_files(
+            system_prompt_file="agents/eic.md",
+            prompt=prompt,
+            output_file=output_file,
+            allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
+            task_type="eic",
+        )
+
+        if parsed is None:
+            logger.error(f"EIC agent returned no output, attempt {attempt + 1}")
             continue
 
-        parsed = _parse_eic_response(raw_output)
-
-        # Handle kill-day response
+        # Handle kill-day response (dict with "topics" key)
         if isinstance(parsed, dict):
             topics = parsed.get("topics", [])
             if not topics:
@@ -279,12 +244,7 @@ def select_topic(
                     f"EIC topic is duplicate (similarity {top_dup['similarity']:.2f} "
                     f"to post from {top_dup['date']}), retrying"
                 )
-                # Add the rejected anchor to recent_posts for next attempt
-                recent_posts.append({
-                    "date": date_str,
-                    "platform": "rejected",
-                    "anchor_text": anchor_text,
-                })
+                rejected_anchors.append(anchor_text)
                 continue
 
         # Normalize the topic dict to a consistent shape
@@ -345,36 +305,34 @@ def create_brief(
     topic: dict,
     date_str: str,
 ) -> dict:
-    """Expand EIC topic into a creative brief via Creative Director (Sonnet).
+    """Expand EIC topic into a creative brief via Creative Director agent.
 
-    Reads the Creative Director agent definition (Mode 1: Brief Generation)
-    and sends the approved topic for expansion into a unified creative brief.
+    Uses run_agent_with_files() with agents/creative-director.md as the
+    system prompt. The voice guide content is inlined in the prompt so
+    the agent has full context. The agent writes its output to
+    data/social-drafts/creative-brief.json.
 
     Returns: {
-        topic, anchor_text, angle, editorial_angle,
-        visual_metaphor_direction, key_points, source_urls,
-        platform_hooks: {x, linkedin, bluesky}
+        editorial_angle, key_message, emotional_register, tone,
+        source_attribution, visual_metaphor_direction, platform_hooks,
+        do_not_include, mindpattern_link, _eic_topic, source_urls, date
     }
     """
-    # Load agent definitions
-    cd_md_path = PROJECT_ROOT / "agents" / "creative-director.md"
+    config = _load_social_config()
+
+    # Read voice guide content to inline in prompt
     voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
-
-    cd_instructions = ""
-    if cd_md_path.exists():
-        cd_instructions = cd_md_path.read_text()
-
     voice_guide = ""
     if voice_guide_path.exists():
         voice_guide = voice_guide_path.read_text()
 
-    config = _load_social_config()
+    output_file = str(PROJECT_ROOT / "data" / "social-drafts" / "creative-brief.json")
 
     prompt = f"""You are the Creative Director for mindpattern. Run in Brief Generation mode.
 
-{cd_instructions}
-
 ---
+
+## Voice Guide
 
 {voice_guide}
 
@@ -390,25 +348,20 @@ def create_brief(
 
 ---
 
-CRITICAL: Output ONLY valid JSON matching the Unified Brief Output Schema from your instructions.
-No markdown, no commentary, no code fences.
+Write the unified creative brief as valid JSON to `data/social-drafts/creative-brief.json` using the Write tool.
+Follow the Unified Brief Output Schema from your system prompt (agents/creative-director.md).
 """
 
-    raw_output, exit_code = run_claude_prompt(
-        prompt,
+    brief = run_agent_with_files(
+        system_prompt_file="agents/creative-director.md",
+        prompt=prompt,
+        output_file=output_file,
+        allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
         task_type="creative_brief",
-        allowed_tools=["Read", "Glob"],
     )
 
-    if exit_code != 0:
-        logger.error(f"Creative Director brief generation failed (exit {exit_code})")
-        return _fallback_brief(topic, date_str, config)
-
-    # Parse the creative brief
-    brief = _parse_brief_response(raw_output)
-
-    if not brief:
-        logger.warning("Failed to parse Creative Director response, using fallback")
+    if not brief or not isinstance(brief, dict):
+        logger.warning("Creative Director agent returned no output, using fallback")
         return _fallback_brief(topic, date_str, config)
 
     # Merge EIC topic data into the brief for downstream consumers
@@ -420,31 +373,6 @@ No markdown, no commentary, no code fences.
         f"Creative brief generated: {brief.get('editorial_angle', 'no angle')[:100]}"
     )
     return brief
-
-
-def _parse_brief_response(raw: str) -> dict | None:
-    """Parse JSON from the Creative Director response."""
-    text = raw.strip()
-
-    # Try direct parse
-    try:
-        data = json.loads(text)
-        if isinstance(data, dict) and "editorial_angle" in data:
-            return data
-    except json.JSONDecodeError:
-        pass
-
-    # Try to find JSON object with editorial_angle
-    obj_match = re.search(r'\{[\s\S]*"editorial_angle"[\s\S]*\}', text)
-    if obj_match:
-        try:
-            data = json.loads(obj_match.group())
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
-
-    return None
 
 
 def _fallback_brief(topic: dict, date_str: str, config: dict) -> dict:

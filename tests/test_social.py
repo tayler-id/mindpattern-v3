@@ -567,16 +567,16 @@ class TestSelectTopic:
     """Tests for select_topic()."""
 
     def test_returns_none_on_kill_day(self):
-        """select_topic returns None when EIC responds with kill-day JSON."""
-        kill_day_response = json.dumps({
+        """select_topic returns None when EIC agent writes kill-day JSON."""
+        kill_day_output = {
             "topics": [],
             "kill_explanation": "Nothing passed threshold today.",
-        })
+        }
 
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
 
-        with patch("social.eic.run_claude_prompt", return_value=(kill_day_response, 0)), \
+        with patch("social.eic.run_agent_with_files", return_value=kill_day_output), \
              patch("social.eic._load_social_config", return_value={
                  "eic": {"quality_threshold": 5.0, "max_topics": 3},
                  "mindpattern_link": "https://mindpattern.ai",
@@ -585,9 +585,7 @@ class TestSelectTopic:
                  {"id": 1, "run_date": "2026-03-14", "agent": "ai",
                   "title": "Test", "summary": "Test", "importance": "high",
                   "source_url": "https://example.com", "source_name": "Ex"},
-             ]), \
-             patch("social.eic._get_recent_post_anchors", return_value=[]), \
-             patch("social.eic._get_user_preferences", return_value=[]):
+             ]):
 
             from social.eic import select_topic
 
@@ -596,24 +594,24 @@ class TestSelectTopic:
 
     def test_retries_on_duplicate_topic(self):
         """select_topic retries when topic is detected as duplicate."""
-        topic_response = json.dumps([{
+        topic_output = [{
             "rank": 1,
             "anchor": "Duplicate topic",
             "anchor_source": "example.com",
             "reaction": "Nice.",
             "confidence": "HIGH",
             "editorial_scores": {"composite": 8.0},
-        }])
+        }]
 
         mock_db = MagicMock()
 
         call_count = [0]
 
-        def mock_run_claude(prompt, **kwargs):
+        def mock_run_agent(**kwargs):
             call_count[0] += 1
-            return (topic_response, 0)
+            return topic_output
 
-        with patch("social.eic.run_claude_prompt", side_effect=mock_run_claude), \
+        with patch("social.eic.run_agent_with_files", side_effect=mock_run_agent), \
              patch("social.eic._load_social_config", return_value={
                  "eic": {"quality_threshold": 5.0, "max_topics": 3},
                  "mindpattern_link": "https://mindpattern.ai",
@@ -623,8 +621,6 @@ class TestSelectTopic:
                   "title": "T", "summary": "S", "importance": "high",
                   "source_url": "https://x.com", "source_name": "X"},
              ]), \
-             patch("social.eic._get_recent_post_anchors", return_value=[]), \
-             patch("social.eic._get_user_preferences", return_value=[]), \
              patch("memory.social.check_duplicate", return_value={
                  "is_duplicate": True,
                  "duplicates": [{"similarity": 0.92, "date": "2026-03-10"}],
