@@ -15,8 +15,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 router = APIRouter()
 
-# Possible report directories (v2 local, production)
+# Possible report directories (v3 production via symlink, v3 local, v2 local)
 _REPORT_DIRS = [
+    Path(__file__).parent.parent.parent / "data" / "reports" / "ramsay",  # /app/data/reports/ramsay -> /data/reports/ramsay on Fly.io
     Path(__file__).parent.parent.parent / "reports" / "ramsay",
     Path("/Users/taylerramsay/Projects/daily-research-agent/reports/ramsay"),
 ]

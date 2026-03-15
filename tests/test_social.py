@@ -71,7 +71,8 @@ def bluesky_config():
 @pytest.fixture
 def linkedin_config():
     return {
-        "api_base": "https://api.linkedin.com/v2",
+        "api_base": "https://api.linkedin.com",
+        "api_version": "202501",
         "target_chars": 1350,
         "keychain": {"access_token": "linkedin-access-token"},
     }
@@ -244,8 +245,24 @@ class TestBlueskyClient:
 class TestLinkedInClient:
     """Tests for LinkedInClient."""
 
-    def test_post_uses_correct_api_flow(self, mock_keychain, linkedin_config):
-        """LinkedInClient.post() gets person URN then posts to ugcPosts."""
+    def test_init_strips_v2_suffix(self, mock_keychain):
+        """LinkedInClient strips /v2 from api_base for backward compat."""
+        config = {
+            "api_base": "https://api.linkedin.com/v2",
+            "target_chars": 1350,
+            "keychain": {"access_token": "linkedin-access-token"},
+        }
+        client = LinkedInClient(config)
+        assert client.api_base == "https://api.linkedin.com"
+
+    def test_init_sets_required_headers(self, mock_keychain, linkedin_config):
+        """LinkedInClient sets Linkedin-Version and X-Restli-Protocol-Version headers."""
+        client = LinkedInClient(linkedin_config)
+        assert client.session.headers["Linkedin-Version"] == "202501"
+        assert client.session.headers["X-Restli-Protocol-Version"] == "2.0.0"
+
+    def test_post_uses_rest_posts_api(self, mock_keychain, linkedin_config):
+        """LinkedInClient.post() uses /rest/posts (not /v2/ugcPosts)."""
         client = LinkedInClient(linkedin_config)
 
         userinfo_resp = MagicMock()
@@ -254,14 +271,14 @@ class TestLinkedInClient:
 
         post_resp = MagicMock()
         post_resp.status_code = 201
-        post_resp.headers = {"X-RestLi-Id": "urn:li:share:99999"}
+        post_resp.headers = {"x-restli-id": "urn:li:share:99999"}
         post_resp.json.return_value = {}
         post_resp.text = ""
 
-        call_count = [0]
+        calls = []
 
         def side_effect(method, url, **kwargs):
-            call_count[0] += 1
+            calls.append((method, url))
             if "userinfo" in url:
                 return userinfo_resp
             return post_resp
@@ -271,7 +288,53 @@ class TestLinkedInClient:
 
         assert result["success"] is True
         assert "urn:li:share:99999" in result["url"]
-        assert call_count[0] == 2  # userinfo + ugcPosts
+        assert len(calls) == 2  # userinfo + /rest/posts
+
+        # Verify correct endpoints
+        assert calls[0] == ("GET", "https://api.linkedin.com/v2/userinfo")
+        assert calls[1] == ("POST", "https://api.linkedin.com/rest/posts")
+
+    def test_post_payload_uses_commentary_format(self, mock_keychain, linkedin_config):
+        """Post payload uses 'commentary' (Posts API), not 'specificContent' (UGC)."""
+        client = LinkedInClient(linkedin_config)
+        client._person_urn = "urn:li:person:member123"
+
+        post_resp = MagicMock()
+        post_resp.status_code = 201
+        post_resp.headers = {"x-restli-id": "urn:li:share:99999"}
+        post_resp.json.return_value = {}
+        post_resp.text = ""
+
+        with patch.object(client.session, "request", return_value=post_resp) as mock_req:
+            client.post("Hello LinkedIn")
+
+        call_args = mock_req.call_args
+        payload = call_args[1]["json"]
+        # New format: top-level 'commentary', NOT nested 'specificContent'
+        assert "commentary" in payload
+        assert payload["commentary"] == "Hello LinkedIn"
+        assert "specificContent" not in payload
+        assert payload["visibility"] == "PUBLIC"
+        assert payload["author"] == "urn:li:person:member123"
+        assert payload["distribution"]["feedDistribution"] == "MAIN_FEED"
+
+    def test_verify_token(self, mock_keychain, linkedin_config):
+        """verify_token() calls /v2/userinfo and returns the response."""
+        client = LinkedInClient(linkedin_config)
+
+        userinfo_resp = MagicMock()
+        userinfo_resp.status_code = 200
+        userinfo_resp.json.return_value = {
+            "sub": "member123",
+            "name": "Test User",
+            "email": "test@example.com",
+        }
+
+        with patch.object(client.session, "request", return_value=userinfo_resp):
+            data = client.verify_token()
+
+        assert data["sub"] == "member123"
+        assert data["name"] == "Test User"
 
 
 # ────────────────────────────────────────────────────────────────────────

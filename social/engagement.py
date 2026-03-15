@@ -1,16 +1,32 @@
 """Engagement pipeline — find, draft, approve, post replies.
 
-Discovers relevant conversations on X, Bluesky, and LinkedIn, drafts replies
-using the brand voice, runs them through approval, and posts with jitter.
-All engagement actions are tracked in memory for cooldown enforcement.
+Discovers relevant conversations on Bluesky (and optionally X/LinkedIn),
+drafts replies using the brand voice, runs them through approval, and
+posts with jitter. All engagement actions are tracked in memory.
+
+Key difference from v1/v2: Python does the platform API searching directly
+(via BlueskyClient.search()), then passes results to the LLM for query
+generation and ranking. This replaces the broken v3 approach of asking
+run_claude_prompt() to somehow search APIs it has no access to.
+
+Flow:
+    1. LLM generates search queries from today's research findings
+    2. Python executes those queries via platform API clients
+    3. Python filters: follower count, like count, age, already-engaged
+    4. Python checks Bluesky relationships (skip already-connected)
+    5. LLM ranks and selects top candidates
+    6. LLM drafts replies with voice guide
+    7. Rate limit check + approval gate
+    8. Post replies + auto-follow
 """
 
 import json
 import logging
 import random
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import memory
@@ -73,12 +89,12 @@ class EngagementPipeline:
         """Execute the engagement pipeline.
 
         Steps:
-            1. Find conversations matching today's research (Sonnet)
+            1. Find conversations matching today's research (API search + LLM ranking)
             2. Filter: skip already-engaged authors (memory.check_engagement)
             3. Draft replies with voice guide + editorial corrections (Sonnet)
             4. Rate limit check (PolicyEngine, enforced not advisory)
             5. Approval gate (ApprovalGateway)
-            6. Post replies + auto-follow (parallel per platform, with jitter)
+            6. Post replies + auto-follow (with jitter)
             7. Log engagements to memory
 
         Args:
@@ -277,21 +293,478 @@ class EngagementPipeline:
 
         return result
 
-    def _find_candidates(self, date_str: str) -> list[dict]:
-        """Use engagement-finder agent (Sonnet) to search for conversations.
+    # ── Phase 1a: Generate search queries from research findings ──────
 
-        Combines LLM-driven search (for semantic matching against today's
-        research) with direct platform API searches for broader coverage.
+    def _generate_search_queries(self, topics: list[str]) -> list[str]:
+        """Use LLM to generate specific search queries from research topics.
+
+        Takes broad research finding titles and produces focused queries
+        optimized for Bluesky's search API.
+
+        Args:
+            topics: List of research finding titles.
+
+        Returns:
+            List of search query strings.
+        """
+        queries_per_platform = self.engagement_config.get(
+            "search_queries_per_platform", 8
+        )
+
+        topics_list = "\n".join(f"- {t}" for t in topics)
+
+        prompt = f"""You are generating search queries for finding social media conversations.
+
+## Research Topics
+{topics_list}
+
+## Task
+Generate {queries_per_platform} specific search queries optimized for Bluesky's
+post search API. Each query should find conversations where a knowledgeable
+reply would add value.
+
+## Query Guidelines
+- Be specific: "Claude Code MCP" not "AI tools"
+- Use terms people actually post about
+- Mix: some topic-specific, some broader community terms
+- Include tool/product names when relevant
+- Avoid overly academic language
+
+## Output Format
+Output ONLY valid JSON:
+{{
+  "queries": ["query1", "query2", ...]
+}}"""
+
+        output, exit_code = run_claude_prompt(
+            prompt=prompt,
+            task_type="engagement_finder",
+        )
+
+        if exit_code != 0 or not output:
+            logger.warning("Query generation failed, using topic titles as fallback")
+            return topics[:queries_per_platform]
+
+        try:
+            data = json.loads(output.strip())
+            queries = data.get("queries", [])
+        except json.JSONDecodeError:
+            json_match = re.search(r'\{[\s\S]*"queries"[\s\S]*\}', output)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                    queries = data.get("queries", [])
+                except json.JSONDecodeError:
+                    queries = []
+
+        if not queries:
+            logger.warning("No queries parsed, using topic titles as fallback")
+            return topics[:queries_per_platform]
+
+        logger.info(f"Generated {len(queries)} search queries")
+        return queries[:queries_per_platform]
+
+    # ── Phase 1b: Execute searches via platform API clients ───────────
+
+    def _search_platform(
+        self, platform: str, client, queries: list[str]
+    ) -> list[dict]:
+        """Execute search queries against a single platform's API.
+
+        Args:
+            platform: Platform name (e.g. "bluesky").
+            client: Platform API client instance (e.g. BlueskyClient).
+            queries: List of search query strings.
+
+        Returns:
+            List of raw post dicts from the platform API.
+        """
+        all_posts = []
+        seen_uris = set()
+
+        for query in queries:
+            try:
+                posts = client.search(query, max_results=50)
+                for p in posts:
+                    # Dedup by URI/ID
+                    uri = p.get("uri") or p.get("id", "")
+                    if uri and uri not in seen_uris:
+                        seen_uris.add(uri)
+                        all_posts.append(p)
+            except Exception as e:
+                logger.warning(f"Search failed on {platform} for '{query}': {e}")
+
+            # Small delay between queries to avoid rate limits
+            time.sleep(random.uniform(0.5, 1.5))
+
+        logger.info(
+            f"Searched {platform}: {len(queries)} queries, "
+            f"{len(all_posts)} unique posts"
+        )
+        return all_posts
+
+    # ── Phase 1c: Filter posts by hard criteria ───────────────────────
+
+    def _filter_posts(
+        self, posts: list[dict], platform: str
+    ) -> list[dict]:
+        """Apply hard filters to raw search results.
+
+        Removes posts that don't meet minimum engagement, follower count,
+        or age criteria. Also removes link-only posts and our own posts.
+
+        Args:
+            posts: Raw post dicts from platform search.
+            platform: Platform name.
+
+        Returns:
+            Filtered list of post dicts.
+        """
+        min_likes = self.engagement_config.get("min_likes", 3)
+        max_likes = self.engagement_config.get("max_likes", 5000)
+        min_followers = self.engagement_config.get("min_follower_count", 50)
+
+        # Get our own handle to skip self-posts
+        our_handle = ""
+        platform_config = self.config.get("platforms", {}).get(platform, {})
+        if platform == "bluesky":
+            our_handle = platform_config.get("handle", "")
+        elif platform == "x":
+            our_handle = platform_config.get("handle", "").lstrip("@")
+
+        filtered = []
+        for p in posts:
+            # Skip our own posts
+            author_handle = p.get("author_handle", p.get("author", ""))
+            if our_handle and author_handle == our_handle:
+                continue
+
+            # Follower count check
+            followers = p.get("followers_count", p.get("followers", 0))
+            if followers < min_followers:
+                continue
+
+            # Like count check
+            likes = p.get("like_count", p.get("likes", 0))
+            if likes < min_likes or likes > max_likes:
+                continue
+
+            # Skip posts with no text content (link-only, images-only)
+            text = p.get("text", "")
+            if len(text.strip()) < 20:
+                continue
+
+            # Age check: skip posts older than 48 hours
+            created_at = p.get("created_at", "")
+            if created_at:
+                try:
+                    post_time = datetime.fromisoformat(
+                        created_at.replace("Z", "+00:00")
+                    )
+                    age_hours = (
+                        datetime.now(timezone.utc) - post_time
+                    ).total_seconds() / 3600
+                    if age_hours > 48:
+                        continue
+                except (ValueError, TypeError):
+                    pass  # Can't parse date, keep the post
+
+            filtered.append(p)
+
+        logger.info(
+            f"Filtered {platform}: {len(posts)} -> {len(filtered)} posts "
+            f"(min_likes={min_likes}, min_followers={min_followers})"
+        )
+        return filtered
+
+    # ── Phase 1d: Check connections (skip already-following) ──────────
+
+    def _filter_already_connected(
+        self, posts: list[dict], platform: str
+    ) -> list[dict]:
+        """Remove posts from authors we already follow.
+
+        Uses platform API to check relationship status in batch.
+
+        Args:
+            posts: Filtered post dicts.
+            platform: Platform name.
+
+        Returns:
+            Posts from authors we're NOT already connected to.
+        """
+        client = self._platform_clients.get(platform)
+
+        if platform == "bluesky" and isinstance(client, BlueskyClient):
+            # Collect unique DIDs
+            dids = list({
+                p["author_did"]
+                for p in posts
+                if p.get("author_did")
+            })
+
+            if not dids:
+                return posts
+
+            try:
+                relationships = client.get_relationships(dids)
+            except Exception as e:
+                logger.warning(
+                    f"Relationship check failed on {platform}: {e}. "
+                    f"Proceeding without filtering."
+                )
+                return posts
+
+            not_connected = []
+            already_following = 0
+            for p in posts:
+                did = p.get("author_did", "")
+                rel = relationships.get(did, {})
+                if rel.get("following"):
+                    already_following += 1
+                    continue
+                not_connected.append(p)
+
+            if already_following:
+                logger.info(
+                    f"Filtered out {already_following} already-followed authors "
+                    f"on {platform}"
+                )
+            return not_connected
+
+        # For other platforms, skip connection check (X API is expensive)
+        return posts
+
+    # ── Phase 1e: LLM ranks and selects top candidates ────────────────
+
+    def _rank_candidates(
+        self, posts: list[dict], topics: list[str], platform: str
+    ) -> list[dict]:
+        """Use LLM to rank posts by relevance and reply-worthiness.
+
+        Passes the raw search results and research topics to the LLM,
+        which scores and selects the best candidates.
+
+        Args:
+            posts: Filtered post dicts.
+            topics: Research topic titles for context.
+            platform: Platform name.
+
+        Returns:
+            Ranked list of candidate dicts in engagement pipeline format.
+        """
+        candidates_per_platform = self.engagement_config.get(
+            "candidates_per_platform", 20
+        )
+
+        if not posts:
+            return []
+
+        # Truncate to avoid token limits (max 100 posts for ranking)
+        posts_for_ranking = posts[:100]
+
+        # Format posts for the LLM prompt
+        posts_json = json.dumps(
+            [
+                {
+                    "index": i,
+                    "text": p.get("text", "")[:300],
+                    "author": p.get("author_handle", p.get("author", "")),
+                    "author_name": p.get("author_name", ""),
+                    "likes": p.get("like_count", p.get("likes", 0)),
+                    "replies": p.get("reply_count", p.get("replies", 0)),
+                    "followers": p.get("followers_count", p.get("followers", 0)),
+                }
+                for i, p in enumerate(posts_for_ranking)
+            ],
+            indent=2,
+        )
+
+        topics_list = "\n".join(f"- {t}" for t in topics)
+
+        prompt = f"""You are ranking social media posts for engagement.
+
+## Today's Research Topics
+{topics_list}
+
+## Posts to Rank ({platform})
+{posts_json}
+
+## Task
+Select the top {candidates_per_platform} posts that are best for engagement.
+
+## Scoring Criteria
+1. **Topic relevance** (1-5): How well does the post connect to today's research?
+2. **Reply-worthiness** (1-5): Is there a clear opening for a substantive reply?
+3. **Person signal** (1-3): Is the author a builder, researcher, or thought leader?
+4. **Engagement sweet spot** (1-3): Active discussion but not buried (5-50 likes ideal)
+
+Avoid: political posts, drama threads, promotional content, link-only posts.
+Prefer: questions, opinions we can add to, technical discussions.
+
+## Output Format
+Output ONLY valid JSON:
+{{
+  "selected": [
+    {{
+      "index": 0,
+      "relevance": 4,
+      "reply_worthiness": 5,
+      "person_signal": 2,
+      "engagement_score": 3,
+      "total_score": 14,
+      "topic_connection": "Why this post connects to today's research"
+    }}
+  ]
+}}
+
+Return up to {candidates_per_platform} posts, sorted by total_score descending."""
+
+        output, exit_code = run_claude_prompt(
+            prompt=prompt,
+            task_type="engagement_finder",
+        )
+
+        if exit_code != 0 or not output:
+            logger.warning(
+                f"Ranking failed for {platform}, returning top posts by likes"
+            )
+            # Fallback: just return top posts by like count
+            posts_for_ranking.sort(
+                key=lambda p: p.get("like_count", p.get("likes", 0)),
+                reverse=True,
+            )
+            return [
+                self._post_to_candidate(p, platform)
+                for p in posts_for_ranking[:candidates_per_platform]
+            ]
+
+        try:
+            data = json.loads(output.strip())
+            selected = data.get("selected", [])
+        except json.JSONDecodeError:
+            json_match = re.search(r'\{[\s\S]*"selected"[\s\S]*\}', output)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                    selected = data.get("selected", [])
+                except json.JSONDecodeError:
+                    selected = []
+
+        if not selected:
+            logger.warning(f"No ranked candidates for {platform}, using fallback")
+            posts_for_ranking.sort(
+                key=lambda p: p.get("like_count", p.get("likes", 0)),
+                reverse=True,
+            )
+            return [
+                self._post_to_candidate(p, platform)
+                for p in posts_for_ranking[:candidates_per_platform]
+            ]
+
+        # Map ranked indices back to post data
+        candidates = []
+        for s in selected[:candidates_per_platform]:
+            idx = s.get("index", -1)
+            if 0 <= idx < len(posts_for_ranking):
+                post = posts_for_ranking[idx]
+                candidate = self._post_to_candidate(post, platform)
+                candidate["relevance"] = s.get("total_score", 0) / 16.0  # Normalize to 0-1
+                candidate["relevance_score"] = s.get("relevance", 0)
+                candidate["reply_worthiness"] = s.get("reply_worthiness", 0)
+                candidate["person_signal"] = s.get("person_signal", 0)
+                candidate["total_score"] = s.get("total_score", 0)
+                candidate["topic_connection"] = s.get("topic_connection", "")
+                candidates.append(candidate)
+
+        logger.info(f"Ranked {len(candidates)} candidates for {platform}")
+        return candidates
+
+    def _post_to_candidate(self, post: dict, platform: str) -> dict:
+        """Convert a raw platform post dict to the engagement candidate format.
+
+        Normalizes field names across platforms into the unified candidate
+        schema used by the rest of the pipeline.
+        """
+        if platform == "bluesky":
+            handle = post.get("author_handle", "")
+            uri = post.get("uri", "")
+            rkey = uri.split("/")[-1] if uri else ""
+            return {
+                "platform": "bluesky",
+                "post_id": uri,
+                "post_cid": post.get("cid", ""),
+                "author": handle,
+                "author_id": post.get("author_did", ""),
+                "content": post.get("text", ""),
+                "target_post_url": post.get("url", f"https://bsky.app/profile/{handle}/post/{rkey}"),
+                "target_author": post.get("author_name", handle),
+                "target_author_id": post.get("author_did", ""),
+                "target_content": post.get("text", ""),
+                "followers": post.get("followers_count", 0),
+                "likes": post.get("like_count", 0),
+                "replies": post.get("reply_count", 0),
+                "relevance": 0,
+                "our_reply": "",
+            }
+        elif platform == "x":
+            return {
+                "platform": "x",
+                "post_id": post.get("id", ""),
+                "post_cid": "",
+                "author": post.get("author_username", post.get("author", "")),
+                "author_id": post.get("author_id", ""),
+                "content": post.get("text", ""),
+                "target_post_url": f"https://x.com/i/status/{post.get('id', '')}",
+                "target_author": post.get("author_name", ""),
+                "target_author_id": post.get("author_id", ""),
+                "target_content": post.get("text", ""),
+                "followers": post.get("followers_count", 0),
+                "likes": post.get("like_count", 0),
+                "replies": post.get("reply_count", 0),
+                "relevance": 0,
+                "our_reply": "",
+            }
+        else:
+            # Generic fallback
+            return {
+                "platform": platform,
+                "post_id": post.get("id", post.get("uri", "")),
+                "post_cid": post.get("cid", ""),
+                "author": post.get("author", ""),
+                "author_id": post.get("author_id", post.get("author_did", "")),
+                "content": post.get("text", ""),
+                "target_post_url": post.get("url", ""),
+                "target_author": post.get("author_name", post.get("author", "")),
+                "target_author_id": post.get("author_id", post.get("author_did", "")),
+                "target_content": post.get("text", ""),
+                "followers": post.get("followers_count", 0),
+                "likes": post.get("like_count", 0),
+                "replies": post.get("reply_count", 0),
+                "relevance": 0,
+                "our_reply": "",
+            }
+
+    # ── _find_candidates: the main search orchestrator ────────────────
+
+    def _find_candidates(self, date_str: str) -> list[dict]:
+        """Search platforms for engagement candidates using API + LLM ranking.
+
+        This is the fixed version that actually works. Instead of asking an LLM
+        to magically search social media (which it can't), we:
+        1. Use LLM to generate good search queries from today's research
+        2. Execute those queries directly via platform API clients
+        3. Filter by hard criteria (followers, likes, age, connections)
+        4. Use LLM to rank and select the best candidates
 
         Args:
             date_str: Today's date (YYYY-MM-DD).
 
         Returns:
-            List of candidate dicts:
-            [{platform, post_id, post_cid, author, author_id, content, relevance}]
+            List of candidate dicts ready for reply drafting.
         """
-        # Get today's research context for relevance matching
-        context = memory.get_context(self.db, date_str)
+        # Get today's research context
+        context = memory.get_context(self.db, "orchestrator", date_str)
         recent_findings = memory.search_findings(
             self.db, f"research {date_str}", limit=10
         )
@@ -310,92 +783,47 @@ class EngagementPipeline:
             logger.warning("No research findings to base engagement search on")
             topics = ["AI agents", "LLM applications", "developer tools"]
 
-        # Get engagement config limits
-        queries_per_platform = self.engagement_config.get(
-            "search_queries_per_platform", 8
-        )
-        candidates_per_platform = self.engagement_config.get(
-            "candidates_per_platform", 10
-        )
-        min_likes = self.engagement_config.get("min_likes", 3)
-        max_likes = self.engagement_config.get("max_likes", 5000)
-        min_followers = self.engagement_config.get("min_follower_count", 50)
+        # Step 1: Generate search queries from research topics
+        logger.info(f"Generating search queries from {len(topics)} topics")
+        queries = self._generate_search_queries(topics)
+        logger.info(f"Generated {len(queries)} search queries: {queries}")
 
-        # Build the prompt for the engagement-finder agent
-        topics_list = "\n".join(f"- {t}" for t in topics)
-        platforms_list = ", ".join(self._platform_clients.keys())
+        # Step 2: Execute searches on each platform
+        all_candidates = []
+        for platform, client in self._platform_clients.items():
+            logger.info(f"Searching {platform} with {len(queries)} queries...")
 
-        prompt = f"""You are an engagement finder for MindPattern, a technical AI newsletter.
+            # Search
+            raw_posts = self._search_platform(platform, client, queries)
+            if not raw_posts:
+                logger.info(f"No posts found on {platform}")
+                continue
 
-## Today's Research Topics
-{topics_list}
+            # Filter by hard criteria
+            filtered = self._filter_posts(raw_posts, platform)
+            if not filtered:
+                logger.info(f"All posts filtered out on {platform}")
+                continue
 
-## Task
-Find 5-10 high-quality social media conversations on each platform ({platforms_list})
-that are relevant to today's research topics. These should be conversations where
-a thoughtful, knowledgeable reply would add value.
-
-## Criteria
-- Post must have between {min_likes} and {max_likes} likes/engagements
-- Author must have at least {min_followers} followers
-- Post should be from the last 48 hours
-- Post should be substantive (not just a link drop or meme)
-- Prefer posts asking questions or sharing opinions we can add to
-- Avoid: political posts, drama threads, obvious promotional content
-
-## Search Strategy
-For each platform, search using variations of these topics. Try both direct
-topic searches and broader related terms.
-
-Search up to {queries_per_platform} queries per platform.
-Return up to {candidates_per_platform} candidates per platform.
-
-## Memory Context
-{context[:2000] if context else "No prior context available."}
-
-## Output Format
-Output ONLY valid JSON:
-{{
-  "candidates": [
-    {{
-      "platform": "x|bluesky|linkedin",
-      "post_id": "string",
-      "post_cid": "string (bluesky only, empty otherwise)",
-      "author": "display name",
-      "author_id": "handle or ID",
-      "content": "the post text",
-      "relevance": 0.0-1.0,
-      "reason": "why this is worth engaging with"
-    }}
-  ]
-}}"""
-
-        output, exit_code = run_claude_prompt(
-            prompt=prompt,
-            task_type="engagement_finder",
-            allowed_tools=["Bash", "WebSearch", "WebFetch"],
-        )
-
-        candidates = []
-        if exit_code == 0 and output:
-            try:
-                data = json.loads(output.strip())
-                candidates = data.get("candidates", [])
-            except json.JSONDecodeError:
-                # Try to extract JSON from mixed output
-                import re
-                json_match = re.search(
-                    r'\{[\s\S]*"candidates"[\s\S]*\}', output
+            # Filter already-connected authors
+            not_connected = self._filter_already_connected(filtered, platform)
+            if not not_connected:
+                logger.info(
+                    f"All remaining posts from already-connected authors on {platform}"
                 )
-                if json_match:
-                    try:
-                        data = json.loads(json_match.group())
-                        candidates = data.get("candidates", [])
-                    except json.JSONDecodeError:
-                        logger.warning("Could not parse engagement finder output")
+                continue
 
-        logger.info(f"Engagement finder returned {len(candidates)} candidates")
-        return candidates
+            # Rank and select candidates
+            candidates = self._rank_candidates(not_connected, topics, platform)
+            all_candidates.extend(candidates)
+
+            logger.info(
+                f"{platform}: {len(raw_posts)} raw -> {len(filtered)} filtered -> "
+                f"{len(not_connected)} not connected -> {len(candidates)} ranked"
+            )
+
+        logger.info(f"Total candidates across all platforms: {len(all_candidates)}")
+        return all_candidates
 
     def _draft_replies(self, candidates: list[dict]) -> list[dict]:
         """Use engagement-writer agent (Sonnet) to draft replies.
@@ -457,6 +885,7 @@ Output ONLY valid JSON:
                     "platform": c.get("platform"),
                     "author": c.get("author"),
                     "content": c.get("content", "")[:500],
+                    "topic_connection": c.get("topic_connection", ""),
                     "max_reply_chars": platform_limits.get(c.get("platform"), 280),
                 }
                 for i, c in enumerate(candidates)
@@ -468,10 +897,10 @@ Output ONLY valid JSON:
 
 ## Voice Guide
 - Casual, knowledgeable tone of a senior developer
-- Add genuine value (insight, experience, data) — never generic "great point!"
+- Add genuine value (insight, experience, data) -- never generic "great point!"
 - No hashtags, no emojis unless the conversation calls for it
 - No em dashes. Use commas or periods instead.
-- Keep replies concise — match the platform's vibe
+- Keep replies concise -- match the platform's vibe
 - Never start with "Great point!" or "Interesting!" or similar filler
 - When disagreeing, be respectful but direct
 - Link to mindpattern.ai only if genuinely relevant, never forced
@@ -516,7 +945,6 @@ engagement (quality content in our space)."""
             data = json.loads(output.strip())
             replies = data.get("replies", [])
         except json.JSONDecodeError:
-            import re
             json_match = re.search(r'\{[\s\S]*"replies"[\s\S]*\}', output)
             if json_match:
                 try:
@@ -572,14 +1000,27 @@ engagement (quality content in our space)."""
             "error": None,
         }
 
-        # Post the reply
+        # Post the reply -- use correct API signatures per platform
         try:
-            reply_result = client.reply(
-                post_id=post_id,
-                text=our_reply,
-                post_cid=post_cid,
-            )
-            result["reply_posted"] = True
+            if platform == "bluesky":
+                reply_result = client.reply(
+                    content=our_reply,
+                    parent_uri=post_id,
+                    parent_cid=post_cid,
+                )
+            elif platform == "x":
+                reply_result = client.reply(
+                    content=our_reply,
+                    reply_to_id=post_id,
+                )
+            else:
+                logger.warning(f"Reply not supported for platform: {platform}")
+                return result
+
+            if reply_result.get("success"):
+                result["reply_posted"] = True
+            else:
+                result["error"] = reply_result.get("error", "Reply failed")
 
             # Log the reply engagement
             memory.store_engagement(
@@ -592,12 +1033,13 @@ engagement (quality content in our space)."""
                 target_author_id=author_id,
                 target_content=candidate.get("content"),
                 our_reply=our_reply,
-                status="posted",
+                status="posted" if result["reply_posted"] else "failed",
             )
 
-            logger.info(
-                f"Reply posted on {platform} to @{candidate.get('author', '?')}"
-            )
+            if result["reply_posted"]:
+                logger.info(
+                    f"Reply posted on {platform} to @{candidate.get('author', '?')}"
+                )
 
         except Exception as e:
             result["error"] = f"Reply failed: {e}"
@@ -618,7 +1060,7 @@ engagement (quality content in our space)."""
             return result
 
         # Auto-follow if suggested and within rate limits
-        if should_follow and author_id:
+        if should_follow and author_id and result["reply_posted"]:
             follow_check = self.policy.validate_rate_limits(
                 self.db, platform, "follow"
             )

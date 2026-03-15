@@ -12,6 +12,8 @@ from dashboard.platform_health import check_linkedin_token_health
 from orchestrator.traces_db import get_db, TRACES_DB_PATH
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent
+# On Fly.io the reports live on the volume at /data/reports/ (symlinked via /app/data)
+DATA_DIR = SCRIPT_DIR / "data"
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -77,6 +79,14 @@ def get_pipeline_context() -> dict:
     }
 
 
+def _first_existing(*paths: Path) -> Path | None:
+    """Return the first path that exists, or None."""
+    for p in paths:
+        if p.exists():
+            return p
+    return None
+
+
 @router.get("/api/pipeline-log", response_class=HTMLResponse)
 def pipeline_log(request: Request, lines: int = 50):
     """Return the tail of today's debug log + orchestrator JSONL as HTML lines."""
@@ -84,8 +94,12 @@ def pipeline_log(request: Request, lines: int = 50):
     output_lines = []
 
     # Debug log (phases, watchdog, findings)
-    debug_log = SCRIPT_DIR / "reports" / "ramsay" / f"{today}.debug.log"
-    if debug_log.exists():
+    # Check both local (/app/reports) and volume (/app/data/reports) paths
+    debug_log = _first_existing(
+        SCRIPT_DIR / "reports" / "ramsay" / f"{today}.debug.log",
+        DATA_DIR / "reports" / "ramsay" / f"{today}.debug.log",
+    )
+    if debug_log:
         try:
             all_lines = debug_log.read_text().strip().split("\n")
             output_lines.extend(all_lines[-lines:])
@@ -93,8 +107,11 @@ def pipeline_log(request: Request, lines: int = 50):
             pass
 
     # Orchestrator JSONL (pipeline stages with timestamps)
-    jsonl_log = SCRIPT_DIR / "reports" / f"orchestrator-{today}.jsonl"
-    if jsonl_log.exists():
+    jsonl_log = _first_existing(
+        SCRIPT_DIR / "reports" / f"orchestrator-{today}.jsonl",
+        DATA_DIR / "reports" / f"orchestrator-{today}.jsonl",
+    )
+    if jsonl_log:
         try:
             for raw in jsonl_log.read_text().strip().split("\n"):
                 if not raw.strip():
@@ -111,8 +128,11 @@ def pipeline_log(request: Request, lines: int = 50):
             pass
 
     # Social JSONL
-    social_log = SCRIPT_DIR / "reports" / f"social-{today}.jsonl"
-    if social_log.exists():
+    social_log = _first_existing(
+        SCRIPT_DIR / "reports" / f"social-{today}.jsonl",
+        DATA_DIR / "reports" / f"social-{today}.jsonl",
+    )
+    if social_log:
         try:
             for raw in social_log.read_text().strip().split("\n"):
                 if not raw.strip():
@@ -129,8 +149,11 @@ def pipeline_log(request: Request, lines: int = 50):
             pass
 
     # Engagement JSONL
-    eng_log = SCRIPT_DIR / "reports" / f"engagement-{today}.jsonl"
-    if eng_log.exists():
+    eng_log = _first_existing(
+        SCRIPT_DIR / "reports" / f"engagement-{today}.jsonl",
+        DATA_DIR / "reports" / f"engagement-{today}.jsonl",
+    )
+    if eng_log:
         try:
             for raw in eng_log.read_text().strip().split("\n"):
                 if not raw.strip():

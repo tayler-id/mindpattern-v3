@@ -22,7 +22,8 @@
       "keychain": {
         "access_token": "linkedin-access-token"
       },
-      "api_base": "https://api.linkedin.com/v2",
+      "api_base": "https://api.linkedin.com",
+      "api_version": "202501",
       "token_expires_days": 60,
       "target_chars": 1350
     },
