@@ -21,7 +21,7 @@ from orchestrator.agents import run_agent_with_files, run_claude_prompt
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-PLATFORMS = ["bluesky"]
+PLATFORMS = ["bluesky", "linkedin"]
 
 # Voice guide is loaded once at module level (immutable reference text)
 _VOICE_GUIDE_PATH = PROJECT_ROOT / "agents" / "voice-guide.md"
