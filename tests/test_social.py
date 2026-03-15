@@ -509,6 +509,45 @@ class TestExpedite:
         # Legacy key preserved for pipeline compatibility
         assert "notes" in result
 
+    def test_returns_fail_when_agent_returns_string(self):
+        """expedite() returns FAIL when agent returns a raw string instead of dict."""
+        # This reproduces the 'str' object has no attribute 'get' crash.
+        # run_agent_with_files can return a str if json.loads parses a JSON
+        # string literal (e.g. the agent wrote "PASS" instead of {"verdict":"PASS"}).
+        with patch("social.critics.run_agent_with_files", return_value="PASS"):
+            from social.critics import expedite
+
+            result = expedite(
+                drafts={"x": {"content": "test post"}},
+                brief={"topic": "test"},
+                images={},
+            )
+
+        assert result["verdict"] == "FAIL"
+        assert result["platform_verdicts"]["x"] == "FAIL"
+
+    def test_returns_pass_when_agent_returns_json_string(self):
+        """expedite() parses JSON from a string result when possible."""
+        json_str = json.dumps({
+            "verdict": "PASS",
+            "feedback": "Looks good.",
+            "platform_verdicts": {"x": "PASS"},
+            "scores": {"voice_match": 8, "framing_authenticity": 7,
+                        "platform_genre_fit": 9, "epistemic_calibration": 8,
+                        "structural_variation": 7, "rhetorical_framework": 8},
+        })
+        with patch("social.critics.run_agent_with_files", return_value=json_str):
+            from social.critics import expedite
+
+            result = expedite(
+                drafts={"x": {"content": "test post"}},
+                brief={"topic": "test"},
+                images={},
+            )
+
+        assert result["verdict"] == "PASS"
+        assert result["platform_verdicts"]["x"] == "PASS"
+
 
 # ────────────────────────────────────────────────────────────────────────
 # social/writers.py — _build_writer_prompt

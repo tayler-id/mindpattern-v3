@@ -117,6 +117,19 @@ Write ONLY the JSON file. No other files, no other output.
         task_type="critic",
     )
 
+    # Agent may return None (no output), a raw string (malformed JSON file),
+    # or a non-dict JSON value. Normalise to dict or treat as failure.
+    if result is not None and not isinstance(result, dict):
+        logger.warning(
+            f"Critic agent returned non-dict for {platform} "
+            f"(type={type(result).__name__}). Attempting JSON parse."
+        )
+        try:
+            parsed = json.loads(result) if isinstance(result, str) else None
+            result = parsed if isinstance(parsed, dict) else None
+        except (json.JSONDecodeError, TypeError):
+            result = None
+
     if result is None:
         logger.warning(f"Critic agent failed for {platform} (no output file)")
         return {
@@ -298,6 +311,19 @@ Write ONLY the JSON file. No other files, no other output.
         allowed_tools=["Read", "Write", "Glob", "Grep"],
         task_type="expeditor",
     )
+
+    # Agent may return None (no output), a raw string (malformed JSON file),
+    # or a non-dict JSON value. Normalise to dict or treat as failure.
+    if result is not None and not isinstance(result, dict):
+        logger.warning(
+            f"Expeditor returned non-dict (type={type(result).__name__}). "
+            f"Attempting JSON parse."
+        )
+        try:
+            parsed = json.loads(result) if isinstance(result, str) else None
+            result = parsed if isinstance(parsed, dict) else None
+        except (json.JSONDecodeError, TypeError):
+            result = None
 
     # CRITICAL: failure = FAIL, not auto-pass
     if result is None:
