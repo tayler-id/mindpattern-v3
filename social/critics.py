@@ -10,10 +10,9 @@ The expeditor is the final quality gate across all platforms.
 
 import json
 import logging
-import re
 from pathlib import Path
 
-from orchestrator.agents import run_claude_prompt
+from orchestrator.agents import run_agent_with_files
 from policies.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
@@ -32,130 +31,16 @@ def review_draft(platform: str, draft_text: str) -> dict:
 
     Scores: voice_authenticity, platform_fit, engagement_potential (each 1-10)
     """
-    prompt = _build_critic_prompt(platform, draft_text)
-
-    raw_output, exit_code = run_claude_prompt(
-        prompt,
-        task_type="critic",
-        system_prompt_file=str(PROJECT_ROOT / "agents" / f"{platform}-critic.md"),
-    )
-
-    if exit_code != 0:
-        logger.warning(f"Critic call failed for {platform} (exit {exit_code})")
-        # Critic failure = REVISE (not auto-pass)
-        return {
-            "verdict": "REVISE",
-            "feedback": f"Critic call failed with exit code {exit_code}. "
-                        "Cannot validate draft quality.",
-            "scores": {
-                "voice_authenticity": 0,
-                "platform_fit": 0,
-                "engagement_potential": 0,
-            },
-        }
-
-    return _parse_critic_output(raw_output, platform)
-
-
-# ── Deterministic policy validation ─────────────────────────────────────
-
-
-def deterministic_validate(platform: str, content: str) -> list[str]:
-    """Policy checks that cannot be gamed by prompt injection.
-
-    Uses PolicyEngine with social.json rules.
-
-    Returns list of error strings (empty = valid).
-
-    Checks:
-    - Character/grapheme limits per platform
-    - Banned words from voice guide
-    - Banned patterns (em dashes, rhetorical questions)
-    - Required elements (URL for X/Bluesky)
-    """
-    policy = PolicyEngine.load_social(PROJECT_ROOT / "policies")
-    return policy.validate_social_post(platform, content)
-
-
-# ── Expeditor (final quality gate) ──────────────────────────────────────
-
-
-def expedite(
-    drafts: dict[str, dict],
-    brief: dict,
-    images: dict,
-) -> dict:
-    """Expeditor -- final quality gate before approval.
-
-    Consolidates all platform drafts + images into a proof package.
-    Runs one Sonnet call to verify coherence across platforms.
-
-    IMPORTANT: If claude call fails, return FAIL (not auto-pass).
-
-    Returns: {verdict: 'PASS'|'FAIL', notes: str, proof_package: dict}
-    """
-    # Build the proof package
-    proof_package = {
-        "brief": brief,
-        "drafts": {},
-        "images": images or {},
-    }
-
-    for platform, draft_data in drafts.items():
-        proof_package["drafts"][platform] = {
-            "content": draft_data.get("humanized") or draft_data.get("content", ""),
-            "iterations": draft_data.get("iterations", 0),
-            "critic_verdict": draft_data.get("critic_verdict", "UNKNOWN"),
-            "policy_errors": draft_data.get("policy_errors", []),
-        }
-
-    # Load voice guide for the expeditor
-    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
-    voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
-
-    prompt = _build_expeditor_prompt(proof_package, voice_guide)
-
-    raw_output, exit_code = run_claude_prompt(
-        prompt,
-        task_type="expeditor",
-        system_prompt_file=str(PROJECT_ROOT / "agents" / "expeditor.md"),
-    )
-
-    # CRITICAL: failure = FAIL, not auto-pass
-    if exit_code != 0:
-        logger.error(f"Expeditor call failed (exit {exit_code}). Returning FAIL.")
-        return {
-            "verdict": "FAIL",
-            "notes": f"Expeditor call failed with exit code {exit_code}. "
-                     "Cannot verify cross-platform coherence. "
-                     "Failing safe -- do not auto-pass.",
-            "proof_package": proof_package,
-        }
-
-    return _parse_expeditor_output(raw_output, proof_package)
-
-
-# ── Prompt builders ─────────────────────────────────────────────────────
-
-
-def _build_critic_prompt(platform: str, draft_text: str) -> str:
-    """Build blind critic prompt.
-
-    ONLY includes:
-    - The draft text
-    - Platform-specific rules (char limits, audience, tone expectations)
-    - Voice guide excerpt (what good looks like)
-
-    NOT included: brief, writer reasoning, creative direction.
-
-    Output: JSON {verdict, feedback, scores}
-    """
-    # Load voice guide for voice reference
+    # Load voice guide for inline inclusion
     voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
     voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
 
     # Platform-specific rules
     platform_rules = _get_platform_rules(platform)
+
+    output_file = str(
+        PROJECT_ROOT / "data" / "social-drafts" / f"{platform}-verdict.json"
+    )
 
     prompt = f"""You are a blind critic. You have NEVER seen the creative brief, the writer's
 reasoning, or the editorial direction. You see ONLY the draft text below and
@@ -207,7 +92,9 @@ Evaluate this draft on three dimensions (1-10 each):
 
 ## Output
 
-Respond with ONLY valid JSON, no other text:
+Write your verdict as a JSON file to: {output_file}
+
+The JSON must have this exact structure:
 
 {{
   "verdict": "APPROVED" or "REVISE",
@@ -218,13 +105,103 @@ Respond with ONLY valid JSON, no other text:
     "engagement_potential": <1-10>
   }}
 }}
+
+Write ONLY the JSON file. No other files, no other output.
 """
-    return prompt
+
+    result = run_agent_with_files(
+        system_prompt_file=f"agents/{platform}-critic.md",
+        prompt=prompt,
+        output_file=output_file,
+        allowed_tools=["Read", "Write", "Glob", "Grep"],
+        task_type="critic",
+    )
+
+    if result is None:
+        logger.warning(f"Critic agent failed for {platform} (no output file)")
+        return {
+            "verdict": "REVISE",
+            "feedback": "Critic agent failed to produce output. "
+                        "Cannot validate draft quality.",
+            "scores": {
+                "voice_authenticity": 0,
+                "platform_fit": 0,
+                "engagement_potential": 0,
+            },
+        }
+
+    # Validate the result has expected keys
+    return {
+        "verdict": result.get("verdict", "REVISE"),
+        "feedback": result.get("feedback", ""),
+        "scores": result.get("scores", {
+            "voice_authenticity": 0,
+            "platform_fit": 0,
+            "engagement_potential": 0,
+        }),
+    }
 
 
-def _build_expeditor_prompt(proof_package: dict, voice_guide: str) -> str:
-    """Build expeditor prompt with the full proof package."""
-    # Format drafts for readability
+# ── Deterministic policy validation ─────────────────────────────────────
+
+
+def deterministic_validate(platform: str, content: str) -> list[str]:
+    """Policy checks that cannot be gamed by prompt injection.
+
+    Uses PolicyEngine with social.json rules.
+
+    Returns list of error strings (empty = valid).
+
+    Checks:
+    - Character/grapheme limits per platform
+    - Banned words from voice guide
+    - Banned patterns (em dashes, rhetorical questions)
+    - Required elements (URL for X/Bluesky)
+    """
+    policy = PolicyEngine.load_social(PROJECT_ROOT / "policies")
+    return policy.validate_social_post(platform, content)
+
+
+# ── Expeditor (final quality gate) ──────────────────────────────────────
+
+
+def expedite(
+    drafts: dict[str, dict],
+    brief: dict,
+    images: dict,
+) -> dict:
+    """Expeditor -- final quality gate before approval.
+
+    Consolidates all platform drafts + images into a proof package.
+    Runs one agent call to verify coherence across platforms.
+
+    IMPORTANT: If agent call fails, return FAIL (not auto-pass).
+
+    Returns: {verdict: 'PASS'|'FAIL', feedback: str, scores: dict,
+              platform_verdicts: dict, proof_package: dict}
+    """
+    # Build the proof package
+    proof_package = {
+        "brief": brief,
+        "drafts": {},
+        "images": images or {},
+    }
+
+    for platform, draft_data in drafts.items():
+        proof_package["drafts"][platform] = {
+            "content": draft_data.get("humanized") or draft_data.get("content", ""),
+            "iterations": draft_data.get("iterations", 0),
+            "critic_verdict": draft_data.get("critic_verdict", "UNKNOWN"),
+            "policy_errors": draft_data.get("policy_errors", []),
+        }
+
+    # Load voice guide for inline inclusion
+    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
+
+    # Format proof package sections for the prompt
+    brief_json = json.dumps(proof_package.get("brief", {}), indent=2)
+
     drafts_section = ""
     for platform, data in proof_package.get("drafts", {}).items():
         content = data.get("content", "(empty)")
@@ -238,16 +215,24 @@ def _build_expeditor_prompt(proof_package: dict, voice_guide: str) -> str:
             drafts_section += f"Policy errors: {', '.join(errors)}\n"
         drafts_section += f"\n{content}\n"
 
-    brief_json = json.dumps(proof_package.get("brief", {}), indent=2)
-
     images_section = ""
-    images = proof_package.get("images", {})
-    if images:
+    images_data = proof_package.get("images", {})
+    if images_data:
         images_section = "\n## Editorial Art\n"
-        for key, path in images.items():
+        for key, path in images_data.items():
             images_section += f"- {key}: {path}\n"
     else:
         images_section = "\n## Editorial Art\nNo images provided.\n"
+
+    # Platform list for per-platform verdicts
+    platform_list = list(proof_package.get("drafts", {}).keys())
+    platform_verdicts_template = ", ".join(
+        f'"{p}": "PASS" or "FAIL"' for p in platform_list
+    )
+
+    output_file = str(
+        PROJECT_ROOT / "data" / "social-drafts" / "expedite-verdict.json"
+    )
 
     prompt = f"""You are the Expeditor, the last quality gate before content reaches a human.
 
@@ -285,12 +270,14 @@ Evaluate the COMPLETE proof package for cross-platform coherence:
 
 ## Output
 
-Respond with ONLY valid JSON:
+Write your verdict as a JSON file to: {output_file}
+
+The JSON must have this exact structure:
 
 {{
   "verdict": "PASS" or "FAIL",
-  "quality_score": <0-10, mean of rubric dimensions>,
-  "notes": "Brief summary of evaluation.",
+  "feedback": "Brief summary of evaluation.",
+  "platform_verdicts": {{ {platform_verdicts_template} }},
   "scores": {{
     "voice_match": <0-10>,
     "framing_authenticity": <0-10>,
@@ -298,11 +285,49 @@ Respond with ONLY valid JSON:
     "epistemic_calibration": <0-10>,
     "structural_variation": <0-10>,
     "rhetorical_framework": <0-10>
-  }},
-  "cross_platform": "consistent" or "description of inconsistencies"
+  }}
 }}
+
+Write ONLY the JSON file. No other files, no other output.
 """
-    return prompt
+
+    result = run_agent_with_files(
+        system_prompt_file="agents/expeditor.md",
+        prompt=prompt,
+        output_file=output_file,
+        allowed_tools=["Read", "Write", "Glob", "Grep"],
+        task_type="expeditor",
+    )
+
+    # CRITICAL: failure = FAIL, not auto-pass
+    if result is None:
+        logger.error("Expeditor agent failed (no output file). Returning FAIL.")
+        return {
+            "verdict": "FAIL",
+            "feedback": "Expeditor agent failed to produce output. "
+                        "Cannot verify cross-platform coherence. "
+                        "Failing safe -- do not auto-pass.",
+            "platform_verdicts": {p: "FAIL" for p in platform_list},
+            "scores": {
+                "voice_match": 0,
+                "framing_authenticity": 0,
+                "platform_genre_fit": 0,
+                "epistemic_calibration": 0,
+                "structural_variation": 0,
+                "rhetorical_framework": 0,
+            },
+            "proof_package": proof_package,
+        }
+
+    return {
+        "verdict": result.get("verdict", "FAIL"),
+        "feedback": result.get("feedback", ""),
+        "platform_verdicts": result.get("platform_verdicts", {}),
+        "scores": result.get("scores", {}),
+        "proof_package": proof_package,
+        # Preserve legacy keys consumed by pipeline.py
+        "notes": result.get("feedback", ""),
+    }
 
 
 # ── Platform rules reference ────────────────────────────────────────────
@@ -344,98 +369,3 @@ def _get_platform_rules(platform: str) -> str:
         ),
     }
     return rules.get(platform, f"Unknown platform: {platform}")
-
-
-# ── Output parsers ──────────────────────────────────────────────────────
-
-
-def _parse_critic_output(raw_output: str, platform: str) -> dict:
-    """Parse critic JSON response. Fail-safe: REVISE on parse error."""
-    try:
-        # Try direct JSON parse
-        data = json.loads(raw_output.strip())
-        if isinstance(data, dict) and "verdict" in data:
-            return {
-                "verdict": data.get("verdict", "REVISE"),
-                "feedback": data.get("feedback", ""),
-                "scores": data.get("scores", {}),
-            }
-    except json.JSONDecodeError:
-        pass
-
-    # Try to find JSON in output
-    json_match = re.search(r'\{[\s\S]*"verdict"[\s\S]*\}', raw_output)
-    if json_match:
-        try:
-            data = json.loads(json_match.group())
-            return {
-                "verdict": data.get("verdict", "REVISE"),
-                "feedback": data.get("feedback", ""),
-                "scores": data.get("scores", {}),
-            }
-        except json.JSONDecodeError:
-            pass
-
-    # Parse failure -- check for APPROVED/REVISE keywords in raw text
-    raw_upper = raw_output.upper()
-    if "APPROVED" in raw_upper and "REVISE" not in raw_upper:
-        return {
-            "verdict": "APPROVED",
-            "feedback": "Parsed from non-JSON output.",
-            "scores": {},
-        }
-
-    logger.warning(
-        f"[{platform}] Could not parse critic output ({len(raw_output)} chars), "
-        f"defaulting to REVISE"
-    )
-    return {
-        "verdict": "REVISE",
-        "feedback": f"Critic output could not be parsed. Raw: {raw_output[:500]}",
-        "scores": {},
-    }
-
-
-def _parse_expeditor_output(raw_output: str, proof_package: dict) -> dict:
-    """Parse expeditor JSON response. Fail-safe: FAIL on parse error."""
-    try:
-        data = json.loads(raw_output.strip())
-        if isinstance(data, dict) and "verdict" in data:
-            return {
-                "verdict": data.get("verdict", "FAIL"),
-                "notes": data.get("notes", data.get("revision_notes", "")),
-                "proof_package": proof_package,
-                "quality_score": data.get("quality_score", 0),
-                "scores": data.get("scores", {}),
-                "cross_platform": data.get("cross_platform", "unknown"),
-            }
-    except json.JSONDecodeError:
-        pass
-
-    # Try to find JSON in output
-    json_match = re.search(r'\{[\s\S]*"verdict"[\s\S]*\}', raw_output)
-    if json_match:
-        try:
-            data = json.loads(json_match.group())
-            return {
-                "verdict": data.get("verdict", "FAIL"),
-                "notes": data.get("notes", data.get("revision_notes", "")),
-                "proof_package": proof_package,
-                "quality_score": data.get("quality_score", 0),
-                "scores": data.get("scores", {}),
-                "cross_platform": data.get("cross_platform", "unknown"),
-            }
-        except json.JSONDecodeError:
-            pass
-
-    # Parse failure = FAIL (not auto-pass)
-    logger.error(
-        f"Could not parse expeditor output ({len(raw_output)} chars), "
-        f"defaulting to FAIL"
-    )
-    return {
-        "verdict": "FAIL",
-        "notes": f"Expeditor output could not be parsed. Failing safe. "
-                 f"Raw: {raw_output[:500]}",
-        "proof_package": proof_package,
-    }
