@@ -339,14 +339,16 @@ class ApprovalGateway:
             phone: Phone number to send to.
             message: Message text.
         """
+        # Normalize phone number
+        if not phone.startswith("+"):
+            phone = f"+1{phone}"
+
         # Escape special characters for AppleScript
         escaped = message.replace("\\", "\\\\").replace('"', '\\"')
 
         script = f'''
         tell application "Messages"
-            set targetService to 1st account whose service type = iMessage
-            set targetBuddy to participant "{phone}" of targetService
-            send "{escaped}" to targetBuddy
+            send "{escaped}" to buddy "{phone}"
         end tell
         '''
 
@@ -453,30 +455,34 @@ class ApprovalGateway:
     # ── Message formatting ────────────────────────────────────────────
 
     def _format_topic_message(self, topics: list[dict]) -> str:
-        """Format topic candidates for iMessage."""
+        """Format topic candidates for iMessage with full details."""
         lines = ["MindPattern Social - Topic Approval", ""]
         for i, t in enumerate(topics):
             # Support both title and anchor keys
-            title = t.get("anchor", t.get("title", f"Topic {i + 1}"))
+            anchor = t.get("anchor", t.get("title", f"Topic {i + 1}"))
             angle = t.get("angle", "")
             scores = t.get("editorial_scores", {})
             composite = scores.get("composite", t.get("score", 0))
             source_urls = t.get("source_urls", [])
+            reasoning = t.get("reasoning", "")
 
-            lines.append(f"{i + 1}. {title}")
+            lines.append(f"{i + 1}. {anchor}")
             if angle:
-                lines.append(f"   Angle: {angle[:150]}")
+                lines.append(f"   Angle: {angle[:200]}")
             lines.append(f"   Score: {composite}")
             if source_urls:
-                lines.append(f"   Source: {source_urls[0]}")
+                sources_str = ", ".join(source_urls[:3])
+                lines.append(f"   Sources: {sources_str}")
+            if reasoning:
+                lines.append(f"   Reasoning: {reasoning[:200]}")
             lines.append("")
 
-        lines.append("Reply: 'go' to approve, 'skip' to kill, or type custom topic")
+        lines.append("Reply GO to approve, SKIP to kill, or type a custom topic")
 
         return "\n".join(lines)
 
     def _format_draft_message(self, drafts: dict, images: dict) -> str:
-        """Format draft previews for iMessage."""
+        """Format draft previews for iMessage with actual draft text."""
         lines = ["MindPattern Social - Draft Approval", ""]
 
         for platform, content in drafts.items():
@@ -486,15 +492,13 @@ class ApprovalGateway:
                 text = content
             has_image = "yes" if images.get(platform) else "no"
             lines.append(f"--- {platform.upper()} (image: {has_image}) ---")
-            lines.append(text[:500])
+            truncated = text[:500]
+            lines.append(truncated)
             if len(text) > 500:
                 lines.append(f"... ({len(text)} chars total)")
             lines.append("")
 
-        lines.append("Reply with:")
-        lines.append("  'go' or 'all' to post everything")
-        lines.append("  'skip' to cancel all")
-        lines.append("  Platform names to approve selectively (e.g. 'x bluesky')")
+        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'x linkedin')")
 
         return "\n".join(lines)
 
