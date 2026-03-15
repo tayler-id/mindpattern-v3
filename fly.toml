@@ -1,0 +1,31 @@
+app = "mindpattern"
+primary_region = "sjc"
+
+[build]
+
+[env]
+  DATA_DIR = "/data"
+  USERS_JSON = "/data/users.json"
+  HOST = "0.0.0.0"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "mindpattern_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[services.http_checks]]
+  interval = 30000
+  grace_period = "10s"
+  method = "GET"
+  path = "/healthz"
+  timeout = 5000

@@ -1,0 +1,79 @@
+<div>
+    <div style="margin-bottom:1rem;">
+        <a hx-get="/findings" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/findings"
+           style="color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+            &larr; Back to Findings
+        </a>
+    </div>
+
+    {% if finding %}
+    <div class="card">
+        <h2>{{ finding.title or 'Untitled Finding' }}</h2>
+        <div class="meta">
+            <div class="meta-item">
+                <span class="meta-label">Date</span>
+                <span class="meta-value">{{ finding.run_date or '—' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Agent</span>
+                <span class="meta-value">{{ finding.agent or '—' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Importance</span>
+                {% if finding.importance == 'high' %}
+                <span class="badge" style="background:rgba(248,113,113,0.15);color:#f87171;">high</span>
+                {% elif finding.importance == 'medium' %}
+                <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">medium</span>
+                {% elif finding.importance == 'low' %}
+                <span class="badge" style="background:rgba(74,222,128,0.15);color:#4ade80;">low</span>
+                {% else %}
+                <span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8;">{{ finding.importance or '—' }}</span>
+                {% endif %}
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Category</span>
+                <span class="meta-value">{{ finding.category or '—' }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Summary</h2>
+        <p style="line-height:1.6;color:#cbd5e1;white-space:pre-wrap;">{{ finding.summary or 'No summary available.' }}</p>
+    </div>
+
+    {% if finding.source_url or finding.source_name %}
+    <div class="card">
+        <h2>Source</h2>
+        <div class="meta">
+            {% if finding.source_name %}
+            <div class="meta-item">
+                <span class="meta-label">Name</span>
+                <span class="meta-value">{{ finding.source_name }}</span>
+            </div>
+            {% endif %}
+            {% if finding.source_url %}
+            <div class="meta-item">
+                <span class="meta-label">URL</span>
+                <a href="{{ finding.source_url }}" target="_blank" rel="noopener"
+                   style="color:#38bdf8;text-decoration:none;word-break:break-all;">
+                    {{ finding.source_url }}
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if finding.created_at %}
+    <div style="text-align:right;font-size:0.75rem;color:#475569;margin-top:0.5rem;">
+        Stored: {{ finding.created_at }}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="card empty-state">
+        <p>Finding not found.</p>
+    </div>
+    {% endif %}
+</div>

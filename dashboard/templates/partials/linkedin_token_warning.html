@@ -1,0 +1,19 @@
+{% if linkedin_health and not linkedin_health.healthy %}
+<div class="card" style="border:1px solid {% if linkedin_health.expired %}#991b1b{% else %}#92400e{% endif %};background:{% if linkedin_health.expired %}#450a0a{% else %}#1c1917{% endif %};margin-bottom:1rem;">
+    <div style="display:flex;align-items:flex-start;gap:0.5rem;">
+        <span style="font-size:1.25rem;">{% if linkedin_health.expired %}&#10060;{% else %}&#9888;{% endif %}</span>
+        <div>
+            <h3 style="font-size:0.9375rem;color:{% if linkedin_health.expired %}#f87171{% else %}#fbbf24{% endif %};margin:0 0 0.25rem 0;">
+                {% if linkedin_health.expired %}
+                LinkedIn Token Expired
+                {% else %}
+                LinkedIn Token Expiring Soon
+                {% endif %}
+            </h3>
+            <p style="font-size:0.8125rem;color:#e2e8f0;margin:0;line-height:1.5;">
+                {{ linkedin_health.message }}
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -1,0 +1,111 @@
+<!-- Back link -->
+<div style="margin-bottom:1rem;">
+    <a hx-get="/engagement-history" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="/engagement-history"
+       style="color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+        &larr; Back to Engagement History
+    </a>
+</div>
+
+{% if engagement %}
+<div class="card">
+    <h2>Engagement #{{ engagement.id }}</h2>
+
+    <div class="meta" style="margin-top:0.75rem;">
+        <div class="meta-item">
+            <span class="meta-label">Platform</span><br>
+            {% set plat = engagement.platform|lower if engagement.platform else '' %}
+            {% if plat == 'x' or plat == 'twitter' %}
+            <span class="badge" style="background:#1e3a5f;color:#1DA1F2;">{{ engagement.platform }}</span>
+            {% elif plat == 'linkedin' %}
+            <span class="badge" style="background:#0a2540;color:#0A66C2;">{{ engagement.platform }}</span>
+            {% elif plat == 'bluesky' %}
+            <span class="badge" style="background:#0a2540;color:#0085FF;">{{ engagement.platform }}</span>
+            {% else %}
+            <span class="badge badge-pending">{{ engagement.platform or "---" }}</span>
+            {% endif %}
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Type</span><br>
+            <span class="badge badge-orchestrator">{{ engagement.engagement_type or "---" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Status</span><br>
+            {% set st = engagement.status|lower if engagement.status else '' %}
+            {% if st == 'posted' %}
+            <span class="badge badge-completed">{{ engagement.status }}</span>
+            {% elif st == 'failed' %}
+            <span class="badge badge-failed">{{ engagement.status }}</span>
+            {% elif st == 'pending' %}
+            <span class="badge" style="background:#3f3212;color:#fbbf24;">{{ engagement.status }}</span>
+            {% else %}
+            <span class="badge badge-pending">{{ engagement.status or "---" }}</span>
+            {% endif %}
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Created</span><br>
+            <span class="meta-value">{{ engagement.created_at or "---" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Posted</span><br>
+            <span class="meta-value">{{ engagement.posted_at or "---" }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Target Info -->
+<div class="card">
+    <h2>Target Post</h2>
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Author</span><br>
+            <span class="meta-value">{{ engagement.target_author or "---" }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Author ID</span><br>
+            <span class="meta-value" style="font-family:monospace;font-size:0.8125rem;">{{ engagement.target_author_id or "---" }}</span>
+        </div>
+        {% if engagement.target_post_url %}
+        <div class="meta-item">
+            <span class="meta-label">URL</span><br>
+            <a href="{{ engagement.target_post_url }}" target="_blank" rel="noopener"
+               style="color:#38bdf8;font-size:0.8125rem;text-decoration:none;">
+                {{ engagement.target_post_url[:60] }}{% if engagement.target_post_url|length > 60 %}...{% endif %} &nearr;
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if engagement.target_content %}
+    <div style="margin-top:0.75rem;">
+        <span class="meta-label">Target Content</span>
+        <div style="margin-top:0.375rem;background:#0f172a;border:1px solid #334155;border-radius:0.375rem;padding:0.75rem;font-size:0.875rem;color:#cbd5e1;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;">{{ engagement.target_content }}</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Our Reply -->
+<div class="card">
+    <h2>Our Reply</h2>
+    {% if engagement.our_reply %}
+    <div style="background:#0f172a;border:1px solid #334155;border-radius:0.375rem;padding:0.75rem;font-size:0.875rem;color:#e2e8f0;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;">{{ engagement.our_reply }}</div>
+    {% else %}
+    <p style="color:#64748b;font-size:0.875rem;">No reply content recorded.</p>
+    {% endif %}
+</div>
+
+{% if engagement.finding_id %}
+<div class="card">
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Linked Finding ID</span><br>
+            <span class="meta-value" style="font-family:monospace;">{{ engagement.finding_id }}</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card empty-state">
+    <p>Engagement not found.</p>
+</div>
+{% endif %}

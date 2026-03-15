@@ -1,0 +1,21 @@
+{
+    "required_fields": ["title", "summary", "importance", "source_url", "source_name"],
+    "importance_values": ["high", "medium", "low"],
+    "max_findings_per_agent": 15,
+    "min_findings_per_agent": 1,
+    "max_summary_length": 1000,
+    "max_age_hours": 48,
+    "injection_patterns": [
+        "ignore previous instructions",
+        "ignore all instructions",
+        "you are now",
+        "system prompt",
+        "disregard",
+        "forget everything",
+        "new instructions",
+        "override",
+        "act as",
+        "pretend to be",
+        "jailbreak"
+    ]
+}

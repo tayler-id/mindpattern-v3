@@ -1,0 +1,90 @@
+<div class="card">
+    <h2>Trace Tree Viewer</h2>
+    <p style="color:#94a3b8;font-size:0.875rem;margin-bottom:1rem;">
+        Select a pipeline run to view its execution trace tree.
+    </p>
+</div>
+
+{% if runs %}
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Spans</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in runs %}
+            <tr>
+                <td style="font-family:monospace;font-size:0.8125rem;">{{ run.id }}</td>
+                <td>{{ run.pipeline_type }}</td>
+                <td><span class="badge badge-{{ run.status }}">{{ run.status }}</span></td>
+                <td>{{ run.started_at[:19] if run.started_at else "—" }}</td>
+                <td>{{ run.span_count }}</td>
+                <td>
+                    <a hx-get="/traces/{{ run.id | urlencode }}" hx-target="#main-content" hx-swap="innerHTML"
+                       hx-push-url="/traces/{{ run.id | urlencode }}"
+                       style="color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+                        View Tree &rarr;
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card empty-state">
+    <p>No pipeline runs with trace data found in the last 30 days.</p>
+</div>
+{% endif %}
+
+{% if older_runs %}
+<div class="card" style="margin-top:1rem;">
+    <h3 style="margin-bottom:0.5rem;">Older Runs</h3>
+    <p style="color:#94a3b8;font-size:0.8125rem;margin-bottom:0.75rem;">
+        Runs older than 30 days. Trace spans may have been pruned.
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Spans</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for run in older_runs %}
+            <tr>
+                <td style="font-family:monospace;font-size:0.8125rem;">{{ run.id }}</td>
+                <td>{{ run.pipeline_type }}</td>
+                <td><span class="badge badge-{{ run.status }}">{{ run.status }}</span></td>
+                <td>{{ run.started_at[:19] if run.started_at else "—" }}</td>
+                <td>
+                    {% if run.spans_pruned %}
+                    <span style="color:#f87171;font-size:0.75rem;">pruned</span>
+                    {% else %}
+                    {{ run.span_count }}
+                    {% endif %}
+                </td>
+                <td>
+                    <a hx-get="/traces/{{ run.id | urlencode }}" hx-target="#main-content" hx-swap="innerHTML"
+                       hx-push-url="/traces/{{ run.id | urlencode }}"
+                       style="color:#38bdf8;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+                        View Tree &rarr;
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

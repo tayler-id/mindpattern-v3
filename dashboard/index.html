@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mindpattern dashboard</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --card: #111114;
+    --card-hover: #16161a;
+    --border: #1c1c24;
+    --text: #c8c8d4;
+    --dim: #52525e;
+    --accent: #7c6aef;
+    --accent-dim: rgba(124, 106, 239, 0.12);
+    --green: #34d399;
+    --green-dim: rgba(52, 211, 153, 0.12);
+    --red: #f87171;
+    --red-dim: rgba(248, 113, 113, 0.12);
+    --yellow: #fbbf24;
+    --yellow-dim: rgba(251, 191, 36, 0.1);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96, 165, 250, 0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .app { max-width: 1440px; margin: 0 auto; padding: 16px 20px; }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0; margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: var(--accent); display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 14px; color: #fff;
+  }
+  header h1 { font-size: 15px; font-weight: 600; flex: 1; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    transition: all 0.3s;
+  }
+  .status-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status-dot.off { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  #clock { color: var(--dim); font-size: 12px; }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
+    gap: 12px;
+  }
+  .span-2 { grid-column: 1 / -1; }
+
+  /* Cards */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-header h2 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--dim);
+    flex: 1;
+  }
+  .card-header .count {
+    background: var(--accent-dim); color: var(--accent);
+    padding: 1px 7px; border-radius: 10px;
+    font-size: 10px; font-weight: 600;
+  }
+  .card-body { padding: 10px 14px; }
+
+  /* Process rows */
+  .proc {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 6px;
+    margin-bottom: 3px; transition: background 0.15s;
+  }
+  .proc:hover { background: var(--card-hover); }
+  .tag {
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    min-width: 78px; text-align: center;
+  }
+  .tag-social { background: var(--accent-dim); color: var(--accent); }
+  .tag-research { background: var(--green-dim); color: var(--green); }
+  .tag-engagement { background: var(--blue-dim); color: var(--blue); }
+  .tag-agent { background: var(--yellow-dim); color: var(--yellow); }
+  .proc-name { flex: 1; font-weight: 500; font-size: 13px; }
+  .proc-meta { color: var(--dim); font-size: 11px; }
+  .proc-meta span { margin-right: 8px; }
+  .btn-kill {
+    background: var(--red-dim); color: var(--red);
+    border: 1px solid rgba(248,113,113,0.2); border-radius: 5px;
+    padding: 3px 10px; font-size: 10px; cursor: pointer;
+    font-family: inherit; font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn-kill:hover { background: rgba(248,113,113,0.25); }
+
+  .empty { color: var(--dim); padding: 16px; text-align: center; font-style: italic; }
+
+  /* Events */
+  .events { max-height: 320px; overflow-y: auto; }
+  .evt {
+    display: flex; gap: 6px; padding: 3px 0;
+    border-bottom: 1px solid rgba(28,28,36,0.6);
+    font-size: 12px;
+  }
+  .evt-ts { color: var(--dim); min-width: 55px; font-family: 'SF Mono', monospace; font-size: 11px; }
+  .evt-stage { min-width: 130px; font-weight: 500; font-size: 12px; }
+  .evt-msg { color: var(--text); flex: 1; opacity: 0.8; }
+  .evt.error .evt-stage { color: var(--red); }
+  .evt.warn .evt-stage { color: var(--yellow); }
+  .evt.info .evt-stage { color: var(--green); }
+
+  /* Artifacts */
+  .brief-box {
+    background: rgba(0,0,0,0.25); padding: 10px 12px;
+    border-radius: 6px; font-size: 13px; line-height: 1.5;
+    margin-bottom: 10px; border-left: 3px solid var(--accent);
+  }
+  .brief-meta {
+    display: flex; gap: 8px; margin-top: 6px;
+    font-size: 11px; color: var(--dim);
+  }
+  .brief-meta .badge {
+    padding: 1px 7px; border-radius: 4px;
+    font-size: 10px; font-weight: 600;
+  }
+
+  .section-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--dim);
+    margin: 12px 0 6px;
+  }
+
+  .images-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+  .img-box {
+    flex: 1; min-width: 250px;
+    border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; background: #000;
+  }
+  .img-box img { width: 100%; display: block; }
+  .img-info {
+    padding: 6px 10px; font-size: 10px; color: var(--dim);
+    background: var(--card); display: flex; justify-content: space-between;
+  }
+
+  /* Drafts */
+  .draft {
+    background: rgba(0,0,0,0.25); border-radius: 6px;
+    margin-bottom: 8px; overflow: hidden;
+  }
+  .draft-header {
+    padding: 6px 10px; background: rgba(0,0,0,0.2);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .draft-platform {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    color: var(--accent);
+  }
+  .draft-time { font-size: 10px; color: var(--dim); }
+  .draft-body {
+    padding: 8px 10px; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; max-height: 140px; overflow-y: auto;
+  }
+
+  /* Posts */
+  .post-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; border-bottom: 1px solid rgba(28,28,36,0.5);
+  }
+  .post-platform { min-width: 70px; font-weight: 600; font-size: 12px; }
+  .post-anchor { flex: 1; color: var(--dim); font-size: 12px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .badge-posted { background: var(--green-dim); color: var(--green); }
+  .badge-pending { background: var(--yellow-dim); color: var(--yellow); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2a2a38; }
+
+  .btn-trigger {
+    background: var(--accent-dim); color: var(--accent);
+    border: 1px solid rgba(124,106,239,0.2); border-radius: 5px;
+    padding: 6px 14px; font-size: 11px; cursor: pointer;
+    font-family: inherit; font-weight: 600;
+    transition: all 0.15s;
+  }
+  .btn-trigger:hover { background: rgba(124,106,239,0.25); }
+
+  .approval-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; border-bottom: 1px solid rgba(28,28,36,0.5);
+    font-size: 12px;
+  }
+  .approval-stage { min-width: 50px; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+  .approval-status { font-size: 11px; }
+  .approval-time { color: var(--dim); font-size: 11px; margin-left: auto; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+    .span-2 { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">m</div>
+    <h1>pipeline dashboard</h1>
+    <div class="status-dot off" id="status"></div>
+    <span id="clock"></span>
+  </header>
+
+  <div class="grid">
+    <div class="card span-2">
+      <div class="card-header">
+        <h2>Active Processes</h2>
+        <span class="count" id="proc-count">0</span>
+      </div>
+      <div class="card-body" id="processes">
+        <div class="empty">Scanning...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Social Pipeline</h2></div>
+      <div class="card-body events" id="social-events"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Research Pipeline</h2></div>
+      <div class="card-body events" id="research-events"></div>
+    </div>
+
+    <div class="card span-2">
+      <div class="card-header"><h2>Artifacts</h2></div>
+      <div class="card-body" id="artifacts"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Drafts</h2></div>
+      <div class="card-body" id="drafts"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Posts Today</h2></div>
+      <div class="card-body" id="posts"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2>Approval Gates</h2></div>
+      <div class="card-body" id="approvals"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Pipeline Controls</h2></div>
+      <div class="card-body" id="controls">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-trigger" onclick="triggerPipeline('social')">Run Social Pipeline</button>
+          <button class="btn-trigger" onclick="triggerPipeline('social-skip-art')">Run (Skip Art)</button>
+          <button class="btn-trigger" onclick="triggerPipeline('social-art-only')">Art Only</button>
+          <button class="btn-trigger" onclick="triggerPipeline('social-skip-curator')">Skip Curator</button>
+        </div>
+        <div id="trigger-status" style="margin-top:8px;font-size:11px;color:var(--dim)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let ws;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => $('status').className = 'status-dot on';
+  ws.onclose = () => { $('status').className = 'status-dot off'; setTimeout(connect, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = e => {
+    try { render(JSON.parse(e.data)); } catch(err) { console.error(err); }
+  };
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function render(s) {
+  $('clock').textContent = s.ts;
+  renderProcs(s.processes);
+  renderEvts('social-events', s.social_events);
+  renderEvts('research-events', s.research_events);
+  renderArtifacts(s.artifacts);
+  renderDrafts(s.artifacts);
+  renderPosts(s.posts_today);
+  renderApprovals(s.approvals);
+}
+
+function renderProcs(p) {
+  $('proc-count').textContent = p?.length || 0;
+  if (!p?.length) { $('processes').innerHTML = '<div class="empty">No pipelines running</div>'; return; }
+  $('processes').innerHTML = p.map(x => {
+    const tag = x.type === 'agent' ? 'tag-agent' :
+      x.type.includes('social') ? 'tag-social' :
+      x.type.includes('engagement') ? 'tag-engagement' : 'tag-research';
+    return `<div class="proc">
+      <span class="tag ${tag}">${esc(x.type)}</span>
+      <span class="proc-name">${esc(x.name)}</span>
+      <span class="proc-meta">
+        <span>PID ${x.pid}</span>
+        <span>CPU ${x.cpu}%</span>
+        <span>MEM ${x.mem}%</span>
+      </span>
+      <button class="btn-kill" onclick="killPid('${x.pid}')">kill</button>
+    </div>`;
+  }).join('');
+}
+
+function renderEvts(id, evts) {
+  if (!evts?.length) { $(id).innerHTML = '<div class="empty">No events</div>'; return; }
+  $(id).innerHTML = evts.slice().reverse().map(e => {
+    const ts = (e.ts||'').split('T')[1]?.replace('Z','')?.substring(0,8) || '';
+    return `<div class="evt ${e.level||'info'}">
+      <span class="evt-ts">${ts}</span>
+      <span class="evt-stage">${esc(e.stage)}</span>
+      <span class="evt-msg">${esc(e.msg)}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderArtifacts(a) {
+  if (!a) { $('artifacts').innerHTML = ''; return; }
+  let h = '';
+
+  if (a.brief) {
+    h += `<div class="brief-box">${esc(a.brief.anchor)}</div>
+      <div class="brief-meta">
+        <span class="badge" style="background:var(--accent-dim);color:var(--accent)">${esc(a.brief.emotional_register)}</span>
+        <span class="badge" style="background:var(--yellow-dim);color:var(--yellow)">${esc(a.brief.confidence)}</span>
+        ${a.brief.anchor_source ? `<span>${esc(a.brief.anchor_source)}</span>` : ''}
+      </div>`;
+  }
+
+  if (a.art_concept) {
+    h += `<div class="section-label">Art Concept</div>
+      <div class="brief-box" style="border-left-color:var(--yellow)">${esc(a.art_concept.metaphor)}</div>`;
+  }
+
+  if (a.linkedin_image || a.bluesky_image) {
+    h += '<div class="section-label">Generated Images</div><div class="images-grid">';
+    if (a.linkedin_image) {
+      h += `<div class="img-box">
+        <img src="/api/image/linkedin?t=${Date.now()}" alt="LinkedIn">
+        <div class="img-info"><span>LinkedIn</span><span>${a.linkedin_image.size_kb}KB &middot; ${a.linkedin_image.modified}</span></div>
+      </div>`;
+    }
+    if (a.bluesky_image) {
+      h += `<div class="img-box">
+        <img src="/api/image/bluesky?t=${Date.now()}" alt="Bluesky">
+        <div class="img-info"><span>Bluesky</span><span>${a.bluesky_image.size_kb}KB &middot; ${a.bluesky_image.modified}</span></div>
+      </div>`;
+    }
+    h += '</div>';
+  }
+
+  if (a.art_review) {
+    const r = a.art_review;
+    h += `<div class="section-label">Art Review</div>
+      <div class="brief-box" style="border-left-color:${r.linkedin_verdict==='APPROVED'?'var(--green)':'var(--red)'}">
+        <strong>LinkedIn:</strong> ${esc(r.linkedin_verdict)} &nbsp; <strong>Bluesky:</strong> ${esc(r.bluesky_verdict)}
+        <br><br>${esc(r.feedback?.substring(0, 500))}
+      </div>`;
+  }
+
+  $('artifacts').innerHTML = h || '<div class="empty">No artifacts</div>';
+}
+
+function renderDrafts(a) {
+  if (!a) { $('drafts').innerHTML = ''; return; }
+  let h = '';
+  for (const p of ['x','bluesky','linkedin']) {
+    const d = a[p+'_draft'];
+    if (!d) continue;
+    let content = d.content || '';
+    const parts = content.split('---');
+    if (parts.length >= 3) content = parts[1].trim();
+    h += `<div class="draft">
+      <div class="draft-header">
+        <span class="draft-platform">${p}</span>
+        <span class="draft-time">${d.modified}</span>
+      </div>
+      <div class="draft-body">${esc(content)}</div>
+    </div>`;
+  }
+  $('drafts').innerHTML = h || '<div class="empty">No drafts</div>';
+}
+
+function renderPosts(posts) {
+  if (!posts?.length) { $('posts').innerHTML = '<div class="empty">No posts today</div>'; return; }
+  $('posts').innerHTML = posts.map(p => {
+    const cls = p.posted ? 'badge-posted' : 'badge-pending';
+    return `<div class="post-row">
+      <span class="post-platform">${esc(p.platform)}</span>
+      <span class="badge ${cls}">${p.posted ? 'posted' : 'pending'}</span>
+      <span class="post-anchor">${esc((p.anchor_text||'').substring(0,80))}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderApprovals(approvals) {
+  if (!approvals?.length) { $('approvals').innerHTML = '<div class="empty">No approvals today</div>'; return; }
+  $('approvals').innerHTML = approvals.map(a => {
+    const statusCls = a.status === 'decided' ? 'badge-posted' : 'badge-pending';
+    const time = (a.created_at || '').split(' ')[1] || '';
+    return `<div class="approval-row">
+      <span class="approval-stage">${esc(a.stage)}</span>
+      <span class="badge ${statusCls}">${esc(a.status)}</span>
+      <span class="approval-time">${time}</span>
+    </div>`;
+  }).join('');
+}
+
+async function triggerPipeline(pipeline) {
+  const status = $('trigger-status');
+  status.textContent = 'Starting ' + pipeline + '...';
+  try {
+    const res = await fetch('/api/trigger?pipeline=' + pipeline, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = 'Started ' + pipeline + ' (PID ' + data.pid + ')';
+      status.style.color = 'var(--green)';
+    } else {
+      status.textContent = 'Failed: ' + data.error;
+      status.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+  setTimeout(() => { status.textContent = ''; status.style.color = 'var(--dim)'; }, 5000);
+}
+
+async function killPid(pid) {
+  const btn = event.target;
+  if (btn.dataset.confirming) {
+    btn.dataset.confirming = '';
+    btn.textContent = 'kill';
+    await fetch('/api/kill?pid=' + pid, { method: 'POST' });
+    return;
+  }
+  btn.dataset.confirming = '1';
+  btn.textContent = 'confirm?';
+  btn.style.background = 'rgba(248,113,113,0.35)';
+  setTimeout(() => {
+    if (btn.dataset.confirming) {
+      btn.dataset.confirming = '';
+      btn.textContent = 'kill';
+      btn.style.background = '';
+    }
+  }, 3000);
+}
+
+connect();
+</script>
+</body>
+</html>

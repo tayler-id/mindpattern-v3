@@ -1,0 +1,611 @@
+"""Main pipeline runner — deterministic state machine.
+
+Python controls the phase sequence. Each phase is either a focused claude -p call
+or a Python-only step. The LLM never decides what phase comes next.
+"""
+
+import json
+import logging
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+import memory
+from . import agents as agent_dispatch
+from .checkpoint import Checkpoint
+from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
+from .traces_db import (
+    get_db as get_traces_db,
+    create_pipeline_run,
+    complete_pipeline_run,
+    log_event,
+    create_phase as traces_create_phase,
+    complete_phase as traces_complete_phase,
+)
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+class ResearchPipeline:
+    """Orchestrates the full research pipeline for a single user."""
+
+    def __init__(self, user_id: str, date_str: str | None = None):
+        self.user_id = user_id
+        self.date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+        self.user_config = agent_dispatch.load_user_config(user_id)
+        self.global_config = agent_dispatch.load_global_config()
+        self.db = memory.get_db(user_id=user_id)
+        self.trends: list[dict] = []
+        self.agent_results: list = []
+        self.newsletter_text: str = ""
+
+        # Traces DB for observability
+        self.traces_conn = get_traces_db()
+        self.checkpoint = Checkpoint(self.traces_conn)
+
+        # Create pipeline run in traces.db so dashboard can see it
+        self.pipeline = PipelineRun("research", user_id, self.date_str)
+        self.traces_run_id = create_pipeline_run(
+            self.traces_conn,
+            pipeline_type="research",
+            trigger="manual",
+            metadata=json.dumps({"user_id": user_id, "date": self.date_str}),
+            run_id=self.pipeline.run_id,
+            status="running",
+        )
+
+    def run(self) -> int:
+        """Execute the full pipeline. Returns exit code (0=success, 1=failure)."""
+        logger.info(f"Starting pipeline {self.pipeline.run_id} for {self.user_id}")
+
+        # Check for resumable run
+        resume_id = self.checkpoint.find_resumable_run(self.user_id, self.date_str)
+        if resume_id:
+            resume_phase = self.checkpoint.resume_from(resume_id)
+            if resume_phase:
+                logger.info(f"Resuming from {resume_phase.value} (run {resume_id})")
+                self.pipeline.run_id = resume_id
+                self.pipeline.current_phase = resume_phase
+                return self._execute_from(resume_phase)
+
+        return self._execute_from(Phase.INIT)
+
+    def _execute_from(self, start_phase: Phase) -> int:
+        """Execute phases starting from the given phase."""
+        from .pipeline import PHASE_ORDER
+
+        start_idx = PHASE_ORDER.index(start_phase) if start_phase in PHASE_ORDER else 0
+
+        for phase in PHASE_ORDER[start_idx:]:
+            if phase in {Phase.COMPLETED, Phase.FAILED}:
+                break
+
+            phase_start = time.monotonic()
+
+            try:
+                # Skip transition if we're already at this phase (e.g. INIT at start)
+                if self.pipeline.current_phase != phase:
+                    self.pipeline.transition(phase)
+                logger.info(f"Phase: {phase.value}")
+
+                # Log phase start to traces.db
+                log_event(self.traces_conn, self.traces_run_id,
+                          f"phase_{phase.value}_start", "{}")
+
+                handler = self._get_phase_handler(phase)
+                if handler:
+                    result = handler()
+                    self.pipeline.complete_phase(phase, result)
+                    self.checkpoint.save(self.pipeline.run_id, phase, result)
+                else:
+                    logger.warning(f"No handler for phase {phase.value}, skipping")
+                    self.pipeline.complete_phase(phase)
+                    self.checkpoint.save(self.pipeline.run_id, phase)
+                    result = {}
+
+                # Log phase completion
+                duration_ms = int((time.monotonic() - phase_start) * 1000)
+                log_event(self.traces_conn, self.traces_run_id,
+                          f"phase_{phase.value}_complete",
+                          json.dumps({"duration_ms": duration_ms, "result": str(result)[:500]}))
+
+            except Exception as e:
+                error_msg = f"{phase.value}: {e}"
+                duration_ms = int((time.monotonic() - phase_start) * 1000)
+                logger.error(error_msg, exc_info=True)
+
+                log_event(self.traces_conn, self.traces_run_id,
+                          f"phase_{phase.value}_failed",
+                          json.dumps({"error": str(e)[:500], "duration_ms": duration_ms}))
+
+                if phase in CRITICAL_PHASES:
+                    self.pipeline.fail(error_msg)
+                    complete_pipeline_run(self.traces_conn, self.traces_run_id,
+                                         status="failed", error=error_msg)
+                    self._send_alert(f"CRITICAL: {error_msg}")
+                    return 1
+                else:
+                    self.pipeline.fail_phase(phase, str(e))
+                    logger.warning(f"Non-critical phase {phase.value} failed, continuing")
+                    self.checkpoint.save(self.pipeline.run_id, phase, {"error": str(e)})
+
+        # Mark completed
+        self.pipeline.transition(Phase.COMPLETED)
+        self.checkpoint.save(self.pipeline.run_id, Phase.COMPLETED)
+
+        warnings = self.pipeline.warnings
+        if warnings:
+            complete_pipeline_run(self.traces_conn, self.traces_run_id,
+                                  status="completed",
+                                  error=json.dumps({"warnings": warnings}))
+            logger.warning(f"Completed with {len(warnings)} warnings")
+        else:
+            complete_pipeline_run(self.traces_conn, self.traces_run_id, status="completed")
+
+        logger.info(f"Pipeline {self.pipeline.run_id} completed")
+        return 0
+
+    def _get_phase_handler(self, phase: Phase):
+        """Map phases to their handler methods."""
+        return {
+            Phase.INIT: self._phase_init,
+            Phase.TREND_SCAN: self._phase_trend_scan,
+            Phase.RESEARCH: self._phase_research,
+            Phase.SYNTHESIS: self._phase_synthesis,
+            Phase.DELIVER: self._phase_deliver,
+            Phase.LEARN: self._phase_learn,
+            Phase.SOCIAL: self._phase_social,
+            Phase.ENGAGEMENT: self._phase_engagement,
+            Phase.SYNC: self._phase_sync,
+        }.get(phase)
+
+    # ── Phase handlers ─────────────────────────────────────────────────
+
+    def _phase_init(self) -> dict:
+        """Phase 1: Init (Python only, no LLM)."""
+        prefs = memory.list_preferences(self.db, email=self.user_config.get("email"), effective=True)
+        logger.info(f"Loaded {len(prefs)} preferences")
+
+        try:
+            resend_key = self._keychain_lookup("resend-api-key")
+            if resend_key:
+                fb_result = memory.fetch_feedback(
+                    self.db, resend_key,
+                    user_email=self.user_config.get("email"),
+                )
+                logger.info(f"Feedback: {fb_result.get('fetched', 0)} new, {fb_result.get('pending_feedback', 0)} pending")
+        except Exception as e:
+            logger.warning(f"Feedback fetch failed (non-critical): {e}")
+
+        failures = memory.recent_failures(self.db, limit=10)
+        if failures:
+            logger.info(f"Loaded {len(failures)} recent failure lessons")
+
+        return {"preferences_count": len(prefs), "failures_loaded": len(failures)}
+
+    def _phase_trend_scan(self) -> dict:
+        """Phase 2: Trend Scan (Haiku).
+
+        Skippable — if it fails, research agents run without trends.
+        """
+        # Instead of using a template with {url_summaries} that we don't have,
+        # ask the LLM to search for trends directly
+        prompt = (
+            f"Today is {self.date_str}. Search the web for the latest AI and tech news. "
+            f"Identify 5-8 trending topics relevant to developers building with AI.\n\n"
+            f"Focus on: AI agents, vibe coding, developer tools, ML infrastructure, AI security.\n"
+            f"Ignore: funding rounds, hiring, stock prices.\n\n"
+            f"Output ONLY a valid JSON array. Each element: "
+            f'{{\"topic\": \"string\", \"evidence\": \"string\", \"relevance_score\": 0.0-1.0}}\n\n'
+            f"No markdown fences. No explanation. Just the JSON array."
+        )
+
+        output, exit_code = agent_dispatch.run_claude_prompt(
+            prompt, "trend_scan",
+            allowed_tools=["WebSearch", "WebFetch"],
+        )
+
+        if exit_code != 0 or not output.strip():
+            logger.warning("Trend scan returned no output")
+            return {"trends": []}
+
+        # Try to parse JSON from output (may have text around it)
+        import re
+        try:
+            self.trends = json.loads(output.strip())
+            if isinstance(self.trends, dict):
+                self.trends = self.trends.get("topics", self.trends.get("trends", []))
+        except json.JSONDecodeError:
+            # Try to find JSON array in output
+            match = re.search(r'\[[\s\S]*\]', output)
+            if match:
+                try:
+                    self.trends = json.loads(match.group())
+                except json.JSONDecodeError:
+                    self.trends = []
+            else:
+                self.trends = []
+
+        if not isinstance(self.trends, list):
+            self.trends = []
+
+        logger.info(f"Trend scan: {len(self.trends)} topics identified")
+        return {"trends": self.trends}
+
+    def _phase_research(self) -> dict:
+        """Phase 3: Research (13x Sonnet, parallel)."""
+        memory.clear_claims(self.db, self.date_str)
+
+        def context_fn(agent_name, date_str):
+            return memory.get_context(self.db, agent_name, date_str)
+
+        current_claims = [c["topic_hash"] for c in memory.list_claims(self.db, self.date_str)]
+
+        self.agent_results = agent_dispatch.dispatch_research_agents(
+            user_id=self.user_id,
+            date_str=self.date_str,
+            context_fn=context_fn,
+            trends=self.trends,
+            claims=current_claims,
+            max_workers=6,
+        )
+
+        total_stored = 0
+        for result in self.agent_results:
+            if result.error and not result.findings:
+                continue
+
+            for finding in result.findings:
+                try:
+                    title = finding.get("title", "")
+                    summary = finding.get("summary", "")
+                    if not title or not summary:
+                        continue
+
+                    # Dedup: check if a very similar finding exists in the last 30 days
+                    existing = memory.search_findings(
+                        self.db, f"{title}. {summary}", limit=1, days=30,
+                    )
+                    if existing and existing[0].get("similarity", 0) > 0.85:
+                        logger.debug(
+                            f"Skipping duplicate: '{title[:50]}' "
+                            f"(sim={existing[0]['similarity']:.2f} with '{existing[0]['title'][:50]}')"
+                        )
+                        continue
+
+                    memory.store_finding(
+                        self.db,
+                        run_date=self.date_str,
+                        agent=result.agent_name,
+                        title=title,
+                        summary=summary,
+                        importance=finding.get("importance", "medium"),
+                        category=finding.get("category"),
+                        source_url=finding.get("source_url"),
+                        source_name=finding.get("source_name"),
+                    )
+                    total_stored += 1
+
+                    if finding.get("source_url"):
+                        from urllib.parse import urlparse
+                        domain = urlparse(finding["source_url"]).netloc
+                        if domain:
+                            memory.store_source(
+                                self.db, domain,
+                                name=finding.get("source_name"),
+                                quality="high" if finding.get("importance") == "high" else "medium",
+                                date=self.date_str,
+                            )
+                except Exception as e:
+                    logger.warning(f"Failed to store finding from {result.agent_name}: {e}")
+
+            memory.log_agent_run(
+                self.db, result.agent_name, self.date_str,
+                findings_count=len(result.findings),
+            )
+
+        successful = sum(1 for r in self.agent_results if not r.error)
+        logger.info(f"Research: {successful} agents succeeded, {total_stored} findings stored")
+
+        if total_stored == 0:
+            raise RuntimeError("Zero findings stored — research phase failed")
+
+        return {
+            "agents_dispatched": len(self.agent_results),
+            "agents_succeeded": successful,
+            "findings_stored": total_stored,
+        }
+
+    def _phase_synthesis(self) -> dict:
+        """Phase 4: Synthesis (Opus, two passes).
+
+        Pass 1: Story selection from summaries.
+        Pass 2: Newsletter writing from full reports.
+        """
+        today_findings = self.db.execute(
+            "SELECT agent, title, summary, importance, source_url, source_name "
+            "FROM findings WHERE run_date = ?",
+            (self.date_str,),
+        ).fetchall()
+
+        if not today_findings:
+            raise RuntimeError("No findings available for synthesis")
+
+        # Build summaries for pass 1 — full text, not truncated (we have 1M context)
+        summaries = []
+        for f in today_findings:
+            source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or ''
+            summaries.append(
+                f"[{f['agent']}] ({f['importance']}) {f['title']}\n"
+                f"  Source: {source}\n"
+                f"  {f['summary']}"
+            )
+
+        prefs = memory.list_preferences(self.db, effective=True)
+        pref_text = "\n".join(
+            f"- {p['topic']}: weight {p.get('effective_weight', p['weight'])}"
+            for p in prefs
+        ) if prefs else "No specific preferences."
+
+        trends_text = ", ".join(
+            t.get("topic", "") for t in self.trends
+        ) if self.trends else "No trending topics identified."
+
+        newsletter_title = self.user_config.get("newsletter_title", "Research Agent")
+
+        # Pass 1: Story selection (inline prompt — no template placeholders to miss)
+        pass1_prompt = (
+            f"Select exactly 5 stories from these {len(summaries)} findings for today's newsletter.\n\n"
+            f"Date: {self.date_str}\n\n"
+            f"## User Preferences\n{pref_text}\n\n"
+            f"## Trending Topics\n{trends_text}\n\n"
+            f"## Findings\n" + "\n".join(summaries) + "\n\n"
+            f"Selection criteria: cross-agent convergence, quantitative evidence, "
+            f"builder relevance, source diversity.\n\n"
+            f"Output ONLY a JSON array of 5 objects: "
+            f'[{{"story_title": "...", "agent": "...", "section": "...", "reason": "..."}}]\n'
+            f"No markdown fences. No explanation. Just JSON."
+        )
+
+        pass1_output, exit_code = agent_dispatch.run_claude_prompt(pass1_prompt, "synthesis_pass1")
+        if exit_code != 0:
+            logger.warning("Synthesis pass 1 failed, using all findings for pass 2")
+            pass1_output = ""
+
+        # Pass 2: Newsletter writing (inline prompt)
+        full_findings = []
+        for f in today_findings:
+            source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or 'unknown'
+            full_findings.append(
+                f"### [{f['agent']}] {f['title']} ({f['importance']})\n"
+                f"Source: {source}\n{f['summary']}\n"
+            )
+
+        failures = memory.recent_failures(self.db, limit=5)
+        failure_text = ""
+        if failures:
+            failure_text = "\n## Previous failures to avoid:\n" + "\n".join(
+                f"- [{fl['category']}] {fl['lesson']}" for fl in failures
+            )
+
+        pass2_prompt = (
+            f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
+            f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
+            f"## Story Selection\n{pass1_output or 'Use your judgment to select the Top 5.'}\n\n"
+            f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
+            f"## User Preferences\n{pref_text}\n\n"
+            f"{failure_text}\n\n"
+            f"## Structure\n"
+            f"1. Top 5 (200-400 words each with source links)\n"
+            f"2. Per-section deep dives (skip empty sections)\n"
+            f"3. Skills of the Day (10 actionable skills)\n\n"
+            f"## Rules\n"
+            f"- Every claim must have a source link [Source Name](url)\n"
+            f"- No story in more than one section\n"
+            f"- Voice: direct, technical, opinionated. Not corporate.\n"
+            f"- MINIMUM 4000 words. Target 4500. The newsletter MUST be comprehensive.\n"
+            f"- Write 200-400 words per Top 5 story. Write 100-200 words per deep dive finding.\n"
+            f"- Include ALL sections that have findings. Do not skip sections to save space.\n\n"
+            f"Output ONLY the newsletter markdown. Start with the title. No meta-commentary."
+        )
+
+        self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(pass2_prompt, "synthesis_pass2")
+
+        if exit_code != 0 or not self.newsletter_text.strip():
+            raise RuntimeError("Synthesis pass 2 failed — no newsletter generated")
+
+        # Save the report with timestamp so multiple runs per day work
+        report_dir = PROJECT_ROOT / "reports" / self.user_id
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        # Primary file: date.md (latest version)
+        report_path = report_dir / f"{self.date_str}.md"
+        report_path.write_text(self.newsletter_text)
+
+        # Also save timestamped copy for history
+        ts = datetime.now().strftime("%H%M%S")
+        archive_path = report_dir / f"{self.date_str}-{ts}.md"
+        archive_path.write_text(self.newsletter_text)
+
+        word_count = len(self.newsletter_text.split())
+        logger.info(f"Newsletter written: {word_count} words → {report_path}")
+
+        return {"word_count": word_count, "report_path": str(report_path)}
+
+    def _phase_deliver(self) -> dict:
+        """Phase 5: Deliver (Python only). Convert to HTML, send via Resend."""
+        from .newsletter import send_newsletter, validate_report
+
+        report_path = PROJECT_ROOT / "reports" / self.user_id / f"{self.date_str}.md"
+
+        # Validate report
+        validation = validate_report(
+            report_path, traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
+        )
+        logger.info(f"Report validation: {validation.get('final_bytes', 0)} bytes")
+
+        # Append feedback footer before sending
+        try:
+            footer = memory.get_feedback_footer(self.db)
+            if footer:
+                content = report_path.read_text()
+                report_path.write_text(content + "\n\n" + footer)
+                logger.info("Feedback footer appended")
+        except Exception as e:
+            logger.warning(f"Could not append feedback footer: {e}")
+
+        # Send
+        result = send_newsletter(
+            report_path, self.user_config, self.date_str,
+            traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
+        )
+
+        if result.get("success"):
+            logger.info(f"Newsletter sent: {result.get('resend_id')}")
+        else:
+            logger.warning(f"Newsletter send failed: {result.get('error')}")
+
+        return result
+
+    def _phase_learn(self) -> dict:
+        """Phase 6: Learn (Python + one Sonnet call)."""
+        trending_topics = ",".join(t.get("topic", "") for t in self.trends) if self.trends else None
+        quality = memory.evaluate_run(self.db, self.date_str, trending_topics=trending_topics)
+        logger.info(f"Quality score: {quality.get('overall_score', 'N/A')}")
+
+        if quality.get("warning"):
+            memory.store_failure(
+                self.db, self.date_str, "quality_drop",
+                quality["warning"],
+                f"Overall score {quality['overall_score']:.3f} vs 7-day avg {quality.get('7day_avg', 'N/A')}"
+            )
+
+        consolidate_result = memory.consolidate(self.db)
+        promote_result = memory.promote(self.db)
+        prune_result = memory.prune(self.db)
+
+        # Regenerate learnings.md
+        stats = memory.get_stats(self.db)
+        learnings_prompt = (
+            f"Regenerate the learnings.md summary for the mindpattern research agent.\n"
+            f"Date: {self.date_str}\n\n"
+            f"Database stats: {json.dumps(stats, indent=2)}\n\n"
+            f"Quality this run: {json.dumps(quality, indent=2)}\n\n"
+            f"Write a concise learnings summary covering:\n"
+            f"- Key findings from recent runs\n"
+            f"- Patterns observed\n"
+            f"- Source insights\n"
+            f"- Agent performance notes\n\n"
+            f"Output ONLY the markdown. Keep to the 5 most recent runs."
+        )
+        output, _ = agent_dispatch.run_claude_prompt(learnings_prompt, "learnings_update")
+        if output.strip():
+            dest = PROJECT_ROOT / "data" / self.user_id / "learnings.md"
+            dest.write_text(output)
+            logger.info(f"Learnings.md regenerated ({len(output)} chars)")
+
+        return {
+            "quality": quality,
+            "consolidated": consolidate_result,
+            "promoted": promote_result,
+            "pruned": prune_result,
+        }
+
+    def _phase_social(self) -> dict:
+        """Phase 7: Social (SocialPipeline).
+
+        EIC picks topic → brief → art → writers → critics → approve → post.
+        """
+        from social.pipeline import SocialPipeline
+
+        social_config_path = PROJECT_ROOT / "social-config.json"
+        with open(social_config_path) as f:
+            social_config = json.load(f)
+
+        pipeline = SocialPipeline(self.user_id, social_config, self.db)
+        result = pipeline.run()
+
+        if result.get("kill_day"):
+            logger.info("Social: kill day — no good topics found")
+        elif result.get("posts"):
+            platforms = [p.get("platform") for p in result["posts"]]
+            logger.info(f"Social: posted to {platforms}")
+        else:
+            logger.info(f"Social: completed with result: {list(result.keys())}")
+
+        return result
+
+    def _phase_engagement(self) -> dict:
+        """Phase 8: Engagement.
+
+        Find conversations → draft replies → approve → post + auto-follow.
+        """
+        from social.engagement import EngagementPipeline
+
+        social_config_path = PROJECT_ROOT / "social-config.json"
+        with open(social_config_path) as f:
+            social_config = json.load(f)
+
+        pipeline = EngagementPipeline(self.user_id, social_config, self.db)
+        result = pipeline.run()
+
+        logger.info(
+            f"Engagement: {result.get('replies_posted', 0)} replies, "
+            f"{result.get('follows', 0)} follows"
+        )
+        return result
+
+    def _phase_sync(self) -> dict:
+        """Phase 9: Sync to Fly.io.
+
+        Bundle memory.db + reports → upload → dashboard gets fresh data.
+        """
+        from .sync import sync_to_fly
+
+        data_dir = PROJECT_ROOT / "data"
+        result = sync_to_fly(
+            self.user_id, data_dir,
+            app_name="mindpattern",
+            traces_conn=self.traces_conn,
+        )
+
+        if result.get("success"):
+            logger.info(f"Sync: {result.get('bytes_uploaded', 0)} bytes uploaded")
+        else:
+            logger.warning(f"Sync failed: {result.get('error')}")
+
+        return result
+
+    # ── Helpers ─────────────────────────────────────────────────────────
+
+    def _keychain_lookup(self, service_name: str) -> str | None:
+        import subprocess
+        try:
+            return subprocess.check_output(
+                ["security", "find-generic-password", "-s", service_name, "-w"],
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+        except subprocess.CalledProcessError:
+            return None
+
+    def _send_alert(self, message: str):
+        phone = self.user_config.get("phone")
+        if not phone:
+            logger.warning(f"No phone number for alerts: {message}")
+            return
+        try:
+            import subprocess
+            safe_msg = message.replace('"', '\\"')[:200]
+            script = f'tell application "Messages" to send "{safe_msg}" to buddy "{phone}"'
+            subprocess.run(["osascript", "-e", script], capture_output=True, timeout=10)
+        except Exception as e:
+            logger.warning(f"iMessage alert failed: {e}")
+
+    def close(self):
+        if self.db:
+            self.db.close()
+        if self.traces_conn:
+            self.traces_conn.close()

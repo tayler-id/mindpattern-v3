@@ -1,0 +1,441 @@
+"""Blind validation + deterministic policy checks for social drafts.
+
+The critic is BLIND -- it sees only the draft text and platform rules, never
+the brief, writer reasoning, or creative direction. This is the Zeroshot
+pattern: judge the output on its own merits.
+
+Deterministic validation uses PolicyEngine (code-enforced, not LLM judgment).
+The expeditor is the final quality gate across all platforms.
+"""
+
+import json
+import logging
+import re
+from pathlib import Path
+
+from orchestrator.agents import run_claude_prompt
+from policies.engine import PolicyEngine
+
+logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+# ── Blind critic review ─────────────────────────────────────────────────
+
+
+def review_draft(platform: str, draft_text: str) -> dict:
+    """Blind critic review -- sees ONLY the text and platform rules.
+
+    Does NOT see the brief, writer reasoning, or creative direction.
+
+    Returns: {verdict: 'APPROVED'|'REVISE', feedback: str, scores: dict}
+
+    Scores: voice_authenticity, platform_fit, engagement_potential (each 1-10)
+    """
+    prompt = _build_critic_prompt(platform, draft_text)
+
+    raw_output, exit_code = run_claude_prompt(
+        prompt,
+        task_type="critic",
+        system_prompt_file=str(PROJECT_ROOT / "agents" / f"{platform}-critic.md"),
+    )
+
+    if exit_code != 0:
+        logger.warning(f"Critic call failed for {platform} (exit {exit_code})")
+        # Critic failure = REVISE (not auto-pass)
+        return {
+            "verdict": "REVISE",
+            "feedback": f"Critic call failed with exit code {exit_code}. "
+                        "Cannot validate draft quality.",
+            "scores": {
+                "voice_authenticity": 0,
+                "platform_fit": 0,
+                "engagement_potential": 0,
+            },
+        }
+
+    return _parse_critic_output(raw_output, platform)
+
+
+# ── Deterministic policy validation ─────────────────────────────────────
+
+
+def deterministic_validate(platform: str, content: str) -> list[str]:
+    """Policy checks that cannot be gamed by prompt injection.
+
+    Uses PolicyEngine with social.json rules.
+
+    Returns list of error strings (empty = valid).
+
+    Checks:
+    - Character/grapheme limits per platform
+    - Banned words from voice guide
+    - Banned patterns (em dashes, rhetorical questions)
+    - Required elements (URL for X/Bluesky)
+    """
+    policy = PolicyEngine.load_social(PROJECT_ROOT / "policies")
+    return policy.validate_social_post(platform, content)
+
+
+# ── Expeditor (final quality gate) ──────────────────────────────────────
+
+
+def expedite(
+    drafts: dict[str, dict],
+    brief: dict,
+    images: dict,
+) -> dict:
+    """Expeditor -- final quality gate before approval.
+
+    Consolidates all platform drafts + images into a proof package.
+    Runs one Sonnet call to verify coherence across platforms.
+
+    IMPORTANT: If claude call fails, return FAIL (not auto-pass).
+
+    Returns: {verdict: 'PASS'|'FAIL', notes: str, proof_package: dict}
+    """
+    # Build the proof package
+    proof_package = {
+        "brief": brief,
+        "drafts": {},
+        "images": images or {},
+    }
+
+    for platform, draft_data in drafts.items():
+        proof_package["drafts"][platform] = {
+            "content": draft_data.get("humanized") or draft_data.get("content", ""),
+            "iterations": draft_data.get("iterations", 0),
+            "critic_verdict": draft_data.get("critic_verdict", "UNKNOWN"),
+            "policy_errors": draft_data.get("policy_errors", []),
+        }
+
+    # Load voice guide for the expeditor
+    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
+
+    prompt = _build_expeditor_prompt(proof_package, voice_guide)
+
+    raw_output, exit_code = run_claude_prompt(
+        prompt,
+        task_type="expeditor",
+        system_prompt_file=str(PROJECT_ROOT / "agents" / "expeditor.md"),
+    )
+
+    # CRITICAL: failure = FAIL, not auto-pass
+    if exit_code != 0:
+        logger.error(f"Expeditor call failed (exit {exit_code}). Returning FAIL.")
+        return {
+            "verdict": "FAIL",
+            "notes": f"Expeditor call failed with exit code {exit_code}. "
+                     "Cannot verify cross-platform coherence. "
+                     "Failing safe -- do not auto-pass.",
+            "proof_package": proof_package,
+        }
+
+    return _parse_expeditor_output(raw_output, proof_package)
+
+
+# ── Prompt builders ─────────────────────────────────────────────────────
+
+
+def _build_critic_prompt(platform: str, draft_text: str) -> str:
+    """Build blind critic prompt.
+
+    ONLY includes:
+    - The draft text
+    - Platform-specific rules (char limits, audience, tone expectations)
+    - Voice guide excerpt (what good looks like)
+
+    NOT included: brief, writer reasoning, creative direction.
+
+    Output: JSON {verdict, feedback, scores}
+    """
+    # Load voice guide for voice reference
+    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
+
+    # Platform-specific rules
+    platform_rules = _get_platform_rules(platform)
+
+    prompt = f"""You are a blind critic. You have NEVER seen the creative brief, the writer's
+reasoning, or the editorial direction. You see ONLY the draft text below and
+must judge it purely on quality.
+
+## The Draft
+
+{draft_text}
+
+## Platform Rules ({platform})
+
+{platform_rules}
+
+## Voice Guide
+
+{voice_guide}
+
+## Your Task
+
+Evaluate this draft on three dimensions (1-10 each):
+
+1. **voice_authenticity**: Does this sound like a real person? Check for:
+   - Banned words/phrases from the voice guide
+   - Em dashes (instant fail)
+   - At least 2 first-person references (I, my, me, I'm, I've)
+   - At least 1 sentence fragment
+   - Mixed sentence lengths (burstiness)
+   - No snappy triads, no broetry, no throat-clearing openers
+
+2. **platform_fit**: Is this native to {platform}? Check for:
+   - Correct length for the platform
+   - Appropriate tone and style
+   - Required elements (URLs where needed)
+   - Would this blend in naturally with real posts on this platform?
+
+3. **engagement_potential**: Would someone care about this post?
+   - Is there a genuine reaction or take (not just information)?
+   - Does it invite response without engagement-farming?
+   - Is it specific enough to be interesting?
+
+## Verdict Rules
+
+- If ANY banned word or banned phrase is present: REVISE
+- If em dash character is present: REVISE
+- If post exceeds platform character/grapheme limit: REVISE
+- If mindpattern is the grammatical subject of any main clause: REVISE
+- If any dimension scores below 5: REVISE
+- Otherwise: APPROVED
+
+## Output
+
+Respond with ONLY valid JSON, no other text:
+
+{{
+  "verdict": "APPROVED" or "REVISE",
+  "feedback": "If REVISE: specific fixes with exact quotes of what failed. If APPROVED: brief positive note.",
+  "scores": {{
+    "voice_authenticity": <1-10>,
+    "platform_fit": <1-10>,
+    "engagement_potential": <1-10>
+  }}
+}}
+"""
+    return prompt
+
+
+def _build_expeditor_prompt(proof_package: dict, voice_guide: str) -> str:
+    """Build expeditor prompt with the full proof package."""
+    # Format drafts for readability
+    drafts_section = ""
+    for platform, data in proof_package.get("drafts", {}).items():
+        content = data.get("content", "(empty)")
+        iterations = data.get("iterations", 0)
+        critic = data.get("critic_verdict", "UNKNOWN")
+        errors = data.get("policy_errors", [])
+
+        drafts_section += f"\n### {platform.upper()} Draft\n"
+        drafts_section += f"Iterations: {iterations} | Critic: {critic}\n"
+        if errors:
+            drafts_section += f"Policy errors: {', '.join(errors)}\n"
+        drafts_section += f"\n{content}\n"
+
+    brief_json = json.dumps(proof_package.get("brief", {}), indent=2)
+
+    images_section = ""
+    images = proof_package.get("images", {})
+    if images:
+        images_section = "\n## Editorial Art\n"
+        for key, path in images.items():
+            images_section += f"- {key}: {path}\n"
+    else:
+        images_section = "\n## Editorial Art\nNo images provided.\n"
+
+    prompt = f"""You are the Expeditor, the last quality gate before content reaches a human.
+
+## Creative Brief
+
+```json
+{brief_json}
+```
+
+## Platform Drafts
+{drafts_section}
+{images_section}
+
+## Voice Guide
+
+{voice_guide}
+
+## Your Task
+
+Evaluate the COMPLETE proof package for cross-platform coherence:
+
+1. **Anchor alignment**: All drafts are about the SAME topic from the brief.
+2. **No conflicting claims**: Numbers, facts, and sources are consistent across platforms.
+3. **Source consistency**: All platforms reference the same primary source(s).
+4. **Voice compliance**: Check ALL drafts for banned words, em dashes, banned phrases.
+5. **Any draft with policy errors**: Auto-FAIL.
+
+## Verdict Rules
+
+- Any kill switch violation in any draft: FAIL
+- Any draft with non-empty policy_errors: FAIL
+- Conflicting claims across platforms: FAIL
+- All drafts empty or missing: FAIL
+- Otherwise: PASS
+
+## Output
+
+Respond with ONLY valid JSON:
+
+{{
+  "verdict": "PASS" or "FAIL",
+  "quality_score": <0-10, mean of rubric dimensions>,
+  "notes": "Brief summary of evaluation.",
+  "scores": {{
+    "voice_match": <0-10>,
+    "framing_authenticity": <0-10>,
+    "platform_genre_fit": <0-10>,
+    "epistemic_calibration": <0-10>,
+    "structural_variation": <0-10>,
+    "rhetorical_framework": <0-10>
+  }},
+  "cross_platform": "consistent" or "description of inconsistencies"
+}}
+"""
+    return prompt
+
+
+# ── Platform rules reference ────────────────────────────────────────────
+
+
+def _get_platform_rules(platform: str) -> str:
+    """Return a human-readable summary of platform constraints."""
+    rules = {
+        "x": (
+            "- HARD LIMIT: 280 characters per post\n"
+            "- URLs count as 23 characters regardless of actual length (t.co wrapping)\n"
+            "- Single posts preferred, not threads\n"
+            "- 0-1 hashtags (zero is usually better)\n"
+            "- No emoji formatting or emoji bullet points\n"
+            "- Must include https://mindpattern.ai at end\n"
+            "- Tone: sharp observation, like texting a colleague you respect\n"
+            "- Audience: tech/engineering professionals"
+        ),
+        "linkedin": (
+            "- Sweet spot: 1200-1500 characters\n"
+            "- First 2 lines are the hook (truncated after ~210 chars)\n"
+            "- No broetry (one sentence per line, double-spaced)\n"
+            "- No emoji bullet points, no numbered lists as structure\n"
+            "- Must include https://mindpattern.ai at end\n"
+            "- Tone: story-shaped lesson, like a coffee chat with a peer\n"
+            "- End with a genuine, specific question\n"
+            "- Audience: professional/enterprise engineers and leaders"
+        ),
+        "bluesky": (
+            "- HARD LIMIT: 300 characters total (including URLs)\n"
+            "- URLs count toward the 300 limit\n"
+            "- SINGLE POST ONLY. Never a thread.\n"
+            "- Must include https://mindpattern.ai at end\n"
+            "- Most technical depth of the 3 platforms\n"
+            "- No viral-bait tactics\n"
+            "- Conversational, community-oriented, lowercase fine\n"
+            "- Tone: delightfully specific micro-take, like posting in a Discord\n"
+            "- Audience: technical, skeptical of hype, values substance"
+        ),
+    }
+    return rules.get(platform, f"Unknown platform: {platform}")
+
+
+# ── Output parsers ──────────────────────────────────────────────────────
+
+
+def _parse_critic_output(raw_output: str, platform: str) -> dict:
+    """Parse critic JSON response. Fail-safe: REVISE on parse error."""
+    try:
+        # Try direct JSON parse
+        data = json.loads(raw_output.strip())
+        if isinstance(data, dict) and "verdict" in data:
+            return {
+                "verdict": data.get("verdict", "REVISE"),
+                "feedback": data.get("feedback", ""),
+                "scores": data.get("scores", {}),
+            }
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find JSON in output
+    json_match = re.search(r'\{[\s\S]*"verdict"[\s\S]*\}', raw_output)
+    if json_match:
+        try:
+            data = json.loads(json_match.group())
+            return {
+                "verdict": data.get("verdict", "REVISE"),
+                "feedback": data.get("feedback", ""),
+                "scores": data.get("scores", {}),
+            }
+        except json.JSONDecodeError:
+            pass
+
+    # Parse failure -- check for APPROVED/REVISE keywords in raw text
+    raw_upper = raw_output.upper()
+    if "APPROVED" in raw_upper and "REVISE" not in raw_upper:
+        return {
+            "verdict": "APPROVED",
+            "feedback": "Parsed from non-JSON output.",
+            "scores": {},
+        }
+
+    logger.warning(
+        f"[{platform}] Could not parse critic output ({len(raw_output)} chars), "
+        f"defaulting to REVISE"
+    )
+    return {
+        "verdict": "REVISE",
+        "feedback": f"Critic output could not be parsed. Raw: {raw_output[:500]}",
+        "scores": {},
+    }
+
+
+def _parse_expeditor_output(raw_output: str, proof_package: dict) -> dict:
+    """Parse expeditor JSON response. Fail-safe: FAIL on parse error."""
+    try:
+        data = json.loads(raw_output.strip())
+        if isinstance(data, dict) and "verdict" in data:
+            return {
+                "verdict": data.get("verdict", "FAIL"),
+                "notes": data.get("notes", data.get("revision_notes", "")),
+                "proof_package": proof_package,
+                "quality_score": data.get("quality_score", 0),
+                "scores": data.get("scores", {}),
+                "cross_platform": data.get("cross_platform", "unknown"),
+            }
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find JSON in output
+    json_match = re.search(r'\{[\s\S]*"verdict"[\s\S]*\}', raw_output)
+    if json_match:
+        try:
+            data = json.loads(json_match.group())
+            return {
+                "verdict": data.get("verdict", "FAIL"),
+                "notes": data.get("notes", data.get("revision_notes", "")),
+                "proof_package": proof_package,
+                "quality_score": data.get("quality_score", 0),
+                "scores": data.get("scores", {}),
+                "cross_platform": data.get("cross_platform", "unknown"),
+            }
+        except json.JSONDecodeError:
+            pass
+
+    # Parse failure = FAIL (not auto-pass)
+    logger.error(
+        f"Could not parse expeditor output ({len(raw_output)} chars), "
+        f"defaulting to FAIL"
+    )
+    return {
+        "verdict": "FAIL",
+        "notes": f"Expeditor output could not be parsed. Failing safe. "
+                 f"Raw: {raw_output[:500]}",
+        "proof_package": proof_package,
+    }

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Data (sacred — never commit the DBs)
+data/*/memory.db
+data/*/traces.db
+
+# Reports (large, generated daily)
+reports/
+
+# Secrets
+.env
+*.pem
+social-config.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+*.jsonl
+
+# Temp
+/tmp/
+*.lock

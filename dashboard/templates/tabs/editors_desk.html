@@ -1,0 +1,90 @@
+{% include "partials/linkedin_token_warning.html" %}
+
+{% if packages %}
+<div style="margin-bottom:1rem;">
+    <h2 style="font-size:1.125rem;color:#f8fafc;margin-bottom:0.25rem;">Editor's Desk</h2>
+    <p style="font-size:0.8125rem;color:#64748b;">{{ packages|length }} package{{ "s" if packages|length != 1 else "" }} pending review</p>
+</div>
+
+{% for pkg in packages %}
+{% include "partials/proof_card.html" %}
+{% endfor %}
+
+{% else %}
+
+{% if eic_kill_reason %}
+<!-- EIC killed all topics — show explanation -->
+<div class="card" style="border:1px solid #92400e;background:#1c1917;">
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+        <span style="font-size:1.5rem;">&#9888;</span>
+        <h2 style="font-size:1.125rem;color:#fbbf24;margin:0;">No topics met the editorial bar today</h2>
+    </div>
+    <p style="font-size:0.875rem;color:#e2e8f0;line-height:1.5;">{{ eic_kill_reason }}</p>
+</div>
+{% else %}
+<div class="card empty-state">
+    <p>No proof packages pending review.</p>
+    <p style="margin-top:0.5rem;font-size:0.8125rem;">Packages will appear here after the Expeditor approves them.</p>
+</div>
+{% endif %}
+
+{% endif %}
+
+<!-- Engagement candidates section -->
+{% if engagement_count is defined and engagement_count > 0 %}
+<div style="margin-top:1.5rem;margin-bottom:1rem;">
+    <div class="card" style="border:1px solid #1e3a5f;background:#0c1929;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <h3 style="font-size:1rem;color:#38bdf8;margin:0 0 0.25rem 0;">Engagement Candidates</h3>
+                <p style="font-size:0.8125rem;color:#64748b;margin:0;">
+                    {{ engagement_count }} candidate{{ "s" if engagement_count != 1 else "" }} found for reply
+                </p>
+            </div>
+            <a href="/engagement-gate"
+               hx-get="/engagement-gate"
+               hx-target="#tab-content"
+               hx-swap="innerHTML"
+               style="padding:0.5rem 1rem;background:#1e3a5f;color:#38bdf8;border:1px solid #1e40af;border-radius:0.375rem;cursor:pointer;font-size:0.8125rem;text-decoration:none;">
+                Review Engagement
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Reviewed packages summary -->
+{% if review_summary and (review_summary.approved + review_summary.rejected + review_summary.revised) > 0 %}
+<div style="margin-top:1.5rem;" x-data="{ showReviewed: false }">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <h3 style="font-size:1rem;color:#f8fafc;margin:0;">Today's Decisions</h3>
+        <button @click="showReviewed=!showReviewed"
+                style="background:none;border:1px solid #334155;color:#64748b;border-radius:0.375rem;padding:0.25rem 0.75rem;cursor:pointer;font-size:0.75rem;"
+                x-text="showReviewed ? 'Hide details' : 'Show details'">
+            Show details
+        </button>
+    </div>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+        {% if review_summary.approved > 0 %}
+        <span style="font-size:0.875rem;color:#4ade80;background:#14532d;padding:0.25rem 0.75rem;border-radius:9999px;">
+            {{ review_summary.approved }} approved
+        </span>
+        {% endif %}
+        {% if review_summary.rejected > 0 %}
+        <span style="font-size:0.875rem;color:#f87171;background:#7f1d1d;padding:0.25rem 0.75rem;border-radius:9999px;">
+            {{ review_summary.rejected }} rejected
+        </span>
+        {% endif %}
+        {% if review_summary.revised > 0 %}
+        <span style="font-size:0.875rem;color:#fbbf24;background:#78350f;padding:0.25rem 0.75rem;border-radius:9999px;">
+            {{ review_summary.revised }} sent back
+        </span>
+        {% endif %}
+    </div>
+    <div x-show="showReviewed" x-cloak>
+        {% for pkg in reviewed_packages %}
+        {% include "partials/reviewed_card.html" %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}

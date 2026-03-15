@@ -1,0 +1,45 @@
+{
+  "editorial_angle": "Google just published a protocol that treats your UI as an API for AI agents. Not accessibility. Not automation. A first-class citizen spec for machines navigating interfaces built for humans. The deeper story: we're entering a world where UIs have two audiences — humans and agents — and nobody's figured out what happens when those audiences want different things. This isn't the agentic web arriving. It's the moment someone tried to write the spec for it.",
+  "key_message": "Google's A2UI protocol means the 'user' in user interface is no longer assumed to be human.",
+  "emotional_register": "curious",
+  "tone": "conversational-authoritative",
+  "source_attribution": {
+    "primary": {"name": "Google A2UI on GitHub", "url": "https://github.com/google/A2UI"},
+    "supporting": []
+  },
+  "visual_metaphor_direction": {
+    "core_tension": "A human hand and a robotic arm both reaching for the same UI control — the interface was designed for one, now claimed by both. Neither fully owns it.",
+    "suggested_approach": "caricature",
+    "mood": "surreal",
+    "key_elements": [
+      "Google logo or 'G' branding on the interface or screen",
+      "A physical control panel or dashboard with human-centric affordances: buttons, dials, labeled inputs",
+      "A mechanical or skeletal robot arm reaching in from one side, finger extended toward a control",
+      "A human hand reaching from the other side, slightly displaced or uncertain",
+      "A placard or label reading 'USER' that has been partially relabeled or overlaid with 'AGENT'"
+    ],
+    "avoid": [
+      "Friendly robots or cute AI mascots — this is not a consumer product launch",
+      "Abstract neural network imagery, glowing nodes, or digital particle effects",
+      "Smartphones or laptops as the primary interface device — too generic",
+      "Any sense of triumph or celebration — the mood is unresolved curiosity, not victory",
+      "Dystopian darkness or threat — surreal and curious, not ominous"
+    ]
+  },
+  "platform_hooks": {
+    "x": {
+      "hook": "The 'user' in UI might not be you anymore.",
+      "angle": "Google just published a protocol for AI agents to navigate UIs. That's not a feature. That's a new primary audience."
+    },
+    "linkedin": {
+      "hook": "Your product has two users now. One of them is an AI.",
+      "angle": "Google's A2UI spec formalizes something product teams have been ignoring: agents are using your interfaces, and they weren't designed for them. What does it actually mean to do UX for a machine?"
+    },
+    "bluesky": {
+      "hook": "Google dropped a spec for AI agents to navigate UIs and I can't stop thinking about it.",
+      "angle": "A2UI is basically: here's how an agent should understand a button. Fifty years of designing UIs for human perception and now we're writing the machine-readable version. Weird moment to be paying attention."
+    }
+  },
+  "do_not_include": [],
+  "mindpattern_link": "https://mindpattern.ai"
+}

@@ -1,0 +1,145 @@
+<div>
+
+{% include "partials/linkedin_token_warning.html" %}
+
+{% if pipeline_run %}
+<div class="card">
+    <h2>Pipeline Run</h2>
+    <div class="meta">
+        <div class="meta-item">
+            <span class="meta-label">Run ID</span><br>
+            <span class="meta-value">{{ pipeline_run.id[:12] }}...</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Type</span><br>
+            <span class="meta-value">{{ pipeline_run.pipeline_type }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Status</span><br>
+            <span class="badge badge-{{ pipeline_run.status }}">{{ pipeline_run.status }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Started</span><br>
+            <span class="meta-value">{{ pipeline_run.started_at[:19] if pipeline_run.started_at else "—" }}</span>
+        </div>
+        {% if pipeline_run.completed_at %}
+        <div class="meta-item">
+            <span class="meta-label">Completed</span><br>
+            <span class="meta-value">{{ pipeline_run.completed_at[:19] }}</span>
+        </div>
+        {% endif %}
+        <div class="meta-item">
+            <span class="meta-label">Trigger</span><br>
+            <span class="meta-value">{{ pipeline_run.trigger or "—" }}</span>
+        </div>
+    </div>
+    {% if pipeline_run.error %}
+    <p class="error-text">Error: {{ pipeline_run.error }}</p>
+    {% endif %}
+</div>
+
+{% if agent_runs %}
+<div class="card">
+    <h2>Agent Runs ({{ agent_runs|length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Agent</th>
+                <th>Status</th>
+                <th>Latency</th>
+                <th>Tokens (in/out)</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for agent in agent_runs %}
+            <tr>
+                <td>{{ agent.agent_name }}</td>
+                <td><span class="badge badge-{{ agent.status }}">{{ agent.status }}</span></td>
+                <td>{{ "%.1f"|format(agent.latency_ms / 1000) ~ "s" if agent.latency_ms else "—" }}</td>
+                <td>{{ agent.input_tokens or "—" }} / {{ agent.output_tokens or "—" }}</td>
+                <td>{% if agent.error %}<span class="error-text" title="{{ agent.error }}">{{ agent.error[:80] }}{% if agent.error|length > 80 %}...{% endif %}</span>{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card empty-state">
+    <p>No pipeline runs found.</p>
+    <p style="margin-top:0.5rem;font-size:0.8125rem;">Pipeline data will appear here once the orchestrator runs.</p>
+</div>
+{% endif %}
+
+{% if recent_events %}
+<div class="card">
+    <h2>Event Stream ({{ recent_events|length }})</h2>
+    <div style="max-height:400px;overflow-y:auto;">
+        <table>
+            <thead>
+                <tr><th style="width:140px;">Time</th><th style="width:180px;">Event</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+                {% for evt in recent_events|reverse %}
+                <tr>
+                    <td style="font-size:0.75rem;color:#64748b;">{{ evt.created_at[:19] if evt.created_at else "—" }}</td>
+                    <td>
+                        {% if evt.event_type == 'watchdog_tick' %}
+                        <span class="badge badge-running">watchdog</span>
+                        {% elif evt.event_type == 'agents_dispatched' %}
+                        <span class="badge badge-orchestrator">agents dispatched</span>
+                        {% elif evt.event_type == 'agents_completed' %}
+                        <span class="badge badge-completed">agents done</span>
+                        {% elif evt.event_type == 'research_phase' %}
+                        <span class="badge badge-agent">phase {{ evt.parsed_payload.get('phase', '?') }}</span>
+                        {% elif evt.event_type == 'watchdog_kill' %}
+                        <span class="badge badge-failed">killed</span>
+                        {% elif evt.event_type == 'pipeline_state_changed' %}
+                        <span class="badge badge-pending">state change</span>
+                        {% elif evt.event_type == 'prompt_versions_captured' %}
+                        <span class="badge badge-llm_call">prompts</span>
+                        {% else %}
+                        <span class="badge">{{ evt.event_type }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size:0.8125rem;">
+                        {% if evt.event_type == 'watchdog_tick' %}
+                        {{ evt.parsed_payload.get('findings', 0) }} findings · {{ evt.parsed_payload.get('elapsed_min', 0)|round(0)|int }}m elapsed · {{ evt.parsed_payload.get('mins_since_new', 0)|round(0)|int }}m since new
+                        {% elif evt.event_type == 'agents_dispatched' %}
+                        {{ evt.parsed_payload.get('count', 0) }} agents: {{ evt.parsed_payload.get('agents', [])|join(', ') }}
+                        {% elif evt.event_type == 'research_phase' %}
+                        {{ evt.parsed_payload.get('description', '') }}
+                        {% elif evt.event_type == 'pipeline_state_changed' %}
+                        {{ evt.parsed_payload.get('old_state', '?') }} → {{ evt.parsed_payload.get('new_state', '?') }}
+                        {% elif evt.event_type == 'prompt_versions_captured' %}
+                        {{ evt.parsed_payload.get('count', 0) }} agent prompts captured
+                        {% else %}
+                        {{ evt.payload[:120] if evt.payload else "—" }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Live Pipeline Log</h2>
+    <pre id="live-log"
+         hx-get="/api/pipeline-log?lines=40"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML"
+         style="background:#0f172a;color:#a3e635;padding:1rem;border-radius:0.375rem;font-size:0.6875rem;line-height:1.6;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">Loading...</pre>
+    <script>
+        document.body.addEventListener('htmx:afterSwap', function(e) {
+            if (e.detail.target.id === 'live-log') {
+                e.detail.target.scrollTop = e.detail.target.scrollHeight;
+            }
+        });
+    </script>
+</div>
+</div>

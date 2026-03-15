@@ -1,0 +1,213 @@
+<div x-data="{
+    charts: {},
+    async loadCharts() {
+        const endpoints = [
+            { key: 'byDomain', ref: 'byDomainCanvas', type: 'bar', url: '/skills/data/by-domain', indexAxis: 'y' },
+            { key: 'byDate', ref: 'byDateCanvas', type: 'line', url: '/skills/data/by-date', indexAxis: 'x' },
+        ];
+        for (const ep of endpoints) {
+            if (this.charts[ep.key]) this.charts[ep.key].destroy();
+            try {
+                const resp = await fetch(ep.url);
+                const data = await resp.json();
+                this.charts[ep.key] = new Chart(this.$refs[ep.ref], {
+                    type: ep.type,
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: ep.indexAxis,
+                        plugins: {
+                            tooltip: { mode: 'index', intersect: false },
+                            legend: { display: false },
+                        },
+                        scales: {
+                            x: { ticks: { color: '#64748b', maxRotation: 45 }, grid: { color: '#1e293b' }, beginAtZero: true },
+                            y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' }, beginAtZero: true },
+                        },
+                    },
+                });
+            } catch (e) {
+                console.error('Failed to load chart:', ep.key, e);
+            }
+        }
+    }
+}" x-init="loadCharts()">
+
+    <!-- Summary stats bar -->
+    <div class="card">
+        <h2>Skills Browser</h2>
+        <div class="meta">
+            <div class="meta-item">
+                <span class="meta-label">Total Skills</span><br>
+                <span class="meta-value" style="font-size:1.25rem;">{{ stats.total }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Domains</span><br>
+                <span class="meta-value" style="font-size:1.25rem;">{{ stats.unique_domains }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Date Range</span><br>
+                <span class="meta-value">{{ stats.date_min }} &mdash; {{ stats.date_max }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="card">
+        <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;">
+            <div>
+                <label class="meta-label" for="filter-domain">Domain</label><br>
+                <select id="filter-domain" name="domain"
+                        hx-get="/skills"
+                        hx-include="[name='difficulty'],[name='date_from'],[name='date_to'],[name='q']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="">All Domains</option>
+                    {% for d in domains %}
+                    <option value="{{ d }}" {% if filter_domain == d %}selected{% endif %}>{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="filter-difficulty">Difficulty</label><br>
+                <select id="filter-difficulty" name="difficulty"
+                        hx-get="/skills"
+                        hx-include="[name='domain'],[name='date_from'],[name='date_to'],[name='q']"
+                        hx-target="#main-content" hx-swap="innerHTML"
+                        style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+                    <option value="">All</option>
+                    <option value="beginner" {% if filter_difficulty == 'beginner' %}selected{% endif %}>Beginner</option>
+                    <option value="intermediate" {% if filter_difficulty == 'intermediate' %}selected{% endif %}>Intermediate</option>
+                    <option value="advanced" {% if filter_difficulty == 'advanced' %}selected{% endif %}>Advanced</option>
+                </select>
+            </div>
+            <div>
+                <label class="meta-label" for="filter-date-from">From</label><br>
+                <input type="date" id="filter-date-from" name="date_from" value="{{ filter_date_from }}"
+                       hx-get="/skills"
+                       hx-include="[name='domain'],[name='difficulty'],[name='date_to'],[name='q']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+            </div>
+            <div>
+                <label class="meta-label" for="filter-date-to">To</label><br>
+                <input type="date" id="filter-date-to" name="date_to" value="{{ filter_date_to }}"
+                       hx-get="/skills"
+                       hx-include="[name='domain'],[name='difficulty'],[name='date_from'],[name='q']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;">
+            </div>
+            <div>
+                <label class="meta-label" for="filter-q">Search</label><br>
+                <input type="text" id="filter-q" name="q" value="{{ filter_q }}" placeholder="Search titles &amp; descriptions..."
+                       hx-get="/skills"
+                       hx-include="[name='domain'],[name='difficulty'],[name='date_from'],[name='date_to']"
+                       hx-target="#main-content" hx-swap="innerHTML"
+                       hx-trigger="keyup changed delay:400ms"
+                       style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:0.25rem;padding:0.375rem 0.5rem;font-size:0.8125rem;min-width:200px;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="card">
+            <h2>Skills by Domain</h2>
+            <div style="height: 280px;"><canvas x-ref="byDomainCanvas"></canvas></div>
+        </div>
+        <div class="card">
+            <h2>Skills Discovered Over Time</h2>
+            <div style="height: 280px;"><canvas x-ref="byDateCanvas"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+            <h2>Results</h2>
+            <span style="font-size:0.8125rem;color:#64748b;">
+                {{ total_count }} skill{{ 's' if total_count != 1 else '' }}
+                &middot; Page {{ page }} of {{ total_pages }}
+            </span>
+        </div>
+
+        {% if skills %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Domain</th>
+                    <th>Title</th>
+                    <th>Difficulty</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in skills %}
+                <tr style="cursor:pointer;"
+                    hx-get="/skills/{{ s.id }}"
+                    hx-target="#main-content" hx-swap="innerHTML"
+                    hx-push-url="/skills/{{ s.id }}">
+                    <td style="white-space:nowrap;">{{ s.run_date or '---' }}</td>
+                    <td>
+                        <span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;">{{ s.domain or '---' }}</span>
+                    </td>
+                    <td>{{ s.title[:80] }}{% if s.title and s.title|length > 80 %}...{% endif %}</td>
+                    <td>
+                        {% if s.difficulty == 'beginner' %}
+                        <span class="badge" style="background:rgba(74,222,128,0.15);color:#4ade80;">beginner</span>
+                        {% elif s.difficulty == 'intermediate' %}
+                        <span class="badge" style="background:rgba(251,191,36,0.15);color:#fbbf24;">intermediate</span>
+                        {% elif s.difficulty == 'advanced' %}
+                        <span class="badge" style="background:rgba(248,113,113,0.15);color:#f87171;">advanced</span>
+                        {% else %}
+                        <span class="badge" style="background:rgba(148,163,184,0.15);color:#94a3b8;">{{ s.difficulty or '---' }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if s.source_url %}
+                        <a href="{{ s.source_url }}" target="_blank" rel="noopener"
+                           style="color:#38bdf8;text-decoration:none;font-size:0.8125rem;"
+                           onclick="event.stopPropagation();">
+                            {{ s.source_name or 'link' }}
+                        </a>
+                        {% else %}
+                        {{ s.source_name or '---' }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div style="display:flex;justify-content:center;gap:0.5rem;margin-top:1rem;">
+            {% if page > 1 %}
+            <a hx-get="/skills?page={{ page - 1 }}&domain={{ filter_domain }}&difficulty={{ filter_difficulty }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_q }}"
+               hx-target="#main-content" hx-swap="innerHTML"
+               style="color:#38bdf8;cursor:pointer;padding:0.375rem 0.75rem;border:1px solid #334155;border-radius:0.25rem;font-size:0.8125rem;text-decoration:none;">
+                &laquo; Previous
+            </a>
+            {% endif %}
+
+            <span style="padding:0.375rem 0.75rem;font-size:0.8125rem;color:#64748b;">
+                Page {{ page }} / {{ total_pages }}
+            </span>
+
+            {% if page < total_pages %}
+            <a hx-get="/skills?page={{ page + 1 }}&domain={{ filter_domain }}&difficulty={{ filter_difficulty }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_q }}"
+               hx-target="#main-content" hx-swap="innerHTML"
+               style="color:#38bdf8;cursor:pointer;padding:0.375rem 0.75rem;border:1px solid #334155;border-radius:0.25rem;font-size:0.8125rem;text-decoration:none;">
+                Next &raquo;
+            </a>
+            {% endif %}
+        </div>
+
+        {% else %}
+        <div class="empty-state">
+            <p>No skills match the current filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
