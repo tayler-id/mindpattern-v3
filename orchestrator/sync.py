@@ -52,11 +52,17 @@ def sync_to_fly(
             "error": f"No memory.db found at {db_path}",
         }
 
-    # Step 1: WAL checkpoint to flush writes
+    # Step 1: WAL checkpoint to flush writes on both databases
     checkpoint_result = _wal_checkpoint(db_path)
     if not checkpoint_result["success"]:
-        log.warning("WAL checkpoint failed for %s: %s", user_id, checkpoint_result["error"])
+        log.warning("WAL checkpoint failed for memory.db %s: %s", user_id, checkpoint_result["error"])
         # Continue anyway — the DB is still readable
+
+    traces_path = data_dir / user_id / "traces.db"
+    if traces_path.exists():
+        traces_ckpt = _wal_checkpoint(traces_path)
+        if not traces_ckpt["success"]:
+            log.warning("WAL checkpoint failed for traces.db %s: %s", user_id, traces_ckpt["error"])
 
     # Step 2: Create bundle
     try:
@@ -145,10 +151,11 @@ def create_bundle(
     reports_dir: Path,
     date_str: str,
 ) -> Path:
-    """Create tar.gz bundle of memory.db + today's report.
+    """Create tar.gz bundle of memory.db + traces.db + today's report.
 
     Bundle structure mirrors the remote /data/ layout:
         {user_id}/memory.db
+        {user_id}/traces.db
         reports/{user_id}/YYYY-MM-DD.md
         reports/{user_id}/agents/*.md
 
@@ -162,12 +169,17 @@ def create_bundle(
         Path to the created tar.gz file in a temp directory.
     """
     db_path = data_dir / user_id / "memory.db"
+    traces_path = data_dir / user_id / "traces.db"
     bundle_path = Path(tempfile.mktemp(suffix=".tar.gz", prefix=f"sync-{user_id}-"))
 
     with tarfile.open(bundle_path, "w:gz") as tf:
         # Add memory.db
         if db_path.exists():
             tf.add(str(db_path), arcname=f"{user_id}/memory.db")
+
+        # Add traces.db (pipeline runs, agent runs, events, etc.)
+        if traces_path.exists():
+            tf.add(str(traces_path), arcname=f"{user_id}/traces.db")
 
         # Add today's report
         report_file = reports_dir / f"{date_str}.md"
@@ -301,11 +313,19 @@ def _wal_checkpoint(db_path: Path) -> dict:
 def _fly_ssh(app_name: str, command: str) -> dict:
     """Run a command on the Fly.io app via ssh console.
 
+    Wraps the command in ``sh -c '...'`` so shell builtins (cd, etc.) and
+    operators (&&, ||, ;) work correctly.  flyctl's ``-C`` flag execs the
+    command directly — without a shell — so bare builtins like ``cd`` cause
+    ``exec: "cd": executable file not found in $PATH``.
+
     Returns dict with keys: success, output, error.
     """
     try:
+        # Wrap in sh -c so shell builtins and compound commands work.
+        # Single quotes inside the command are escaped for the sh -c wrapper.
+        wrapped = f"sh -c '{command.replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'"
         result = subprocess.run(
-            ["flyctl", "ssh", "console", "-a", app_name, "-C", command],
+            ["flyctl", "ssh", "console", "-a", app_name, "-C", wrapped],
             capture_output=True,
             text=True,
             timeout=60,
@@ -350,6 +370,13 @@ if __name__ == "__main__":
     conn.commit()
     conn.close()
 
+    # Create test traces.db
+    traces_path = db_dir / "traces.db"
+    conn = sqlite3.connect(str(traces_path))
+    conn.execute("CREATE TABLE pipeline_runs (id TEXT PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+
     # Create test report files
     (tmp / "reports" / user_id / "2026-03-14.md").write_text("# Report\n\nContent.\n")
     (reports_dir / "agent-1.md").write_text("# Agent 1\n\nFindings.\n")
@@ -368,10 +395,11 @@ if __name__ == "__main__":
     with tarfile.open(bundle, "r:gz") as tf:
         names = sorted(tf.getnames())
         assert f"{user_id}/memory.db" in names, f"memory.db not in bundle: {names}"
+        assert f"{user_id}/traces.db" in names, f"traces.db not in bundle: {names}"
         assert f"reports/{user_id}/2026-03-14.md" in names, f"report not in bundle: {names}"
         assert f"reports/{user_id}/agents/agent-1.md" in names, f"agent-1 not in bundle: {names}"
         assert f"reports/{user_id}/agents/agent-2.md" in names, f"agent-2 not in bundle: {names}"
-        assert len(names) == 4, f"Expected 4 files, got {len(names)}: {names}"
+        assert len(names) == 5, f"Expected 5 files, got {len(names)}: {names}"
     print(f"AC #1: Bundle created with {len(names)} files ({bundle.stat().st_size} bytes)")
 
     bundle.unlink()
@@ -385,8 +413,9 @@ if __name__ == "__main__":
     )
     with tarfile.open(bundle2, "r:gz") as tf:
         names2 = tf.getnames()
-        assert len(names2) == 1, f"Expected 1 file (just memory.db), got {len(names2)}"
+        assert len(names2) == 2, f"Expected 2 files (memory.db + traces.db), got {len(names2)}"
         assert f"{user_id}/memory.db" in names2
+        assert f"{user_id}/traces.db" in names2
     print("AC #2: Bundle with missing reports handled gracefully")
     bundle2.unlink()
 

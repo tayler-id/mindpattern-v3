@@ -685,7 +685,8 @@ class BlueskyClient:
     def search(self, query: str, max_results: int = 10) -> list[dict]:
         """Search Bluesky posts.
 
-        Returns list of {uri, cid, text, author_did, author_handle, created_at, like_count, reply_count}.
+        Returns list of dicts with post data including author follower counts
+        and web URLs for engagement pipeline compatibility.
         """
         self._ensure_session()
 
@@ -710,34 +711,123 @@ class BlueskyClient:
         for post_view in body.get("posts", []):
             record = post_view.get("record", {})
             author = post_view.get("author", {})
+            handle = author.get("handle", "")
+            uri = post_view.get("uri", "")
+
+            # Build web URL from AT URI
+            web_url = ""
+            if uri:
+                parts = uri.split("/")
+                if len(parts) >= 5:
+                    rkey = parts[-1]
+                    web_url = f"https://bsky.app/profile/{handle}/post/{rkey}"
+
             results.append({
-                "uri": post_view.get("uri", ""),
+                "uri": uri,
                 "cid": post_view.get("cid", ""),
                 "text": record.get("text", ""),
                 "author_did": author.get("did", ""),
-                "author_handle": author.get("handle", ""),
+                "author_handle": handle,
                 "author_name": author.get("displayName", ""),
+                "followers_count": author.get("followersCount", 0),
+                "following_count": author.get("followsCount", 0),
                 "created_at": record.get("createdAt", ""),
                 "like_count": post_view.get("likeCount", 0),
                 "reply_count": post_view.get("replyCount", 0),
                 "repost_count": post_view.get("repostCount", 0),
+                "url": web_url,
+                "platform": "bluesky",
             })
 
         return results
+
+    def get_relationships(self, dids: list[str]) -> dict[str, dict]:
+        """Check relationship status with a list of DIDs.
+
+        Uses app.bsky.graph.getRelationships to check if we follow or
+        are followed by each DID.
+
+        Args:
+            dids: List of DIDs to check (max 30 per call per API limits).
+
+        Returns:
+            Dict mapping DID to {following: bool, followed_by: bool}.
+        """
+        self._ensure_session()
+
+        relationships = {}
+        # Process in batches of 30 (API limit)
+        for i in range(0, len(dids), 30):
+            batch = dids[i:i + 30]
+            params = {"actor": self._did, "others": batch}
+
+            try:
+                resp = _api_call_with_retry(
+                    self.session,
+                    "GET",
+                    f"{self.api_base}/app.bsky.graph.getRelationships",
+                    params=params,
+                )
+                body = resp.json()
+
+                for rel in body.get("relationships", []):
+                    did = rel.get("did", "")
+                    if did:
+                        relationships[did] = {
+                            "following": bool(rel.get("following")),
+                            "followed_by": bool(rel.get("followedBy")),
+                        }
+            except requests.HTTPError as exc:
+                log.warning("Bluesky getRelationships failed: %s", exc)
+                # Mark all as unknown (don't block engagement)
+                for did in batch:
+                    relationships[did] = {"following": False, "followed_by": False}
+
+            if i + 30 < len(dids):
+                _bot_jitter(0.3, 0.8)
+
+        return relationships
 
 
 # ── LinkedIn Client ──────────────────────────────────────────────────────
 
 
 class LinkedInClient:
-    """LinkedIn API v2 client for posting text and image content."""
+    """LinkedIn Community Management REST API client for posting text and image content.
+
+    Uses the current Posts API (/rest/posts) and Images API (/rest/images),
+    replacing the deprecated UGC Posts API (/v2/ugcPosts) and Assets API
+    (/v2/assets).
+
+    Requires:
+        - OAuth2 access token with ``w_member_social`` scope.
+        - ``Linkedin-Version`` header in YYYYMM format (set via config or
+          defaults to ``202501``).
+
+    See: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
+    """
+
+    # LinkedIn API version — YYYYMM format.  Update when migrating to a
+    # newer version.  The version is sent on every request via the
+    # ``Linkedin-Version`` header which is *required* by the REST API.
+    DEFAULT_API_VERSION = "202501"
 
     def __init__(self, config: dict):
         """Initialize from social-config.json `platforms.linkedin` section.
 
         Loads access token from macOS Keychain.
         """
-        self.api_base = config.get("api_base", "https://api.linkedin.com/v2")
+        # Base URL for the REST API — note: the new endpoints live under
+        # /rest/ (e.g. /rest/posts) while userinfo remains at /v2/userinfo.
+        self.api_base = config.get(
+            "api_base", "https://api.linkedin.com"
+        ).rstrip("/")
+        # Strip a trailing /v2 if the config still has the old value so
+        # callers don't need to update social-config.json immediately.
+        if self.api_base.endswith("/v2"):
+            self.api_base = self.api_base[: -len("/v2")]
+
+        self.api_version = config.get("api_version", self.DEFAULT_API_VERSION)
         self.target_chars = config.get("target_chars", 1350)
 
         kc = config["keychain"]
@@ -747,47 +837,67 @@ class LinkedInClient:
         self.session.headers.update({
             "Authorization": f"Bearer {self._access_token}",
             "X-Restli-Protocol-Version": "2.0.0",
+            "Linkedin-Version": self.api_version,
+            "Content-Type": "application/json",
         })
 
         self._person_urn: str | None = None
 
     def _get_person_urn(self) -> str:
-        """Get the authenticated user's LinkedIn URN (cached)."""
+        """Get the authenticated user's LinkedIn person URN (cached).
+
+        Calls the OpenID Connect userinfo endpoint (``/v2/userinfo``) which
+        returns the ``sub`` claim as the member ID.
+        """
         if self._person_urn:
             return self._person_urn
 
         resp = _api_call_with_retry(
             self.session,
             "GET",
-            f"{self.api_base}/userinfo",
+            f"{self.api_base}/v2/userinfo",
         )
         data = resp.json()
 
-        # LinkedIn v2 userinfo returns "sub" as the member ID
+        # The OIDC ``sub`` claim is the member identifier used to construct
+        # the person URN (e.g. "782bbtaQ" -> "urn:li:person:782bbtaQ").
         member_id = data.get("sub", "")
         if not member_id:
-            raise RuntimeError(f"Could not determine LinkedIn member ID from userinfo: {data}")
+            raise RuntimeError(
+                f"Could not determine LinkedIn member ID from userinfo: {data}"
+            )
 
         self._person_urn = f"urn:li:person:{member_id}"
         log.info("LinkedIn person URN: %s", self._person_urn)
         return self._person_urn
 
-    def _upload_image(self, image_path: Path) -> str | None:
-        """Upload an image to LinkedIn via registerUpload + binary PUT.
+    def verify_token(self) -> dict:
+        """Verify the access token works by calling /v2/userinfo.
 
-        Returns the asset URN or None on failure.
+        Returns the userinfo dict on success.
+        Raises RuntimeError or requests.HTTPError on failure.
+        """
+        resp = _api_call_with_retry(
+            self.session,
+            "GET",
+            f"{self.api_base}/v2/userinfo",
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def _upload_image(self, image_path: Path) -> str | None:
+        """Upload an image via the Images API (initializeUpload + binary PUT).
+
+        Returns the image URN (``urn:li:image:…``) or None on failure.
+
+        See: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/images-api
         """
         person_urn = self._get_person_urn()
 
-        # Step 1: Register upload
-        register_payload = {
-            "registerUploadRequest": {
-                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+        # Step 1: Initialize upload — returns an upload URL and image URN
+        init_payload = {
+            "initializeUploadRequest": {
                 "owner": person_urn,
-                "serviceRelationships": [{
-                    "relationshipType": "OWNER",
-                    "identifier": "urn:li:userGeneratedContent",
-                }],
             }
         }
 
@@ -795,21 +905,18 @@ class LinkedInClient:
             resp = _api_call_with_retry(
                 self.session,
                 "POST",
-                f"{self.api_base}/assets?action=registerUpload",
-                json=register_payload,
+                f"{self.api_base}/rest/images?action=initializeUpload",
+                json=init_payload,
             )
-            reg_data = resp.json()
+            init_data = resp.json()
 
-            upload_info = reg_data["value"]
-            upload_url = upload_info["uploadMechanism"][
-                "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
-            ]["uploadUrl"]
-            asset = upload_info["asset"]
+            upload_url = init_data["value"]["uploadUrl"]
+            image_urn = init_data["value"]["image"]
         except Exception as exc:
-            log.error("LinkedIn registerUpload failed: %s", exc)
+            log.error("LinkedIn initializeUpload failed: %s", exc)
             return None
 
-        # Step 2: Binary upload
+        # Step 2: Binary upload to the provided URL
         try:
             with open(image_path, "rb") as f:
                 image_data = f.read()
@@ -822,14 +929,14 @@ class LinkedInClient:
                 data=image_data,
                 timeout=60,
             )
-            log.info("Uploaded image to LinkedIn: %s", asset)
-            return asset
+            log.info("Uploaded image to LinkedIn: %s", image_urn)
+            return image_urn
         except Exception as exc:
             log.error("LinkedIn image binary upload failed: %s", exc)
             return None
 
     def post(self, content: str, image_path: Path | None = None) -> dict:
-        """Post to LinkedIn with optional image.
+        """Post to LinkedIn via the Posts API (/rest/posts) with optional image.
 
         Returns {success, url, id, error}.
         """
@@ -837,44 +944,43 @@ class LinkedInClient:
 
         payload: dict[str, Any] = {
             "author": person_urn,
+            "commentary": content,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
             "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": content},
-                    "shareMediaCategory": "NONE",
-                },
-            },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
-            },
+            "isReshareDisabledByAuthor": False,
         }
 
         if image_path:
-            asset = self._upload_image(image_path)
-            if asset:
-                share_content = payload["specificContent"]["com.linkedin.ugc.ShareContent"]
-                share_content["shareMediaCategory"] = "IMAGE"
-                share_content["media"] = [{
-                    "status": "READY",
-                    "media": asset,
-                    "title": {"text": ""},
-                }]
+            image_urn = self._upload_image(image_path)
+            if image_urn:
+                payload["content"] = {
+                    "media": {
+                        "id": image_urn,
+                    }
+                }
 
         try:
             resp = _api_call_with_retry(
                 self.session,
                 "POST",
-                f"{self.api_base}/ugcPosts",
+                f"{self.api_base}/rest/posts",
                 json=payload,
             )
 
-            # LinkedIn returns the post ID in the X-RestLi-Id header or response body
-            post_id = resp.headers.get("X-RestLi-Id", "")
+            # LinkedIn returns the post ID in the x-restli-id header
+            post_id = resp.headers.get("x-restli-id", "")
+            if not post_id:
+                post_id = resp.headers.get("X-RestLi-Id", "")
             if not post_id:
                 data = resp.json() if resp.text else {}
                 post_id = data.get("id", "")
 
-            # Build URL from share URN: urn:li:share:12345 -> linkedin.com/feed/update/urn:li:share:12345
+            # Build URL: urn:li:share:12345 -> linkedin.com/feed/update/urn:li:share:12345
             url = ""
             if post_id:
                 url = f"https://www.linkedin.com/feed/update/{post_id}"

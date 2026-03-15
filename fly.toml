@@ -15,6 +15,18 @@ primary_region = "sjc"
   auto_start_machines = true
   min_machines_running = 1
 
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+  [[http_service.checks]]
+    interval = 30000
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+    timeout = 5000
+
 [mounts]
   source = "mindpattern_data"
   destination = "/data"
@@ -22,10 +34,3 @@ primary_region = "sjc"
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"
-
-[[services.http_checks]]
-  interval = 30000
-  grace_period = "10s"
-  method = "GET"
-  path = "/healthz"
-  timeout = 5000

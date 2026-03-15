@@ -474,7 +474,7 @@ class SocialPipeline:
                 continue
 
             try:
-                post_result = client.post(content, image=image)
+                post_result = client.post(content, image_path=image)
                 results.append({
                     "platform": platform,
                     "url": post_result.get("url"),

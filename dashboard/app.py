@@ -21,7 +21,13 @@ app = FastAPI(title="Research Agent Dashboard")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://mindpattern.fly.dev"],
+    allow_origins=[
+        "https://mindpattern.fly.dev",
+        "https://mindpattern.ai",
+        "http://localhost:3000",
+        "http://localhost:8080",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_credentials=True,
     allow_headers=["Authorization", "Content-Type"],
