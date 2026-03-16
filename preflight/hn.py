@@ -22,7 +22,7 @@ def _transform(raw: dict) -> dict:
     )
 
 
-def fetch(queries: str = "AI,LLM,agents,vibe coding,MCP", hours: int = 24, min_points: int = 30) -> list[dict]:
+def fetch(queries: str = "AI,LLM,agents,vibe coding,MCP", hours: int = 48, min_points: int = 10) -> list[dict]:
     cmd = [
         "python3", str(TOOLS_DIR / "hn-fetch.py"),
         "--queries", queries,
