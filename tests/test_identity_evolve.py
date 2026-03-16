@@ -77,11 +77,20 @@ def vault_dir():
 
 
 SAMPLE_PIPELINE_RESULTS = {
-    "topic": "Claude 4 launch announcement",
-    "gate1_outcome": "approved",
-    "gate2_outcome": "approved",
-    "corrections": ["Removed hedge phrase 'it should be noted'"],
-    "expeditor_feedback": "Voice was slightly too formal in first draft.",
+    "date": "2026-03-15",
+    "findings_count": 64,
+    "newsletter_generated": True,
+    "newsletter_eval": {"overall": 1.74, "coverage": 0.90, "dedup": 1.0},
+    "social": {
+        "topic": "Claude 4 launch announcement",
+        "topic_score": 8.3,
+        "gate1_outcome": "approved",
+        "gate1_guidance": "",
+        "gate2_outcome": "approved",
+        "gate2_edits": [],
+        "expeditor_verdict": "PASS",
+        "platforms_posted": ["bluesky", "linkedin"],
+    },
 }
 
 
@@ -134,7 +143,7 @@ class TestBuildEvolvePrompt:
         prompt = build_evolve_prompt(vault_dir, SAMPLE_PIPELINE_RESULTS)
         assert "Claude 4 launch announcement" in prompt
         assert "approved" in prompt
-        assert "Removed hedge phrase" in prompt
+        assert "PASS" in prompt
 
     def test_instructs_json_output(self, vault_dir):
         """Prompt instructs the LLM to output JSON."""
@@ -432,3 +441,61 @@ class TestParseLlmOutput:
         assert result is not None
         assert result["soul"]["action"] == "update"
         assert result["decisions"]["content"] == "Updated personality."
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. Enriched EVOLVE prompt
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestEnrichedPrompt:
+    def test_build_evolve_prompt_includes_social_data(self, vault_dir):
+        """Prompt includes topic, gate outcomes, and expeditor when provided."""
+        from memory.identity_evolve import build_evolve_prompt
+
+        pipeline_results = {
+            "date": "2026-03-15",
+            "findings_count": 64,
+            "newsletter_generated": True,
+            "newsletter_eval": {"overall": 1.74, "coverage": 0.90, "dedup": 1.0},
+            "social": {
+                "topic": "OpenAI launched Frontier with consulting partners",
+                "topic_score": 8.3,
+                "gate1_outcome": "approved",
+                "gate1_guidance": "",
+                "gate2_outcome": "approved",
+                "gate2_edits": [],
+                "expeditor_verdict": "PASS",
+                "platforms_posted": ["bluesky", "linkedin"],
+            },
+        }
+        prompt = build_evolve_prompt(vault_dir, pipeline_results)
+        assert "OpenAI launched Frontier" in prompt
+        assert "Gate 1" in prompt
+        assert "approved" in prompt
+        assert "PASS" in prompt
+        assert "1.74" in prompt
+
+    def test_build_evolve_prompt_without_social(self, vault_dir):
+        """Prompt works with minimal pipeline_results (no social)."""
+        from memory.identity_evolve import build_evolve_prompt
+
+        pipeline_results = {
+            "date": "2026-03-15",
+            "findings_count": 10,
+            "newsletter_generated": True,
+        }
+        prompt = build_evolve_prompt(vault_dir, pipeline_results)
+        assert "Findings: 10" in prompt
+        assert "MUST ALWAYS append to decisions" in prompt
+
+    def test_decisions_instruction_requires_detailed_entry(self, vault_dir):
+        """Prompt tells LLM to always append detailed decisions."""
+        from memory.identity_evolve import build_evolve_prompt
+
+        pipeline_results = {"date": "2026-03-15", "findings_count": 5,
+                            "newsletter_generated": True, "social": {}}
+        prompt = build_evolve_prompt(vault_dir, pipeline_results)
+        assert "MUST ALWAYS append to decisions" in prompt
+        assert "Gate 1 outcome" in prompt
+        assert "Expeditor verdict" in prompt

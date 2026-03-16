@@ -105,6 +105,11 @@ class SocialPipeline:
             "skipped_platforms": [],
             "errors": [],
             "kill_day": False,
+            "gate1_outcome": "unknown",
+            "gate1_guidance": "",
+            "gate2_outcome": "unknown",
+            "gate2_edits": [],
+            "expeditor_verdict": "unknown",
         }
         target_platforms = self._enabled_platforms(platforms)
 
@@ -149,15 +154,20 @@ class SocialPipeline:
             if action == "skip":
                 logger.info("Gate 1: User skipped — kill day")
                 result["kill_day"] = True
+                result["gate1_outcome"] = "rejected"
                 return result
             elif action == "go":
                 logger.info("Gate 1: Approved")
+                result["gate1_outcome"] = "approved"
             elif action == "custom":
                 custom = gate1.get("custom_topic", "")
                 logger.info(f"Gate 1: Custom topic — {custom}")
                 topic["anchor"] = custom
+                result["gate1_outcome"] = "custom"
+                result["gate1_guidance"] = custom
             else:
                 logger.info(f"Gate 1: {action}")
+                result["gate1_outcome"] = action
         except Exception as e:
             # If approval system fails, auto-approve (don't block the pipeline)
             logger.warning(f"Gate 1 failed (auto-approving): {e}")
@@ -337,6 +347,7 @@ class SocialPipeline:
         logger.info("Step 8: Expedite (final quality gate)")
         try:
             exp_result = expedite(drafts, brief, images)
+            result["expeditor_verdict"] = exp_result.get("verdict", "unknown")
             if exp_result.get("verdict") == "FAIL":
                 logger.error(f"Expeditor FAILED: {exp_result.get('notes')}")
                 result["errors"].append(f"Expeditor: {exp_result.get('notes')}")
@@ -378,6 +389,7 @@ class SocialPipeline:
 
         if action == "skip":
             logger.info("Drafts rejected by approver")
+            result["gate2_outcome"] = "rejected"
             self._log_feedback(drafts, approval_response)
             return result
 
@@ -392,6 +404,9 @@ class SocialPipeline:
         for platform, edited_content in edits.items():
             if platform in drafts and edited_content:
                 drafts[platform] = edited_content
+
+        result["gate2_outcome"] = "approved"
+        result["gate2_edits"] = list(edits.keys()) if edits else []
 
         if not drafts:
             logger.info("No platforms approved after filtering")
