@@ -205,6 +205,7 @@ class ResearchPipeline:
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
             Phase.EVOLVE: self._phase_evolve,
+            Phase.ANALYZE: self._phase_analyze,
             Phase.MIRROR: self._phase_mirror,
             Phase.SYNC: self._phase_sync,
         }.get(phase)
@@ -843,6 +844,95 @@ class ResearchPipeline:
             logger.warning(f"EVOLVE errors: {result['errors']}")
 
         return {"evolved": True, **result}
+
+    def _phase_analyze(self) -> dict:
+        """Phase: Analyze agent traces and improve skill files."""
+        from orchestrator.analyzer import (
+            build_analyzer_prompt,
+            parse_analyzer_output,
+            apply_analyzer_changes,
+        )
+
+        trace_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern" / "agents"
+
+        # Collect traced agent names (those with today's trace file)
+        traced_agents = set()
+        if trace_dir.exists():
+            for agent_dir in trace_dir.iterdir():
+                if agent_dir.is_dir() and (agent_dir / f"{self.date_str}.md").exists():
+                    traced_agents.add(agent_dir.name)
+
+        skill_files = self._collect_all_skill_files()
+
+        # Build metrics from this run
+        metrics = {
+            "findings_per_agent": {
+                r.agent_name: len(r.findings)
+                for r in self.agent_results
+            } if self.agent_results else {},
+            "newsletter_eval": self.newsletter_eval,
+            "social_result": {
+                k: v for k, v in self.social_result.items()
+                if k in ("topic", "gate1_outcome", "gate2_outcome", "platforms_posted")
+            } if self.social_result else {},
+        }
+
+        # Get regression data
+        regression_data = []
+        if self.prompt_tracker:
+            regression_data = self.prompt_tracker.check_regression(self.date_str)
+
+        prompt = build_analyzer_prompt(
+            trace_dir=trace_dir,
+            skill_files=skill_files,
+            date_str=self.date_str,
+            metrics=metrics,
+            regression_data=regression_data,
+        )
+
+        output, exit_code = agent_dispatch.run_claude_prompt(
+            prompt, task_type="analyzer",
+        )
+
+        if exit_code != 0 or not output:
+            logger.warning("ANALYZE: LLM call failed")
+            return {"analyzed": False, "reason": "LLM call failed"}
+
+        changes = parse_analyzer_output(output)
+        if changes is None:
+            logger.warning("ANALYZE: Could not parse output as JSON")
+            return {"analyzed": False, "reason": "JSON parse failed"}
+
+        result = apply_analyzer_changes(
+            changes,
+            project_root=PROJECT_ROOT,
+            traced_files=traced_agents,
+            prompt_tracker=self.prompt_tracker,
+        )
+
+        logger.info(
+            f"ANALYZE: {result['applied']} changes, {result['reverted']} reversions, "
+            f"{result['skipped']} skipped"
+        )
+
+        log_event(self.traces_conn, self.traces_run_id,
+                  "analyze_complete", json.dumps(result))
+
+        return {"analyzed": True, **result}
+
+    def _collect_all_skill_files(self) -> list[Path]:
+        """Collect all .md skill files used as agent prompts."""
+        skill_files = []
+        dirs = [
+            PROJECT_ROOT / "verticals" / "ai-tech" / "agents",
+            PROJECT_ROOT / "agents",
+        ]
+        for d in dirs:
+            if d.exists():
+                for f in sorted(d.glob("*.md")):
+                    if "references" not in str(f):
+                        skill_files.append(f)
+        return skill_files
 
     def _phase_mirror(self) -> dict:
         """Phase: Generate Obsidian mirror files from SQLite."""
