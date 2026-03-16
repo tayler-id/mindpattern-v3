@@ -185,50 +185,55 @@ def format_agent_log(
     lines.append(f"Daily log: [[daily/{date_str}]]")
     lines.append("")
 
-    # Prompt summary
-    if log_data["user_prompts"]:
-        lines.append("## Prompt")
-        lines.append("")
-        # Show first prompt truncated (it's usually the big one)
-        prompt = log_data["user_prompts"][0]
-        if len(prompt) > 500:
-            # Show first 200 and last 200
-            lines.append(f"{prompt[:200]}")
-            lines.append("")
-            lines.append("...")
-            lines.append("")
-            lines.append(f"{prompt[-200:]}")
-        else:
-            lines.append(prompt)
-        lines.append("")
-
-    # Tool calls
+    # Tool calls (skip prompt — it's just the agent schema + SOUL, not useful)
     if log_data["tool_calls"]:
         lines.append("## Tool Calls")
         lines.append("")
         for tc in log_data["tool_calls"]:
-            lines.append(f"- **{tc['tool']}**: `{tc['input_preview']}`")
-        lines.append("")
-
-    # Tool results (summaries)
-    if log_data.get("tool_results"):
-        lines.append("## Tool Results (summaries)")
-        lines.append("")
-        for tr in log_data["tool_results"]:
-            lines.append(f"- {tr}")
-        lines.append("")
-
-    # Reasoning / decisions
-    if log_data["reasoning"]:
-        lines.append("## Reasoning & Decisions")
-        lines.append("")
-        for i, block in enumerate(log_data["reasoning"]):
-            if len(block) > 1000:
-                lines.append(f"### Block {i + 1}")
-                lines.append("")
-                lines.append(block[:1000] + "...")
+            tool = tc['tool']
+            preview = tc['input_preview']
+            # Flag subagent dispatches
+            if tool == "Agent":
+                lines.append(f"- **Subagent dispatched**: `{_truncate(preview, 150)}`")
             else:
-                lines.append(block)
+                lines.append(f"- **{tool}**: `{_truncate(preview, 150)}`")
+        lines.append("")
+
+    # Tool results (summaries) — what the agent actually found
+    if log_data.get("tool_results"):
+        lines.append("## Research Results")
+        lines.append("")
+        for i, tr in enumerate(log_data["tool_results"]):
+            # Clean up tool results for readability
+            clean = tr.replace("\\n", " ").strip()
+            if len(clean) > 500:
+                clean = clean[:500] + "..."
+            lines.append(f"### Result {i + 1}")
+            lines.append("")
+            lines.append(clean)
+            lines.append("")
+
+    # Output — the agent's final response (findings JSON, etc.)
+    if log_data["reasoning"]:
+        lines.append("## Output")
+        lines.append("")
+        for block in log_data["reasoning"]:
+            # Try to detect JSON output and format it
+            stripped = block.strip()
+            if stripped.startswith("{") or stripped.startswith("["):
+                if len(stripped) > 2000:
+                    lines.append("```json")
+                    lines.append(stripped[:2000] + "...")
+                    lines.append("```")
+                else:
+                    lines.append("```json")
+                    lines.append(stripped)
+                    lines.append("```")
+            else:
+                if len(block) > 1000:
+                    lines.append(block[:1000] + "...")
+                else:
+                    lines.append(block)
             lines.append("")
 
     return "\n".join(lines)
