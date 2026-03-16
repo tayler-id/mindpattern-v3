@@ -61,7 +61,36 @@ def build_evolve_prompt(vault_dir: Path, pipeline_results: dict) -> str:
     recent_decisions = vault.get_recent_entries(decisions_path, n=7)
     decisions_text = "\n\n---\n\n".join(recent_decisions) if recent_decisions else "(no recent decisions)"
 
-    results_text = json.dumps(pipeline_results, indent=2, default=str)
+    # Build structured sections for social and newsletter results
+    social = pipeline_results.get("social", {})
+    social_section = ""
+    if social and social.get("topic"):
+        social_section = f"""
+## Social Pipeline Results
+- Topic: {social.get('topic', 'none')} (score: {social.get('topic_score', 'N/A')})
+- Gate 1: {social.get('gate1_outcome', 'unknown')}{' — ' + social['gate1_guidance'] if social.get('gate1_guidance') else ''}
+- Gate 2: {social.get('gate2_outcome', 'unknown')}{' (edits: ' + ', '.join(social['gate2_edits']) + ')' if social.get('gate2_edits') else ''}
+- Expeditor: {social.get('expeditor_verdict', 'unknown')}
+- Posted to: {', '.join(social.get('platforms_posted', [])) or 'none'}
+"""
+
+    newsletter_eval = pipeline_results.get("newsletter_eval", {})
+    newsletter_section = ""
+    if newsletter_eval:
+        newsletter_section = f"""
+## Newsletter Quality Scores
+- Overall: {newsletter_eval.get('overall', 'N/A')}
+- Coverage: {newsletter_eval.get('coverage', 'N/A')}
+- Dedup: {newsletter_eval.get('dedup', 'N/A')}
+- Sources: {newsletter_eval.get('sources', 'N/A')}
+"""
+
+    core_results = f"""
+## Core Pipeline Results
+- Date: {pipeline_results.get('date', 'unknown')}
+- Findings: {pipeline_results.get('findings_count', 0)}
+- Newsletter generated: {pipeline_results.get('newsletter_generated', False)}
+"""
 
     return f"""\
 You are the EVOLVE phase of the MindPattern pipeline. Your job is to review
@@ -82,14 +111,23 @@ incremental updates to keep the identity files accurate and useful.
 ### Recent Decisions (last 7 entries from decisions.md)
 {decisions_text}
 
-## This Run's Results
-{results_text}
+{core_results}
+{social_section}
+{newsletter_section}
 
 ## Instructions
 
 Based on the run results, decide whether any identity files need updating.
-Most runs should produce NO changes — only update when there is a genuine
-lesson, preference shift, or pattern worth recording.
+Most runs should produce NO changes to soul/user/voice — only update when
+there is a genuine lesson, preference shift, or pattern worth recording.
+
+However, you MUST ALWAYS append to decisions.md with a detailed entry including:
+- Topic selected/killed + score + reasoning
+- Gate 1 outcome (approved/rejected/custom + any user guidance)
+- Gate 2 outcome (approved/rejected/edits made)
+- Expeditor verdict
+- Newsletter quality scores
+- Pattern observations (e.g. "3rd security topic rejected this week")
 
 Output a single JSON object with these rules:
 - Keys: only "soul", "user", "voice", "decisions" are allowed.

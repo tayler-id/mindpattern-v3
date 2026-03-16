@@ -44,6 +44,8 @@ class ResearchPipeline:
         self.trends: list[dict] = []
         self.agent_results: list = []
         self.newsletter_text: str = ""
+        self.newsletter_eval: dict = {}
+        self.social_result: dict = {}
 
         # Traces DB for observability
         self.traces_conn = get_traces_db()
@@ -53,6 +55,9 @@ class ResearchPipeline:
         # Prompt tracking — initialized in _phase_init(), stored here for _phase_learn()
         self.prompt_tracker: PromptTracker | None = None
         self.prompt_changes: dict[str, dict] = {}
+
+        # Set pipeline date so subprocess env vars include it for hooks
+        agent_dispatch.set_pipeline_date(self.date_str)
 
         # Create pipeline run in traces.db so dashboard can see it
         self.pipeline = PipelineRun("research", user_id, self.date_str)
@@ -530,14 +535,9 @@ class ResearchPipeline:
         report_dir = PROJECT_ROOT / "reports" / self.user_id
         report_dir.mkdir(parents=True, exist_ok=True)
 
-        # Primary file: date.md (latest version)
+        # Primary file: date.md (overwritten each run, synced to Fly.io)
         report_path = report_dir / f"{self.date_str}.md"
         report_path.write_text(self.newsletter_text)
-
-        # Also save timestamped copy for history
-        ts = datetime.now().strftime("%H%M%S")
-        archive_path = report_dir / f"{self.date_str}-{ts}.md"
-        archive_path.write_text(self.newsletter_text)
 
         word_count = len(self.newsletter_text.split())
         logger.info(f"Newsletter written: {word_count} words → {report_path}")
@@ -572,6 +572,7 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Newsletter evaluation failed (non-critical): {e}")
 
+        self.newsletter_eval = eval_scores
         return {"word_count": word_count, "report_path": str(report_path),
                 "eval_scores": eval_scores}
 
@@ -724,6 +725,7 @@ class ResearchPipeline:
 
         pipeline = SocialPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
+        self.social_result = result
 
         if result.get("kill_day"):
             logger.info("Social: kill day — no good topics found")
@@ -791,11 +793,27 @@ class ResearchPipeline:
 
         vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
 
-        # Build pipeline results summary for the evolve prompt
+        # Build enriched pipeline results for the evolve prompt
+        social = {}
+        if self.social_result:
+            topic = self.social_result.get("topic") or {}
+            social = {
+                "topic": topic.get("anchor", topic.get("topic", "")),
+                "topic_score": topic.get("composite_score", 0),
+                "gate1_outcome": self.social_result.get("gate1_outcome", "unknown"),
+                "gate1_guidance": self.social_result.get("gate1_guidance", ""),
+                "gate2_outcome": self.social_result.get("gate2_outcome", "unknown"),
+                "gate2_edits": self.social_result.get("gate2_edits", []),
+                "expeditor_verdict": self.social_result.get("expeditor_verdict", "unknown"),
+                "platforms_posted": self.social_result.get("platforms_posted", []),
+            }
+
         pipeline_results = {
             "date": self.date_str,
             "findings_count": len(self.agent_results) if self.agent_results else 0,
             "newsletter_generated": bool(self.newsletter_text),
+            "newsletter_eval": self.newsletter_eval,
+            "social": social,
         }
 
         prompt = build_evolve_prompt(vault_dir, pipeline_results)
