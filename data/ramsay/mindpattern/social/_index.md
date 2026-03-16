@@ -1,16 +1,14 @@
 ---
 type: index
 date: 2026-03-15
-tags: [index, social]
+tags: index, social
 ---
 
-# Social Posts
+# Social
 
-Published and draft social media posts. Each entry tracks the platform, content, engagement, and any editorial feedback.
+Social media posts, corrections, and engagement logs.
 
-```dataview
-LIST FROM "social"
-WHERE type = "social"
-SORT date DESC
-LIMIT 30
-```
+- [[social/corrections|Corrections]]
+- [[social/engagement-log|Engagement Log]]
+- [[social/feedback|Feedback]]
+- [[social/posts|Posts]]
