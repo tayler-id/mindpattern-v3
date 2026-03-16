@@ -580,9 +580,9 @@ Output ONLY valid JSON:
         Returns:
             Filtered list of post dicts.
         """
-        min_likes = self.engagement_config.get("min_likes", 3)
+        min_likes = self.engagement_config.get("min_likes", 0)
         max_likes = self.engagement_config.get("max_likes", 5000)
-        min_followers = self.engagement_config.get("min_follower_count", 50)
+        min_followers = self.engagement_config.get("min_follower_count", 10)
 
         # Get our own handle to skip self-posts
         our_handle = ""
