@@ -425,6 +425,9 @@ def run_agent_with_files(
     for tool in allowed_tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Prevent subagent dispatch — agents must do their own work
+    cmd.extend(["--disallowedTools", "Agent"])
+
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
 
@@ -505,6 +508,11 @@ def run_claude_prompt(
     tools = allowed_tools if allowed_tools is not None else ["Read", "Glob", "Grep"]
     for tool in tools:
         cmd.extend(["--allowedTools", tool])
+
+    # Prevent subagent dispatch and file writing — agents must return output
+    # via stdout, not write to files. Write/Edit would let the agent put the
+    # newsletter in a file instead of returning it.
+    cmd.extend(["--disallowedTools", "Agent,Write,Edit,NotebookEdit"])
 
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
