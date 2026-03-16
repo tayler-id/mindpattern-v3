@@ -28,7 +28,7 @@ The 7 rendering styles available:
 ## Process
 
 1. Read the style guide: `agents/art-style-guide.md`
-2. Read the editorial caricature variation engine: `/Users/taylerramsay/.claude/skills/editorial-caricature/references/variation-engine.md` — use this to pick your satire angle, exaggeration logic, symbol systems, scene type, composition, rendering style, and tone. Deliberately vary across all dimensions.
+2. Read the editorial caricature variation engine: `~/.claude/skills/editorial-caricature/references/variation-engine.md` — use this to pick your satire angle, exaggeration logic, symbol systems, scene type, composition, rendering style, and tone. Deliberately vary across all dimensions.
 3. Read the curator brief at the path provided
 4. Check the LAST_STYLE value — pick a DIFFERENT rendering style from the 7-style rotation
 5. Identify the core tension in the story — what's the contrast? What's the irony? What would make someone stop scrolling?

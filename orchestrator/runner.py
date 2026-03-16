@@ -264,20 +264,11 @@ class ResearchPipeline:
 
         Skippable — if it fails, research agents run without trends.
         """
-        # Instead of using a template with {url_summaries} that we don't have,
-        # ask the LLM to search for trends directly
-        prompt = (
-            f"Today is {self.date_str}. Search the web for the latest AI and tech news. "
-            f"Identify 5-8 trending topics relevant to developers building with AI.\n\n"
-            f"Focus on: AI agents, vibe coding, developer tools, ML infrastructure, AI security.\n"
-            f"Ignore: funding rounds, hiring, stock prices.\n\n"
-            f"Output ONLY a valid JSON array. Each element: "
-            f'{{\"topic\": \"string\", \"evidence\": \"string\", \"relevance_score\": 0.0-1.0}}\n\n'
-            f"No markdown fences. No explanation. Just the JSON array."
-        )
+        prompt = f"Today is {self.date_str}. Search for trending topics."
 
         output, exit_code = agent_dispatch.run_claude_prompt(
             prompt, "trend_scan",
+            system_prompt_file="agents/trend-scanner.md",
             allowed_tools=["WebSearch", "WebFetch"],
         )
 
@@ -499,26 +490,24 @@ class ResearchPipeline:
 
         newsletter_title = self.user_config.get("newsletter_title", "Research Agent")
 
-        # Pass 1: Story selection (inline prompt — no template placeholders to miss)
+        # Pass 1: Story selection
         pass1_prompt = (
             f"Select exactly 5 stories from these {len(summaries)} findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
-            f"## Findings\n" + "\n".join(summaries) + "\n\n"
-            f"Selection criteria: cross-agent convergence, quantitative evidence, "
-            f"builder relevance, source diversity.\n\n"
-            f"Output ONLY a JSON array of 5 objects: "
-            f'[{{"story_title": "...", "agent": "...", "section": "...", "reason": "..."}}]\n'
-            f"No markdown fences. No explanation. Just JSON."
+            f"## Findings\n" + "\n".join(summaries)
         )
 
-        pass1_output, exit_code = agent_dispatch.run_claude_prompt(pass1_prompt, "synthesis_pass1")
+        pass1_output, exit_code = agent_dispatch.run_claude_prompt(
+            pass1_prompt, "synthesis_pass1",
+            system_prompt_file="agents/synthesis-selector.md",
+        )
         if exit_code != 0:
             logger.warning("Synthesis pass 1 failed, using all findings for pass 2")
             pass1_output = ""
 
-        # Pass 2: Newsletter writing (inline prompt)
+        # Pass 2: Newsletter writing
         full_findings = []
         for f in today_findings:
             source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or 'unknown'
@@ -540,22 +529,13 @@ class ResearchPipeline:
             f"## Story Selection\n{pass1_output or 'Use your judgment to select the Top 5.'}\n\n"
             f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
-            f"{failure_text}\n\n"
-            f"## Structure\n"
-            f"1. Top 5 (200-400 words each with source links)\n"
-            f"2. Per-section deep dives (skip empty sections)\n"
-            f"3. Skills of the Day (10 actionable skills)\n\n"
-            f"## Rules\n"
-            f"- Every claim must have a source link [Source Name](url)\n"
-            f"- No story in more than one section\n"
-            f"- Voice: direct, technical, opinionated. Not corporate.\n"
-            f"- MINIMUM 4000 words. Target 4500. The newsletter MUST be comprehensive.\n"
-            f"- Write 200-400 words per Top 5 story. Write 100-200 words per deep dive finding.\n"
-            f"- Include ALL sections that have findings. Do not skip sections to save space.\n\n"
-            f"Output ONLY the newsletter markdown. Start with the title. No meta-commentary."
+            f"{failure_text}"
         )
 
-        self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(pass2_prompt, "synthesis_pass2")
+        self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(
+            pass2_prompt, "synthesis_pass2",
+            system_prompt_file="agents/synthesis-writer.md",
+        )
 
         if exit_code != 0 or not self.newsletter_text.strip():
             raise RuntimeError("Synthesis pass 2 failed — no newsletter generated")
@@ -715,18 +695,14 @@ class ResearchPipeline:
         # Regenerate learnings.md
         stats = memory.get_stats(self.db)
         learnings_prompt = (
-            f"Regenerate the learnings.md summary for the mindpattern research agent.\n"
             f"Date: {self.date_str}\n\n"
             f"Database stats: {json.dumps(stats, indent=2)}\n\n"
-            f"Quality this run: {json.dumps(quality, indent=2)}\n\n"
-            f"Write a concise learnings summary covering:\n"
-            f"- Key findings from recent runs\n"
-            f"- Patterns observed\n"
-            f"- Source insights\n"
-            f"- Agent performance notes\n\n"
-            f"Output ONLY the markdown. Keep to the 5 most recent runs."
+            f"Quality this run: {json.dumps(quality, indent=2)}"
         )
-        output, _ = agent_dispatch.run_claude_prompt(learnings_prompt, "learnings_update")
+        output, _ = agent_dispatch.run_claude_prompt(
+            learnings_prompt, "learnings_update",
+            system_prompt_file="agents/learnings-updater.md",
+        )
         if output.strip():
             dest = PROJECT_ROOT / "data" / self.user_id / "learnings.md"
             dest.write_text(output)
