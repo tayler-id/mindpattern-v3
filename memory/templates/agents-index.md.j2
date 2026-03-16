@@ -1,0 +1,17 @@
+---
+type: index
+date: {{ date }}
+tags: agents
+---
+
+# Agents
+
+Pipeline agent transcript logs — per-agent folders with daily reasoning captures.
+
+{% if agents %}
+{% for agent in agents %}
+- [[agents/{{ agent.name }}/_index|{{ agent.name }}]] ({{ agent.run_count }} runs)
+{% endfor %}
+{% else %}
+No agent logs yet.
+{% endif %}

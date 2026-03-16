@@ -1,0 +1,21 @@
+---
+type: agent-index
+agent: {{ agent_name }}
+date: {{ date }}
+tags: agent, {{ agent_name }}
+runs: {{ runs | length }}
+---
+
+# {{ agent_name }}
+
+Agent transcript logs — reasoning, tool calls, and decisions from each pipeline run.
+
+{% if runs %}
+| Date | Duration | Tools | Reasoning |
+|------|----------|-------|-----------|
+{% for run in runs %}
+| [[agents/{{ agent_name }}/{{ run.date }}|{{ run.date }}]] | {{ run.duration }} | {{ run.tool_calls }} | {{ run.reasoning_blocks }} |
+{% endfor %}
+{% else %}
+No runs recorded yet.
+{% endif %}
