@@ -597,9 +597,9 @@ Output ONLY valid JSON:
             if our_handle and author_handle == our_handle:
                 continue
 
-            # Follower count check
+            # Follower count check — skip filter if API returned 0 (unknown, not zero)
             followers = p.get("followers_count", p.get("followers", 0))
-            if followers < min_followers:
+            if followers > 0 and followers < min_followers:
                 continue
 
             # Like count check
