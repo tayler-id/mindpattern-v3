@@ -338,13 +338,34 @@ def main() -> None:
 
     vault_path = Path(vault_dir)
 
-    # Parse transcript
+    # Parse parent transcript
     messages = parse_transcript(transcript_path)
     if not messages:
         return
 
-    # Extract and format
+    # Find and merge subagent transcripts
+    # Parent: {session_id}.jsonl → Subagents: {session_id}/subagents/*.jsonl
+    transcript_file = Path(transcript_path)
+    session_id = transcript_file.stem
+    subagents_dir = transcript_file.parent / session_id / "subagents"
+
+    subagent_logs = []
+    if subagents_dir.is_dir():
+        for sub_jsonl in sorted(subagents_dir.glob("*.jsonl")):
+            sub_messages = parse_transcript(str(sub_jsonl))
+            if sub_messages:
+                sub_log = extract_agent_log(sub_messages)
+                subagent_logs.append(sub_log)
+
+    # Extract parent log
     log_data = extract_agent_log(messages)
+
+    # Merge subagent data into parent
+    for sub in subagent_logs:
+        log_data["reasoning"].extend(sub["reasoning"])
+        log_data["tool_calls"].extend(sub["tool_calls"])
+        log_data["tool_results"].extend(sub["tool_results"])
+
     markdown = format_agent_log(agent_name, date_str, log_data)
 
     # Write to agent folder
