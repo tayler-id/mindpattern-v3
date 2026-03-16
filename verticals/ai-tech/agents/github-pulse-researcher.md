@@ -76,3 +76,40 @@ Return 6-10 findings ordered by importance.
 - **WebFetch GitHub Trending** (overall, python, typescript in parallel) catches repos the API misses. Essential complement.
 - **Deduplicate** against memory context to avoid re-reporting repos covered in last 7 days.
 - **Bug watch**: github-fetch.py query encoding (+ vs spaces) caused silent 0-result failures in the past.
+
+
+## Available Research Tools (Agent Reach)
+
+In addition to web search, you have these tools available via the Bash tool:
+
+### Read any web page as clean markdown
+```bash
+curl -s https://r.jina.ai/URL
+```
+
+### Read a tweet
+```bash
+xreach tweet URL --json
+```
+
+### Search Twitter/X
+```bash
+xreach search "query" --json --limit 20
+```
+
+### Get YouTube video info + subtitles
+```bash
+yt-dlp --dump-json --skip-download "URL" 2>/dev/null
+```
+
+### Parse RSS feeds
+```bash
+python3 -c "import feedparser; feed = feedparser.parse('FEED_URL'); [print(e.title, e.link) for e in feed.entries[:10]]"
+```
+
+### Search Reddit
+```bash
+curl -s "https://www.reddit.com/search.json?q=QUERY&limit=10&sort=new" -H "User-Agent: mindpattern/1.0"
+```
+
+Use these tools when your standard web search does not surface enough primary sources. Twitter and Reddit often have real-time discussion that web search misses. YouTube videos may contain announcements not covered in articles.

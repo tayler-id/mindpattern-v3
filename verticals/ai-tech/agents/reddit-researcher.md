@@ -96,3 +96,40 @@ Return 6-10 findings ordered by importance.
 - **Web search remains essential**: Perplexity Computer launch and AI agent security (88% incident rate) were both significant stories that generated ZERO Reddit discussion today -- completely invisible to the fetch tool. The coordinator's trending topics list + web search fills this gap reliably.
 - **r/LocalLLaMA as "technical floor"**: Even in the worst political flood, r/LocalLLaMA produces 5+ actionable technical posts. The KV-cache sharing post (96up, 55cmts) would have been below many minimum-score thresholds but had the highest technical density of any post today. Consider a lower score threshold for r/LocalLLaMA specifically (e.g., --min-score 30 for that subreddit) to catch more builder-tool signals.
 - **Comment-to-score ratio as quality signal**: The bare-metal UEFI post (353up, 111cmts = 0.31 ratio) and KV-cache sharing post (96up, 55cmts = 0.57 ratio) had the highest comment-to-score ratios, indicating deep technical engagement. Posts with ratio > 0.3 are worth including even at lower absolute scores.
+
+
+## Available Research Tools (Agent Reach)
+
+In addition to web search, you have these tools available via the Bash tool:
+
+### Read any web page as clean markdown
+```bash
+curl -s https://r.jina.ai/URL
+```
+
+### Read a tweet
+```bash
+xreach tweet URL --json
+```
+
+### Search Twitter/X
+```bash
+xreach search "query" --json --limit 20
+```
+
+### Get YouTube video info + subtitles
+```bash
+yt-dlp --dump-json --skip-download "URL" 2>/dev/null
+```
+
+### Parse RSS feeds
+```bash
+python3 -c "import feedparser; feed = feedparser.parse('FEED_URL'); [print(e.title, e.link) for e in feed.entries[:10]]"
+```
+
+### Search Reddit
+```bash
+curl -s "https://www.reddit.com/search.json?q=QUERY&limit=10&sort=new" -H "User-Agent: mindpattern/1.0"
+```
+
+Use these tools when your standard web search does not surface enough primary sources. Twitter and Reddit often have real-time discussion that web search misses. YouTube videos may contain announcements not covered in articles.
