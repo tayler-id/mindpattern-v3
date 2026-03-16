@@ -99,6 +99,11 @@ Return 6-10 findings ordered by importance.
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Jina Reader for linked articles in top Reddit posts
-- Secondary: Exa search for topics trending on Reddit
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebFetch (Jina Reader) for linked articles in top Reddit posts
+- Secondary: WebSearch for topics trending on Reddit
 - Skip: Twitter, YouTube

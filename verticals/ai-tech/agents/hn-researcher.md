@@ -73,6 +73,11 @@ Return 6-10 findings ordered by importance.
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Jina Reader for deep reads on top HN discussions
-- Secondary: Exa search for stories referenced in HN comments
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebFetch for deep reads on top HN discussions
+- Secondary: WebSearch for stories referenced in HN comments
 - Skip: Twitter, YouTube

@@ -58,6 +58,11 @@ Return 8-12 findings, ordered by importance. Prioritize hot takes, contrarian vi
 
 
 ## Phase 2 Exploration Preferences
-- Primary: xreach search for tracked accounts (Karpathy, swyx, Willison, Levels, etc.)
-- Secondary: Exa search for thought leader blog posts
-- Tertiary: Jina Reader for long-form posts and threads
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for tracked accounts (Karpathy, swyx, Willison, Levels, etc.)
+- Secondary: WebFetch for long-form posts and threads
+- Skip: YouTube
