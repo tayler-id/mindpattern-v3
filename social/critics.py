@@ -371,16 +371,6 @@ Write ONLY the JSON file. No other files, no other output.
 def _get_platform_rules(platform: str) -> str:
     """Return a human-readable summary of platform constraints."""
     rules = {
-        "x": (
-            "- HARD LIMIT: 280 characters per post\n"
-            "- URLs count as 23 characters regardless of actual length (t.co wrapping)\n"
-            "- Single posts preferred, not threads\n"
-            "- 0-1 hashtags (zero is usually better)\n"
-            "- No emoji formatting or emoji bullet points\n"
-            "- Must include https://mindpattern.ai at end\n"
-            "- Tone: sharp observation, like texting a colleague you respect\n"
-            "- Audience: tech/engineering professionals"
-        ),
         "linkedin": (
             "- Sweet spot: 1200-1500 characters\n"
             "- First 2 lines are the hook (truncated after ~210 chars)\n"

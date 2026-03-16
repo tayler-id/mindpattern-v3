@@ -400,7 +400,6 @@ def _fallback_brief(topic: dict, date_str: str, config: dict) -> dict:
             "avoid": [],
         },
         "platform_hooks": {
-            "x": {"hook": anchor[:50], "angle": anchor[:100]},
             "linkedin": {"hook": anchor[:80], "angle": anchor[:150]},
             "bluesky": {"hook": anchor[:60], "angle": anchor[:120]},
         },

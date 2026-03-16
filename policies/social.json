@@ -1,9 +1,5 @@
 {
     "platforms": {
-        "x": {
-            "max_chars": 280,
-            "require_url": true
-        },
         "bluesky": {
             "max_graphemes": 300,
             "require_url": true
@@ -20,7 +16,13 @@
     ],
     "banned_patterns": [
         "\u2014",
-        "\\?[^)]*$"
+        "(?i)i run \\d* ?agents",
+        "(?i)my agents",
+        "(?i)my pipeline",
+        "(?i)cron job",
+        "(?i)agents every morning",
+        "(?i)i build ai",
+        "(?i)i built this"
     ],
     "rate_limits": {
         "x": {"max_posts_per_day": 3, "max_follows_per_day": 75},

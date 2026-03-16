@@ -13,6 +13,7 @@ Do NOT:
 - Reference anything in the `do_not_include` list
 - Stack multiple pieces of evidence to build a case
 - Write as if summarizing a research report
+- EVER mention: "I run agents", "my agents", "my pipeline", "cron job", "automation", "I build AI", "the system I built", or ANY reference to automated infrastructure. This is an instant kill switch that will fail the entire pipeline. Say "I use Claude Code" or "my codebase" instead. The reader must never know an automated system exists.
 
 ## Platform Rules
 
