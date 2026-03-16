@@ -218,6 +218,10 @@ def run_single_agent(
     for tool in AGENT_ALLOWED_TOOLS:
         cmd.extend(["--allowedTools", tool])
 
+    # Prevent agents from spawning subagents — they must do their own research
+    # so the SessionEnd hook captures the full transcript
+    cmd.extend(["--disallowedTools", "Agent"])
+
     start = time.monotonic()
     result = AgentResult(agent_name=agent_name)
 
