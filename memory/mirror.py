@@ -583,8 +583,132 @@ def generate_mirrors(
     _write_index(env, vault_dir, "social", "Social", date_str, "Social media posts, corrections, and engagement logs.")
     _write_index(env, vault_dir, "people", "People", date_str, "People and authors we engage with.")
 
+    # ── Mirror: newsletters ──────────────────────────────────────────────
+    _mirror_newsletters(vault_dir, date_str)
+
+    # ── Render: social/feedback.md (Gate 2 outcomes) ─────────────────────
+    _mirror_feedback(db, vault_dir, date_str, env)
+
+    # ── Write newsletter index ─────────────────────────────────────────
+    _write_index(env, vault_dir, "newsletters", "Newsletters", date_str, "Daily research newsletters sent via email.")
+
     # ── Archival: decisions.md ────────────────────────────────────────────
     decisions_path = vault_dir / "decisions.md"
     archive_path = vault_dir / "decisions-archive.md"
     if decisions_path.exists():
         archive_old_entries(decisions_path, archive_path, max_age_days=90)
+
+
+def _mirror_newsletters(vault_dir: Path, date_str: str) -> None:
+    """Copy newsletter .md files from reports/ramsay/ into the vault.
+
+    Each newsletter gets YAML frontmatter added and wiki-links to the
+    matching daily log.
+    """
+    project_root = vault_dir.parent.parent.parent  # data/ramsay/mindpattern -> project root
+    reports_dir = project_root / "reports" / "ramsay"
+
+    if not reports_dir.exists():
+        return
+
+    newsletters_dir = vault_dir / "newsletters"
+    newsletters_dir.mkdir(parents=True, exist_ok=True)
+
+    for report_file in sorted(reports_dir.glob("*.md")):
+        # Skip non-date files
+        name = report_file.stem
+        if not (len(name) >= 10 and name[:4].isdigit()):
+            continue
+
+        content = report_file.read_text(encoding="utf-8")
+
+        # Add frontmatter if not present
+        if not content.startswith("---"):
+            date_part = name[:10]
+            frontmatter = (
+                f"---\n"
+                f"type: newsletter\n"
+                f"date: {date_part}\n"
+                f"tags:\n"
+                f"  - newsletter\n"
+                f"---\n\n"
+                f"See also: [[daily/{date_part}|Daily Log]]\n\n"
+            )
+            content = frontmatter + content
+
+        atomic_write(newsletters_dir / f"{name}.md", content)
+
+
+def _mirror_feedback(
+    db: sqlite3.Connection,
+    vault_dir: Path,
+    date_str: str,
+    env: Environment,
+) -> None:
+    """Generate social/feedback.md from social_feedback table.
+
+    Shows Gate 2 outcomes: which posts were approved/rejected/edited,
+    by platform and date.
+    """
+    rows = db.execute(
+        """
+        SELECT date, platform, action, edit_type, user_feedback
+        FROM social_feedback
+        ORDER BY date DESC
+        """
+    ).fetchall()
+
+    entries = []
+    for r in rows:
+        entries.append({
+            "date": r["date"] if hasattr(r, "keys") else r[0],
+            "platform": r["platform"] if hasattr(r, "keys") else r[1],
+            "action": r["action"] if hasattr(r, "keys") else r[2],
+            "edit_type": r["edit_type"] if hasattr(r, "keys") else r[3],
+            "feedback": (r["user_feedback"] if hasattr(r, "keys") else r[4]) or "",
+        })
+
+    content = (
+        "---\n"
+        "type: social\n"
+        f"date: {date_str}\n"
+        "tags:\n"
+        "  - social\n"
+        "  - feedback\n"
+        "---\n\n"
+        "# Gate 2 Feedback Log\n\n"
+        "Editorial feedback from Gate 2 approvals. Shows which posts were "
+        "approved, rejected, or edited.\n\n"
+    )
+
+    if not entries:
+        content += "*No feedback recorded yet.*\n"
+    else:
+        # Summary stats
+        approved = sum(1 for e in entries if e["action"] == "approved")
+        skipped = sum(1 for e in entries if e["action"] == "skip")
+        total = len(entries)
+        content += (
+            f"**Total**: {total} decisions | "
+            f"**Approved**: {approved} | "
+            f"**Skipped**: {skipped}\n\n"
+        )
+
+        # Group by date
+        from collections import defaultdict
+        by_date = defaultdict(list)
+        for e in entries:
+            by_date[e["date"]].append(e)
+
+        for date in sorted(by_date.keys(), reverse=True)[:30]:
+            content += f"## {date}\n\n"
+            for e in by_date[date]:
+                status = "approved" if e["action"] == "approved" else e["action"]
+                edit = f" ({e['edit_type']})" if e["edit_type"] and e["edit_type"] != "none" else ""
+                content += f"- **{e['platform']}**: {status}{edit}"
+                if e["feedback"]:
+                    content += f" — {e['feedback']}"
+                content += f" → [[daily/{date}|Daily Log]]\n"
+            content += "\n"
+
+    atomic_write(vault_dir / "social" / "feedback.md", content)
