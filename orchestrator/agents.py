@@ -122,6 +122,7 @@ def build_agent_prompt(
     claims: list[str] | None = None,
     preflight_items: list[dict] | None = None,
     already_covered: list[dict] | None = None,
+    identity_dir: Path | None = None,
 ) -> str:
     """Build the prompt for a single research agent.
 
@@ -136,6 +137,16 @@ def build_agent_prompt(
     """
     soul_content = soul_path.read_text() if soul_path.exists() else ""
     skill_content = agent_skill_path.read_text() if agent_skill_path.exists() else ""
+
+    # Load identity files from vault if identity_dir provided
+    user_content = ""
+    if identity_dir:
+        vault_soul = identity_dir / "soul.md"
+        if vault_soul.exists():
+            soul_content = vault_soul.read_text()  # Override verticals version
+        vault_user = identity_dir / "user.md"
+        if vault_user.exists():
+            user_content = vault_user.read_text()
 
     trends_section = ""
     if trends:
@@ -259,6 +270,10 @@ Do not explain your full reasoning — just output the finding.
 
 ---
 
+{user_content}
+
+---
+
 {skill_content}
 
 ---
@@ -315,6 +330,9 @@ def run_single_agent(
     # Add allowed tools
     for tool in AGENT_ALLOWED_TOOLS:
         cmd.extend(["--allowedTools", tool])
+
+    # Block global skills from polluting pipeline agent context
+    cmd.extend(["--disallowedTools", "Skill"])
 
     start = time.monotonic()
     result = AgentResult(agent_name=agent_name)
@@ -446,6 +464,8 @@ def dispatch_research_agents(
                 agent_preflight = preflight_data["assignments"].get(agent_name, [])
                 agent_covered = preflight_data.get("already_covered", [])
 
+            identity_dir = PROJECT_ROOT / "data" / user_id / "mindpattern"
+
             prompt = build_agent_prompt(
                 agent_name=agent_name,
                 user_id=user_id,
@@ -457,6 +477,7 @@ def dispatch_research_agents(
                 claims=claims,
                 preflight_items=agent_preflight,
                 already_covered=agent_covered,
+                identity_dir=identity_dir,
             )
 
             future = executor.submit(run_single_agent, agent_name, prompt)
@@ -616,7 +637,7 @@ def run_claude_prompt(
     # Prevent subagent dispatch and file writing — agents must return output
     # via stdout, not write to files. Write/Edit would let the agent put the
     # newsletter in a file instead of returning it.
-    cmd.extend(["--disallowedTools", "Agent,Write,Edit,NotebookEdit"])
+    cmd.extend(["--disallowedTools", "Agent,Write,Edit,NotebookEdit,Skill"])
 
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
