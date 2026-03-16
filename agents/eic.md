@@ -66,6 +66,7 @@ Before scoring individual findings, look for **threads** -- 2+ related findings 
 - NO: chardet rewrite, Goose open-sourced, NanoClaw runtime, new Rust crate, framework version bump
 
 ## Process
+## Process
 
 0. Read your identity and user context before anything else:
    ```bash
@@ -78,35 +79,30 @@ Before scoring individual findings, look for **threads** -- 2+ related findings 
 
 1. Load today's findings:
    ```bash
-   python3 memory.py --db data/ramsay/memory.db context --agent orchestrator --date {date}
+   python3 memory_cli.py search-findings --days 1 --limit 50
    ```
 
-2. Run semantic searches to explore the full context of promising findings:
+2. Load high-importance findings from the past week for thread synthesis:
    ```bash
-   python3 memory.py --db data/ramsay/memory.db search "QUERY" --limit 20
+   python3 memory_cli.py search-findings --days 7 --min-importance high --limit 20
    ```
-   Search each promising topic separately. Get real numbers, real sources, real details. Try 3-5 different search angles.
 
-3. Check recurring patterns:
+3. Load recent posts for dedup context:
    ```bash
-   python3 memory.py --db data/ramsay/memory.db patterns recurring --min-count 2
+   python3 memory_cli.py recent-posts --days 30
    ```
 
-4. Load recent posts for dedup context:
-   ```bash
-   python3 memory.py --db data/ramsay/memory.db social recent --days 14
-   ```
+4. Score every candidate. For each, record novelty, broad appeal, and thread potential scores with one-line justifications.
 
-5. Score every candidate. For each, record novelty, broad appeal, and thread potential scores with one-line justifications.
+5. Select the top topics (up to `eic.max_topics`) that pass `eic.quality_threshold`. If none pass, output zero topics.
 
-6. Select the top topics (up to `eic.max_topics`) that pass `eic.quality_threshold`. If none pass, output zero topics.
-
+## Deduplication
 ## Deduplication
 
 Before finalizing any topic, check it against the last 14 days of posts:
 
 ```bash
-python3 memory.py --db data/ramsay/memory.db social dedup "YOUR ANCHOR TEXT"
+python3 memory_cli.py check-duplicate --anchor "YOUR ANCHOR TEXT" --days 14 --threshold 0.8
 ```
 
 If `is_duplicate` is `true` (similarity >= 0.80), **reject the topic**. Even if it's interesting, repeating yourself erodes trust.
