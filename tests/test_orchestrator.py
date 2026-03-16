@@ -38,7 +38,8 @@ class TestPhaseEnum:
 
     EXPECTED_PHASES = [
         "init", "trend_scan", "research", "synthesis", "deliver",
-        "learn", "social", "engagement", "sync", "completed", "failed",
+        "learn", "social", "engagement", "evolve", "mirror",
+        "sync", "completed", "failed",
     ]
 
     def test_all_values_present(self):
@@ -68,7 +69,7 @@ class TestPhaseOrder:
         expected = [
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            Phase.SYNC, Phase.COMPLETED,
+            Phase.EVOLVE, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
         ]
         assert PHASE_ORDER == expected
 
