@@ -219,7 +219,7 @@ class TestFormatAgentLog:
     def test_has_yaml_frontmatter(self):
         log_data = {
             "reasoning": ["Decided to search arxiv first"],
-            "tool_calls": [{"tool": "WebSearch", "input_preview": '{"q": "..."}'}],
+            "tool_calls": [{"tool": "WebSearch", "input": {"query": "test"}}],
             "user_prompts": ["Search for papers"],
             "duration": "2m 30s",
         }
@@ -228,6 +228,18 @@ class TestFormatAgentLog:
         assert "type: agent-log" in md
         assert "agent: news-researcher" in md
         assert "date: 2026-03-15" in md
+
+    def test_contains_summary_bar(self):
+        log_data = {
+            "reasoning": ["thinking step"],
+            "tool_calls": [{"tool": "WebSearch", "input": {"query": "test"}}],
+            "tool_results": ["result 1"],
+            "user_prompts": [],
+            "duration": "2m 0s",
+        }
+        md = hook.format_agent_log("researcher", "2026-03-15", log_data)
+        assert "**Duration**" in md
+        assert "**Tools used**: 1" in md
 
     def test_contains_daily_link(self):
         log_data = {
@@ -243,8 +255,8 @@ class TestFormatAgentLog:
         log_data = {
             "reasoning": [],
             "tool_calls": [
-                {"tool": "WebSearch", "input_preview": '{"q": "test"}'},
-                {"tool": "Read", "input_preview": '{"path": "/foo"}'},
+                {"tool": "WebSearch", "input": {"query": "test"}},
+                {"tool": "Read", "input": {"file_path": "/foo"}},
             ],
             "user_prompts": [],
             "duration": "1m 0s",
@@ -253,6 +265,17 @@ class TestFormatAgentLog:
         assert "## Tool Calls" in md
         assert "**WebSearch**" in md
         assert "**Read**" in md
+
+    def test_formats_bash_tool_calls(self):
+        log_data = {
+            "reasoning": [],
+            "tool_calls": [{"tool": "Bash", "input": {"command": "curl -s https://r.jina.ai/example.com"}}],
+            "user_prompts": [],
+            "duration": "",
+        }
+        md = hook.format_agent_log("researcher", "2026-03-15", log_data)
+        assert "**Bash**" in md
+        assert "curl" in md
 
     def test_contains_reasoning_section(self):
         log_data = {
@@ -275,6 +298,33 @@ class TestFormatAgentLog:
         }
         md = hook.format_agent_log("researcher", "2026-03-15", log_data)
         assert "x" * 5000 in md
+
+    def test_json_output_pretty_printed(self):
+        """JSON findings output is pretty-printed in code fence."""
+        log_data = {
+            "reasoning": ['{"findings": [{"title": "Paper 1"}]}'],
+            "tool_calls": [],
+            "user_prompts": [],
+            "duration": "",
+        }
+        md = hook.format_agent_log("researcher", "2026-03-15", log_data)
+        assert "## Final Output" in md
+        assert "```json" in md
+        assert '"title": "Paper 1"' in md
+
+    def test_research_results_in_details_tags(self):
+        """Tool results use collapsible details tags."""
+        log_data = {
+            "reasoning": [],
+            "tool_calls": [],
+            "tool_results": ["Found: alignment paper from arxiv"],
+            "user_prompts": [],
+            "duration": "",
+        }
+        md = hook.format_agent_log("researcher", "2026-03-15", log_data)
+        assert "## Research Results" in md
+        assert "<details>" in md
+        assert "alignment paper" in md
 
     def test_no_tool_calls_section_when_empty(self):
         log_data = {

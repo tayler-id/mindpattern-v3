@@ -21,7 +21,6 @@ reliably in Claude Code's subprocess context.
 
 import json
 import os
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -64,10 +63,11 @@ def extract_agent_log(messages: list[dict]) -> dict:
     """Extract structured data from transcript messages.
 
     Returns a dict with:
-        - reasoning: list of assistant text blocks
-        - tool_calls: list of {tool, input_preview, output_preview}
+        - reasoning: list of assistant text/thinking blocks
+        - tool_calls: list of {tool, input_preview}
+        - tool_results: list of tool result strings
         - user_prompts: list of user message texts
-        - duration_estimate: rough time span from first to last timestamp
+        - duration: time span string
     """
     reasoning = []
     tool_calls = []
@@ -87,7 +87,6 @@ def extract_agent_log(messages: list[dict]) -> dict:
             content = msg.get("message", {}).get("content", "")
             if isinstance(content, str) and content.strip():
                 text = content.strip()
-                # Skip system/internal messages
                 if any(text.startswith(p) for p in [
                     "<system-reminder", "<teammate-message",
                     "<command-message", "<observed_from",
@@ -103,7 +102,7 @@ def extract_agent_log(messages: list[dict]) -> dict:
                     elif isinstance(block, dict) and block.get("type") == "tool_result":
                         result_text = block.get("content", "")
                         if isinstance(result_text, str) and result_text.strip():
-                            tool_results.append(_truncate(result_text.strip(), 300))
+                            tool_results.append(result_text.strip())
 
         # Assistant messages (reasoning, decisions)
         elif msg_type == "assistant":
@@ -118,22 +117,14 @@ def extract_agent_log(messages: list[dict]) -> dict:
                             if text:
                                 reasoning.append(text)
                         elif block.get("type") == "thinking":
-                            # Claude's internal reasoning between tool calls
                             text = block.get("thinking", "").strip()
                             if text:
                                 reasoning.append(text)
                         elif block.get("type") == "tool_use":
                             tool_calls.append({
                                 "tool": block.get("name", "unknown"),
-                                "input_preview": _truncate(
-                                    json.dumps(block.get("input", {})), 200
-                                ),
+                                "input": block.get("input", {}),
                             })
-
-        # Tool results
-        elif msg_type == "tool_result":
-            # Tool results are embedded in user messages as tool_result content
-            pass
 
     duration = ""
     if len(timestamps) >= 2:
@@ -163,6 +154,34 @@ def _truncate(text: str, max_len: int = 200) -> str:
     return text[:max_len - 3] + "..."
 
 
+def _format_tool_call(tc: dict) -> str:
+    """Format a single tool call as a readable line."""
+    tool = tc["tool"]
+    inp = tc.get("input", {})
+
+    if tool == "Agent":
+        desc = inp.get("description", "subagent")
+        return f"**Subagent dispatched**: {desc}"
+    elif tool == "WebSearch":
+        return f"**WebSearch**: `{inp.get('query', inp.get('q', ''))}`"
+    elif tool in ("WebFetch", "Read"):
+        target = inp.get("url", inp.get("file_path", inp.get("path", "")))
+        return f"**{tool}**: `{_truncate(str(target), 120)}`"
+    elif tool == "Bash":
+        cmd = inp.get("command", "")
+        return f"**Bash**: `{_truncate(cmd, 200)}`"
+    elif tool == "Grep":
+        return f"**Grep**: `{inp.get('pattern', '')}` in `{inp.get('path', '.')}`"
+    elif tool == "Glob":
+        return f"**Glob**: `{inp.get('pattern', '')}`"
+    elif tool == "Write":
+        return f"**Write**: `{inp.get('file_path', '')}`"
+    elif tool == "Edit":
+        return f"**Edit**: `{inp.get('file_path', '')}`"
+    else:
+        return f"**{tool}**: `{_truncate(json.dumps(inp), 150)}`"
+
+
 # ── Markdown formatting ─────────────────────────────────────────────────────
 
 
@@ -174,76 +193,95 @@ def format_agent_log(
     """Format extracted log data as Obsidian-compatible markdown."""
     lines = []
 
-    # YAML frontmatter
+    # Separate reasoning (thinking) from output (JSON)
+    thinking = []
+    output_blocks = []
+    for block in log_data["reasoning"]:
+        stripped = block.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            output_blocks.append(stripped)
+        else:
+            thinking.append(block)
+
+    # Count stats
+    n_tools = len(log_data["tool_calls"])
+    n_results = len(log_data.get("tool_results", []))
+    n_thinking = len(thinking)
+
+    # ── YAML frontmatter ──
     lines.append("---")
     lines.append("type: agent-log")
     lines.append(f"agent: {agent_name}")
     lines.append(f"date: {date_str}")
     lines.append(f"duration: {log_data['duration'] or 'unknown'}")
-    lines.append(f"tool_calls: {len(log_data['tool_calls'])}")
-    lines.append(f"reasoning_blocks: {len(log_data['reasoning'])}")
-    lines.append(f"tool_results: {len(log_data.get('tool_results', []))}")
+    lines.append(f"tool_calls: {n_tools}")
+    lines.append(f"reasoning_blocks: {n_thinking}")
+    lines.append(f"tool_results: {n_results}")
     lines.append("---")
     lines.append("")
+
+    # ── Header ──
     lines.append(f"# {agent_name} — {date_str}")
     lines.append("")
     lines.append(f"Daily log: [[daily/{date_str}]]")
     lines.append("")
 
-    # Tool calls (skip prompt — it's just the agent schema + SOUL, not useful)
-    if log_data["tool_calls"]:
-        lines.append("## Tool Calls")
-        lines.append("")
-        for tc in log_data["tool_calls"]:
-            tool = tc['tool']
-            preview = tc['input_preview']
-            # Flag subagent dispatches
-            if tool == "Agent":
-                lines.append(f"- **Subagent dispatched**: `{_truncate(preview, 150)}`")
-            else:
-                lines.append(f"- **{tool}**: `{_truncate(preview, 150)}`")
-        lines.append("")
+    # ── Summary bar ──
+    lines.append(f"> **Duration**: {log_data['duration'] or 'unknown'} | "
+                 f"**Tools used**: {n_tools} | "
+                 f"**Thinking steps**: {n_thinking} | "
+                 f"**Results collected**: {n_results}")
+    lines.append("")
 
-    # Tool results (summaries) — what the agent actually found
-    if log_data.get("tool_results"):
-        lines.append("## Research Results")
-        lines.append("")
-        for i, tr in enumerate(log_data["tool_results"]):
-            # Clean up tool results for readability
-            clean = tr.replace("\\n", " ").strip()
-            if len(clean) > 500:
-                clean = clean[:500] + "..."
-            lines.append(f"### Result {i + 1}")
-            lines.append("")
-            lines.append(clean)
-            lines.append("")
-
-    # Reasoning — Claude's thinking between tool calls
-    thinking = [b for b in log_data["reasoning"]
-                if not (b.strip().startswith("{") or b.strip().startswith("["))]
+    # ── Reasoning — Claude's thinking between tool calls ──
     if thinking:
         lines.append("## Reasoning")
         lines.append("")
         for i, block in enumerate(thinking):
-            lines.append(f"### Step {i + 1}")
-            lines.append("")
+            if n_thinking > 1:
+                lines.append(f"### Step {i + 1}")
+                lines.append("")
             lines.append(block)
             lines.append("")
 
-    # Output — the agent's final response (findings JSON, etc.)
-    output_blocks = [b for b in log_data["reasoning"]
-                     if b.strip().startswith("{") or b.strip().startswith("[")]
+    # ── Tool Calls ──
+    if log_data["tool_calls"]:
+        lines.append("## Tool Calls")
+        lines.append("")
+        for tc in log_data["tool_calls"]:
+            lines.append(f"- {_format_tool_call(tc)}")
+        lines.append("")
+
+    # ── Research Results — what the tools returned ──
+    if log_data.get("tool_results"):
+        lines.append("## Research Results")
+        lines.append("")
+        for i, tr in enumerate(log_data["tool_results"]):
+            lines.append(f"<details><summary>Result {i + 1} ({len(tr)} chars)</summary>")
+            lines.append("")
+            lines.append(tr)
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
+
+    # ── Final Output — the agent's findings ──
     if output_blocks:
         lines.append("## Final Output")
         lines.append("")
         for block in output_blocks:
-            stripped = block.strip()
-            lines.append("```json")
-            lines.append(stripped)
-            lines.append("```")
+            # Pretty-print JSON if possible
+            try:
+                parsed = json.loads(block)
+                pretty = json.dumps(parsed, indent=2)
+                lines.append("```json")
+                lines.append(pretty)
+                lines.append("```")
+            except json.JSONDecodeError:
+                lines.append("```json")
+                lines.append(block)
+                lines.append("```")
         lines.append("")
     elif not thinking and log_data["reasoning"]:
-        # Fallback: show all reasoning as output
         lines.append("## Output")
         lines.append("")
         for block in log_data["reasoning"]:
