@@ -24,7 +24,7 @@ def _transform(raw: dict) -> dict:
     )
 
 
-def fetch(categories: str = "cs.AI,cs.LG,cs.CL", days: int = 2, max_results: int = 30) -> list[dict]:
+def fetch(categories: str = "cs.AI,cs.LG,cs.CL", days: int = 5, max_results: int = 30) -> list[dict]:
     cmd = [
         "python3", str(TOOLS_DIR / "arxiv-fetch.py"),
         "--categories", categories,

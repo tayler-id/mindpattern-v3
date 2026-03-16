@@ -29,7 +29,7 @@ def _transform(raw: dict) -> dict:
 def fetch(
     topics: str = "llm,ai-agent,rag,mcp,ai-coding,vibe-coding,ai-sdk,llm-framework",
     days: int = 7,
-    min_stars: int = 25,
+    min_stars: int = 100,
 ) -> list[dict]:
     cmd = [
         "python3", str(TOOLS_DIR / "github-fetch.py"),
