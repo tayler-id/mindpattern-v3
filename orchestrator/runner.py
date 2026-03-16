@@ -312,6 +312,34 @@ class ResearchPipeline:
         """Phase 3: Research (13x Sonnet, parallel)."""
         memory.clear_claims(self.db, self.date_str)
 
+        # Run preflight to gather structured data from all sources
+        preflight_data = None
+        try:
+            from preflight.run_all import run_all as run_preflight
+            preflight_data = run_preflight(
+                date_str=self.date_str,
+                db=self.db,
+                feeds_file=PROJECT_ROOT / "verticals" / "ai-tech" / "rss-feeds.json",
+            )
+            logger.info(
+                f"Preflight: {preflight_data['total_items']} items, "
+                f"{preflight_data['new_count']} new, "
+                f"{preflight_data['covered_count']} already covered, "
+                f"{preflight_data['duration_ms']}ms"
+            )
+
+            log_event(self.traces_conn, self.traces_run_id,
+                      "preflight_complete",
+                      json.dumps({
+                          "total_items": preflight_data["total_items"],
+                          "new_count": preflight_data["new_count"],
+                          "covered_count": preflight_data["covered_count"],
+                          "source_counts": preflight_data["source_counts"],
+                          "duration_ms": preflight_data["duration_ms"],
+                      }))
+        except Exception as e:
+            logger.warning(f"Preflight failed (non-critical, agents will use WebSearch): {e}")
+
         # Get cross-pipeline signal context to enrich agent dispatch
         signal_context = ""
         try:
@@ -334,6 +362,7 @@ class ResearchPipeline:
             trends=self.trends,
             claims=current_claims,
             max_workers=6,
+            preflight_data=preflight_data,
         )
 
         total_stored = 0
