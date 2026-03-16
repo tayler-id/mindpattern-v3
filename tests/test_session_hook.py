@@ -254,7 +254,7 @@ class TestFormatAgentLog:
         assert "**WebSearch**" in md
         assert "**Read**" in md
 
-    def test_contains_output_section(self):
+    def test_contains_reasoning_section(self):
         log_data = {
             "reasoning": ["This is important because it shows a new trend"],
             "tool_calls": [],
@@ -262,20 +262,19 @@ class TestFormatAgentLog:
             "duration": "",
         }
         md = hook.format_agent_log("researcher", "2026-03-15", log_data)
-        assert "## Output" in md
+        assert "## Reasoning" in md
         assert "important because" in md
 
-    def test_truncates_long_reasoning(self):
+    def test_preserves_full_reasoning(self):
+        """Full reasoning is preserved — no truncation."""
         log_data = {
-            "reasoning": ["x" * 2000],
+            "reasoning": ["x" * 5000],
             "tool_calls": [],
             "user_prompts": [],
             "duration": "",
         }
         md = hook.format_agent_log("researcher", "2026-03-15", log_data)
-        assert "..." in md
-        # Should be truncated to ~1000 chars
-        assert "x" * 1001 not in md
+        assert "x" * 5000 in md
 
     def test_no_tool_calls_section_when_empty(self):
         log_data = {

@@ -218,27 +218,36 @@ def format_agent_log(
             lines.append(clean)
             lines.append("")
 
+    # Reasoning — Claude's thinking between tool calls
+    thinking = [b for b in log_data["reasoning"]
+                if not (b.strip().startswith("{") or b.strip().startswith("["))]
+    if thinking:
+        lines.append("## Reasoning")
+        lines.append("")
+        for i, block in enumerate(thinking):
+            lines.append(f"### Step {i + 1}")
+            lines.append("")
+            lines.append(block)
+            lines.append("")
+
     # Output — the agent's final response (findings JSON, etc.)
-    if log_data["reasoning"]:
+    output_blocks = [b for b in log_data["reasoning"]
+                     if b.strip().startswith("{") or b.strip().startswith("[")]
+    if output_blocks:
+        lines.append("## Final Output")
+        lines.append("")
+        for block in output_blocks:
+            stripped = block.strip()
+            lines.append("```json")
+            lines.append(stripped)
+            lines.append("```")
+        lines.append("")
+    elif not thinking and log_data["reasoning"]:
+        # Fallback: show all reasoning as output
         lines.append("## Output")
         lines.append("")
         for block in log_data["reasoning"]:
-            # Try to detect JSON output and format it
-            stripped = block.strip()
-            if stripped.startswith("{") or stripped.startswith("["):
-                if len(stripped) > 2000:
-                    lines.append("```json")
-                    lines.append(stripped[:2000] + "...")
-                    lines.append("```")
-                else:
-                    lines.append("```json")
-                    lines.append(stripped)
-                    lines.append("```")
-            else:
-                if len(block) > 1000:
-                    lines.append(block[:1000] + "...")
-                else:
-                    lines.append(block)
+            lines.append(block)
             lines.append("")
 
     return "\n".join(lines)
