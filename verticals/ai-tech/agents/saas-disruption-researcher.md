@@ -145,14 +145,7 @@ Return findings as a structured list. For each finding:
 Return 15-20 findings, ordered by importance. At least 2 should be cross-category patterns if you spot them. This is the primary signal section — go wide and deep. More findings = more value here.
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: Exa search for SaaS disruption, fintech AI, startup launches
+- Secondary: Jina Reader for investor analysis and market reports
+- Tertiary: xreach for VC and founder discussions on Twitter

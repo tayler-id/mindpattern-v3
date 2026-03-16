@@ -78,14 +78,7 @@ Return 6-10 findings ordered by importance.
 - **Bug watch**: github-fetch.py query encoding (+ vs spaces) caused silent 0-result failures in the past.
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: Exa search for new open-source AI tool launches
+- Secondary: Jina Reader for README analysis of trending repos
+- Skip: Twitter, YouTube

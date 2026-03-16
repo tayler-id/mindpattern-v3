@@ -134,14 +134,7 @@ Return findings as a structured list. For each finding:
 Return 8-12 findings, ordered by importance.
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: Exa search for AI agent frameworks and launches
+- Secondary: Jina Reader for documentation and announcement posts
+- Tertiary: xreach for agent-related discussions on Twitter

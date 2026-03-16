@@ -72,14 +72,7 @@ Return 6-10 findings ordered by importance.
 - **HN front page via Firebase API** catches non-AI stories with AI relevance
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: Jina Reader for deep reads on top HN discussions
+- Secondary: Exa search for stories referenced in HN comments
+- Skip: Twitter, YouTube
