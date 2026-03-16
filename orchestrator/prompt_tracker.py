@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 PROMPT_DIRS = [
     PROJECT_ROOT / "prompts",
     PROJECT_ROOT / "agents",
+    PROJECT_ROOT / "verticals" / "ai-tech" / "agents",
 ]
 
 # File extensions that count as prompt files
