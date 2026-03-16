@@ -1,0 +1,58 @@
+---
+type: daily
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+agents_run: {{ agents | length }}
+findings_count: {{ findings | length }}
+posts: {{ posts | length }}
+---
+
+# Daily Activity Log - {{ date }}
+
+## Agents Run
+
+{% for agent in agents %}
+### {{ agent.name }}
+
+{% if agent.findings %}
+**Findings:**
+{% for finding in agent.findings %}
+- {{ finding.title }} ({{ finding.importance }}) - [[topics/{{ finding.topic_slug }}]]
+  - Source: [[sources/{{ finding.source_slug }}]]
+{% endfor %}
+{% else %}
+No findings this run.
+{% endif %}
+
+{% endfor %}
+
+## Social Results
+
+{% if posts %}
+{% for post in posts %}
+- **{{ post.platform }}**: {{ post.content[:80] }}{% if post.content | length > 80 %}...{% endif %}
+  - Gate outcome: {{ post.gate_outcome | default('n/a') }}
+{% endfor %}
+{% else %}
+No posts today.
+{% endif %}
+
+## Engagement Results
+
+{% if engagements %}
+{% for engagement in engagements %}
+- {{ engagement.platform }}: {{ engagement.type }} - {{ engagement.target_author | default('unknown') }}
+{% endfor %}
+{% else %}
+No engagements today.
+{% endif %}
+
+## Evolution Summary
+
+{% if evolution_actions %}
+{% for action in evolution_actions %}
+- **{{ action.action }}**: {{ action.agents }} - {{ action.reason }}
+{% endfor %}
+{% else %}
+No evolution actions today.
+{% endif %}

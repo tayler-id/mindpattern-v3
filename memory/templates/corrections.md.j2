@@ -1,0 +1,28 @@
+---
+type: social
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+---
+
+# Editorial Corrections
+
+{% if corrections %}
+{% for correction in corrections %}
+## {{ correction.date | default(date) }} - {{ correction.platform }}
+
+**Reason**: {{ correction.reason | default('No reason given') }}
+
+**Before**:
+> {{ correction.original_text }}
+
+**After**:
+> {{ correction.approved_text }}
+
+- **Daily log**: [[daily/{{ correction.date | default(date) }}]]
+
+---
+
+{% endfor %}
+{% else %}
+No corrections recorded yet.
+{% endif %}
