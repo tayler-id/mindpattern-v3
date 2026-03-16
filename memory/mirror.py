@@ -184,11 +184,19 @@ def _build_posts_data(posts: list[dict]) -> list[dict]:
     """Transform social_posts rows for templates."""
     result = []
     for p in posts:
+        content = p["content"]
+        # Strip v2-era PLATFORM/TYPE prefix
+        if content.startswith("PLATFORM:"):
+            lines = content.split("\n")
+            for i, line in enumerate(lines):
+                if line.strip() == "---":
+                    content = "\n".join(lines[i + 1 :]).strip()
+                    break
         result.append(
             {
                 "date": p["date"],
                 "platform": p["platform"],
-                "content": p["content"],
+                "content": content,
                 "gate1_outcome": p.get("anchor_text", "n/a"),
                 "gate2_outcome": p.get("gate2_action", "n/a"),
                 "gate_outcome": p.get("gate2_action", "n/a"),
@@ -620,6 +628,12 @@ def generate_mirrors(
     # ── Write newsletter index ─────────────────────────────────────────
     _write_index(env, vault_dir, "newsletters", "Newsletters", date_str, "Daily research newsletters sent via email.")
 
+    # ── Mirror: social drafts folder ────────────────────────────────────
+    _mirror_social_drafts(vault_dir, date_str)
+
+    # ── Mirror: agent transcript indexes ─────────────────────────────────
+    _mirror_agent_indexes(vault_dir, date_str, env)
+
     # ── Archival: decisions.md ────────────────────────────────────────────
     decisions_path = vault_dir / "decisions.md"
     archive_path = vault_dir / "decisions-archive.md"
@@ -740,3 +754,141 @@ def _mirror_feedback(
             content += "\n"
 
     atomic_write(vault_dir / "social" / "feedback.md", content)
+
+
+def _mirror_social_drafts(vault_dir: Path, date_str: str) -> None:
+    """Mirror live social draft files into the Obsidian vault.
+
+    Copies the current state of data/social-drafts/ into
+    vault/social/drafts/{date}/ so the user can browse EIC briefs,
+    creative briefs, platform drafts, and verdicts in Obsidian.
+    """
+    project_root = vault_dir.parent.parent.parent
+    drafts_src = project_root / "data" / "social-drafts"
+    if not drafts_src.exists():
+        return
+
+    drafts_dest = vault_dir / "social" / "drafts" / date_str
+    drafts_dest.mkdir(parents=True, exist_ok=True)
+
+    # Files to mirror (skip debug logs)
+    for src_file in sorted(drafts_src.iterdir()):
+        if not src_file.is_file():
+            continue
+        if src_file.suffix == ".log":
+            continue
+
+        content = src_file.read_text(encoding="utf-8")
+
+        if src_file.suffix == ".json":
+            # Wrap JSON in a markdown code block with frontmatter
+            md_content = (
+                f"---\n"
+                f"type: social-draft\n"
+                f"date: {date_str}\n"
+                f"source: {src_file.name}\n"
+                f"tags:\n"
+                f"  - social\n"
+                f"  - draft\n"
+                f"---\n\n"
+                f"# {src_file.stem}\n\n"
+                f"Source: `data/social-drafts/{src_file.name}`\n\n"
+                f"Daily log: [[daily/{date_str}]]\n\n"
+                f"```json\n{content}\n```\n"
+            )
+            atomic_write(drafts_dest / f"{src_file.stem}.md", md_content)
+        elif src_file.suffix == ".md":
+            # Add frontmatter to markdown files
+            if not content.startswith("---"):
+                content = (
+                    f"---\n"
+                    f"type: social-draft\n"
+                    f"date: {date_str}\n"
+                    f"source: {src_file.name}\n"
+                    f"tags:\n"
+                    f"  - social\n"
+                    f"  - draft\n"
+                    f"---\n\n"
+                    f"Daily log: [[daily/{date_str}]]\n\n"
+                ) + content
+            atomic_write(drafts_dest / src_file.name, content)
+
+
+def _parse_agent_log_frontmatter(path: Path) -> dict:
+    """Extract YAML frontmatter fields from an agent log markdown file."""
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return {}
+    end = text.find("---", 3)
+    if end == -1:
+        return {}
+    frontmatter = text[3:end].strip()
+    result = {}
+    for line in frontmatter.split("\n"):
+        if ":" in line:
+            key, _, val = line.partition(":")
+            result[key.strip()] = val.strip()
+    return result
+
+
+def _mirror_agent_indexes(
+    vault_dir: Path,
+    date_str: str,
+    env: "Environment",
+) -> None:
+    """Generate _index.md for each agent folder and a top-level agents index.
+
+    Scans vault_dir/agents/ for per-agent folders created by the SessionEnd
+    hook, reads frontmatter from each daily log, and renders index templates.
+    """
+    agents_dir = vault_dir / "agents"
+    if not agents_dir.exists():
+        return
+
+    agent_index_tpl = env.get_template("agent-index.md.j2")
+    agents_top_tpl = env.get_template("agents-index.md.j2")
+
+    agents_summary = []
+
+    for agent_folder in sorted(agents_dir.iterdir()):
+        if not agent_folder.is_dir():
+            continue
+
+        agent_name = agent_folder.name
+
+        # Collect run metadata from daily log files
+        runs = []
+        for log_file in sorted(agent_folder.glob("*.md")):
+            if log_file.name.startswith("_"):
+                continue
+            fm = _parse_agent_log_frontmatter(log_file)
+            runs.append({
+                "date": fm.get("date", log_file.stem),
+                "duration": fm.get("duration", "unknown"),
+                "tool_calls": fm.get("tool_calls", "0"),
+                "reasoning_blocks": fm.get("reasoning_blocks", "0"),
+            })
+
+        # Most recent first
+        runs.sort(key=lambda r: r["date"], reverse=True)
+
+        # Write per-agent _index.md
+        content = agent_index_tpl.render(
+            agent_name=agent_name,
+            date=date_str,
+            runs=runs,
+        )
+        atomic_write(agent_folder / "_index.md", content)
+
+        agents_summary.append({
+            "name": agent_name,
+            "run_count": len(runs),
+        })
+
+    # Write top-level agents/_index.md
+    if agents_summary:
+        content = agents_top_tpl.render(
+            date=date_str,
+            agents=agents_summary,
+        )
+        atomic_write(agents_dir / "_index.md", content)
