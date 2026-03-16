@@ -120,6 +120,8 @@ def build_agent_prompt(
     context: str,
     trends: list[dict] | None = None,
     claims: list[str] | None = None,
+    preflight_items: list[dict] | None = None,
+    already_covered: list[dict] | None = None,
 ) -> str:
     """Build the prompt for a single research agent.
 
@@ -128,8 +130,9 @@ def build_agent_prompt(
     2. SOUL identity
     3. Agent skill definition
     4. Dynamic context (date, trends, memory context, claims)
-    5. Search instructions (SMTL: search ALL first, then reason)
-    6. Critical output rules repeated
+    5. Novelty requirement
+    6. Phase 1 (evaluate preflight) + Phase 2 (explore) — or legacy SMTL
+    7. Critical output rules repeated
     """
     soul_content = soul_path.read_text() if soul_path.exists() else ""
     skill_content = agent_skill_path.read_text() if agent_skill_path.exists() else ""
@@ -146,6 +149,94 @@ def build_agent_prompt(
             + "\n".join(f"- {c}" for c in claims)
             + "\n"
         )
+
+    # Build preflight sections if data available
+    preflight_section = ""
+    if preflight_items:
+        new_items = [i for i in preflight_items if not i.get("already_covered")]
+        covered_items = already_covered or [i for i in preflight_items if i.get("already_covered")]
+
+        # Phase 1: Evaluate preflight data
+        items_md = []
+        for idx, item in enumerate(new_items, 1):
+            metrics_str = ""
+            if item.get("metrics"):
+                parts = [f"{k}={v}" for k, v in item["metrics"].items() if v]
+                if parts:
+                    metrics_str = f" ({', '.join(parts)})"
+            items_md.append(
+                f"{idx}. **[{item['source'].upper()}]** [{item.get('source_name', '')}] "
+                f"{item['title']}\n"
+                f"   URL: {item['url']}\n"
+                f"   {item.get('content_preview', '')[:200]}{metrics_str}"
+            )
+
+        covered_md = []
+        for item in (covered_items or [])[:20]:
+            mi = item.get("match_info") or {}
+            covered_md.append(
+                f"- ~~{item['title']}~~ — covered by {mi.get('matched_agent', '?')} "
+                f"on {mi.get('matched_date', '?')} (sim={mi.get('similarity', 0):.2f})"
+            )
+
+        nl = "\n"
+        preflight_section = f"""
+
+---
+
+## Phase 1: Evaluate Pre-Fetched Data
+
+Below are {len(new_items)} NEW items pre-fetched from your domain sources.
+
+Select the 8-12 most important NEW items as findings. For each:
+- Verify the content is real and recent (not old news resurfacing)
+- Write a 2-3 sentence summary with specific details (names, numbers, dates)
+- Rate importance (high/medium/low)
+- Include the source_url from the preflight data
+
+{nl.join(items_md)}
+
+### ALREADY COVERED (skip unless major update)
+
+{nl.join(covered_md) if covered_md else 'None.'}
+
+---
+
+## Phase 2: Explore Beyond Preflight
+
+The preflight data covers known sources. Now find what it MISSED.
+Use these tools to discover 2-5 additional findings:
+
+- Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
+- Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
+- Twitter search: xreach search "query" --count 10 --json
+- YouTube transcripts: yt-dlp --dump-json "URL"
+- WebSearch (last resort): only if Exa doesn't cover it
+
+Look for:
+- Stories that broke in the last 6 hours (too recent for RSS/feeds)
+- Primary sources not in our feed list
+- Reactions and follow-ups to stories in the preflight data
+
+Target: 10-15 total findings (8-12 from Phase 1 + 2-5 from Phase 2).
+
+"""
+
+    # Old search instructions — only used when no preflight data
+    search_section = ""
+    if not preflight_items:
+        search_section = """
+---
+
+## Search Instructions (SMTL)
+
+PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
+PHASE B: Now reason over collected evidence. Score each finding.
+PHASE C: Filter against the Recent Findings list. Remove anything already covered.
+
+For each finding evaluation, use max 5 words per reasoning step.
+Do not explain your full reasoning — just output the finding.
+"""
 
     prompt = f"""CRITICAL: Output ONLY valid JSON matching this schema. No markdown, no commentary.
 {{
@@ -193,18 +284,7 @@ Search for what happened in the LAST 24 HOURS. Prioritize:
 
 Every finding you return must pass this test: "Would someone who read
 yesterday's newsletter learn something NEW from this?"
-
----
-
-## Search Instructions (SMTL)
-
-PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
-PHASE B: Now reason over collected evidence. Score each finding.
-PHASE C: Filter against the Recent Findings list. Remove anything already covered.
-
-For each finding evaluation, use max 5 words per reasoning step.
-Do not explain your full reasoning — just output the finding.
-
+{preflight_section}{search_section}
 ---
 
 CRITICAL REMINDER: Output ONLY the JSON object with "findings" array. No other text.
@@ -325,6 +405,7 @@ def dispatch_research_agents(
     claims: list[str] | None = None,
     max_workers: int = 6,
     vertical: str = "ai-tech",
+    preflight_data: dict | None = None,
 ) -> list[AgentResult]:
     """Dispatch all research agents in parallel via concurrent.futures.
 
@@ -358,6 +439,13 @@ def dispatch_research_agents(
             # Build context for this agent
             context = context_fn(agent_name, date_str)
 
+            # Get preflight items assigned to this agent
+            agent_preflight = None
+            agent_covered = None
+            if preflight_data and preflight_data.get("assignments"):
+                agent_preflight = preflight_data["assignments"].get(agent_name, [])
+                agent_covered = preflight_data.get("already_covered", [])
+
             prompt = build_agent_prompt(
                 agent_name=agent_name,
                 user_id=user_id,
@@ -367,6 +455,8 @@ def dispatch_research_agents(
                 context=context,
                 trends=trends,
                 claims=claims,
+                preflight_items=agent_preflight,
+                already_covered=agent_covered,
             )
 
             future = executor.submit(run_single_agent, agent_name, prompt)
