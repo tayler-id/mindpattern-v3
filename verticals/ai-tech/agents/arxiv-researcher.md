@@ -75,38 +75,14 @@ Return 6-10 findings ordered by importance.
 - **Dedup against memory context** is critical — papers persist in API results for days. Check recent findings before reporting.
 
 
-## Available Research Tools (Agent Reach)
+## Research Protocol (MANDATORY)
 
-In addition to web search, you have these tools available via the Bash tool:
+1. **Search phase**: Use WebSearch to find candidate sources and URLs
+2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
+   ```bash
+   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
+   ```
+3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
+4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
 
-### Read any web page as clean markdown
-```bash
-curl -s https://r.jina.ai/URL
-```
-
-### Read a tweet
-```bash
-xreach tweet URL --json
-```
-
-### Search Twitter/X
-```bash
-xreach search "query" --json --limit 20
-```
-
-### Get YouTube video info + subtitles
-```bash
-yt-dlp --dump-json --skip-download "URL" 2>/dev/null
-```
-
-### Parse RSS feeds
-```bash
-python3 -c "import feedparser; feed = feedparser.parse('FEED_URL'); [print(e.title, e.link) for e in feed.entries[:10]]"
-```
-
-### Search Reddit
-```bash
-curl -s "https://www.reddit.com/search.json?q=QUERY&limit=10&sort=new" -H "User-Agent: mindpattern/1.0"
-```
-
-Use these tools when your standard web search does not surface enough primary sources. Twitter and Reddit often have real-time discussion that web search misses. YouTube videos may contain announcements not covered in articles.
+Do NOT return findings based only on search result snippets. Read the actual articles.
