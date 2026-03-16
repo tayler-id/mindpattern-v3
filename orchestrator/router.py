@@ -34,6 +34,9 @@ MODEL_ROUTING: dict[str, str] = {
     # Engagement
     "engagement_finder": "sonnet",  # search + match
     "engagement_writer": "sonnet",  # reply writing
+
+    # Self-optimization
+    "analyzer": "opus_1m",          # needs 1M context for all traces + skills
 }
 
 # Max turns per task type
@@ -53,6 +56,7 @@ MAX_TURNS: dict[str, int] = {
     "humanizer": 5,
     "engagement_finder": 10,
     "engagement_writer": 5,
+    "analyzer": 10,
 }
 
 # Timeout per task type (seconds)
@@ -72,6 +76,7 @@ TIMEOUTS: dict[str, int] = {
     "humanizer": 120,
     "engagement_finder": 300,
     "engagement_writer": 120,
+    "analyzer": 600,
 }
 
 # Cost per 1M tokens (for budget tracking)
