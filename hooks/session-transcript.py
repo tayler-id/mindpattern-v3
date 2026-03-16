@@ -117,6 +117,11 @@ def extract_agent_log(messages: list[dict]) -> dict:
                             text = block.get("text", "").strip()
                             if text:
                                 reasoning.append(text)
+                        elif block.get("type") == "thinking":
+                            # Claude's internal reasoning between tool calls
+                            text = block.get("thinking", "").strip()
+                            if text:
+                                reasoning.append(text)
                         elif block.get("type") == "tool_use":
                             tool_calls.append({
                                 "tool": block.get("name", "unknown"),
