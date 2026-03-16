@@ -199,6 +199,8 @@ class ResearchPipeline:
             Phase.LEARN: self._phase_learn,
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
+            Phase.EVOLVE: self._phase_evolve,
+            Phase.MIRROR: self._phase_mirror,
             Phase.SYNC: self._phase_sync,
         }.get(phase)
 
@@ -782,6 +784,50 @@ class ResearchPipeline:
             f"{result.get('follows', 0)} follows"
         )
         return result
+
+    def _phase_evolve(self) -> dict:
+        """Phase: Evolve identity files based on today's results."""
+        from memory.identity_evolve import build_evolve_prompt, apply_evolution_diff, parse_llm_output
+
+        vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
+
+        # Build pipeline results summary for the evolve prompt
+        pipeline_results = {
+            "date": self.date_str,
+            "findings_count": len(self.agent_results) if self.agent_results else 0,
+            "newsletter_generated": bool(self.newsletter_text),
+        }
+
+        prompt = build_evolve_prompt(vault_dir, pipeline_results)
+        output, exit_code = agent_dispatch.run_claude_prompt(prompt, task_type="evolve")
+
+        if exit_code != 0 or not output:
+            logger.warning("EVOLVE: LLM call failed, skipping identity evolution")
+            return {"evolved": False, "reason": "LLM call failed"}
+
+        diff = parse_llm_output(output)
+        if diff is None:
+            logger.warning("EVOLVE: Could not parse LLM output as JSON")
+            return {"evolved": False, "reason": "JSON parse failed"}
+
+        result = apply_evolution_diff(vault_dir, diff)
+
+        if result.get("changes_made"):
+            logger.info(f"EVOLVE: {result['changes_made']}")
+        if result.get("errors"):
+            logger.warning(f"EVOLVE errors: {result['errors']}")
+
+        return {"evolved": True, **result}
+
+    def _phase_mirror(self) -> dict:
+        """Phase: Generate Obsidian mirror files from SQLite."""
+        from memory.mirror import generate_mirrors
+
+        vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
+        generate_mirrors(self.db, vault_dir, self.date_str)
+
+        logger.info(f"MIRROR: Generated Obsidian files in {vault_dir}")
+        return {"mirrored": True}
 
     def _phase_sync(self) -> dict:
         """Phase 9: Sync to Fly.io.
