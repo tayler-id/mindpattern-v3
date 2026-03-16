@@ -1,16 +1,38 @@
 ---
 type: index
 date: 2026-03-15
-tags: [index, daily]
+tags: index, daily
 ---
 
-# Daily Research Reports
+# Daily Logs
 
-Each day's research output is stored here as a single note. Agents read recent dailies for continuity and deduplication.
+Daily activity and research logs.
 
-```dataview
-LIST FROM "daily"
-WHERE type = "daily"
-SORT date DESC
-LIMIT 30
-```
+- [[daily/2026-02-12|2026 02 12]]
+- [[daily/2026-02-13|2026 02 13]]
+- [[daily/2026-02-14|2026 02 14]]
+- [[daily/2026-02-16|2026 02 16]]
+- [[daily/2026-02-17|2026 02 17]]
+- [[daily/2026-02-20|2026 02 20]]
+- [[daily/2026-02-21|2026 02 21]]
+- [[daily/2026-02-22|2026 02 22]]
+- [[daily/2026-02-23|2026 02 23]]
+- [[daily/2026-02-24|2026 02 24]]
+- [[daily/2026-02-25|2026 02 25]]
+- [[daily/2026-02-26|2026 02 26]]
+- [[daily/2026-02-27|2026 02 27]]
+- [[daily/2026-02-28|2026 02 28]]
+- [[daily/2026-03-01|2026 03 01]]
+- [[daily/2026-03-02|2026 03 02]]
+- [[daily/2026-03-03|2026 03 03]]
+- [[daily/2026-03-04|2026 03 04]]
+- [[daily/2026-03-05|2026 03 05]]
+- [[daily/2026-03-06|2026 03 06]]
+- [[daily/2026-03-07|2026 03 07]]
+- [[daily/2026-03-08|2026 03 08]]
+- [[daily/2026-03-09|2026 03 09]]
+- [[daily/2026-03-10|2026 03 10]]
+- [[daily/2026-03-11|2026 03 11]]
+- [[daily/2026-03-13|2026 03 13]]
+- [[daily/2026-03-14|2026 03 14]]
+- [[daily/2026-03-15|2026 03 15]]
