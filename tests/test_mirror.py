@@ -495,3 +495,161 @@ class TestSlugGeneration:
         assert _domain_from_url("https://anthropic.com/blog/claude-5") == "anthropic.com"
         assert _domain_from_url("") is None
         assert _domain_from_url(None) is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. Agent transcript indexes
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestAgentIndexMirror:
+    """Tests for _mirror_agent_indexes and _parse_agent_log_frontmatter."""
+
+    def test_no_agents_dir_is_noop(self, seeded_db, vault):
+        """If agents/ doesn't exist yet, mirror is a no-op."""
+        from memory.mirror import generate_mirrors
+
+        generate_mirrors(seeded_db, vault, "2026-03-15")
+        # Should not create agents/ if no hook has run
+        agents_dir = vault / "agents"
+        assert not agents_dir.exists() or not any(
+            p for p in agents_dir.iterdir() if p.is_dir()
+        )
+
+    def test_generates_per_agent_index(self, seeded_db, vault):
+        """Per-agent _index.md is generated from agent log files."""
+        from memory.mirror import generate_mirrors
+        from memory.vault import atomic_write
+
+        # Simulate hook output
+        agent_dir = vault / "agents" / "news-researcher"
+        agent_dir.mkdir(parents=True)
+        atomic_write(
+            agent_dir / "2026-03-15.md",
+            "---\ntype: agent-log\nagent: news-researcher\n"
+            "date: 2026-03-15\nduration: 2m 30s\n"
+            "tool_calls: 5\nreasoning_blocks: 3\n---\n\n# Test\n",
+        )
+
+        generate_mirrors(seeded_db, vault, "2026-03-15")
+
+        index = agent_dir / "_index.md"
+        assert index.exists()
+        content = index.read_text(encoding="utf-8")
+        assert "news-researcher" in content
+        assert "2026-03-15" in content
+        assert "2m 30s" in content
+
+    def test_generates_top_level_agents_index(self, seeded_db, vault):
+        """Top-level agents/_index.md lists all agent folders."""
+        from memory.mirror import generate_mirrors
+        from memory.vault import atomic_write
+
+        for name in ["news-researcher", "security-researcher"]:
+            d = vault / "agents" / name
+            d.mkdir(parents=True)
+            atomic_write(
+                d / "2026-03-15.md",
+                f"---\ntype: agent-log\nagent: {name}\n"
+                f"date: 2026-03-15\nduration: 1m 0s\n"
+                f"tool_calls: 2\nreasoning_blocks: 1\n---\n\n# Test\n",
+            )
+
+        generate_mirrors(seeded_db, vault, "2026-03-15")
+
+        top_index = vault / "agents" / "_index.md"
+        assert top_index.exists()
+        content = top_index.read_text(encoding="utf-8")
+        assert "news-researcher" in content
+        assert "security-researcher" in content
+
+    def test_multiple_runs_per_agent(self, seeded_db, vault):
+        """Agent with multiple daily logs gets them all listed."""
+        from memory.mirror import generate_mirrors
+        from memory.vault import atomic_write
+
+        agent_dir = vault / "agents" / "eic"
+        agent_dir.mkdir(parents=True)
+
+        for date in ["2026-03-13", "2026-03-14", "2026-03-15"]:
+            atomic_write(
+                agent_dir / f"{date}.md",
+                f"---\ntype: agent-log\nagent: eic\n"
+                f"date: {date}\nduration: 1m 0s\n"
+                f"tool_calls: 3\nreasoning_blocks: 2\n---\n\n# Test\n",
+            )
+
+        generate_mirrors(seeded_db, vault, "2026-03-15")
+
+        content = (agent_dir / "_index.md").read_text(encoding="utf-8")
+        assert "2026-03-13" in content
+        assert "2026-03-14" in content
+        assert "2026-03-15" in content
+        assert "runs: 3" in content
+
+    def test_parse_agent_log_frontmatter(self, tmp_path):
+        """_parse_agent_log_frontmatter extracts YAML fields."""
+        from memory.mirror import _parse_agent_log_frontmatter
+
+        path = tmp_path / "test.md"
+        path.write_text(
+            "---\ntype: agent-log\nagent: eic\ndate: 2026-03-15\n"
+            "duration: 2m 30s\ntool_calls: 5\n---\n\n# Content\n"
+        )
+        fm = _parse_agent_log_frontmatter(path)
+        assert fm["type"] == "agent-log"
+        assert fm["agent"] == "eic"
+        assert fm["date"] == "2026-03-15"
+        assert fm["duration"] == "2m 30s"
+        assert fm["tool_calls"] == "5"
+
+    def test_parse_frontmatter_no_frontmatter(self, tmp_path):
+        """Files without frontmatter return empty dict."""
+        from memory.mirror import _parse_agent_log_frontmatter
+
+        path = tmp_path / "test.md"
+        path.write_text("# No frontmatter\n\nJust content.\n")
+        assert _parse_agent_log_frontmatter(path) == {}
+
+    def test_daily_template_links_to_agents(self, seeded_db, vault):
+        """Daily notes include links to agent transcript logs."""
+        from memory.mirror import generate_mirrors
+
+        generate_mirrors(seeded_db, vault, "2026-03-15")
+
+        daily = vault / "daily" / "2026-03-15.md"
+        assert daily.exists()
+        content = daily.read_text(encoding="utf-8")
+        assert "[[agents/" in content
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. Post cleanup (v2-era prefix stripping)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPostCleanup:
+    def test_strips_v2_platform_prefix(self):
+        """v2-era posts with PLATFORM/TYPE prefix get cleaned."""
+        from memory.mirror import _build_posts_data
+        posts = [{
+            "date": "2026-03-10",
+            "platform": "bluesky",
+            "content": "PLATFORM: bluesky\nTYPE: single\n---\nactual post content here",
+            "gate2_action": "approved",
+        }]
+        result = _build_posts_data(posts)
+        assert "PLATFORM:" not in result[0]["content"]
+        assert "actual post content here" in result[0]["content"]
+
+    def test_preserves_normal_content(self):
+        """Posts without v2 prefix are unchanged."""
+        from memory.mirror import _build_posts_data
+        posts = [{
+            "date": "2026-03-15",
+            "platform": "bluesky",
+            "content": "normal post content without prefix",
+            "gate2_action": "approved",
+        }]
+        result = _build_posts_data(posts)
+        assert result[0]["content"] == "normal post content without prefix"
