@@ -14,6 +14,8 @@ posts: {{ posts | length }}
 {% for agent in agents %}
 ### {{ agent.name }}
 
+Transcript: [[agents/{{ agent.name }}/{{ date }}]]
+
 {% if agent.findings %}
 **Findings:**
 {% for finding in agent.findings %}

@@ -97,10 +97,15 @@ def sync_to_fly(
             "error": f"Upload failed: {upload_result['error']}",
         }
 
-    # Step 5: Extract bundle on remote
+    # Step 5: Extract bundle on remote and clean up old timestamped reports.
+    # The pipeline creates timestamped backups like 2026-03-15-103412.md
+    # alongside the canonical 2026-03-15.md. These cause duplicates in the
+    # API. Remove ALL timestamped report files (pattern: YYYY-MM-DD-HHMMSS.md)
+    # so only the canonical date files remain.
     extract_result = _fly_ssh(
         app_name,
-        f"cd /data && tar xzf {remote_bundle} && rm -f {remote_bundle}",
+        f"cd /data && tar xzf {remote_bundle} && rm -f {remote_bundle} && "
+        f"find /data/reports/{user_id}/ -maxdepth 1 -regex '.*/[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}-[0-9]{{6}}\\.md' -delete 2>/dev/null; true",
     )
 
     if not extract_result["success"]:

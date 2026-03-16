@@ -7,6 +7,7 @@ gets a focused prompt with its context. Python controls the orchestration.
 
 import json
 import logging
+import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +21,31 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SOCIAL_DRAFTS_DIR = PROJECT_ROOT / "data" / "social-drafts"
+
+# Pipeline date — set by runner before dispatching agents
+_pipeline_date: str | None = None
+
+
+def set_pipeline_date(date_str: str) -> None:
+    """Set the pipeline date so subprocess env vars include it."""
+    global _pipeline_date
+    _pipeline_date = date_str
+
+
+def _agent_env(agent_name: str) -> dict[str, str]:
+    """Build environment dict for a claude -p subprocess.
+
+    Inherits the parent process environment and adds MINDPATTERN_AGENT,
+    MINDPATTERN_DATE, and MINDPATTERN_VAULT so the SessionEnd hook can
+    capture the transcript into the correct agent folder.
+    """
+    env = {**os.environ}
+    env["MINDPATTERN_AGENT"] = agent_name
+    if _pipeline_date:
+        env["MINDPATTERN_DATE"] = _pipeline_date
+    vault = PROJECT_ROOT / "data" / "ramsay" / "mindpattern"
+    env["MINDPATTERN_VAULT"] = str(vault)
+    return env
 
 # Tools each agent is allowed to use
 AGENT_ALLOWED_TOOLS = [
@@ -195,6 +221,9 @@ def run_single_agent(
     start = time.monotonic()
     result = AgentResult(agent_name=agent_name)
 
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(agent_name)
+
     try:
         proc = subprocess.run(
             cmd,
@@ -202,6 +231,7 @@ def run_single_agent(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
         result.exit_code = proc.returncode
         result.raw_output = proc.stdout
@@ -391,6 +421,9 @@ def run_agent_with_files(
     for tool in allowed_tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(task_type)
+
     proc = None
     try:
         proc = subprocess.run(
@@ -399,6 +432,7 @@ def run_agent_with_files(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         logger.warning(f"Agent {task_type} timed out after {timeout}s")
@@ -468,6 +502,9 @@ def run_claude_prompt(
     for tool in tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(task_type)
+
     try:
         proc = subprocess.run(
             cmd,
@@ -475,6 +512,7 @@ def run_claude_prompt(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
         return proc.stdout, proc.returncode
     except subprocess.TimeoutExpired:
