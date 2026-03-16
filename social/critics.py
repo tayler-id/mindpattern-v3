@@ -32,7 +32,7 @@ def review_draft(platform: str, draft_text: str) -> dict:
     Scores: voice_authenticity, platform_fit, engagement_potential (each 1-10)
     """
     # Load voice guide for inline inclusion
-    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide_path = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
     voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
 
     # Platform-specific rules
@@ -218,7 +218,7 @@ def expedite(
             }
 
     # Load voice guide for inline inclusion
-    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide_path = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
     voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
 
     # Format proof package sections for the prompt

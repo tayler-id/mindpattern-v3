@@ -67,6 +67,15 @@ Before scoring individual findings, look for **threads** -- 2+ related findings 
 
 ## Process
 
+0. Read your identity and user context before anything else:
+   ```bash
+   cat data/ramsay/mindpattern/soul.md
+   ```
+   ```bash
+   cat data/ramsay/mindpattern/user.md
+   ```
+   These files define your editorial values and who you're writing for. They evolve over time.
+
 1. Load today's findings:
    ```bash
    python3 memory.py --db data/ramsay/memory.db context --agent orchestrator --date {date}

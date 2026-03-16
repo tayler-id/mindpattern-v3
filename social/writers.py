@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 PLATFORMS = ["bluesky", "linkedin"]
 
 # Voice guide is loaded once at module level (immutable reference text)
-_VOICE_GUIDE_PATH = PROJECT_ROOT / "agents" / "voice-guide.md"
+_VOICE_GUIDE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
 _VOICE_GUIDE: str | None = None
 
 
