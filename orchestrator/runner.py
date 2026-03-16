@@ -607,9 +607,11 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Could not append feedback footer: {e}")
 
-        # Send
+        # Send — pass file content directly so the footer is guaranteed
+        # to be included in the HTML conversion (avoids stale file reads).
         result = send_newsletter(
             report_path, self.user_config, self.date_str,
+            report_content=report_path.read_text(),
             traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
         )
 
