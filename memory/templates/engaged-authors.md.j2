@@ -1,0 +1,38 @@
+---
+type: people
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+---
+
+# Engaged Authors
+
+{% if platforms %}
+{% for platform in platforms %}
+## {{ platform.name }}
+
+{% if platform.authors %}
+{% for author in platform.authors %}
+### {{ author.name }}
+
+{% if author.id %}- **ID**: {{ author.id }}{% endif %}
+- **Interactions**: {{ author.interaction_count | default(0) }}
+- **First seen**: {{ author.first_seen | default('unknown') }}
+- **Last seen**: {{ author.last_seen | default('unknown') }}
+
+{% if author.interactions %}
+**History:**
+{% for interaction in author.interactions %}
+- {{ interaction.date }}: {{ interaction.type | default('reply') }} - {{ interaction.content[:60] | default('') }}{% if interaction.content | default('') | length > 60 %}...{% endif %}
+  - [[daily/{{ interaction.date }}]]
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% else %}
+No authors engaged on {{ platform.name }} yet.
+{% endif %}
+
+{% endfor %}
+{% else %}
+No engagement data yet.
+{% endif %}
