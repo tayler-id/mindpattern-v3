@@ -179,10 +179,28 @@ def build_agent_prompt(
 
 ---
 
+## NOVELTY REQUIREMENT (CRITICAL)
+
+You MUST find NEW content that is NOT in the "Recent Findings" list above.
+If a topic, company, product, or event is already listed, DO NOT include it
+unless there is a genuinely new development (new data, new announcement,
+new reaction). "More coverage of the same story" is NOT new.
+
+Search for what happened in the LAST 24 HOURS. Prioritize:
+- Brand new announcements, launches, releases
+- Breaking developments not yet widely covered
+- Primary sources (blog posts, papers, repos) over secondary coverage
+
+Every finding you return must pass this test: "Would someone who read
+yesterday's newsletter learn something NEW from this?"
+
+---
+
 ## Search Instructions (SMTL)
 
 PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
 PHASE B: Now reason over collected evidence. Score each finding.
+PHASE C: Filter against the Recent Findings list. Remove anything already covered.
 
 For each finding evaluation, use max 5 words per reasoning step.
 Do not explain your full reasoning — just output the finding.
