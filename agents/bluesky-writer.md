@@ -93,7 +93,7 @@ TYPE: single
 
 ## Process
 
-1. Read the voice guide: `agents/voice-guide.md`
+1. Read the voice guide: `data/ramsay/mindpattern/voice.md`
 2. Read the framework reference: `agents/references/framework-catalog.md`
 3. Read the curator brief
 4. Study the voice exemplars if provided — these are real approved posts. Match their rhythm and tone.

@@ -11,7 +11,7 @@ You receive these variables in your prompt:
 - `TODAY` — today's date
 
 Read these files first:
-1. `SCRIPT_DIR/agents/voice-guide.md` — your voice rules (required)
+1. `SCRIPT_DIR/data/ramsay/mindpattern/voice.md` — your voice rules (required)
 2. `DRAFTS_DIR/engagement-candidates.json` — posts to reply to
 
 ## For Each Candidate
