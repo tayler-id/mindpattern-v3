@@ -47,6 +47,15 @@ Two categories:
 
 **File safety**: All writes use atomic write (write to `.tmp` file, then `os.rename()`) to prevent corruption if the pipeline crashes mid-write or Obsidian has the file open. Obsidian's `fs.watch` picks up changes within 1-2 seconds automatically.
 
+**Obsidian conventions** (apply to all generated files):
+- **Encoding**: UTF-8 only, `\n` line endings (no BOM)
+- **Filenames**: kebab-case, lowercase, no special characters (`ai-security.md` not `AI Security.md`)
+- **YAML frontmatter** on every file with at minimum: `type`, `date`, `tags`. Quote values containing colons. Use list syntax for tags (`tags:\n  - tag1`).
+- **Wiki-links**: `[[note-name]]` or `[[note-name|Display Text]]`. Link first mention only, 3-7 links per note. Every note must have at least 1 outbound link (no orphans).
+- **Index files**: Each subfolder gets a `_index.md` that serves as a Map of Content (MOC) hub — links to all files in that folder. These become large nodes in graph view.
+- **Dataview compatibility**: Use `type` field in frontmatter for queries like `FROM "" WHERE type = "daily"`. Use inline fields (`Key:: Value`) sparingly in generated content for queryable metadata.
+- **Recommended plugins**: Dataview, Periodic Notes, Calendar, Dataview Serializer (converts live queries to static markdown for agent readability), Obsidian Git (auto-backup vault)
+
 ### 1B. Source of Truth Files
 
 #### soul.md — Agent Identity (evolves)
@@ -92,6 +101,8 @@ Each run appends a `## YYYY-MM-DD` dated entry:
 
 #### daily/YYYY-MM-DD.md
 
+YAML frontmatter: `type: daily`, `date: YYYY-MM-DD`, `tags: [daily-note]`, `agents_run: N`, `findings_count: N`, `posts: [bluesky, linkedin]`.
+
 Full activity log for one pipeline run. Contains:
 - Per-agent section for each research agent that participated in this run:
   - Focus areas for this run
@@ -105,21 +116,25 @@ Full activity log for one pipeline run. Contains:
 
 #### topics/{topic-slug}.md
 
+YAML frontmatter: `type: topic`, `date: YYYY-MM-DD` (last updated), `tags: [topic, {subtags}]`, `finding_count: N`, `first_seen: YYYY-MM-DD`.
+
 Generated from findings + patterns tables. One file per recurring topic cluster:
 - Topic name and description
 - Finding count and date range
-- Key findings (last 30 days)
-- Sources that cover this topic
+- Key findings (last 30 days) — each linking to its `[[daily/YYYY-MM-DD]]` note
+- Sources that cover this topic — each linking to `[[sources/{source-slug}]]`
 - Posts made about this topic
-- Cross-references to related topics (Obsidian `[[links]]` for graph view)
+- Cross-references to related topics via `[[topics/{related-slug}]]` links
 
 #### sources/{source-slug}.md
+
+YAML frontmatter: `type: source`, `date: YYYY-MM-DD` (last updated), `tags: [source]`, `url: "https://..."`, `finding_count: N`, `eic_selection_rate: 0.N`.
 
 Generated from sources table:
 - Source name and URL
 - Finding count and reliability history
-- Topics covered
-- Most recent findings from this source
+- Topics covered — each linking to `[[topics/{topic-slug}]]`
+- Most recent findings from this source — each linking to `[[daily/YYYY-MM-DD]]`
 - Quality assessment (how often findings from this source get selected by EIC)
 
 #### social/posts.md
@@ -227,7 +242,7 @@ LinkedIn engagement flow:
 4. Filter by criteria (follower count, recency, relevance)
 5. LLM ranks candidates
 6. LLM drafts replies
-7. Post replies via LinkedInClient — requires adding a `comment()` method to LinkedInClient using the LinkedIn Comments API (`/rest/socialActions/{postUrn}/comments`). LinkedIn does not support direct reply-to-post in the same way as Bluesky; engagement posts are comments on existing posts.
+7. **No auto-posting** — LinkedIn Comments API access not yet available. Drafted replies are saved to `data/social-drafts/engagement-linkedin.json` and sent via iMessage for manual posting. When API access is added later, auto-posting can be enabled.
 8. Add `search_via_exa()` helper to `social/engagement.py` that wraps the Exa CLI subprocess call and normalizes results to the same format as `BlueskyClient.search()`
 
 New in social-config.json:
@@ -427,7 +442,7 @@ A and C can be built in parallel. B starts after A. D starts after C. E starts a
 - [ ] After a pipeline run, EVOLVE phase runs without error and either updates a file or logs a justified "no changes" decision
 - [ ] Topics, sources, social, and people mirrors are generated and browseable
 - [ ] Research agent prompts include Agent Reach tool instructions
-- [ ] Engagement pipeline finds and drafts replies on LinkedIn
+- [ ] Engagement pipeline finds conversations and drafts replies for LinkedIn (manual posting — no auto-post until API access added)
 - [ ] All references to `agents/voice-guide.md` point to `data/ramsay/mindpattern/voice.md`
 - [ ] EVOLVE and MIRROR phases are in SKIPPABLE_PHASES — failure does not block SYNC
 - [ ] EVOLVE rejects malformed JSON diffs without crashing
