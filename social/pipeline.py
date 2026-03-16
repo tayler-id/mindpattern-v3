@@ -23,7 +23,7 @@ from social.art import create_art
 from social.eic import select_topic, create_brief
 from social.writers import write_drafts, _humanize
 from social.critics import review_draft, deterministic_validate, expedite
-from social.posting import XClient, BlueskyClient, LinkedInClient
+from social.posting import BlueskyClient, LinkedInClient
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +58,6 @@ class SocialPipeline:
         clients = {}
         platforms = self.config.get("platforms", {})
 
-        if platforms.get("x", {}).get("enabled"):
-            clients["x"] = XClient(platforms["x"])
         if platforms.get("bluesky", {}).get("enabled"):
             clients["bluesky"] = BlueskyClient(platforms["bluesky"])
         if platforms.get("linkedin", {}).get("enabled"):

@@ -33,7 +33,7 @@ import memory
 from orchestrator.agents import run_claude_prompt
 from policies.engine import PolicyEngine
 from social.approval import ApprovalGateway
-from social.posting import XClient, BlueskyClient, LinkedInClient
+from social.posting import BlueskyClient, LinkedInClient
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +73,6 @@ class EngagementPipeline:
         platforms = self.config.get("platforms", {})
         engagement_platforms = self.engagement_config.get("platforms")
 
-        if platforms.get("x", {}).get("enabled"):
-            if engagement_platforms is None or "x" in engagement_platforms:
-                clients["x"] = XClient(platforms["x"])
         if platforms.get("bluesky", {}).get("enabled"):
             if engagement_platforms is None or "bluesky" in engagement_platforms:
                 clients["bluesky"] = BlueskyClient(platforms["bluesky"])
@@ -429,8 +426,6 @@ Output ONLY valid JSON:
         platform_config = self.config.get("platforms", {}).get(platform, {})
         if platform == "bluesky":
             our_handle = platform_config.get("handle", "")
-        elif platform == "x":
-            our_handle = platform_config.get("handle", "").lstrip("@")
 
         filtered = []
         for p in posts:
@@ -700,24 +695,6 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 "target_post_url": post.get("url", f"https://bsky.app/profile/{handle}/post/{rkey}"),
                 "target_author": post.get("author_name", handle),
                 "target_author_id": post.get("author_did", ""),
-                "target_content": post.get("text", ""),
-                "followers": post.get("followers_count", 0),
-                "likes": post.get("like_count", 0),
-                "replies": post.get("reply_count", 0),
-                "relevance": 0,
-                "our_reply": "",
-            }
-        elif platform == "x":
-            return {
-                "platform": "x",
-                "post_id": post.get("id", ""),
-                "post_cid": "",
-                "author": post.get("author_username", post.get("author", "")),
-                "author_id": post.get("author_id", ""),
-                "content": post.get("text", ""),
-                "target_post_url": f"https://x.com/i/status/{post.get('id', '')}",
-                "target_author": post.get("author_name", ""),
-                "target_author_id": post.get("author_id", ""),
                 "target_content": post.get("text", ""),
                 "followers": post.get("followers_count", 0),
                 "likes": post.get("like_count", 0),
@@ -1007,11 +984,6 @@ engagement (quality content in our space)."""
                     content=our_reply,
                     parent_uri=post_id,
                     parent_cid=post_cid,
-                )
-            elif platform == "x":
-                reply_result = client.reply(
-                    content=our_reply,
-                    reply_to_id=post_id,
                 )
             else:
                 logger.warning(f"Reply not supported for platform: {platform}")

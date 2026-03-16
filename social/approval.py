@@ -37,6 +37,7 @@ class ApprovalGateway:
         """
         imessage_config = config.get("imessage", {})
         self.phone = imessage_config.get("phone", "")
+        self.identities = imessage_config.get("identities", [self.phone] if self.phone else [])
         self.gate_timeout = imessage_config.get("gate_timeout_seconds", 43200)
         self.api_base = config.get("approval_api_base", "")
         self._last_rowid: int | None = None
@@ -305,12 +306,14 @@ class ApprovalGateway:
             logger.warning("No iMessage phone configured, cannot request approval")
             return None
 
-        # Record current max ROWID before sending so we only read new messages
-        self._last_rowid = self._get_max_rowid()
-
-        # Send the approval request
+        # Send the approval request first
         self._imessage_send(self.phone, message)
-        logger.info(f"iMessage sent to {self.phone}, waiting for reply...")
+
+        # Record max ROWID AFTER sending so the baseline includes our sent
+        # message. This prevents picking up stale replies from previous runs
+        # (whose ROWIDs are below messages sent between runs in other chats).
+        self._last_rowid = self._get_max_rowid()
+        logger.info(f"iMessage sent to {self.phone}, waiting for reply (baseline ROWID={self._last_rowid})...")
 
         # Poll for response
         return self._imessage_poll(self.phone, timeout_seconds)
@@ -371,8 +374,18 @@ class ApprovalGateway:
         start_time = time.monotonic()
         min_rowid = self._last_rowid or 0
 
-        # Normalize phone for matching (strip spaces, dashes)
-        normalized_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        # Build handle patterns from all known identities (phone + email)
+        identity_patterns = []
+        for identity in self.identities:
+            cleaned = identity.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            if "@" in cleaned:
+                identity_patterns.append(f"%{cleaned}%")
+            else:
+                identity_patterns.append(f"%{cleaned[-10:]}%")
+
+        if not identity_patterns:
+            normalized = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            identity_patterns = [f"%{normalized[-10:]}%"]
 
         while (time.monotonic() - start_time) < timeout_seconds:
             time.sleep(poll_interval)
@@ -381,28 +394,41 @@ class ApprovalGateway:
                 conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
                 conn.row_factory = sqlite3.Row
 
-                # Query for new messages in this conversation
-                # Match by phone number OR email-based chat identifier
-                # (iMessage conversations can be associated with either)
-                phone_pattern = f"%{normalized_phone[-10:]}%"
+                # Find ALL chats associated with ANY of this person's
+                # identities (phone number AND email). iMessage replies
+                # can come from either identity depending on which device
+                # the user replies from.
+                where_clauses = " OR ".join(
+                    "h.id LIKE ?" for _ in identity_patterns
+                )
+                chat_ids = conn.execute(
+                    f"""
+                    SELECT DISTINCT cmj.chat_id
+                    FROM chat_message_join cmj
+                    JOIN message m ON m.ROWID = cmj.message_id
+                    JOIN handle h ON h.ROWID = m.handle_id
+                    WHERE {where_clauses}
+                    """,
+                    identity_patterns,
+                ).fetchall()
+
+                if not chat_ids:
+                    conn.close()
+                    continue
+
+                chat_id_list = ",".join(str(r[0]) for r in chat_ids)
                 rows = conn.execute(
-                    """
+                    f"""
                     SELECT m.ROWID, m.text, m.is_from_me, m.date
                     FROM message m
                     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-                    JOIN chat c ON c.ROWID = cmj.chat_id
                     WHERE m.ROWID > ?
                       AND m.text IS NOT NULL
                       AND m.text != ''
-                      AND c.ROWID IN (
-                          SELECT cmj2.chat_id FROM chat_message_join cmj2
-                          JOIN message m2 ON m2.ROWID = cmj2.message_id
-                          JOIN handle h ON h.ROWID = m2.handle_id
-                          WHERE h.id LIKE ?
-                      )
+                      AND cmj.chat_id IN ({chat_id_list})
                     ORDER BY m.ROWID ASC
                     """,
-                    (min_rowid, phone_pattern),
+                    (min_rowid,),
                 ).fetchall()
 
                 conn.close()
