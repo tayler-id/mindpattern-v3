@@ -24,10 +24,12 @@ import json
 import logging
 import random
 import re
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import memory
 from orchestrator.agents import run_claude_prompt
@@ -38,6 +40,162 @@ from social.posting import BlueskyClient, LinkedInClient
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+# ── LinkedIn search via Jina Reader ───────────────────────────────────────
+
+
+def search_via_jina(
+    query: str, max_results: int = 10
+) -> list[dict]:
+    """Search LinkedIn posts via Jina Reader's search endpoint.
+
+    Uses Jina's ``s.jina.ai`` search endpoint with a ``site:linkedin.com``
+    filter to discover LinkedIn posts matching the query. Parses the
+    markdown response to extract URLs and content, then normalizes results
+    into the same dict format that BlueskyClient.search() returns.
+
+    Args:
+        query: Search query string (e.g. "AI agents developer tools").
+        max_results: Maximum number of results to return.
+
+    Returns:
+        List of normalized post dicts with keys: url, text, author_handle,
+        author_name, followers_count, like_count, reply_count, platform.
+        Returns empty list on any failure.
+    """
+    search_query = f"{query} site:linkedin.com"
+
+    try:
+        result = subprocess.run(
+            ["curl", "-s", f"https://s.jina.ai/{quote(search_query)}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("Jina search timed out for query: %s", query)
+        return []
+    except Exception as e:
+        logger.warning("Jina search failed for query '%s': %s", query, e)
+        return []
+
+    if result.returncode != 0 or not result.stdout.strip():
+        logger.warning(
+            "Jina search returned error (rc=%d) for query: %s",
+            result.returncode,
+            query,
+        )
+        return []
+
+    return _parse_jina_results(result.stdout, max_results)
+
+
+def _parse_jina_results(markdown: str, max_results: int) -> list[dict]:
+    """Parse Jina Reader markdown output into normalized post dicts.
+
+    Jina returns search results as markdown with sections like:
+        ## [1] Title
+        **URL:** https://linkedin.com/posts/...
+        Author Name - Role
+
+        Post content...
+
+    Args:
+        markdown: Raw markdown from Jina Reader.
+        max_results: Cap on results to return.
+
+    Returns:
+        List of normalized post dicts.
+    """
+    results = []
+
+    # Split on section headers (## [N] ...)
+    sections = re.split(r"^## \[\d+\]\s*", markdown, flags=re.MULTILINE)
+
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+
+        # Extract URL — look for **URL:** or bare LinkedIn URLs
+        url_match = re.search(
+            r"\*\*URL:\*\*\s*(https?://[^\s]+linkedin\.com/[^\s]+)",
+            section,
+        )
+        if not url_match:
+            # Try bare LinkedIn URL
+            url_match = re.search(
+                r"(https?://(?:www\.)?linkedin\.com/posts/[^\s\)]+)",
+                section,
+            )
+        if not url_match:
+            continue
+
+        url = url_match.group(1).rstrip(".,;:!?")
+
+        # Extract author handle from URL: /posts/username_slug
+        handle_match = re.search(
+            r"linkedin\.com/posts/([a-zA-Z0-9_-]+)", url
+        )
+        author_handle = handle_match.group(1) if handle_match else ""
+
+        # Extract title (first line of section)
+        lines = section.split("\n")
+        title = lines[0].strip() if lines else ""
+
+        # Extract author name from lines after URL
+        # Pattern: "Author Name - Role at Company"
+        author_name = ""
+        for line in lines[1:5]:
+            line = line.strip()
+            if line.startswith("**URL:**") or not line:
+                continue
+            # Skip markdown formatting lines
+            if line.startswith("---"):
+                break
+            # First non-URL, non-empty line after title is likely author
+            if not author_name and line and not line.startswith("*"):
+                author_name = line.split(" - ")[0].strip()
+                break
+
+        # Extract content: everything after the metadata lines
+        content_lines = []
+        past_metadata = False
+        for line in lines:
+            if past_metadata:
+                if line.strip() == "---":
+                    break
+                content_lines.append(line)
+            elif line.strip() == "" and len(content_lines) == 0:
+                # Empty line after metadata signals start of content
+                past_metadata = True
+
+        text = "\n".join(content_lines).strip()
+        if not text:
+            # Fallback: use title as text
+            text = title
+
+        if not text:
+            continue
+
+        results.append(
+            {
+                "url": url,
+                "text": text,
+                "author_handle": author_handle,
+                "author_name": author_name or author_handle,
+                "followers_count": 0,  # Unknown from search
+                "like_count": 0,  # Unknown from search
+                "reply_count": 0,  # Unknown from search
+                "platform": "linkedin",
+            }
+        )
+
+        if len(results) >= max_results:
+            break
+
+    return results
 
 
 class EngagementPipeline:
@@ -62,12 +220,18 @@ class EngagementPipeline:
         self.approval = ApprovalGateway(config)
         self.engagement_config = config.get("engagement", {})
         self._platform_clients = self._init_platform_clients()
+        self._linkedin_drafts_dir = PROJECT_ROOT / "data" / "social-drafts"
 
     def _init_platform_clients(self) -> dict:
         """Initialize API clients for engagement-enabled platforms only.
 
         Uses engagement.platforms list from config if present,
         otherwise falls back to all enabled platforms.
+
+        Note: LinkedIn is excluded from platform clients for engagement
+        because LinkedInClient has no search() or reply() methods.
+        LinkedIn engagement uses search_via_jina() for discovery and
+        draft-only mode for replies.
         """
         clients = {}
         platforms = self.config.get("platforms", {})
@@ -76,9 +240,8 @@ class EngagementPipeline:
         if platforms.get("bluesky", {}).get("enabled"):
             if engagement_platforms is None or "bluesky" in engagement_platforms:
                 clients["bluesky"] = BlueskyClient(platforms["bluesky"])
-        if platforms.get("linkedin", {}).get("enabled"):
-            if engagement_platforms is None or "linkedin" in engagement_platforms:
-                clients["linkedin"] = LinkedInClient(platforms["linkedin"])
+        # LinkedIn is intentionally excluded from platform clients for
+        # engagement. It uses Jina Reader search and draft-only posting.
 
         return clients
 
@@ -767,6 +930,8 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
 
         # Step 2: Execute searches on each platform
         all_candidates = []
+        engagement_platforms = self.engagement_config.get("platforms", [])
+
         for platform, client in self._platform_clients.items():
             logger.info(f"Searching {platform} with {len(queries)} queries...")
 
@@ -798,6 +963,50 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 f"{platform}: {len(raw_posts)} raw -> {len(filtered)} filtered -> "
                 f"{len(not_connected)} not connected -> {len(candidates)} ranked"
             )
+
+        # Step 2b: LinkedIn via Jina Reader search (no native search API)
+        # If "linkedin" is in engagement platforms but NOT in _platform_clients
+        # (LinkedInClient doesn't have search()), use search_via_jina() instead.
+        if "linkedin" in engagement_platforms and "linkedin" not in self._platform_clients:
+            logger.info("Searching LinkedIn via Jina Reader search...")
+            all_linkedin_posts = []
+            seen_urls = set()
+
+            for query in queries:
+                try:
+                    posts = search_via_jina(query, max_results=10)
+                    for p in posts:
+                        url = p.get("url", "")
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
+                            all_linkedin_posts.append(p)
+                except Exception as e:
+                    logger.warning(f"Jina search failed for '{query}': {e}")
+
+                time.sleep(random.uniform(0.5, 1.5))
+
+            if all_linkedin_posts:
+                logger.info(
+                    f"LinkedIn via Jina: {len(all_linkedin_posts)} unique posts"
+                )
+
+                # Filter by hard criteria
+                filtered = self._filter_posts(all_linkedin_posts, "linkedin")
+                if filtered:
+                    # Rank and select candidates
+                    candidates = self._rank_candidates(
+                        filtered, topics, "linkedin"
+                    )
+                    all_candidates.extend(candidates)
+
+                    logger.info(
+                        f"linkedin: {len(all_linkedin_posts)} raw -> "
+                        f"{len(filtered)} filtered -> {len(candidates)} ranked"
+                    )
+                else:
+                    logger.info("All LinkedIn posts filtered out")
+            else:
+                logger.info("No LinkedIn posts found via Jina search")
 
         logger.info(f"Total candidates across all platforms: {len(all_candidates)}")
         return all_candidates
@@ -949,12 +1158,17 @@ engagement (quality content in our space)."""
         Posts the reply via the platform client, optionally follows the author,
         and logs everything to memory.
 
+        LinkedIn is draft-only: saves the reply to a JSON file and sends an
+        iMessage notification for manual posting, since we don't have LinkedIn
+        Comments API access.
+
         Args:
             candidate: Dict with platform, post_id, author_id, our_reply,
                        should_follow, etc.
 
         Returns:
-            {reply_posted: bool, follow_success: bool, error: str | None}
+            {reply_posted: bool, follow_success: bool, draft_saved: bool,
+             error: str | None}
         """
         platform = candidate.get("platform", "")
         post_id = candidate.get("post_id", "")
@@ -963,17 +1177,23 @@ engagement (quality content in our space)."""
         our_reply = candidate.get("our_reply", "")
         should_follow = candidate.get("should_follow", False)
 
+        # ── LinkedIn: draft-only mode ─────────────────────────────────
+        if platform == "linkedin":
+            return self._draft_linkedin_engagement(candidate)
+
         client = self._platform_clients.get(platform)
         if not client:
             return {
                 "reply_posted": False,
                 "follow_success": False,
+                "draft_saved": False,
                 "error": f"No client for {platform}",
             }
 
         result = {
             "reply_posted": False,
             "follow_success": False,
+            "draft_saved": False,
             "error": None,
         }
 
@@ -1063,5 +1283,98 @@ engagement (quality content in our space)."""
                     f"Follow rate limit hit for {platform}: "
                     f"{follow_check['reason']}"
                 )
+
+        return result
+
+    def _draft_linkedin_engagement(self, candidate: dict) -> dict:
+        """Save a LinkedIn engagement reply as a draft for manual posting.
+
+        LinkedIn Comments API is not available, so we save the drafted reply
+        to a JSON file and send an iMessage notification so the user can
+        copy-paste the reply manually.
+
+        Args:
+            candidate: Engagement candidate dict with our_reply, target info.
+
+        Returns:
+            {reply_posted: False, follow_success: False, draft_saved: bool,
+             error: str | None}
+        """
+        result = {
+            "reply_posted": False,
+            "follow_success": False,
+            "draft_saved": False,
+            "error": None,
+        }
+
+        our_reply = candidate.get("our_reply", "")
+        author_id = candidate.get("author_id", "")
+
+        if not our_reply:
+            result["error"] = "No reply text to draft"
+            return result
+
+        # Save draft to JSON file
+        try:
+            self._linkedin_drafts_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            draft_file = self._linkedin_drafts_dir / f"engagement-linkedin-{timestamp}.json"
+
+            draft_data = {
+                "platform": "linkedin",
+                "target_post_url": candidate.get("target_post_url", ""),
+                "target_author": candidate.get("author", ""),
+                "target_author_id": author_id,
+                "target_content": candidate.get("content", ""),
+                "our_reply": our_reply,
+                "relevance": candidate.get("relevance", 0),
+                "topic_connection": candidate.get("topic_connection", ""),
+                "drafted_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending_manual_post",
+            }
+
+            with open(draft_file, "w") as f:
+                json.dump(draft_data, f, indent=2)
+
+            result["draft_saved"] = True
+            logger.info(
+                f"LinkedIn engagement draft saved: {draft_file.name} "
+                f"(reply to @{candidate.get('author', '?')})"
+            )
+
+        except Exception as e:
+            result["error"] = f"Failed to save LinkedIn draft: {e}"
+            logger.error(f"LinkedIn draft save failed: {e}")
+            return result
+
+        # Send iMessage notification for manual posting
+        try:
+            target_url = candidate.get("target_post_url", "")
+            author = candidate.get("author", "unknown")
+            message = (
+                f"LinkedIn Engagement Draft\n\n"
+                f"Reply to @{author}:\n"
+                f"{target_url}\n\n"
+                f"Draft reply:\n{our_reply}\n\n"
+                f"(Copy and paste this reply on LinkedIn manually)"
+            )
+            self.approval._imessage_send(self.approval.phone, message)
+        except Exception as e:
+            logger.warning(f"iMessage notification failed for LinkedIn draft: {e}")
+            # Don't fail the whole operation if iMessage fails
+
+        # Log as drafted in memory
+        memory.store_engagement(
+            self.db,
+            user_id=self.user_id,
+            platform="linkedin",
+            engagement_type="reply",
+            target_post_url=candidate.get("target_post_url"),
+            target_author=candidate.get("author"),
+            target_author_id=author_id,
+            target_content=candidate.get("content"),
+            our_reply=our_reply,
+            status="drafted",
+        )
 
         return result
