@@ -348,11 +348,11 @@ class ResearchPipeline:
                     if not title or not summary:
                         continue
 
-                    # Dedup: check if a very similar finding exists in the last 30 days
+                    # Dedup: check if a near-identical finding exists in the last 7 days
                     existing = memory.search_findings(
-                        self.db, f"{title}. {summary}", limit=1, days=30,
+                        self.db, f"{title}. {summary}", limit=1, days=7,
                     )
-                    if existing and existing[0].get("similarity", 0) > 0.85:
+                    if existing and existing[0].get("similarity", 0) > 0.92:
                         logger.debug(
                             f"Skipping duplicate: '{title[:50]}' "
                             f"(sim={existing[0]['similarity']:.2f} with '{existing[0]['title'][:50]}')"

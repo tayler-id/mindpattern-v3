@@ -39,7 +39,7 @@ MODEL_ROUTING: dict[str, str] = {
 # Max turns per task type
 MAX_TURNS: dict[str, int] = {
     "trend_scan": 5,
-    "research_agent": 15,
+    "research_agent": 25,
     "synthesis_pass1": 10,
     "synthesis_pass2": 30,
     "learnings_update": 5,
@@ -58,7 +58,7 @@ MAX_TURNS: dict[str, int] = {
 # Timeout per task type (seconds)
 TIMEOUTS: dict[str, int] = {
     "trend_scan": 60,
-    "research_agent": 1200,     # 20 minutes per agent
+    "research_agent": 1800,     # 30 minutes per agent (Jina deep reads need time)
     "synthesis_pass1": 600,     # 10 minutes — Opus needs time for story selection
     "synthesis_pass2": 900,     # 15 minutes — Opus writing full newsletter
     "learnings_update": 120,
