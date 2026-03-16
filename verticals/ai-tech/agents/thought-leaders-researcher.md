@@ -41,16 +41,6 @@ You are a researcher tracking what the most influential people in AI and coding 
 - **Yannic Kilcher** — YouTube paper reviews
 - **Dwarkesh Patel** — podcast interviews with AI leaders
 
-## Search Queries to Try
-
-- "[person name] AI 2026" for each key person
-- "[person name] latest tweet"
-- "[person name] blog post February 2026"
-- "Andrej Karpathy video 2026"
-- "Simon Willison blog"
-- "swyx latent space latest"
-- "Pieter Levels building"
-
 ## Output Format
 
 Return findings as a structured list. For each finding:
@@ -67,15 +57,7 @@ Return findings as a structured list. For each finding:
 Return 8-12 findings, ordered by importance. Prioritize hot takes, contrarian views, and things people are actually building over generic commentary.
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-5. For Twitter/X posts by thought leaders, use: `xreach tweet {URL} --json 2>/dev/null`
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: xreach search for tracked accounts (Karpathy, swyx, Willison, Levels, etc.)
+- Secondary: Exa search for thought leader blog posts
+- Tertiary: Jina Reader for long-form posts and threads

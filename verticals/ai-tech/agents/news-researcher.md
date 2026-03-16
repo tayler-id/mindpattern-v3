@@ -29,15 +29,6 @@ Search these specifically:
 - Ars Technica AI
 - Company blogs: blog.anthropic.com, openai.com/blog, deepmind.google, ai.meta.com
 
-## Search Queries to Try
-
-- "AI news today 2026"
-- "AI model release February 2026"
-- "AI funding round 2026"
-- "Anthropic Claude announcement"
-- "OpenAI GPT announcement"
-- "AI regulation policy 2026"
-
 ## Output Format
 
 Return findings as a structured list. For each finding:
@@ -54,14 +45,7 @@ Return findings as a structured list. For each finding:
 Return 8-12 findings, ordered by importance.
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: Exa search for breaking AI news from last 6 hours
+- Secondary: Jina Reader for deep reads on company blog posts
+- Tertiary: Twitter via xreach for breaking announcements

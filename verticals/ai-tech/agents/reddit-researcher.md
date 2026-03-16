@@ -98,14 +98,7 @@ Return 6-10 findings ordered by importance.
 - **Comment-to-score ratio as quality signal**: The bare-metal UEFI post (353up, 111cmts = 0.31 ratio) and KV-cache sharing post (96up, 55cmts = 0.57 ratio) had the highest comment-to-score ratios, indicating deep technical engagement. Posts with ratio > 0.3 are worth including even at lower absolute scores.
 
 
-## Research Protocol (MANDATORY)
-
-1. **Search phase**: Use WebSearch to find candidate sources and URLs
-2. **Deep read phase**: For your top 5 sources, use Jina Reader to get full article content:
-   ```bash
-   curl -s "https://r.jina.ai/{URL}" 2>/dev/null | head -200
-   ```
-3. **Verify phase**: Cross-reference claims across at least 2 sources before including in findings
-4. Every finding MUST include a source_url you have actually read via Jina Reader or WebFetch
-
-Do NOT return findings based only on search result snippets. Read the actual articles.
+## Phase 2 Exploration Preferences
+- Primary: Jina Reader for linked articles in top Reddit posts
+- Secondary: Exa search for topics trending on Reddit
+- Skip: Twitter, YouTube
