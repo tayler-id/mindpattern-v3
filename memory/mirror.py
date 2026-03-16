@@ -494,18 +494,46 @@ def generate_mirrors(
     # ── Collect tags ──────────────────────────────────────────────────────
     topic_names = list({_topic_from_agent(f["agent"]) for f in findings})
 
-    # ── Render: daily ─────────────────────────────────────────────────────
+    # ── Render: daily (all dates with findings, not just today) ──────────
+    all_dates = db.execute(
+        "SELECT DISTINCT run_date FROM findings ORDER BY run_date"
+    ).fetchall()
     daily_tpl = env.get_template("daily.md.j2")
-    daily_content = daily_tpl.render(
-        date=date_str,
-        tags=["daily"] + topic_names,
-        agents=agents_data,
-        findings=findings,
-        posts=today_posts_data,
-        engagements=today_engagements_data,
-        evolution_actions=[],
-    )
-    atomic_write(vault_dir / "daily" / f"{date_str}.md", daily_content)
+
+    for date_row in all_dates:
+        d = date_row[0] if not hasattr(date_row, "keys") else date_row["run_date"]
+        if not d:
+            continue
+
+        day_findings = _query_findings(db, d)
+        day_posts = _query_social_posts(db, d)
+        day_engagements = _query_engagements(db, d)
+
+        day_agents = _build_agents_data(day_findings)
+        day_posts_data = _build_posts_data(day_posts)
+        day_topic_names = list({_topic_from_agent(f["agent"]) for f in day_findings})
+
+        day_eng_data = []
+        for e in day_engagements:
+            created = e.get("created_at", "")
+            dp = created[:10] if created else ""
+            day_eng_data.append({
+                "platform": e["platform"],
+                "type": e.get("engagement_type", "reply"),
+                "target_author": e.get("target_author"),
+                "date": dp,
+            })
+
+        daily_content = daily_tpl.render(
+            date=d,
+            tags=["daily"] + day_topic_names,
+            agents=day_agents,
+            findings=day_findings,
+            posts=day_posts_data,
+            engagements=day_eng_data,
+            evolution_actions=[],
+        )
+        atomic_write(vault_dir / "daily" / f"{d}.md", daily_content)
 
     # ── Render: topics ────────────────────────────────────────────────────
     seen_agents = {f["agent"] for f in findings}
