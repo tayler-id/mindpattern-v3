@@ -1,8 +1,7 @@
-"""Approval system — web dashboard API + iMessage fallback.
+"""Approval system — Slack primary, iMessage fallback.
 
-Two-tier approval: tries the authenticated web dashboard first (instant push
-notifications), falls back to iMessage (AppleScript send + Messages.db polling)
-if the dashboard is unreachable or times out.
+Posts approval requests to Slack #mindpattern-approvals channel and polls
+for threaded replies. Falls back to iMessage if Slack is unavailable.
 
 All approval methods return structured dicts so the pipeline can act on them
 without parsing free-text responses.
@@ -14,10 +13,17 @@ import secrets
 import sqlite3
 import subprocess
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Slack config
+SLACK_CHANNEL = "C0ALSRHAATH"  # #mindpattern-approvals
+SLACK_KEYCHAIN_KEY = "slack-bot-token"
 
 # Messages.db path on macOS
 MESSAGES_DB = Path.home() / "Library" / "Messages" / "chat.db"
@@ -98,9 +104,9 @@ class ApprovalGateway:
                 "score": t.get("score", 0),
             })
 
-        # iMessage-only approval (no dashboard)
+        # Slack primary, iMessage fallback
         message = self._format_topic_message(topics)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_topic_reply(reply, len(topics))
 
     def request_draft_approval(self, drafts: dict, images: dict) -> dict:
@@ -134,9 +140,9 @@ class ApprovalGateway:
                 "image_url": images.get(platform),
             })
 
-        # iMessage-only approval (no dashboard)
+        # Slack primary, iMessage fallback
         message = self._format_draft_message(drafts, images)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_draft_reply(reply, list(drafts.keys()))
 
     def request_engagement_approval(self, candidates: list[dict]) -> dict:
@@ -161,9 +167,9 @@ class ApprovalGateway:
                 "our_reply": c.get("our_reply", ""),
             })
 
-        # iMessage-only approval (no dashboard)
+        # Slack primary, iMessage fallback
         message = self._format_engagement_message(candidates)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
 
         return self._parse_engagement_reply(reply, len(candidates))
 
@@ -317,6 +323,123 @@ class ApprovalGateway:
                 return {"approved_indices": [], "reason": data.get("feedback", "")}
 
         return {"action": "skip"}
+
+    # ── Slack approval (primary) ─────────────────────────────────────
+
+    def _get_slack_token(self) -> str | None:
+        """Get Slack bot token from macOS Keychain."""
+        try:
+            result = subprocess.run(
+                ["security", "find-generic-password", "-s", SLACK_KEYCHAIN_KEY, "-w"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    def _slack_post(self, token: str, text: str, thread_ts: str | None = None) -> dict | None:
+        """Post a message to the Slack approvals channel.
+
+        Returns the Slack API response dict with 'ts' (message timestamp) on success.
+        """
+        payload = {
+            "channel": SLACK_CHANNEL,
+            "text": text,
+        }
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            "https://slack.com/api/chat.postMessage",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode())
+                if result.get("ok"):
+                    return result
+                logger.warning(f"Slack post failed: {result.get('error')}")
+                return None
+        except Exception as e:
+            logger.warning(f"Slack post error: {e}")
+            return None
+
+    def _slack_poll_replies(self, token: str, thread_ts: str, timeout_seconds: int) -> str | None:
+        """Poll a Slack thread for replies.
+
+        Args:
+            token: Slack bot token.
+            thread_ts: Timestamp of the parent message to watch for replies.
+            timeout_seconds: Max wait time.
+
+        Returns:
+            First reply text, or None if timed out.
+        """
+        poll_interval = 10
+        start_time = time.monotonic()
+
+        while (time.monotonic() - start_time) < timeout_seconds:
+            time.sleep(poll_interval)
+
+            try:
+                params = urllib.parse.urlencode({
+                    "channel": SLACK_CHANNEL,
+                    "ts": thread_ts,
+                    "limit": 10,
+                })
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.replies?{params}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+
+                if result.get("ok"):
+                    messages = result.get("messages", [])
+                    # First message is the parent, replies follow
+                    replies = [m for m in messages[1:] if m.get("text")]
+                    if replies:
+                        reply_text = replies[0]["text"]
+                        logger.info(f"Slack reply received: {reply_text[:50]}")
+                        return reply_text
+
+            except Exception as e:
+                logger.debug(f"Slack poll error (will retry): {e}")
+
+            elapsed = int(time.monotonic() - start_time)
+            if elapsed > 0 and elapsed % 3600 == 0:
+                hours = elapsed // 3600
+                logger.info(f"Still waiting for Slack reply ({hours}h elapsed)")
+
+        logger.warning(f"Slack approval timed out after {timeout_seconds}s")
+        return None
+
+    def _slack_approval(self, message: str, timeout_seconds: int = 43200) -> str | None:
+        """Send approval request to Slack, poll for threaded reply."""
+        token = self._get_slack_token()
+        if not token:
+            logger.error("No Slack token in Keychain — cannot request approval")
+            return None
+
+        result = self._slack_post(token, message)
+        if not result:
+            logger.error("Slack post failed — cannot request approval")
+            return None
+
+        thread_ts = result.get("message", {}).get("ts") or result.get("ts")
+        if not thread_ts:
+            logger.error("No thread_ts from Slack — cannot poll for reply")
+            return None
+
+        logger.info(f"Slack approval posted to #mindpattern-approvals, waiting for reply...")
+        return self._slack_poll_replies(token, thread_ts, timeout_seconds)
 
     # ── iMessage fallback ─────────────────────────────────────────────
 
