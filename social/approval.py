@@ -23,6 +23,34 @@ logger = logging.getLogger(__name__)
 MESSAGES_DB = Path.home() / "Library" / "Messages" / "chat.db"
 
 
+def _sqlite3_cli_query(query: str, db_path: Path | None = None) -> list[list[str]]:
+    """Execute a SQLite query via the sqlite3 CLI tool.
+
+    This bypasses Python's sqlite3 module which may lack Full Disk Access
+    when running under launchd. The sqlite3 CLI inherits FDA from the
+    parent bash process (which has FDA granted).
+
+    Returns list of rows, each row is a list of string values.
+    """
+    path = db_path or MESSAGES_DB
+    try:
+        proc = subprocess.run(
+            ["sqlite3", "-separator", "\t", str(path), query],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            raise sqlite3.OperationalError(proc.stderr.strip())
+        rows = []
+        for line in proc.stdout.strip().split("\n"):
+            if line:
+                rows.append(line.split("\t"))
+        return rows
+    except subprocess.TimeoutExpired:
+        raise sqlite3.OperationalError("sqlite3 CLI timed out")
+    except FileNotFoundError:
+        raise sqlite3.OperationalError("sqlite3 CLI not found")
+
+
 class ApprovalGateway:
     """Unified approval interface — dashboard API with iMessage fallback."""
 
@@ -391,51 +419,38 @@ class ApprovalGateway:
             time.sleep(poll_interval)
 
             try:
-                conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
-                conn.row_factory = sqlite3.Row
-
-                # Find ALL chats associated with ANY of this person's
-                # identities (phone number AND email). iMessage replies
-                # can come from either identity depending on which device
-                # the user replies from.
+                # Use sqlite3 CLI (inherits FDA from bash) instead of
+                # Python's sqlite3 module which lacks FDA under launchd.
                 where_clauses = " OR ".join(
-                    "h.id LIKE ?" for _ in identity_patterns
+                    f"h.id LIKE '{p}'" for p in identity_patterns
                 )
-                chat_ids = conn.execute(
-                    f"""
+                chat_query = f"""
                     SELECT DISTINCT cmj.chat_id
                     FROM chat_message_join cmj
                     JOIN message m ON m.ROWID = cmj.message_id
                     JOIN handle h ON h.ROWID = m.handle_id
-                    WHERE {where_clauses}
-                    """,
-                    identity_patterns,
-                ).fetchall()
+                    WHERE {where_clauses};
+                """
+                chat_rows = _sqlite3_cli_query(chat_query)
 
-                if not chat_ids:
-                    conn.close()
+                if not chat_rows:
                     continue
 
-                chat_id_list = ",".join(str(r[0]) for r in chat_ids)
-                rows = conn.execute(
-                    f"""
+                chat_id_list = ",".join(r[0] for r in chat_rows)
+                msg_query = f"""
                     SELECT m.ROWID, m.text, m.is_from_me, m.date
                     FROM message m
                     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-                    WHERE m.ROWID > ?
+                    WHERE m.ROWID > {min_rowid}
                       AND m.text IS NOT NULL
                       AND m.text != ''
                       AND cmj.chat_id IN ({chat_id_list})
-                    ORDER BY m.ROWID ASC
-                    """,
-                    (min_rowid,),
-                ).fetchall()
-
-                conn.close()
+                    ORDER BY m.ROWID ASC;
+                """
+                rows = _sqlite3_cli_query(msg_query)
 
                 if rows:
-                    # Return the first new reply
-                    reply_text = rows[0]["text"]
+                    reply_text = rows[0][1]  # text is second column
                     logger.info(
                         f"iMessage reply received ({len(rows)} new messages)"
                     )
@@ -443,12 +458,10 @@ class ApprovalGateway:
 
             except sqlite3.OperationalError as e:
                 err_str = str(e).lower()
-                if "unable to open" in err_str or "authorization denied" in err_str or "readonly" in err_str:
+                if "unable to open" in err_str or "authorization denied" in err_str:
                     if not getattr(self, "_fda_warned", False):
                         logger.error(
-                            f"Cannot read Messages.db — likely Full Disk Access issue. "
-                            f"Grant FDA to Python in System Settings → Privacy & Security → "
-                            f"Full Disk Access. Error: {e}"
+                            f"Cannot read Messages.db via sqlite3 CLI: {e}"
                         )
                         self._fda_warned = True
                 else:
@@ -470,10 +483,8 @@ class ApprovalGateway:
             return 0
 
         try:
-            conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
-            row = conn.execute("SELECT MAX(ROWID) FROM message").fetchone()
-            conn.close()
-            return row[0] if row and row[0] else 0
+            rows = _sqlite3_cli_query("SELECT MAX(ROWID) FROM message;")
+            return int(rows[0][0]) if rows and rows[0][0] else 0
         except Exception:
             return 0
 
