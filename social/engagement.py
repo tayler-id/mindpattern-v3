@@ -592,27 +592,32 @@ Output ONLY valid JSON:
 
         filtered = []
         for p in posts:
-            # Skip our own posts
             author_handle = p.get("author_handle", p.get("author", ""))
+
+            # Skip our own posts
             if our_handle and author_handle == our_handle:
+                logger.debug(f"Filtered out (own post): @{author_handle}")
                 continue
 
-            # Follower count check — skip filter if API returned 0 (unknown, not zero)
+            # Follower count check — skip filter if API returned 0 (unknown)
             followers = p.get("followers_count", p.get("followers", 0))
             if followers > 0 and followers < min_followers:
+                logger.debug(f"Filtered out (followers={followers}): @{author_handle}")
                 continue
 
             # Like count check
             likes = p.get("like_count", p.get("likes", 0))
             if likes < min_likes or likes > max_likes:
+                logger.debug(f"Filtered out (likes={likes}): @{author_handle}")
                 continue
 
             # Skip posts with no text content (link-only, images-only)
             text = p.get("text", "")
             if len(text.strip()) < 20:
+                logger.debug(f"Filtered out (text too short: {len(text)} chars): @{author_handle}")
                 continue
 
-            # Age check: skip posts older than 48 hours
+            # Age check: skip posts older than 72 hours
             created_at = p.get("created_at", "")
             if created_at:
                 try:
@@ -622,7 +627,8 @@ Output ONLY valid JSON:
                     age_hours = (
                         datetime.now(timezone.utc) - post_time
                     ).total_seconds() / 3600
-                    if age_hours > 48:
+                    if age_hours > 72:
+                        logger.debug(f"Filtered out (age={age_hours:.0f}h): @{author_handle}")
                         continue
                 except (ValueError, TypeError):
                     pass  # Can't parse date, keep the post

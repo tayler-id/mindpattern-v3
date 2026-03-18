@@ -614,18 +614,32 @@ def run_claude_prompt(
 ) -> tuple[str, int]:
     """Run a single claude -p call for non-agent tasks (synthesis, trends, etc.).
 
+    For large prompts (>100K chars), writes to a temp file and pipes via stdin
+    to avoid OS argument length limits.
+
     Returns (output_text, exit_code).
     """
     model = router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-    ]
+    # For large prompts, use stdin pipe instead of -p argument
+    use_stdin = len(prompt) > 100_000
+
+    if use_stdin:
+        cmd = [
+            "claude", "-p", "-",
+            "--model", model,
+            "--max-turns", str(max_turns),
+            "--output-format", "text",
+        ]
+    else:
+        cmd = [
+            "claude", "-p", prompt,
+            "--model", model,
+            "--max-turns", str(max_turns),
+            "--output-format", "text",
+        ]
 
     if system_prompt_file:
         cmd.extend(["--append-system-prompt-file", system_prompt_file])
@@ -645,6 +659,7 @@ def run_claude_prompt(
     try:
         proc = subprocess.run(
             cmd,
+            input=prompt if use_stdin else None,
             capture_output=True,
             text=True,
             timeout=timeout,
