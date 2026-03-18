@@ -372,15 +372,18 @@ class ApprovalGateway:
             return None
 
     def _slack_poll_replies(self, token: str, thread_ts: str, timeout_seconds: int) -> str | None:
-        """Poll a Slack thread for replies.
+        """Poll Slack channel for any reply after our message.
+
+        Accepts both threaded replies AND new channel messages posted after
+        the bot's message. Ignores bot messages (only human replies count).
 
         Args:
             token: Slack bot token.
-            thread_ts: Timestamp of the parent message to watch for replies.
+            thread_ts: Timestamp of the bot's message (used as baseline).
             timeout_seconds: Max wait time.
 
         Returns:
-            First reply text, or None if timed out.
+            First human reply text, or None if timed out.
         """
         poll_interval = 10
         start_time = time.monotonic()
@@ -389,6 +392,7 @@ class ApprovalGateway:
             time.sleep(poll_interval)
 
             try:
+                # Check for threaded replies first
                 params = urllib.parse.urlencode({
                     "channel": SLACK_CHANNEL,
                     "ts": thread_ts,
@@ -403,12 +407,33 @@ class ApprovalGateway:
 
                 if result.get("ok"):
                     messages = result.get("messages", [])
-                    # First message is the parent, replies follow
-                    replies = [m for m in messages[1:] if m.get("text")]
+                    replies = [m for m in messages[1:] if m.get("text") and not m.get("bot_id")]
                     if replies:
                         reply_text = replies[0]["text"]
-                        logger.info(f"Slack reply received: {reply_text[:50]}")
+                        logger.info(f"Slack threaded reply: {reply_text[:50]}")
                         return reply_text
+
+                # Also check for new channel messages after our post
+                params = urllib.parse.urlencode({
+                    "channel": SLACK_CHANNEL,
+                    "oldest": thread_ts,
+                    "limit": 10,
+                })
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.history?{params}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+
+                if result.get("ok"):
+                    messages = result.get("messages", [])
+                    # Find human messages posted AFTER our bot message
+                    for m in messages:
+                        if m.get("ts") != thread_ts and not m.get("bot_id") and m.get("text"):
+                            reply_text = m["text"]
+                            logger.info(f"Slack channel reply: {reply_text[:50]}")
+                            return reply_text
 
             except Exception as e:
                 logger.debug(f"Slack poll error (will retry): {e}")
