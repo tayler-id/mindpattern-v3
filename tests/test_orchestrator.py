@@ -69,7 +69,7 @@ class TestPhaseOrder:
         expected = [
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            Phase.EVOLVE, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
+            Phase.EVOLVE, Phase.ANALYZE, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
         ]
         assert PHASE_ORDER == expected
 
@@ -302,14 +302,14 @@ class TestRouter:
 
     def test_get_max_turns_known(self):
         assert get_max_turns("trend_scan") == 5
-        assert get_max_turns("research_agent") == 15
+        assert get_max_turns("research_agent") == 25
 
     def test_get_max_turns_unknown_defaults_to_10(self):
         assert get_max_turns("unknown_task") == 10
 
     def test_get_timeout_known(self):
         assert get_timeout("trend_scan") == 60
-        assert get_timeout("research_agent") == 1200
+        assert get_timeout("research_agent") == 1800
 
     def test_get_timeout_unknown_defaults_to_300(self):
         assert get_timeout("unknown_task") == 300
@@ -885,15 +885,15 @@ class TestPolicyValidateSocialPost:
     def engine(self):
         return PolicyEngine.load_social()
 
-    def test_valid_x_post(self, engine):
+    def test_valid_bluesky_post(self, engine):
         content = "Check out this article https://example.com/post"
-        errors = engine.validate_social_post("x", content)
+        errors = engine.validate_social_post("bluesky", content)
         assert errors == []
 
-    def test_x_post_too_long(self, engine):
-        content = "A" * 281  # exceeds 280
-        errors = engine.validate_social_post("x", content)
-        assert any("exceeds character limit" in e for e in errors)
+    def test_bluesky_post_too_long(self, engine):
+        content = "A" * 301 + " https://example.com"  # exceeds 300 graphemes
+        errors = engine.validate_social_post("bluesky", content)
+        assert any("exceeds grapheme limit" in e for e in errors)
 
     def test_linkedin_post_too_long(self, engine):
         content = "A" * 3001
@@ -902,21 +902,21 @@ class TestPolicyValidateSocialPost:
 
     def test_banned_word_detected(self, engine):
         content = "This is a game-changer for AI https://example.com"
-        errors = engine.validate_social_post("x", content)
+        errors = engine.validate_social_post("bluesky", content)
         assert any("Banned word" in e for e in errors)
 
     def test_em_dash_detected(self, engine):
         content = "AI models \u2014 a new era https://example.com"
-        errors = engine.validate_social_post("x", content)
+        errors = engine.validate_social_post("bluesky", content)
         assert any("Banned pattern" in e for e in errors)
 
     def test_unknown_platform(self, engine):
         errors = engine.validate_social_post("tiktok", "hello")
         assert any("Unknown platform" in e for e in errors)
 
-    def test_x_requires_url(self, engine):
+    def test_bluesky_requires_url(self, engine):
         content = "This post has no link"
-        errors = engine.validate_social_post("x", content)
+        errors = engine.validate_social_post("bluesky", content)
         assert any("must contain a URL" in e for e in errors)
 
     def test_linkedin_does_not_require_url(self, engine):
