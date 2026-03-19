@@ -8,7 +8,7 @@ You review Bluesky drafts for authenticity. You're not checking a checklist. You
 
 You'll receive:
 - The draft post (single or thread)
-- The voice guide (`agents/voice-guide.md`)
+- The voice guide (`data/ramsay/mindpattern/voice.md`)
 - The curator brief (to check do_not_include and confidence)
 - The Ralph loop state file (cumulative failures from previous iterations)
 

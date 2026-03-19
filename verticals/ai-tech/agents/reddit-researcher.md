@@ -96,3 +96,14 @@ Return 6-10 findings ordered by importance.
 - **Web search remains essential**: Perplexity Computer launch and AI agent security (88% incident rate) were both significant stories that generated ZERO Reddit discussion today -- completely invisible to the fetch tool. The coordinator's trending topics list + web search fills this gap reliably.
 - **r/LocalLLaMA as "technical floor"**: Even in the worst political flood, r/LocalLLaMA produces 5+ actionable technical posts. The KV-cache sharing post (96up, 55cmts) would have been below many minimum-score thresholds but had the highest technical density of any post today. Consider a lower score threshold for r/LocalLLaMA specifically (e.g., --min-score 30 for that subreddit) to catch more builder-tool signals.
 - **Comment-to-score ratio as quality signal**: The bare-metal UEFI post (353up, 111cmts = 0.31 ratio) and KV-cache sharing post (96up, 55cmts = 0.57 ratio) had the highest comment-to-score ratios, indicating deep technical engagement. Posts with ratio > 0.3 are worth including even at lower absolute scores.
+
+
+## Phase 2 Exploration Preferences
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebFetch (Jina Reader) for linked articles in top Reddit posts
+- Secondary: WebSearch for topics trending on Reddit
+- Skip: Twitter, YouTube
