@@ -184,14 +184,13 @@ class TestSocialValidation:
         char_errors = [e for e in errors if "character limit" in e.lower() or "char" in e.lower()]
         assert char_errors == []
 
-    def test_x_281_chars_fails(self, social_engine):
-        """X post at 281 chars fails."""
+    def test_bluesky_301_graphemes_fails(self, social_engine):
+        """Bluesky post at 301 graphemes fails."""
         url = " https://mindpattern.ai"
-        body = "A" * (281 - len(url))
+        body = "A" * (301 - len(url))
         content = body + url
-        assert len(content) == 281
-        errors = social_engine.validate_social_post("x", content)
-        assert any("character limit" in e.lower() or "281" in e for e in errors)
+        errors = social_engine.validate_social_post("bluesky", content)
+        assert any("grapheme" in e.lower() for e in errors)
 
     def test_bluesky_300_graphemes(self, social_engine):
         """Bluesky post at 300 graphemes passes, 301 fails."""
@@ -222,13 +221,13 @@ class TestSocialValidation:
     def test_catches_game_changer_case_insensitive(self, social_engine):
         """'game-changer' is caught regardless of case."""
         content = "This is a GAME-CHANGER for the industry https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert any("game-changer" in e.lower() for e in errors)
 
     def test_catches_revolutionize(self, social_engine):
         """'revolutionize' is caught."""
         content = "This will revolutionize the field https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert any("revolutionize" in e.lower() for e in errors)
 
     # ── Banned patterns ─────────────────────────────────────────────
@@ -236,7 +235,7 @@ class TestSocialValidation:
     def test_catches_em_dash(self, social_engine):
         """Em dash character '\u2014' in content is caught."""
         content = "This is great \u2014 really great https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert any("\u2014" in e for e in errors)
 
     # ── Valid post ──────────────────────────────────────────────────
@@ -244,7 +243,7 @@ class TestSocialValidation:
     def test_passes_valid_short_post_with_url(self, social_engine):
         """A clean, short post with URL passes all checks."""
         content = "New approach to LLM evals looks promising. https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert errors == []
 
 
