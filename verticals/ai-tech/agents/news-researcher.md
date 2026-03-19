@@ -46,6 +46,11 @@ Return 8-12 findings, ordered by importance.
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Exa search for breaking AI news from last 6 hours
-- Secondary: Jina Reader for deep reads on company blog posts
-- Tertiary: Twitter via xreach for breaking announcements
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for breaking AI news from last 6 hours
+- Secondary: WebFetch for deep reads on company blog posts and announcements
+- Skip: Twitter, YouTube

@@ -146,6 +146,11 @@ Return 15-20 findings, ordered by importance. At least 2 should be cross-categor
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Exa search for SaaS disruption, fintech AI, startup launches
-- Secondary: Jina Reader for investor analysis and market reports
-- Tertiary: xreach for VC and founder discussions on Twitter
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 5-10 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for SaaS disruption, fintech AI, startup launches
+- Secondary: WebFetch for investor analysis and market reports
+- Skip: Twitter, YouTube

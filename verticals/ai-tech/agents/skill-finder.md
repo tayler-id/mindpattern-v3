@@ -54,6 +54,11 @@ Return EXACTLY 10 skills. Aim for at least 2 different domains represented. Prio
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Jina Reader for extracting actionable skills from top findings
-- Secondary: Exa search for skill-building resources and tutorials
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for actionable skills from top findings and official docs
+- Secondary: WebFetch for extracting techniques from blog posts and tutorials
 - Skip: Twitter, YouTube

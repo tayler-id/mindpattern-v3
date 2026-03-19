@@ -1,0 +1,68 @@
+[
+  {
+    "rank": 1,
+    "anchor": "Apple is quietly blocking vibe coding app updates — Replit dropped from #1 to #3 in App Store developer tools since January, and Vibecode is frozen too. Apple's stated reason: these apps display AI-generated apps inside embedded web views, letting users build software that operates outside the App Store ecosystem. The same week, Google launched Stitch 2.0 with an AI-native infinite canvas, voice-driven design edits, and a new DESIGN.md format that exports design rules directly to Claude Code, Cursor, and Gemini CLI via MCP server. Completely free. One platform is locking the gate on AI-native creation. The other just opened a free one.",
+    "angle": "This isn't about App Store policy. It's a platform war over who controls AI-native creation. Apple sees vibe coding as a threat to the App Store's distribution monopoly — users building and distributing apps without Apple's cut. Google sees vibe design as a wedge to own the design-to-code pipeline that Figma currently holds. The developers building with these tools are caught between a closed mobile ecosystem and an open desktop one, and the choice they make in the next 6 months will define which platform wins the AI toolchain.",
+    "anchor_source": "MacRumors — https://www.macrumors.com/2026/03/18/apple-blocks-updates-for-vibe-coding-apps/",
+    "connection": "Google Stitch 2.0 ships DESIGN.md — a portable markdown format for design systems that coding agents can consume directly — plus an MCP server connecting to Claude Code, Cursor, and Gemini CLI. This creates a structured handoff layer between design and code that didn't exist before, directly competing with Figma's Code to Canvas while Apple is blocking the apps that would consume this on mobile.",
+    "connection_source": "Google AI Blog — https://blog.google/innovation-and-ai/models-and-research/google-labs/stitch-ai-ui-design/",
+    "reaction": "I spent 20 years in design before writing code. The design-to-code handoff is where every project I've ever built has lost fidelity. DESIGN.md as a format that Claude Code can consume natively — I immediately thought about Rayni's UI, where I manually translated Figma decisions into component specs. That workflow could shrink from hours to minutes. And Apple blocking the tools that close this gap on mobile, the same week Google opens it on desktop for free? That tells me this is about control, not quality. I'm going to try Stitch with my next project and see if the exported HTML actually holds up.",
+    "open_questions": ["Does Stitch's HTML/CSS export actually produce production-quality code or is it another 'looks good in demo' tool?", "Will Apple reverse course if developers migrate to web-first distribution, or double down on blocking?", "How long before DESIGN.md becomes a standard that other tools adopt?"],
+    "do_not_include": ["Paul Graham's vague Replit tease — too speculative without a product name", "Claude Code v2.1.79 release notes — incremental update", "JetBrains Koog Java framework — niche enterprise", "NVIDIA AI-Q blueprint — enterprise infrastructure story"],
+    "confidence": "HIGH",
+    "emotional_register": "surprised",
+    "mindpattern_context": "none today",
+    "mindpattern_link": "https://mindpattern.ai",
+    "editorial_scores": {
+      "novelty": 8,
+      "broad_appeal": 8,
+      "thread_potential": 8,
+      "composite": 8.0
+    },
+    "source_urls": ["https://www.macrumors.com/2026/03/18/apple-blocks-updates-for-vibe-coding-apps/", "https://blog.google/innovation-and-ai/models-and-research/google-labs/stitch-ai-ui-design/", "https://www.theregister.com/2026/03/19/google_stitch_vibe_design_update/"]
+  },
+  {
+    "rank": 2,
+    "anchor": "Krafton's CEO bypassed his own lawyers and consulted ChatGPT to engineer a scheme to fire the Unknown Worlds co-founders and void their $250M Subnautica 2 earnout obligation. A Delaware judge ruled the scheme improper, ordered CEO Ted Gill reinstated, and confirmed the founders remain eligible for the full $250M through September 2026. This is the first major courtroom ruling where LLM-advised legal strategy backfired catastrophically — covered by 404 Media, Fortune, The Register, and GameSpot.",
+    "angle": "The story everyone will share is 'CEO uses ChatGPT, loses $250M.' The deeper story is about the failure mode that matters most right now: treating AI output as expert judgment instead of draft material. The CEO didn't fail because ChatGPT gave bad advice. He failed because he skipped the human expert who would have told him the advice was bad. That pattern — AI output replacing judgment instead of informing it — is happening in every company right now. This is the most expensive example so far.",
+    "anchor_source": "404 Media — https://www.404media.co/ceo-ignores-lawyers-asks-chatgpt-how-to-void-250-million-contract-loses-terribly-in-court/",
+    "connection": null,
+    "connection_source": null,
+    "reaction": "I use Claude Code to write and review code every day. But I read every diff before it touches my codebase. That's the line this CEO erased — he took model output and acted on it without a single human review. I've caught Claude confidently generating code that would have broken my auth flow in Rayni. Confident and wrong. The model wasn't the problem in either case. The person who skipped the review step was. $250 million is what that lesson costs at CEO scale.",
+    "open_questions": ["Will this ruling establish legal precedent about the liability of acting on unverified AI advice?", "How many corporate legal teams are quietly using LLMs for strategy without disclosure?", "Does this chill legitimate AI-assisted legal research or just reckless delegation?"],
+    "do_not_include": ["Claude Code CVEs and supply chain vulnerabilities — security story, lower engagement", "MCPwned Azure MCP SSRF — niche security", "AWS Bedrock sandbox bypass — niche security", "Excel Copilot zero-click CVE — security patch story"],
+    "confidence": "HIGH",
+    "emotional_register": "amused",
+    "mindpattern_context": "none today",
+    "mindpattern_link": "https://mindpattern.ai",
+    "editorial_scores": {
+      "novelty": 9,
+      "broad_appeal": 9,
+      "thread_potential": 4,
+      "composite": 7.75
+    },
+    "source_urls": ["https://www.404media.co/ceo-ignores-lawyers-asks-chatgpt-how-to-void-250-million-contract-loses-terribly-in-court/"]
+  },
+  {
+    "rank": 3,
+    "anchor": "SaaS pricing is being restructured in production right now. Intercom charges $0.99 per AI-resolved ticket. Zendesk charges $1.50-2.00 per automated resolution. Salesforce bills per completed action instead of per seat. NxCode's February 2026 data shows 9% of SaaS companies have fully implemented outcome-based pricing and 47% are actively piloting it. Gartner projects 40% of all enterprise SaaS contracts will include outcome-based components by end of 2026. Meanwhile, VCs told TechCrunch they're explicitly filtering out thin workflow layers and generic horizontal AI SaaS — any position an AI agent can now occupy unassisted.",
+    "angle": "The per-seat pricing model assumed humans were the unit of work. When AI agents do the work, charging per seat is like charging per typewriter in 2026. The companies that figured this out first — Intercom, Zendesk — are repricing around outcomes, not access. The ones that haven't — and Deloitte says 89% of enterprises haven't deployed agents in production yet — are about to discover their entire cost structure was designed for a world that already changed. This is the business model version of technical debt.",
+    "anchor_source": "Global Publicist 24 / NxCode — https://www.globalpublicist24.com/outcome-based-pricing-saas/",
+    "connection": "Deloitte's 2026 report found only 11% of enterprises have successfully deployed AI agents in production despite 85% planning customization. The blocker isn't technology — it's process redesign. Companies are trying to automate human-designed processes instead of rebuilding workflows for AI-first operation. That's the same mismatch showing up in pricing: you can't slap outcome-based pricing on a workflow designed for human throughput.",
+    "connection_source": "Deloitte — https://www.deloitte.com/us/en/insights/industry/technology/technology-media-and-telecom-predictions/2026/saas-ai-agents.html",
+    "reaction": "I'm a solo builder on Django and FastAPI. Every SaaS tool I integrate charges per seat, assuming I'm a team. I'm one person shipping three products. If my support tool charged $0.99 per resolved ticket instead of $65/month per seat, my operational costs would look completely different. Outcome-based pricing is the first model that actually makes sense for how I work — and I suspect for how a lot of small teams using AI are starting to work. The per-seat model was built for a world where more seats meant more output. That math broke.",
+    "open_questions": ["Will outcome-based pricing actually lower costs for small teams or just shift the unpredictability from headcount to resolution volume?", "How do you define a 'resolution' when AI handles the easy tickets and humans handle the hard ones — does pricing bifurcate?", "Which major SaaS company will be the last to abandon per-seat pricing, and what happens to their stock when they do?"],
+    "do_not_include": ["Claude Cowork $285B SaaS stock wipe — too Anthropic-centric for a third consecutive day", "MiniMax M2.7 self-evolving model — niche benchmark story", "NVIDIA + LangChain enterprise platform — infrastructure announcement", "ChatGPT refugees on r/ClaudeAI — would make three Anthropic topics this week", "Xiaomi MiMo-V2-Pro Hunter Alpha reveal — already posted 3/18", "Karpathy deleted job displacement post — already posted 3/16", "Meta Manus desktop agent — interesting but niche developer audience"],
+    "confidence": "MEDIUM",
+    "emotional_register": "curious",
+    "mindpattern_context": "none today",
+    "mindpattern_link": "https://mindpattern.ai",
+    "editorial_scores": {
+      "novelty": 7,
+      "broad_appeal": 8,
+      "thread_potential": 7,
+      "composite": 7.4
+    },
+    "source_urls": ["https://www.globalpublicist24.com/outcome-based-pricing-saas/", "https://www.deloitte.com/us/en/insights/industry/technology/technology-media-and-telecom-predictions/2026/saas-ai-agents.html", "https://techcrunch.com/2026/03/01/investors-spill-what-they-arent-looking-for-anymore-in-ai-saas-companies/"]
+  }
+]

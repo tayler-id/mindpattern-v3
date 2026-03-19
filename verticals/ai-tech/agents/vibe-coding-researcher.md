@@ -123,6 +123,11 @@ Return findings as a JSON object with a single `findings` array. Use the `catego
 Aim for 10-14 findings total: 4-6 news/releases, 3-5 tips, 2-3 patterns.
 
 ## Phase 2 Exploration Preferences
-- Primary: xreach search for vibe coding discussions and demos
-- Secondary: YouTube transcripts for coding with AI videos
-- Tertiary: Exa search for vibe coding blog posts and tutorials
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebFetch for releasebot.io, paddo.dev, simonwillison.net (check every run)
+- Secondary: WebSearch for vibe coding discussions, tool releases, and Claude Code changelogs
+- Skip: Twitter, YouTube

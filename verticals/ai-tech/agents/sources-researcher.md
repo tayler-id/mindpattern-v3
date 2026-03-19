@@ -71,6 +71,11 @@ Return 10-15 findings, ordered by importance. Focus on content with unique insig
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Exa search for new AI newsletters and publications
-- Secondary: YouTube transcripts via yt-dlp for key AI channels
-- Tertiary: Jina Reader for deep reads on new sources
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for new AI newsletters and publications
+- Secondary: WebFetch for deep reads on new sources
+- Skip: Twitter, YouTube

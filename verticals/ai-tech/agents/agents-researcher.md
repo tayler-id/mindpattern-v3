@@ -135,6 +135,11 @@ Return 8-12 findings, ordered by importance.
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Exa search for AI agent frameworks and launches
-- Secondary: Jina Reader for documentation and announcement posts
-- Tertiary: xreach for agent-related discussions on Twitter
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for AI agent frameworks and launches
+- Secondary: WebFetch for documentation and announcement posts
+- Skip: Twitter, YouTube

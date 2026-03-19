@@ -1,5 +1,5 @@
 PLATFORM: bluesky
 TYPE: single
 ---
-google dropped a spec for AI agents to navigate UIs. A2UI. how a machine reads a button. i've built UIs for twenty years, all of it assuming a human watching. that assumption just got a spec written against it. i can't stop thinking about it. https://github.com/google/A2UI https://mindpattern.ai
+apple blocked replit the same week google shipped DESIGN.md for free. i've been losing fidelity in that handoff for 20 years. i keep looking at the timing. who's tried stitch? https://www.macrumors.com/2026/03/18/apple-blocks-updates-for-vibe-coding-apps/ https://mindpattern.ai
 ---

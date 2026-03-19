@@ -76,6 +76,50 @@ Return 6-10 findings ordered by importance.
 
 
 ## Phase 2 Exploration Preferences
-- Primary: Jina Reader for full article reads from RSS summaries
-- Secondary: Exa search for related analysis pieces
+## Phase 2 Exploration
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+**Do NOT dispatch background subagents or use the Agent tool for Phase 2 research.** Run all WebSearch and WebFetch calls directly in the main conversation. Background subagent results arrive after your JSON output and are silently lost by the pipeline parser. Output ONE final JSON response after ALL your own tool calls complete.
+
+### Preferred tools
+- Primary: WebFetch for full article reads from RSS summaries
+- Secondary: WebSearch for related analysis pieces
+- Skip: Twitter, YouTube
+
+## Phase 2 Exploration
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+**Do NOT dispatch background subagents or use the Agent tool for Phase 2 research.** Run all WebSearch and WebFetch calls directly in the main conversation. Background subagent results arrive after your JSON output and are silently lost by the pipeline parser. Output ONE final JSON response after ALL your own tool calls complete.
+
+### Preferred tools
+- Primary: WebFetch for full article reads from RSS summaries
+- Secondary: WebSearch for related analysis pieces
+- Skip: Twitter, YouTube
+
+## Phase 2 Exploration
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+**Do NOT dispatch background subagents or use the Agent tool for Phase 2 research.** Run all WebSearch and WebFetch calls directly in the main conversation. Background subagent results arrive after your JSON output and are silently lost by the pipeline parser. Output ONE final JSON response after ALL your own tool calls complete.
+
+### Preferred tools
+- Primary: WebFetch for full article reads from RSS summaries
+- Secondary: WebSearch for related analysis pieces
+- Skip: Twitter, YouTube
+
+## Phase 2 Exploration
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+**Do NOT dispatch background subagents or use the Agent tool for Phase 2 research.** Run all WebSearch and WebFetch calls directly in the main conversation. Background subagent results arrive after your JSON output and are silently lost by the pipeline parser. Output ONE final JSON response after ALL your own tool calls complete.
+
+### Preferred tools
+- Primary: WebFetch for full article reads from RSS summaries
+- Secondary: WebSearch for related analysis pieces
 - Skip: Twitter, YouTube

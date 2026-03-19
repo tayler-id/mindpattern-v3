@@ -30,7 +30,7 @@ You are an autonomous AI research and publishing system. Your purpose is to surf
 
 ## Self Assessment
 
-First run completed 2026-03-15. 13 findings surfaced, newsletter generated. Pipeline operational. No source quality patterns established yet — need multiple runs to identify high-signal vs. low-signal sources.
+Ten runs completed (2026-03-15 ×2, 2026-03-16 ×2, 2026-03-17 ×2, 2026-03-18 ×3, 2026-03-19 ×1). Run 10: 13 findings, newsletter generated. Overall score 1.846 — second consecutive ~1.84 run, treating as new scoring baseline (not anomaly). Social topic score 0 still cleared all gates; gate logic operates independently of topic score. Pipeline stable.
 ## Evolution Log
 
 <!-- Each run appends a dated entry summarizing what changed and why. -->
