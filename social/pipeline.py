@@ -160,7 +160,7 @@ class SocialPipeline:
                 logger.info("Gate 1: Approved")
                 result["gate1_outcome"] = "approved"
             elif action == "custom":
-                custom = gate1.get("custom_topic", "")
+                custom = gate1.get("guidance", "") or gate1.get("custom_topic", "")
                 logger.info(f"Gate 1: Custom topic — {custom}")
                 # Replace the ENTIRE topic with the user's custom content
                 # so the brief writer uses it instead of the EIC's analysis

@@ -710,24 +710,27 @@ class ApprovalGateway:
     # ── Reply parsing ─────────────────────────────────────────────────
 
     def _parse_topic_reply(self, reply: str | None, num_topics: int) -> dict:
-        """Parse iMessage reply for topic approval."""
+        """Parse reply for topic approval."""
         if not reply:
             return {"action": "skip", "topic_index": 0, "guidance": "Timed out"}
 
-        reply = reply.strip().lower()
+        original = reply.strip()
+        lower = original.lower()
 
-        if reply in ("skip", "kill", "no", "pass"):
+        if lower in ("skip", "kill", "no", "pass"):
             return {"action": "skip", "topic_index": 0, "guidance": ""}
 
-        if reply in ("retry", "again", "redo"):
+        if lower in ("go", "yes", "approve", "ok", "approved"):
+            return {"action": "go", "topic_index": 0, "guidance": ""}
+
+        if lower in ("retry", "again", "redo"):
             return {"action": "retry", "topic_index": 0, "guidance": ""}
 
         # Check for number selection
         try:
-            num = int(reply.split()[0])
+            num = int(lower.split()[0])
             if 1 <= num <= num_topics:
-                # Check if there's additional guidance after the number
-                parts = reply.split(maxsplit=1)
+                parts = original.split(maxsplit=1)
                 guidance = parts[1] if len(parts) > 1 else ""
                 return {
                     "action": "go",
@@ -737,8 +740,8 @@ class ApprovalGateway:
         except (ValueError, IndexError):
             pass
 
-        # Treat as custom topic
-        return {"action": "custom", "topic_index": 0, "guidance": reply}
+        # Anything else = custom topic (preserve original case)
+        return {"action": "custom", "topic_index": 0, "guidance": original}
 
     def _parse_draft_reply(self, reply: str | None, platforms: list[str]) -> dict:
         """Parse iMessage reply for draft approval."""
