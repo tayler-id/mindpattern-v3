@@ -502,12 +502,13 @@ def generate_mirrors(
     # ── Collect tags ──────────────────────────────────────────────────────
     topic_names = list({_topic_from_agent(f["agent"]) for f in findings})
 
-    # ── Render: daily (all dates with findings, not just today) ──────────
+    # ── Render: daily (all dates with findings, plus the current run date) ─
     all_dates = db.execute(
         "SELECT DISTINCT run_date FROM findings ORDER BY run_date"
     ).fetchall()
     daily_tpl = env.get_template("daily.md.j2")
 
+    rendered_dates = set()
     for date_row in all_dates:
         d = date_row[0] if not hasattr(date_row, "keys") else date_row["run_date"]
         if not d:
@@ -542,6 +543,20 @@ def generate_mirrors(
             evolution_actions=[],
         )
         atomic_write(vault_dir / "daily" / f"{d}.md", daily_content)
+        rendered_dates.add(d)
+
+    # Always create a daily file for the current run date (even if no findings)
+    if date_str not in rendered_dates:
+        daily_content = daily_tpl.render(
+            date=date_str,
+            tags=["daily"],
+            agents=[],
+            findings=[],
+            posts=[],
+            engagements=[],
+            evolution_actions=[],
+        )
+        atomic_write(vault_dir / "daily" / f"{date_str}.md", daily_content)
 
     # ── Render: topics ────────────────────────────────────────────────────
     seen_agents = {f["agent"] for f in findings}
