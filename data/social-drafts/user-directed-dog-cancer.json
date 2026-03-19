@@ -1,0 +1,10 @@
+{
+  "source": "user_directed",
+  "finding_id": 1420,
+  "title": "Non-Expert Uses ChatGPT + AlphaFold to Design Custom mRNA Cancer Vaccine for Dog — Tumor Shrinks",
+  "summary": "An Australian tech entrepreneur used ChatGPT, AlphaFold, and a custom-synthesized mRNA vaccine to treat his dog's terminal cancer. Researchers assisted and were reportedly excited; tumor size reduced significantly within weeks of the first injection. This is the clearest public demonstration yet of frontier AI enabling personalized medicine workflows outside of clinical settings — a genuine capability milestone, not hype.",
+  "source_url": "https://reddit.com/r/singularity/comments/1rtmmpe/fascinating_story_tech_entrepreneur_in_australia/",
+  "angle": "The real story isn't 'AI cured cancer' — it's that frontier AI tools (ChatGPT for research synthesis, AlphaFold for protein structure prediction) have lowered the barrier so dramatically that a non-expert could design a personalized mRNA vaccine. This is what democratized access to cutting-edge science actually looks like. The implications for personalized medicine, rare disease treatment, and veterinary care are massive.",
+  "platforms": ["bluesky", "linkedin"],
+  "composite_score": 8.5
+}

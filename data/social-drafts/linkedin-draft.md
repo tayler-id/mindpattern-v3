@@ -1,19 +1,17 @@
 PLATFORM: linkedin
 TYPE: single
 ---
-Your product has two users now. One of them is an AI.
+I've been losing design fidelity in the handoff to code for twenty years. Google shipped something this week that might actually fix it. Apple blocked the tools that use it the same week.
 
-Google published A2UI this week. It's a formal spec for how AI agents should navigate user interfaces. Not accessibility tooling. Not scraping hacks. A protocol for agents to understand buttons, forms, inputs as first-class interactions.
+Came up as a visual communications designer before I wrote code. That gap between what's in the design file and what gets shipped has never fully closed.
 
-Fifty years of UX built on one assumption: the person on the other end has eyes, context, intentions. We designed affordances for human cognition. Visual hierarchy. Progressive disclosure. Gestalt principles. All of it oriented toward the same audience.
+Google's Stitch 2.0 introduced DESIGN.md, a portable format that exports design system rules directly to Claude Code, Cursor, and Gemini via an MCP server. Not a static handoff link. A structured file a coding agent can actually read and reason about. I thought about Rayni immediately, where I've been manually translating Figma decisions into component specs for months. That workflow could shrink from hours to minutes.
 
-A2UI doesn't break that. But it adds a second audience that didn't exist when any of those principles were written.
+Apple's stated reason for blocking Replit and Vibecode: these apps display AI-generated apps in embedded web views, letting users build software outside the App Store ecosystem. Replit dropped from #1 to #3 in developer tools since January. Technically accurate. And it tells you exactly what they're protecting.
 
-I've been sitting with what this actually means when both a human and an agent can reach the same control. The human wants something that feels obvious. The agent wants something that's unambiguous. Those aren't always the same thing. A button labeled "Submit" is intuitive to a person. An agent needs to know what submitting does, in what context, with what consequences. I don't think we've built for that yet.
+One platform opened the pipeline the same week the other welded it shut. Not a coincidence.
 
-The deeper question nobody's asking: when those two audiences want different things from the same interface, who wins?
+I'm going to test Stitch with my next project. Real question: does the exported HTML hold up in production, or is this another tool that looks good until you ship it?
 
 https://mindpattern.ai
-
-If you design or build interfaces, is agent-readability something you're actively designing for, or does it still feel too abstract to factor in?
 ---
