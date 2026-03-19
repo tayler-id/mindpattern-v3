@@ -1,0 +1,22 @@
+# Obsidian internals
+.obsidian/
+
+# Generated mirror files (rebuilt from SQLite every run)
+daily/
+topics/
+sources/
+social/
+people/
+newsletters/
+agents/
+
+# Obsidian auto-created files
+Untitled*
+*.canvas
+*.base
+
+# Keep source-of-truth files tracked
+!soul.md
+!user.md
+!voice.md
+!decisions.md

@@ -1,0 +1,235 @@
+{
+  "main": {
+    "id": "6b0f7e64379e0909",
+    "type": "split",
+    "children": [
+      {
+        "id": "d46aee5b7019ea6b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "0fed0359495ffa28",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "docs/ARCHITECTURE.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "ARCHITECTURE"
+            }
+          },
+          {
+            "id": "ffa604cdd0146149",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Untitled.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Untitled"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "6376fec2736555af",
+    "type": "split",
+    "children": [
+      {
+        "id": "a23c7bda74968f92",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "691a09f2b8f29c91",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "4c13681a474d3535",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "3fcc50310e5741f5",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "b99bc6a989214442",
+    "type": "split",
+    "children": [
+      {
+        "id": "05816fabe648f2ce",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "26b24aad5b018679",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Untitled.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Untitled"
+            }
+          },
+          {
+            "id": "32111b81c9fe142c",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Untitled.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Untitled"
+            }
+          },
+          {
+            "id": "1a9c7d53277d9ec9",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "5d6b22e3bd083ad4",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "2d6f5f91cd1d89f7",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Untitled.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Untitled"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "ffa604cdd0146149",
+  "lastOpenFiles": [
+    "docs/ARCHITECTURE.md",
+    "Untitled.md",
+    "data/ramsay/mindpattern/agents/eic/2026-03-17.md",
+    "data/social-drafts/eic-topic.json",
+    "data/ramsay/mindpattern/agents/learnings_update/2026-03-17.md",
+    "reports/ramsay/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/synthesis_pass2/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/synthesis_pass1/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/agents-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/saas-disruption-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/arxiv-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/skill-finder/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/news-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/github-pulse-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/thought-leaders-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/projects-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/reddit-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/sources-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/hn-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/vibe-coding-researcher/2026-03-17.md",
+    "data/ramsay/mindpattern/agents/trend_scan/2026-03-17.md",
+    "data/ramsay/traces.db-shm",
+    "data/ramsay/traces.db-wal",
+    "data/ramsay/memory.db-shm",
+    "data/ramsay/memory.db-wal",
+    "reports/pipeline-2026-03-17.jsonl",
+    "reports/launchd-decisions.log",
+    "data/ramsay/mindpattern/agents/engagement_writer/_index.md",
+    "data/ramsay/mindpattern/agents/analyzer/_index.md",
+    "data/ramsay/mindpattern/agents/engagement_writer/2026-03-16.md",
+    "data/ramsay/mindpattern/agents/engagement_writer"
+  ]
+}

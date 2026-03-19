@@ -143,3 +143,14 @@ Return findings as a structured list. For each finding:
 ```
 
 Return 15-20 findings, ordered by importance. At least 2 should be cross-category patterns if you spot them. This is the primary signal section — go wide and deep. More findings = more value here.
+
+
+## Phase 2 Exploration Preferences
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 5-10 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebSearch for SaaS disruption, fintech AI, startup launches
+- Secondary: WebFetch for investor analysis and market reports
+- Skip: Twitter, YouTube

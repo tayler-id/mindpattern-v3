@@ -1,45 +1,59 @@
 {
-  "editorial_angle": "Google just published a protocol that treats your UI as an API for AI agents. Not accessibility. Not automation. A first-class citizen spec for machines navigating interfaces built for humans. The deeper story: we're entering a world where UIs have two audiences — humans and agents — and nobody's figured out what happens when those audiences want different things. This isn't the agentic web arriving. It's the moment someone tried to write the spec for it.",
-  "key_message": "Google's A2UI protocol means the 'user' in user interface is no longer assumed to be human.",
-  "emotional_register": "curious",
+  "editorial_angle": "The design-to-code handoff has been the leaky pipe in software development for decades. Fidelity dies in translation. Google just patched it with a portable format and free tools that speak directly to the coding agents builders are already using. Apple, the same week, used its platform control to freeze the vibe coding apps that were closing this gap on mobile. This isn't a coincidence. It's a fork in the road for AI-native creation: one platform opening the pipeline, the other welding it shut. Tayler's 20 years as a designer before becoming an engineer gives him standing to say what most commentators can't: this handoff problem is real, DESIGN.md is the most promising attempt at solving it he's seen, and Apple's move tells you exactly how threatened the status quo is.",
+  "key_message": "Apple froze the tools closing the design-to-code gap on mobile the same week Google made those tools free on desktop — and the timing isn't an accident.",
+  "emotional_register": "surprised",
   "tone": "conversational-authoritative",
   "source_attribution": {
-    "primary": {"name": "Google A2UI on GitHub", "url": "https://github.com/google/A2UI"},
-    "supporting": []
+    "primary": {
+      "name": "MacRumors — Apple Blocks Updates for Vibe Coding Apps",
+      "url": "https://www.macrumors.com/2026/03/18/apple-blocks-updates-for-vibe-coding-apps/"
+    },
+    "supporting": [
+      {
+        "name": "Google AI Blog — Stitch AI UI Design",
+        "url": "https://blog.google/innovation-and-ai/models-and-research/google-labs/stitch-ai-ui-design/"
+      }
+    ]
   },
   "visual_metaphor_direction": {
-    "core_tension": "A human hand and a robotic arm both reaching for the same UI control — the interface was designed for one, now claimed by both. Neither fully owns it.",
-    "suggested_approach": "caricature",
-    "mood": "surreal",
+    "core_tension": "Two gates side by side: Apple's is slammed shut with a padlock and a 'Blocked' sign on the Replit logo. Google's gate is wide open with a free-entry sign and a clear path through. A builder figure stands between them holding a design file, forced to choose a side.",
+    "suggested_approach": "symbolic",
+    "mood": "stark",
     "key_elements": [
-      "Google logo or 'G' branding on the interface or screen",
-      "A physical control panel or dashboard with human-centric affordances: buttons, dials, labeled inputs",
-      "A mechanical or skeletal robot arm reaching in from one side, finger extended toward a control",
-      "A human hand reaching from the other side, slightly displaced or uncertain",
-      "A placard or label reading 'USER' that has been partially relabeled or overlaid with 'AGENT'"
+      "Apple logo on a locked gate or wall",
+      "Google logo on an open gate or door",
+      "Replit logo visibly blocked/frozen",
+      "DESIGN.md as a document or blueprint passing freely through the Google side",
+      "A single builder/developer figure caught between the two"
     ],
     "avoid": [
-      "Friendly robots or cute AI mascots — this is not a consumer product launch",
-      "Abstract neural network imagery, glowing nodes, or digital particle effects",
-      "Smartphones or laptops as the primary interface device — too generic",
-      "Any sense of triumph or celebration — the mood is unresolved curiosity, not victory",
-      "Dystopian darkness or threat — surreal and curious, not ominous"
+      "Generic tech imagery with no named brands",
+      "Happy or optimistic framing for both sides — this is a conflict, not a partnership",
+      "Literal App Store screenshots or UI mockups",
+      "Both companies depicted as equal — Apple is the antagonist this week"
     ]
   },
   "platform_hooks": {
     "x": {
-      "hook": "The 'user' in UI might not be you anymore.",
-      "angle": "Google just published a protocol for AI agents to navigate UIs. That's not a feature. That's a new primary audience."
+      "hook": "Apple blocked Replit. Google shipped free design-to-code tools. Same week.",
+      "angle": "The timing is too clean to be coincidental — Apple knows what's at stake if AI-native creation tools mature outside their ecosystem, and blocking updates is the only lever they have left"
     },
     "linkedin": {
-      "hook": "Your product has two users now. One of them is an AI.",
-      "angle": "Google's A2UI spec formalizes something product teams have been ignoring: agents are using your interfaces, and they weren't designed for them. What does it actually mean to do UX for a machine?"
+      "hook": "I spent 20 years losing fidelity in the design-to-code handoff. DESIGN.md might actually fix it — if Apple lets the tools that use it survive.",
+      "angle": "Frame it as a practical question for engineering and product leaders: what does your design-to-code workflow cost you today, and how exposed is it to platform gatekeeping decisions you can't control?"
     },
     "bluesky": {
-      "hook": "Google dropped a spec for AI agents to navigate UIs and I can't stop thinking about it.",
-      "angle": "A2UI is basically: here's how an agent should understand a button. Fifty years of designing UIs for human perception and now we're writing the machine-readable version. Weird moment to be paying attention."
+      "hook": "Apple froze Replit updates this week. Google shipped DESIGN.md for free. I keep looking at the timing.",
+      "angle": "Conversational, builder-to-builder: who's tried Stitch yet? Does the HTML export actually hold up in production? This is a genuine question Tayler wants answered."
     }
   },
-  "do_not_include": [],
+  "do_not_include": [
+    "Paul Graham's vague Replit tease — too speculative without a product name",
+    "Claude Code v2.1.79 release notes — incremental update",
+    "JetBrains Koog Java framework — niche enterprise",
+    "NVIDIA AI-Q blueprint — enterprise infrastructure story",
+    "Any mention of the post being AI-generated, automated, or pipeline-produced",
+    "References to 'agents', 'pipelines', or how the content was found"
+  ],
   "mindpattern_link": "https://mindpattern.ai"
 }

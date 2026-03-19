@@ -44,6 +44,8 @@ class ResearchPipeline:
         self.trends: list[dict] = []
         self.agent_results: list = []
         self.newsletter_text: str = ""
+        self.newsletter_eval: dict = {}
+        self.social_result: dict = {}
 
         # Traces DB for observability
         self.traces_conn = get_traces_db()
@@ -53,6 +55,9 @@ class ResearchPipeline:
         # Prompt tracking — initialized in _phase_init(), stored here for _phase_learn()
         self.prompt_tracker: PromptTracker | None = None
         self.prompt_changes: dict[str, dict] = {}
+
+        # Set pipeline date so subprocess env vars include it for hooks
+        agent_dispatch.set_pipeline_date(self.date_str)
 
         # Create pipeline run in traces.db so dashboard can see it
         self.pipeline = PipelineRun("research", user_id, self.date_str)
@@ -199,6 +204,9 @@ class ResearchPipeline:
             Phase.LEARN: self._phase_learn,
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
+            Phase.EVOLVE: self._phase_evolve,
+            Phase.ANALYZE: self._phase_analyze,
+            Phase.MIRROR: self._phase_mirror,
             Phase.SYNC: self._phase_sync,
         }.get(phase)
 
@@ -257,20 +265,11 @@ class ResearchPipeline:
 
         Skippable — if it fails, research agents run without trends.
         """
-        # Instead of using a template with {url_summaries} that we don't have,
-        # ask the LLM to search for trends directly
-        prompt = (
-            f"Today is {self.date_str}. Search the web for the latest AI and tech news. "
-            f"Identify 5-8 trending topics relevant to developers building with AI.\n\n"
-            f"Focus on: AI agents, vibe coding, developer tools, ML infrastructure, AI security.\n"
-            f"Ignore: funding rounds, hiring, stock prices.\n\n"
-            f"Output ONLY a valid JSON array. Each element: "
-            f'{{\"topic\": \"string\", \"evidence\": \"string\", \"relevance_score\": 0.0-1.0}}\n\n'
-            f"No markdown fences. No explanation. Just the JSON array."
-        )
+        prompt = f"Today is {self.date_str}. Search for trending topics."
 
         output, exit_code = agent_dispatch.run_claude_prompt(
             prompt, "trend_scan",
+            system_prompt_file="agents/trend-scanner.md",
             allowed_tools=["WebSearch", "WebFetch"],
         )
 
@@ -305,6 +304,34 @@ class ResearchPipeline:
         """Phase 3: Research (13x Sonnet, parallel)."""
         memory.clear_claims(self.db, self.date_str)
 
+        # Run preflight to gather structured data from all sources
+        preflight_data = None
+        try:
+            from preflight.run_all import run_all as run_preflight
+            preflight_data = run_preflight(
+                date_str=self.date_str,
+                db=self.db,
+                feeds_file=PROJECT_ROOT / "verticals" / "ai-tech" / "rss-feeds.json",
+            )
+            logger.info(
+                f"Preflight: {preflight_data['total_items']} items, "
+                f"{preflight_data['new_count']} new, "
+                f"{preflight_data['covered_count']} already covered, "
+                f"{preflight_data['duration_ms']}ms"
+            )
+
+            log_event(self.traces_conn, self.traces_run_id,
+                      "preflight_complete",
+                      json.dumps({
+                          "total_items": preflight_data["total_items"],
+                          "new_count": preflight_data["new_count"],
+                          "covered_count": preflight_data["covered_count"],
+                          "source_counts": preflight_data["source_counts"],
+                          "duration_ms": preflight_data["duration_ms"],
+                      }))
+        except Exception as e:
+            logger.warning(f"Preflight failed (non-critical, agents will use WebSearch): {e}")
+
         # Get cross-pipeline signal context to enrich agent dispatch
         signal_context = ""
         try:
@@ -327,6 +354,7 @@ class ResearchPipeline:
             trends=self.trends,
             claims=current_claims,
             max_workers=6,
+            preflight_data=preflight_data,
         )
 
         total_stored = 0
@@ -341,11 +369,11 @@ class ResearchPipeline:
                     if not title or not summary:
                         continue
 
-                    # Dedup: check if a very similar finding exists in the last 30 days
+                    # Dedup: check if a near-identical finding exists in the last 7 days
                     existing = memory.search_findings(
-                        self.db, f"{title}. {summary}", limit=1, days=30,
+                        self.db, f"{title}. {summary}", limit=1, days=7,
                     )
-                    if existing and existing[0].get("similarity", 0) > 0.85:
+                    if existing and existing[0].get("similarity", 0) > 0.92:
                         logger.debug(
                             f"Skipping duplicate: '{title[:50]}' "
                             f"(sim={existing[0]['similarity']:.2f} with '{existing[0]['title'][:50]}')"
@@ -463,26 +491,24 @@ class ResearchPipeline:
 
         newsletter_title = self.user_config.get("newsletter_title", "Research Agent")
 
-        # Pass 1: Story selection (inline prompt — no template placeholders to miss)
+        # Pass 1: Story selection
         pass1_prompt = (
             f"Select exactly 5 stories from these {len(summaries)} findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
-            f"## Findings\n" + "\n".join(summaries) + "\n\n"
-            f"Selection criteria: cross-agent convergence, quantitative evidence, "
-            f"builder relevance, source diversity.\n\n"
-            f"Output ONLY a JSON array of 5 objects: "
-            f'[{{"story_title": "...", "agent": "...", "section": "...", "reason": "..."}}]\n'
-            f"No markdown fences. No explanation. Just JSON."
+            f"## Findings\n" + "\n".join(summaries)
         )
 
-        pass1_output, exit_code = agent_dispatch.run_claude_prompt(pass1_prompt, "synthesis_pass1")
+        pass1_output, exit_code = agent_dispatch.run_claude_prompt(
+            pass1_prompt, "synthesis_pass1",
+            system_prompt_file="agents/synthesis-selector.md",
+        )
         if exit_code != 0:
             logger.warning("Synthesis pass 1 failed, using all findings for pass 2")
             pass1_output = ""
 
-        # Pass 2: Newsletter writing (inline prompt)
+        # Pass 2: Newsletter writing
         full_findings = []
         for f in today_findings:
             source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or 'unknown'
@@ -504,22 +530,13 @@ class ResearchPipeline:
             f"## Story Selection\n{pass1_output or 'Use your judgment to select the Top 5.'}\n\n"
             f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
-            f"{failure_text}\n\n"
-            f"## Structure\n"
-            f"1. Top 5 (200-400 words each with source links)\n"
-            f"2. Per-section deep dives (skip empty sections)\n"
-            f"3. Skills of the Day (10 actionable skills)\n\n"
-            f"## Rules\n"
-            f"- Every claim must have a source link [Source Name](url)\n"
-            f"- No story in more than one section\n"
-            f"- Voice: direct, technical, opinionated. Not corporate.\n"
-            f"- MINIMUM 4000 words. Target 4500. The newsletter MUST be comprehensive.\n"
-            f"- Write 200-400 words per Top 5 story. Write 100-200 words per deep dive finding.\n"
-            f"- Include ALL sections that have findings. Do not skip sections to save space.\n\n"
-            f"Output ONLY the newsletter markdown. Start with the title. No meta-commentary."
+            f"{failure_text}"
         )
 
-        self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(pass2_prompt, "synthesis_pass2")
+        self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(
+            pass2_prompt, "synthesis_pass2",
+            system_prompt_file="agents/synthesis-writer.md",
+        )
 
         if exit_code != 0 or not self.newsletter_text.strip():
             raise RuntimeError("Synthesis pass 2 failed — no newsletter generated")
@@ -528,14 +545,9 @@ class ResearchPipeline:
         report_dir = PROJECT_ROOT / "reports" / self.user_id
         report_dir.mkdir(parents=True, exist_ok=True)
 
-        # Primary file: date.md (latest version)
+        # Primary file: date.md (overwritten each run, synced to Fly.io)
         report_path = report_dir / f"{self.date_str}.md"
         report_path.write_text(self.newsletter_text)
-
-        # Also save timestamped copy for history
-        ts = datetime.now().strftime("%H%M%S")
-        archive_path = report_dir / f"{self.date_str}-{ts}.md"
-        archive_path.write_text(self.newsletter_text)
 
         word_count = len(self.newsletter_text.split())
         logger.info(f"Newsletter written: {word_count} words → {report_path}")
@@ -570,6 +582,7 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Newsletter evaluation failed (non-critical): {e}")
 
+        self.newsletter_eval = eval_scores
         return {"word_count": word_count, "report_path": str(report_path),
                 "eval_scores": eval_scores}
 
@@ -595,9 +608,11 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Could not append feedback footer: {e}")
 
-        # Send
+        # Send — pass file content directly so the footer is guaranteed
+        # to be included in the HTML conversion (avoids stale file reads).
         result = send_newsletter(
             report_path, self.user_config, self.date_str,
+            report_content=report_path.read_text(),
             traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
         )
 
@@ -683,18 +698,14 @@ class ResearchPipeline:
         # Regenerate learnings.md
         stats = memory.get_stats(self.db)
         learnings_prompt = (
-            f"Regenerate the learnings.md summary for the mindpattern research agent.\n"
             f"Date: {self.date_str}\n\n"
             f"Database stats: {json.dumps(stats, indent=2)}\n\n"
-            f"Quality this run: {json.dumps(quality, indent=2)}\n\n"
-            f"Write a concise learnings summary covering:\n"
-            f"- Key findings from recent runs\n"
-            f"- Patterns observed\n"
-            f"- Source insights\n"
-            f"- Agent performance notes\n\n"
-            f"Output ONLY the markdown. Keep to the 5 most recent runs."
+            f"Quality this run: {json.dumps(quality, indent=2)}"
         )
-        output, _ = agent_dispatch.run_claude_prompt(learnings_prompt, "learnings_update")
+        output, _ = agent_dispatch.run_claude_prompt(
+            learnings_prompt, "learnings_update",
+            system_prompt_file="agents/learnings-updater.md",
+        )
         if output.strip():
             dest = PROJECT_ROOT / "data" / self.user_id / "learnings.md"
             dest.write_text(output)
@@ -722,6 +733,7 @@ class ResearchPipeline:
 
         pipeline = SocialPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
+        self.social_result = result
 
         if result.get("kill_day"):
             logger.info("Social: kill day — no good topics found")
@@ -782,6 +794,155 @@ class ResearchPipeline:
             f"{result.get('follows', 0)} follows"
         )
         return result
+
+    def _phase_evolve(self) -> dict:
+        """Phase: Evolve identity files based on today's results."""
+        from memory.identity_evolve import build_evolve_prompt, apply_evolution_diff, parse_llm_output
+
+        vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
+
+        # Build enriched pipeline results for the evolve prompt
+        social = {}
+        if self.social_result:
+            topic = self.social_result.get("topic") or {}
+            social = {
+                "topic": topic.get("anchor", topic.get("topic", "")),
+                "topic_score": topic.get("composite_score", 0),
+                "gate1_outcome": self.social_result.get("gate1_outcome", "unknown"),
+                "gate1_guidance": self.social_result.get("gate1_guidance", ""),
+                "gate2_outcome": self.social_result.get("gate2_outcome", "unknown"),
+                "gate2_edits": self.social_result.get("gate2_edits", []),
+                "expeditor_verdict": self.social_result.get("expeditor_verdict", "unknown"),
+                "platforms_posted": self.social_result.get("platforms_posted", []),
+            }
+
+        pipeline_results = {
+            "date": self.date_str,
+            "findings_count": sum(len(r.findings) for r in self.agent_results) if self.agent_results else 0,
+            "newsletter_generated": bool(self.newsletter_text),
+            "newsletter_eval": self.newsletter_eval,
+            "social": social,
+        }
+
+        prompt = build_evolve_prompt(vault_dir, pipeline_results)
+        output, exit_code = agent_dispatch.run_claude_prompt(prompt, task_type="evolve")
+
+        if exit_code != 0 or not output:
+            logger.warning("EVOLVE: LLM call failed, skipping identity evolution")
+            return {"evolved": False, "reason": "LLM call failed"}
+
+        diff = parse_llm_output(output)
+        if diff is None:
+            logger.warning("EVOLVE: Could not parse LLM output as JSON")
+            return {"evolved": False, "reason": "JSON parse failed"}
+
+        result = apply_evolution_diff(vault_dir, diff)
+
+        if result.get("changes_made"):
+            logger.info(f"EVOLVE: {result['changes_made']}")
+        if result.get("errors"):
+            logger.warning(f"EVOLVE errors: {result['errors']}")
+
+        return {"evolved": True, **result}
+
+    def _phase_analyze(self) -> dict:
+        """Phase: Analyze agent traces and improve skill files."""
+        from orchestrator.analyzer import (
+            build_analyzer_prompt,
+            parse_analyzer_output,
+            apply_analyzer_changes,
+        )
+
+        trace_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern" / "agents"
+
+        # Collect traced agent names (those with today's trace file)
+        traced_agents = set()
+        if trace_dir.exists():
+            for agent_dir in trace_dir.iterdir():
+                if agent_dir.is_dir() and (agent_dir / f"{self.date_str}.md").exists():
+                    traced_agents.add(agent_dir.name)
+
+        skill_files = self._collect_all_skill_files()
+
+        # Build metrics from this run
+        metrics = {
+            "findings_per_agent": {
+                r.agent_name: len(r.findings)
+                for r in self.agent_results
+            } if self.agent_results else {},
+            "newsletter_eval": self.newsletter_eval,
+            "social_result": {
+                k: v for k, v in self.social_result.items()
+                if k in ("topic", "gate1_outcome", "gate2_outcome", "platforms_posted")
+            } if self.social_result else {},
+        }
+
+        # Get regression data
+        regression_data = []
+        if self.prompt_tracker:
+            regression_data = self.prompt_tracker.check_regression(self.date_str)
+
+        prompt = build_analyzer_prompt(
+            trace_dir=trace_dir,
+            skill_files=skill_files,
+            date_str=self.date_str,
+            metrics=metrics,
+            regression_data=regression_data,
+        )
+
+        output, exit_code = agent_dispatch.run_claude_prompt(
+            prompt, task_type="analyzer",
+        )
+
+        if exit_code != 0 or not output:
+            logger.warning("ANALYZE: LLM call failed")
+            return {"analyzed": False, "reason": "LLM call failed"}
+
+        changes = parse_analyzer_output(output)
+        if changes is None:
+            logger.warning("ANALYZE: Could not parse output as JSON")
+            return {"analyzed": False, "reason": "JSON parse failed"}
+
+        result = apply_analyzer_changes(
+            changes,
+            project_root=PROJECT_ROOT,
+            traced_files=traced_agents,
+            prompt_tracker=self.prompt_tracker,
+        )
+
+        logger.info(
+            f"ANALYZE: {result['applied']} changes, {result['reverted']} reversions, "
+            f"{result['skipped']} skipped"
+        )
+
+        log_event(self.traces_conn, self.traces_run_id,
+                  "analyze_complete", json.dumps(result))
+
+        return {"analyzed": True, **result}
+
+    def _collect_all_skill_files(self) -> list[Path]:
+        """Collect all .md skill files used as agent prompts."""
+        skill_files = []
+        dirs = [
+            PROJECT_ROOT / "verticals" / "ai-tech" / "agents",
+            PROJECT_ROOT / "agents",
+        ]
+        for d in dirs:
+            if d.exists():
+                for f in sorted(d.glob("*.md")):
+                    if "references" not in str(f):
+                        skill_files.append(f)
+        return skill_files
+
+    def _phase_mirror(self) -> dict:
+        """Phase: Generate Obsidian mirror files from SQLite."""
+        from memory.mirror import generate_mirrors
+
+        vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
+        generate_mirrors(self.db, vault_dir, self.date_str)
+
+        logger.info(f"MIRROR: Generated Obsidian files in {vault_dir}")
+        return {"mirrored": True}
 
     def _phase_sync(self) -> dict:
         """Phase 9: Sync to Fly.io.

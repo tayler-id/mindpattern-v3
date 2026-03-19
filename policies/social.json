@@ -25,14 +25,12 @@
         "(?i)i built this"
     ],
     "rate_limits": {
-        "x": {"max_posts_per_day": 3, "max_follows_per_day": 75},
         "bluesky": {"max_posts_per_day": 3, "max_follows_per_day": 100},
         "linkedin": {"max_posts_per_day": 1, "max_follows_per_day": 50}
     },
     "reply_cooldown_days": 7,
     "posting": {
         "min_delay_seconds": 30,
-        "jitter_range_seconds": [60, 300],
-        "require_human_approval_for_x": true
+        "jitter_range_seconds": [60, 300]
     }
 }

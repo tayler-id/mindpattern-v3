@@ -1,0 +1,54 @@
+---
+type: topic
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+finding_count: {{ findings | length }}
+first_seen: {{ first_seen }}
+---
+
+# {{ name }}
+
+## Description
+
+{{ description | default('No description available.') }}
+
+## Key Findings
+
+{% if findings %}
+{% for finding in findings %}
+- **{{ finding.title }}** ({{ finding.importance }}) - [[daily/{{ finding.run_date }}]]
+  - {{ finding.summary | default('') }}
+{% endfor %}
+{% else %}
+No findings yet.
+{% endif %}
+
+## Sources
+
+{% if sources %}
+{% for source in sources %}
+- [[sources/{{ source.slug }}]] ({{ source.count }} findings)
+{% endfor %}
+{% else %}
+No sources yet.
+{% endif %}
+
+## Related Topics
+
+{% if related_topics %}
+{% for topic in related_topics %}
+- [[topics/{{ topic.slug }}]]
+{% endfor %}
+{% else %}
+No related topics yet.
+{% endif %}
+
+## Posts
+
+{% if posts %}
+{% for post in posts %}
+- **{{ post.platform }}** ({{ post.date }}): {{ post.content[:80] }}{% if post.content | length > 80 %}...{% endif %}
+{% endfor %}
+{% else %}
+No posts referencing this topic.
+{% endif %}

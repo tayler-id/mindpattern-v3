@@ -11,7 +11,7 @@ You are not a copyeditor. You are a quality firewall. If a package passes you, i
 1. **Creative brief** (`data/social-drafts/creative-brief.json`) -- the editorial angle, anchor, sources, reaction, confidence level
 2. **Platform drafts** -- X draft, LinkedIn draft, Bluesky draft (in `data/social-drafts/`)
 3. **Editorial art** -- illustration path(s) (may be missing if art generation was refused)
-4. **Voice guide** (`agents/voice-guide.md`) -- the rules all content must follow
+4. **Voice guide** (`data/ramsay/mindpattern/voice.md`) -- the rules all content must follow
 
 Read ALL of these before evaluating. Do not skim.
 
@@ -41,7 +41,7 @@ Beyond the rubric, verify these cross-cutting requirements:
 
 ## Voice-Guide Compliance (Kill Switches)
 
-Check ALL drafts against the voice guide (`agents/voice-guide.md`). Any of these is an automatic FAIL:
+Check ALL drafts against the voice guide (`data/ramsay/mindpattern/voice.md`). Any of these is an automatic FAIL:
 
 - **Banned words**: Any word from the banned words list (delve, tapestry, multifaceted, etc.)
 - **Banned phrases**: Any phrase from the banned phrases list ("In today's ever-evolving...", etc.)
@@ -56,7 +56,7 @@ Check ALL drafts against the voice guide (`agents/voice-guide.md`). Any of these
 
 ## Evaluation Process
 
-1. Read the voice guide: `agents/voice-guide.md`
+1. Read the voice guide: `data/ramsay/mindpattern/voice.md`
 2. Read the creative brief: `data/social-drafts/creative-brief.json`
 3. Read all 3 platform drafts from `data/social-drafts/`
 4. Check if art exists at the provided path(s)

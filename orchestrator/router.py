@@ -34,12 +34,15 @@ MODEL_ROUTING: dict[str, str] = {
     # Engagement
     "engagement_finder": "sonnet",  # search + match
     "engagement_writer": "sonnet",  # reply writing
+
+    # Self-optimization
+    "analyzer": "opus_1m",          # needs 1M context for all traces + skills
 }
 
 # Max turns per task type
 MAX_TURNS: dict[str, int] = {
     "trend_scan": 5,
-    "research_agent": 15,
+    "research_agent": 25,
     "synthesis_pass1": 10,
     "synthesis_pass2": 30,
     "learnings_update": 5,
@@ -53,12 +56,13 @@ MAX_TURNS: dict[str, int] = {
     "humanizer": 5,
     "engagement_finder": 10,
     "engagement_writer": 5,
+    "analyzer": 10,
 }
 
 # Timeout per task type (seconds)
 TIMEOUTS: dict[str, int] = {
     "trend_scan": 60,
-    "research_agent": 1200,     # 20 minutes per agent
+    "research_agent": 1800,     # 30 minutes per agent (Jina deep reads need time)
     "synthesis_pass1": 600,     # 10 minutes — Opus needs time for story selection
     "synthesis_pass2": 900,     # 15 minutes — Opus writing full newsletter
     "learnings_update": 120,
@@ -72,6 +76,7 @@ TIMEOUTS: dict[str, int] = {
     "humanizer": 120,
     "engagement_finder": 300,
     "engagement_writer": 120,
+    "analyzer": 600,
 }
 
 # Cost per 1M tokens (for budget tracking)

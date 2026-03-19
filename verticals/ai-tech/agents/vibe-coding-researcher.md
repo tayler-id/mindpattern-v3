@@ -100,51 +100,34 @@ Before including any finding, ask: does this pass the bar?
 - `"spec-driven" OR "TDD" AI coding agent production pattern`
 
 ## Output Format
+## Output Format
 
-Return findings in THREE sections every run. Within each section, order by importance.
+Return findings as a JSON object with a single `findings` array. Use the `category` field to classify each finding. Include findings across all three types every run: news/releases, actionable tips, and recurring patterns.
 
----
-
-### News & Developments
-*Tool releases, version updates, incidents, empirical findings. 4-6 items.*
-
-```
-#### [Title]
-- **Source**: [name](url)
-- **Date**: YYYY-MM-DD
-- **Importance**: high | medium | low
-- **Category**: release | security | research | adoption
-- **Tool**: claude-code | cursor | windsurf | mcp | codex | other
-- **Summary**: What happened and why it matters. Include specific version numbers, benchmark scores, or capability names. 2-3 sentences.
-```
-
----
-
-### Tips & Tricks
-*Specific, actionable techniques a developer can apply today. 3-5 items. Each must be concrete enough to implement.*
-
-```
-#### [Technique Name]
-- **Source**: [name](url)
-- **Applies to**: [tool/context]
-- **Importance**: high | medium | low
-- **Category**: tip
-- **The Tip**: One clear statement of the technique.
-- **How**: Specific steps or config. Include code/commands where relevant.
-- **Why it works**: The mechanism behind it.
+```json
+{
+  "findings": [
+    {
+      "title": "Finding title",
+      "summary": "2-3 sentences. What happened / what to do and why it matters. Include version numbers, benchmarks, or capability names.",
+      "importance": "high | medium | low",
+      "category": "release | security | research | adoption | tip | pattern",
+      "source_url": "https://...",
+      "source_name": "Source Name",
+      "date_found": "YYYY-MM-DD"
+    }
+  ]
+}
 ```
 
----
+Aim for 10-14 findings total: 4-6 news/releases, 3-5 tips, 2-3 patterns.
 
-### Patterns
-*Recurring approaches, architectural decisions, and workflow structures confirmed across multiple sources or practitioners. 2-3 items.*
+## Phase 2 Exploration Preferences
+## Phase 2 Exploration
 
-```
-#### [Pattern Name]
-- **Source**: [name](url)
-- **Importance**: high | medium | low
-- **Category**: pattern
-- **Pattern**: Describe the pattern in 1-2 sentences.
-- **Evidence**: What confirms this is real and recurring (multiple sources, production usage, benchmark data)?
-- **When to use**: The specific situation where this pattern applies.
-```
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+### Preferred tools
+- Primary: WebFetch for releasebot.io, paddo.dev, simonwillison.net (check every run)
+- Secondary: WebSearch for vibe coding discussions, tool releases, and Claude Code changelogs
+- Skip: Twitter, YouTube

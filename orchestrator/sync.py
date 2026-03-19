@@ -38,7 +38,8 @@ def sync_to_fly(
         Dict with keys: success, bytes_uploaded, files_included, error.
     """
     start = time.monotonic()
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Use LOCAL date — reports are named with local date by the pipeline
+    date_str = datetime.now().strftime("%Y-%m-%d")
 
     # Resolve paths
     db_path = data_dir / user_id / "memory.db"
@@ -104,13 +105,16 @@ def sync_to_fly(
     )
 
     if not extract_result["success"]:
-        bundle_path.unlink(missing_ok=True)
-        return {
-            "success": False,
-            "bytes_uploaded": bundle_size,
-            "files_included": files_included,
-            "error": f"Remote extraction failed: {extract_result['error']}",
-        }
+        log.warning(f"Bundle extraction failed: {extract_result['error']}. Falling back to direct SFTP.")
+        # Fallback: upload reports directly via SFTP (more reliable)
+        for report_file in sorted(reports_dir.glob("????-??-??.md")):
+            _fly_sftp_put(app_name, str(report_file), f"/data/reports/{user_id}/{report_file.name}")
+        # Upload DBs directly
+        if db_path.exists():
+            _fly_sftp_put(app_name, str(db_path), f"/data/{user_id}/memory.db")
+        traces_path_local = data_dir / user_id / "traces.db"
+        if traces_path_local.exists():
+            _fly_sftp_put(app_name, str(traces_path_local), f"/data/{user_id}/traces.db")
 
     # Clean up local bundle
     bundle_path.unlink(missing_ok=True)
@@ -181,10 +185,9 @@ def create_bundle(
         if traces_path.exists():
             tf.add(str(traces_path), arcname=f"{user_id}/traces.db")
 
-        # Add today's report
-        report_file = reports_dir / f"{date_str}.md"
-        if report_file.exists():
-            tf.add(str(report_file), arcname=f"reports/{user_id}/{date_str}.md")
+        # Add ALL date-named reports (not just today's — catches missed syncs)
+        for report_file in sorted(reports_dir.glob("????-??-??.md")):
+            tf.add(str(report_file), arcname=f"reports/{user_id}/{report_file.name}")
 
         # Add agent sub-reports
         agents_dir = reports_dir / "agents"
@@ -346,6 +349,20 @@ def _fly_ssh(app_name: str, command: str) -> dict:
         return {"success": False, "output": "", "error": "flyctl not found"}
     except OSError as e:
         return {"success": False, "output": "", "error": str(e)}
+
+
+def _fly_sftp_put(app_name: str, local_path: str, remote_path: str) -> bool:
+    """Upload a single file via flyctl sftp."""
+    try:
+        result = subprocess.run(
+            ["flyctl", "ssh", "sftp", "shell", "-a", app_name],
+            input=f'put "{local_path}" {remote_path}\n',
+            capture_output=True, text=True, timeout=60,
+        )
+        return result.returncode == 0
+    except Exception as e:
+        log.warning(f"SFTP put failed for {local_path}: {e}")
+        return False
 
 
 if __name__ == "__main__":

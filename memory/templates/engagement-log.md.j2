@@ -1,0 +1,43 @@
+---
+type: social
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+---
+
+# Engagement Activity
+
+## Replies Posted
+
+{% if replies %}
+{% for reply in replies %}
+- **{{ reply.platform }}** ({{ reply.date }}): replied to {{ reply.target_author | default('unknown') }}
+  - Post: {{ reply.target_content[:80] | default('') }}{% if reply.target_content | default('') | length > 80 %}...{% endif %}
+
+  - Our reply: {{ reply.our_reply[:80] | default('') }}{% if reply.our_reply | default('') | length > 80 %}...{% endif %}
+
+  - Status: {{ reply.status | default('unknown') }}
+  - [[daily/{{ reply.date }}]]
+{% endfor %}
+{% else %}
+No replies posted yet.
+{% endif %}
+
+## Follows
+
+{% if follows %}
+{% for follow in follows %}
+- **{{ follow.platform }}**: followed {{ follow.target_author | default('unknown') }} ({{ follow.date }})
+{% endfor %}
+{% else %}
+No follows recorded.
+{% endif %}
+
+## Outcomes
+
+{% if outcomes %}
+{% for outcome in outcomes %}
+- **{{ outcome.platform }}** ({{ outcome.date }}): {{ outcome.description | default('No details') }}
+{% endfor %}
+{% else %}
+No engagement outcomes recorded yet.
+{% endif %}

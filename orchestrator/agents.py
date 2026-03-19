@@ -7,6 +7,7 @@ gets a focused prompt with its context. Python controls the orchestration.
 
 import json
 import logging
+import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +21,31 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SOCIAL_DRAFTS_DIR = PROJECT_ROOT / "data" / "social-drafts"
+
+# Pipeline date — set by runner before dispatching agents
+_pipeline_date: str | None = None
+
+
+def set_pipeline_date(date_str: str) -> None:
+    """Set the pipeline date so subprocess env vars include it."""
+    global _pipeline_date
+    _pipeline_date = date_str
+
+
+def _agent_env(agent_name: str) -> dict[str, str]:
+    """Build environment dict for a claude -p subprocess.
+
+    Inherits the parent process environment and adds MINDPATTERN_AGENT,
+    MINDPATTERN_DATE, and MINDPATTERN_VAULT so the SessionEnd hook can
+    capture the transcript into the correct agent folder.
+    """
+    env = {**os.environ}
+    env["MINDPATTERN_AGENT"] = agent_name
+    if _pipeline_date:
+        env["MINDPATTERN_DATE"] = _pipeline_date
+    vault = PROJECT_ROOT / "data" / "ramsay" / "mindpattern"
+    env["MINDPATTERN_VAULT"] = str(vault)
+    return env
 
 # Tools each agent is allowed to use
 AGENT_ALLOWED_TOOLS = [
@@ -94,6 +120,9 @@ def build_agent_prompt(
     context: str,
     trends: list[dict] | None = None,
     claims: list[str] | None = None,
+    preflight_items: list[dict] | None = None,
+    already_covered: list[dict] | None = None,
+    identity_dir: Path | None = None,
 ) -> str:
     """Build the prompt for a single research agent.
 
@@ -102,11 +131,22 @@ def build_agent_prompt(
     2. SOUL identity
     3. Agent skill definition
     4. Dynamic context (date, trends, memory context, claims)
-    5. Search instructions (SMTL: search ALL first, then reason)
-    6. Critical output rules repeated
+    5. Novelty requirement
+    6. Phase 1 (evaluate preflight) + Phase 2 (explore) — or legacy SMTL
+    7. Critical output rules repeated
     """
     soul_content = soul_path.read_text() if soul_path.exists() else ""
     skill_content = agent_skill_path.read_text() if agent_skill_path.exists() else ""
+
+    # Load identity files from vault if identity_dir provided
+    user_content = ""
+    if identity_dir:
+        vault_soul = identity_dir / "soul.md"
+        if vault_soul.exists():
+            soul_content = vault_soul.read_text()  # Override verticals version
+        vault_user = identity_dir / "user.md"
+        if vault_user.exists():
+            user_content = vault_user.read_text()
 
     trends_section = ""
     if trends:
@@ -120,6 +160,94 @@ def build_agent_prompt(
             + "\n".join(f"- {c}" for c in claims)
             + "\n"
         )
+
+    # Build preflight sections if data available
+    preflight_section = ""
+    if preflight_items:
+        new_items = [i for i in preflight_items if not i.get("already_covered")]
+        covered_items = already_covered or [i for i in preflight_items if i.get("already_covered")]
+
+        # Phase 1: Evaluate preflight data
+        items_md = []
+        for idx, item in enumerate(new_items, 1):
+            metrics_str = ""
+            if item.get("metrics"):
+                parts = [f"{k}={v}" for k, v in item["metrics"].items() if v]
+                if parts:
+                    metrics_str = f" ({', '.join(parts)})"
+            items_md.append(
+                f"{idx}. **[{item['source'].upper()}]** [{item.get('source_name', '')}] "
+                f"{item['title']}\n"
+                f"   URL: {item['url']}\n"
+                f"   {item.get('content_preview', '')[:200]}{metrics_str}"
+            )
+
+        covered_md = []
+        for item in (covered_items or [])[:20]:
+            mi = item.get("match_info") or {}
+            covered_md.append(
+                f"- ~~{item['title']}~~ — covered by {mi.get('matched_agent', '?')} "
+                f"on {mi.get('matched_date', '?')} (sim={mi.get('similarity', 0):.2f})"
+            )
+
+        nl = "\n"
+        preflight_section = f"""
+
+---
+
+## Phase 1: Evaluate Pre-Fetched Data
+
+Below are {len(new_items)} NEW items pre-fetched from your domain sources.
+
+Select the 8-12 most important NEW items as findings. For each:
+- Verify the content is real and recent (not old news resurfacing)
+- Write a 2-3 sentence summary with specific details (names, numbers, dates)
+- Rate importance (high/medium/low)
+- Include the source_url from the preflight data
+
+{nl.join(items_md)}
+
+### ALREADY COVERED (skip unless major update)
+
+{nl.join(covered_md) if covered_md else 'None.'}
+
+---
+
+## Phase 2: Explore Beyond Preflight
+
+The preflight data covers known sources. Now find what it MISSED.
+Use these tools to discover 2-5 additional findings:
+
+- Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
+- Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
+- Twitter search: xreach search "query" --count 10 --json
+- YouTube transcripts: yt-dlp --dump-json "URL"
+- WebSearch (last resort): only if Exa doesn't cover it
+
+Look for:
+- Stories that broke in the last 6 hours (too recent for RSS/feeds)
+- Primary sources not in our feed list
+- Reactions and follow-ups to stories in the preflight data
+
+Target: 10-15 total findings (8-12 from Phase 1 + 2-5 from Phase 2).
+
+"""
+
+    # Old search instructions — only used when no preflight data
+    search_section = ""
+    if not preflight_items:
+        search_section = """
+---
+
+## Search Instructions (SMTL)
+
+PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
+PHASE B: Now reason over collected evidence. Score each finding.
+PHASE C: Filter against the Recent Findings list. Remove anything already covered.
+
+For each finding evaluation, use max 5 words per reasoning step.
+Do not explain your full reasoning — just output the finding.
+"""
 
     prompt = f"""CRITICAL: Output ONLY valid JSON matching this schema. No markdown, no commentary.
 {{
@@ -142,6 +270,10 @@ def build_agent_prompt(
 
 ---
 
+{user_content}
+
+---
+
 {skill_content}
 
 ---
@@ -153,14 +285,21 @@ def build_agent_prompt(
 
 ---
 
-## Search Instructions (SMTL)
+## NOVELTY REQUIREMENT (CRITICAL)
 
-PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
-PHASE B: Now reason over collected evidence. Score each finding.
+You MUST find NEW content that is NOT in the "Recent Findings" list above.
+If a topic, company, product, or event is already listed, DO NOT include it
+unless there is a genuinely new development (new data, new announcement,
+new reaction). "More coverage of the same story" is NOT new.
 
-For each finding evaluation, use max 5 words per reasoning step.
-Do not explain your full reasoning — just output the finding.
+Search for what happened in the LAST 24 HOURS. Prioritize:
+- Brand new announcements, launches, releases
+- Breaking developments not yet widely covered
+- Primary sources (blog posts, papers, repos) over secondary coverage
 
+Every finding you return must pass this test: "Would someone who read
+yesterday's newsletter learn something NEW from this?"
+{preflight_section}{search_section}
 ---
 
 CRITICAL REMINDER: Output ONLY the JSON object with "findings" array. No other text.
@@ -192,8 +331,14 @@ def run_single_agent(
     for tool in AGENT_ALLOWED_TOOLS:
         cmd.extend(["--allowedTools", tool])
 
+    # Block global skills from polluting pipeline agent context
+    cmd.extend(["--disallowedTools", "Skill"])
+
     start = time.monotonic()
     result = AgentResult(agent_name=agent_name)
+
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(agent_name)
 
     try:
         proc = subprocess.run(
@@ -202,6 +347,7 @@ def run_single_agent(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
         result.exit_code = proc.returncode
         result.raw_output = proc.stdout
@@ -277,6 +423,7 @@ def dispatch_research_agents(
     claims: list[str] | None = None,
     max_workers: int = 6,
     vertical: str = "ai-tech",
+    preflight_data: dict | None = None,
 ) -> list[AgentResult]:
     """Dispatch all research agents in parallel via concurrent.futures.
 
@@ -310,6 +457,15 @@ def dispatch_research_agents(
             # Build context for this agent
             context = context_fn(agent_name, date_str)
 
+            # Get preflight items assigned to this agent
+            agent_preflight = None
+            agent_covered = None
+            if preflight_data and preflight_data.get("assignments"):
+                agent_preflight = preflight_data["assignments"].get(agent_name, [])
+                agent_covered = preflight_data.get("already_covered", [])
+
+            identity_dir = PROJECT_ROOT / "data" / user_id / "mindpattern"
+
             prompt = build_agent_prompt(
                 agent_name=agent_name,
                 user_id=user_id,
@@ -319,6 +475,9 @@ def dispatch_research_agents(
                 context=context,
                 trends=trends,
                 claims=claims,
+                preflight_items=agent_preflight,
+                already_covered=agent_covered,
+                identity_dir=identity_dir,
             )
 
             future = executor.submit(run_single_agent, agent_name, prompt)
@@ -391,6 +550,12 @@ def run_agent_with_files(
     for tool in allowed_tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Prevent subagent dispatch — agents must do their own work
+    cmd.extend(["--disallowedTools", "Agent"])
+
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(task_type)
+
     proc = None
     try:
         proc = subprocess.run(
@@ -399,6 +564,7 @@ def run_agent_with_files(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         logger.warning(f"Agent {task_type} timed out after {timeout}s")
@@ -448,18 +614,32 @@ def run_claude_prompt(
 ) -> tuple[str, int]:
     """Run a single claude -p call for non-agent tasks (synthesis, trends, etc.).
 
+    For large prompts (>100K chars), writes to a temp file and pipes via stdin
+    to avoid OS argument length limits.
+
     Returns (output_text, exit_code).
     """
     model = router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-    ]
+    # For large prompts, use stdin pipe instead of -p argument
+    use_stdin = len(prompt) > 100_000
+
+    if use_stdin:
+        cmd = [
+            "claude", "-p", "-",
+            "--model", model,
+            "--max-turns", str(max_turns),
+            "--output-format", "text",
+        ]
+    else:
+        cmd = [
+            "claude", "-p", prompt,
+            "--model", model,
+            "--max-turns", str(max_turns),
+            "--output-format", "text",
+        ]
 
     if system_prompt_file:
         cmd.extend(["--append-system-prompt-file", system_prompt_file])
@@ -468,13 +648,23 @@ def run_claude_prompt(
     for tool in tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Prevent subagent dispatch and file writing — agents must return output
+    # via stdout, not write to files. Write/Edit would let the agent put the
+    # newsletter in a file instead of returning it.
+    cmd.extend(["--disallowedTools", "Agent,Write,Edit,NotebookEdit,Skill"])
+
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(task_type)
+
     try:
         proc = subprocess.run(
             cmd,
+            input=prompt if use_stdin else None,
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
         return proc.stdout, proc.returncode
     except subprocess.TimeoutExpired:

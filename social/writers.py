@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 PLATFORMS = ["bluesky", "linkedin"]
 
 # Voice guide is loaded once at module level (immutable reference text)
-_VOICE_GUIDE_PATH = PROJECT_ROOT / "agents" / "voice-guide.md"
+_VOICE_GUIDE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
 _VOICE_GUIDE: str | None = None
 
 
@@ -298,14 +298,18 @@ explanation) to this file:
 
 
 def _humanize(content: str, platform: str, db=None) -> str:
-    """Remove AI writing patterns via one Sonnet call.
+    """Remove AI writing patterns via one Sonnet call with voice.md + 24 patterns.
 
-    Patterns to remove: em dashes, rhetorical questions, 'delve', 'landscape',
-    'it's worth noting', 'in conclusion', excessive hedging.
+    Uses agents/humanizer.md as the system prompt (24-pattern detection guide
+    with two-pass self-audit). The voice guide and editorial corrections are
+    inlined in the user prompt so the agent has full context.
 
     If a db connection is provided, editorial corrections from memory are
     included in the prompt so the humanizer can learn from past edits.
     """
+    # Load voice guide
+    voice_guide = _load_voice_guide()
+
     # Build corrections section from memory (if db available)
     corrections_section = ""
     if db is not None:
@@ -330,38 +334,22 @@ def _humanize(content: str, platform: str, db=None) -> str:
         except Exception as e:
             logger.warning(f"Failed to load corrections for humanizer: {e}")
 
-    prompt = f"""You are a copy editor removing AI writing artifacts from a {platform} post.
+    prompt = f"""## Voice Guide (AUTHORITATIVE — follow exactly)
 
-## The Draft
+{voice_guide}
+
+## The Draft to Clean ({platform})
 
 {content}
-
-## Patterns to Fix
-
-Remove or rewrite ANY of these if present:
-- Em dashes (--) — replace with periods or commas
-- Rhetorical questions used as transitions ("But what does this mean?")
-- Words: delve, landscape, tapestry, multifaceted, testament, realm, nuanced, pivotal, robust, seamless, comprehensive, leverage, utilize, foster, embark, illuminate, elucidate, meticulous, unwavering, unprecedented, transformative, groundbreaking, cutting-edge, revolutionary, innovative, intricate, profound, vibrant, whimsical, quintessential
-- Phrases: "it's worth noting", "in conclusion", "in summary", "in essence", "furthermore", "moreover", "additionally", "at the forefront of", "harness the power of"
-- Excessive hedging ("it should be noted that", "it's important to recognize")
-- Throat-clearing openers ("In today's ever-evolving...")
-- Snappy triads ("Simple. Powerful. Effective.")
-- Summary/conclusion closings
-
-## Rules
-
-- Make minimal changes. Preserve the author's voice and meaning.
-- If the draft is clean, return it unchanged.
-- Do NOT add new content or expand the post.
-- Do NOT change the meaning or angle.
-- Keep the same approximate length.
-- Preserve "https://mindpattern.ai" at the end.
 {corrections_section}
 
-Output ONLY the cleaned post text. No explanation, no headers.
-"""
+Clean this draft following the voice guide and the humanizer instructions. Output ONLY the final cleaned text."""
 
-    output, exit_code = run_claude_prompt(prompt, task_type="humanizer")
+    output, exit_code = run_claude_prompt(
+        prompt,
+        task_type="humanizer",
+        system_prompt_file="agents/humanizer.md",
+    )
 
     if exit_code != 0:
         logger.warning(f"Humanizer call failed for {platform}, returning original")

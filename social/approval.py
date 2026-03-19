@@ -1,8 +1,7 @@
-"""Approval system — web dashboard API + iMessage fallback.
+"""Approval system — Slack primary, iMessage fallback.
 
-Two-tier approval: tries the authenticated web dashboard first (instant push
-notifications), falls back to iMessage (AppleScript send + Messages.db polling)
-if the dashboard is unreachable or times out.
+Posts approval requests to Slack #mindpattern-approvals channel and polls
+for threaded replies. Falls back to iMessage if Slack is unavailable.
 
 All approval methods return structured dicts so the pipeline can act on them
 without parsing free-text responses.
@@ -14,13 +13,48 @@ import secrets
 import sqlite3
 import subprocess
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Slack config
+SLACK_CHANNEL = "C0ALSRHAATH"  # #mindpattern-approvals
+SLACK_KEYCHAIN_KEY = "slack-bot-token"
+
 # Messages.db path on macOS
 MESSAGES_DB = Path.home() / "Library" / "Messages" / "chat.db"
+
+
+def _sqlite3_cli_query(query: str, db_path: Path | None = None) -> list[list[str]]:
+    """Execute a SQLite query via the sqlite3 CLI tool.
+
+    This bypasses Python's sqlite3 module which may lack Full Disk Access
+    when running under launchd. The sqlite3 CLI inherits FDA from the
+    parent bash process (which has FDA granted).
+
+    Returns list of rows, each row is a list of string values.
+    """
+    path = db_path or MESSAGES_DB
+    try:
+        proc = subprocess.run(
+            ["sqlite3", "-separator", "\t", str(path), query],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            raise sqlite3.OperationalError(proc.stderr.strip())
+        rows = []
+        for line in proc.stdout.strip().split("\n"):
+            if line:
+                rows.append(line.split("\t"))
+        return rows
+    except subprocess.TimeoutExpired:
+        raise sqlite3.OperationalError("sqlite3 CLI timed out")
+    except FileNotFoundError:
+        raise sqlite3.OperationalError("sqlite3 CLI not found")
 
 
 class ApprovalGateway:
@@ -60,19 +94,11 @@ class ApprovalGateway:
                 guidance: str           # any editorial guidance from approver
             }
         """
-        # Format topics for display
-        items = []
-        for i, t in enumerate(topics):
-            items.append({
-                "index": i,
-                "title": t.get("title", f"Topic {i + 1}"),
-                "summary": t.get("summary", ""),
-                "score": t.get("score", 0),
-            })
-
-        # iMessage-only approval (no dashboard)
+        # Slack primary, iMessage fallback
         message = self._format_topic_message(topics)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
+        if reply is None:
+            reply = self._imessage_approval(message, self.gate_timeout)
         return self._parse_topic_reply(reply, len(topics))
 
     def request_draft_approval(self, drafts: dict, images: dict) -> dict:
@@ -106,9 +132,11 @@ class ApprovalGateway:
                 "image_url": images.get(platform),
             })
 
-        # iMessage-only approval (no dashboard)
+        # Slack primary, iMessage fallback
         message = self._format_draft_message(drafts, images)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
+        if reply is None:
+            reply = self._imessage_approval(message, self.gate_timeout)
         return self._parse_draft_reply(reply, list(drafts.keys()))
 
     def request_engagement_approval(self, candidates: list[dict]) -> dict:
@@ -133,9 +161,11 @@ class ApprovalGateway:
                 "our_reply": c.get("our_reply", ""),
             })
 
-        # iMessage-only approval (no dashboard)
+        # Slack primary, iMessage fallback
         message = self._format_engagement_message(candidates)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
+        if reply is None:
+            reply = self._imessage_approval(message, self.gate_timeout)
 
         return self._parse_engagement_reply(reply, len(candidates))
 
@@ -290,6 +320,148 @@ class ApprovalGateway:
 
         return {"action": "skip"}
 
+    # ── Slack approval (primary) ─────────────────────────────────────
+
+    def _get_slack_token(self) -> str | None:
+        """Get Slack bot token from macOS Keychain."""
+        try:
+            result = subprocess.run(
+                ["security", "find-generic-password", "-s", SLACK_KEYCHAIN_KEY, "-w"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
+    def _slack_post(self, token: str, text: str, thread_ts: str | None = None) -> dict | None:
+        """Post a message to the Slack approvals channel.
+
+        Returns the Slack API response dict with 'ts' (message timestamp) on success.
+        """
+        payload = {
+            "channel": SLACK_CHANNEL,
+            "text": text,
+        }
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            "https://slack.com/api/chat.postMessage",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode())
+                if result.get("ok"):
+                    return result
+                logger.warning(f"Slack post failed: {result.get('error')}")
+                return None
+        except Exception as e:
+            logger.warning(f"Slack post error: {e}")
+            return None
+
+    def _slack_poll_replies(self, token: str, thread_ts: str, timeout_seconds: int) -> str | None:
+        """Poll Slack channel for any reply after our message.
+
+        Accepts both threaded replies AND new channel messages posted after
+        the bot's message. Ignores bot messages (only human replies count).
+
+        Args:
+            token: Slack bot token.
+            thread_ts: Timestamp of the bot's message (used as baseline).
+            timeout_seconds: Max wait time.
+
+        Returns:
+            First human reply text, or None if timed out.
+        """
+        poll_interval = 10
+        start_time = time.monotonic()
+
+        while (time.monotonic() - start_time) < timeout_seconds:
+            time.sleep(poll_interval)
+
+            try:
+                # Check for threaded replies first
+                params = urllib.parse.urlencode({
+                    "channel": SLACK_CHANNEL,
+                    "ts": thread_ts,
+                    "limit": 10,
+                })
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.replies?{params}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+
+                if result.get("ok"):
+                    messages = result.get("messages", [])
+                    replies = [m for m in messages[1:] if m.get("text") and not m.get("bot_id")]
+                    if replies:
+                        reply_text = replies[0]["text"]
+                        logger.info(f"Slack threaded reply: {reply_text[:50]}")
+                        return reply_text
+
+                # Also check for new channel messages after our post
+                params = urllib.parse.urlencode({
+                    "channel": SLACK_CHANNEL,
+                    "oldest": thread_ts,
+                    "limit": 10,
+                })
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.history?{params}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
+
+                if result.get("ok"):
+                    messages = result.get("messages", [])
+                    # Find human messages posted AFTER our bot message
+                    for m in messages:
+                        if m.get("ts") != thread_ts and not m.get("bot_id") and m.get("text"):
+                            reply_text = m["text"]
+                            logger.info(f"Slack channel reply: {reply_text[:50]}")
+                            return reply_text
+
+            except Exception as e:
+                logger.debug(f"Slack poll error (will retry): {e}")
+
+            elapsed = int(time.monotonic() - start_time)
+            if elapsed > 0 and elapsed % 3600 == 0:
+                hours = elapsed // 3600
+                logger.info(f"Still waiting for Slack reply ({hours}h elapsed)")
+
+        logger.warning(f"Slack approval timed out after {timeout_seconds}s")
+        return None
+
+    def _slack_approval(self, message: str, timeout_seconds: int = 43200) -> str | None:
+        """Send approval request to Slack, poll for threaded reply."""
+        token = self._get_slack_token()
+        if not token:
+            logger.error("No Slack token in Keychain — cannot request approval")
+            return None
+
+        result = self._slack_post(token, message)
+        if not result:
+            logger.error("Slack post failed — cannot request approval")
+            return None
+
+        thread_ts = result.get("message", {}).get("ts") or result.get("ts")
+        if not thread_ts:
+            logger.error("No thread_ts from Slack — cannot poll for reply")
+            return None
+
+        logger.info(f"Slack approval posted to #mindpattern-approvals, waiting for reply...")
+        return self._slack_poll_replies(token, thread_ts, timeout_seconds)
+
     # ── iMessage fallback ─────────────────────────────────────────────
 
     def _imessage_approval(self, message: str, timeout_seconds: int = 43200) -> str | None:
@@ -391,51 +563,39 @@ class ApprovalGateway:
             time.sleep(poll_interval)
 
             try:
-                conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
-                conn.row_factory = sqlite3.Row
-
-                # Find ALL chats associated with ANY of this person's
-                # identities (phone number AND email). iMessage replies
-                # can come from either identity depending on which device
-                # the user replies from.
+                # Use sqlite3 CLI (inherits FDA from bash) instead of
+                # Python's sqlite3 module which lacks FDA under launchd.
                 where_clauses = " OR ".join(
-                    "h.id LIKE ?" for _ in identity_patterns
+                    f"h.id LIKE '{p.replace(chr(39), chr(39)*2)}'" for p in identity_patterns
                 )
-                chat_ids = conn.execute(
-                    f"""
+                chat_query = f"""
                     SELECT DISTINCT cmj.chat_id
                     FROM chat_message_join cmj
                     JOIN message m ON m.ROWID = cmj.message_id
                     JOIN handle h ON h.ROWID = m.handle_id
-                    WHERE {where_clauses}
-                    """,
-                    identity_patterns,
-                ).fetchall()
+                    WHERE {where_clauses};
+                """
+                chat_rows = _sqlite3_cli_query(chat_query)
 
-                if not chat_ids:
-                    conn.close()
+                if not chat_rows:
                     continue
 
-                chat_id_list = ",".join(str(r[0]) for r in chat_ids)
-                rows = conn.execute(
-                    f"""
+                chat_id_list = ",".join(r[0] for r in chat_rows)
+                msg_query = f"""
                     SELECT m.ROWID, m.text, m.is_from_me, m.date
                     FROM message m
                     JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-                    WHERE m.ROWID > ?
+                    WHERE m.ROWID > {min_rowid}
                       AND m.text IS NOT NULL
                       AND m.text != ''
+                      AND m.is_from_me = 0
                       AND cmj.chat_id IN ({chat_id_list})
-                    ORDER BY m.ROWID ASC
-                    """,
-                    (min_rowid,),
-                ).fetchall()
-
-                conn.close()
+                    ORDER BY m.ROWID ASC;
+                """
+                rows = _sqlite3_cli_query(msg_query)
 
                 if rows:
-                    # Return the first new reply
-                    reply_text = rows[0]["text"]
+                    reply_text = rows[0][1]  # text is second column
                     logger.info(
                         f"iMessage reply received ({len(rows)} new messages)"
                     )
@@ -443,12 +603,10 @@ class ApprovalGateway:
 
             except sqlite3.OperationalError as e:
                 err_str = str(e).lower()
-                if "unable to open" in err_str or "authorization denied" in err_str or "readonly" in err_str:
+                if "unable to open" in err_str or "authorization denied" in err_str:
                     if not getattr(self, "_fda_warned", False):
                         logger.error(
-                            f"Cannot read Messages.db — likely Full Disk Access issue. "
-                            f"Grant FDA to Python in System Settings → Privacy & Security → "
-                            f"Full Disk Access. Error: {e}"
+                            f"Cannot read Messages.db via sqlite3 CLI: {e}"
                         )
                         self._fda_warned = True
                 else:
@@ -470,10 +628,8 @@ class ApprovalGateway:
             return 0
 
         try:
-            conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
-            row = conn.execute("SELECT MAX(ROWID) FROM message").fetchone()
-            conn.close()
-            return row[0] if row and row[0] else 0
+            rows = _sqlite3_cli_query("SELECT MAX(ROWID) FROM message;")
+            return int(rows[0][0]) if rows and rows[0][0] else 0
         except Exception:
             return 0
 
@@ -523,7 +679,7 @@ class ApprovalGateway:
                 lines.append(f"... ({len(text)} chars total)")
             lines.append("")
 
-        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'x linkedin')")
+        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'bluesky linkedin')")
 
         return "\n".join(lines)
 
@@ -551,24 +707,27 @@ class ApprovalGateway:
     # ── Reply parsing ─────────────────────────────────────────────────
 
     def _parse_topic_reply(self, reply: str | None, num_topics: int) -> dict:
-        """Parse iMessage reply for topic approval."""
+        """Parse reply for topic approval."""
         if not reply:
             return {"action": "skip", "topic_index": 0, "guidance": "Timed out"}
 
-        reply = reply.strip().lower()
+        original = reply.strip()
+        lower = original.lower()
 
-        if reply in ("skip", "kill", "no", "pass"):
+        if lower in ("skip", "kill", "no", "pass"):
             return {"action": "skip", "topic_index": 0, "guidance": ""}
 
-        if reply in ("retry", "again", "redo"):
+        if lower in ("go", "yes", "approve", "ok", "approved"):
+            return {"action": "go", "topic_index": 0, "guidance": ""}
+
+        if lower in ("retry", "again", "redo"):
             return {"action": "retry", "topic_index": 0, "guidance": ""}
 
         # Check for number selection
         try:
-            num = int(reply.split()[0])
+            num = int(lower.split()[0])
             if 1 <= num <= num_topics:
-                # Check if there's additional guidance after the number
-                parts = reply.split(maxsplit=1)
+                parts = original.split(maxsplit=1)
                 guidance = parts[1] if len(parts) > 1 else ""
                 return {
                     "action": "go",
@@ -578,8 +737,8 @@ class ApprovalGateway:
         except (ValueError, IndexError):
             pass
 
-        # Treat as custom topic
-        return {"action": "custom", "topic_index": 0, "guidance": reply}
+        # Anything else = custom topic (preserve original case)
+        return {"action": "custom", "topic_index": 0, "guidance": original}
 
     def _parse_draft_reply(self, reply: str | None, platforms: list[str]) -> dict:
         """Parse iMessage reply for draft approval."""

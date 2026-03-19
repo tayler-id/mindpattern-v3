@@ -1,0 +1,26 @@
+{
+  "verdict": "APPROVED",
+  "feedback": "Strong post. The Rayni personal moment ('I've been manually translating Figma decisions into component specs for months') earns the take. Sentence variation is natural — 'Technically accurate.' and 'Not a coincidence.' land well against the longer expository paragraphs. The ending question is specific and earned, not an engagement farm.",
+  "scores": {
+    "voice_authenticity": 9,
+    "platform_fit": 8,
+    "engagement_potential": 8
+  },
+  "rubric_scores": {
+    "voice_match": 9,
+    "framing_authenticity": 8,
+    "platform_genre_fit": 8,
+    "epistemic_calibration": 8,
+    "structural_variation": 9,
+    "rhetorical_framework": 8
+  },
+  "kill_switches": "pass",
+  "dimension_notes": {
+    "voice": "pass — multiple fragments, 5+ first-person refs, one hedge, natural burstiness",
+    "framing": "pass — grounded in personal workflow (Rayni), nothing from do_not_include, one narrative",
+    "platform": "pass — ~1360 chars in sweet spot, hook works in first 210 chars, genuine specific question",
+    "epistemic": "pass — surprised register matches brief, cautious on Stitch production quality",
+    "structure": "pass — asymmetric paragraphs, strong short-long contrast, no neat-bow close",
+    "framework": "pass — nut-graf structure, facts → analysis → opinion, claims traceable to brief sources"
+  }
+}

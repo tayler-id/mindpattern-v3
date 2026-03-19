@@ -1,3 +1,9 @@
+---
+type: identity
+date: 2026-03-15
+tags: [voice, persona]
+---
+
 # Voice Guide — mindpattern
 
 Shared reference for all social media writers and critics. This is NOT an agent file.

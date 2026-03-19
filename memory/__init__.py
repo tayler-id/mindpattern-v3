@@ -118,6 +118,26 @@ from .corrections import (
     correction_stats,
 )
 
+# Obsidian vault I/O (NEW in v3.1)
+from .vault import (
+    atomic_write,
+    read_source_file,
+    update_section,
+    append_entry,
+    get_recent_entries,
+    archive_old_entries,
+)
+
+# Obsidian mirror generation (NEW in v3.1)
+from .mirror import generate_mirrors
+
+# Identity evolution (NEW in v3.1)
+from .identity_evolve import (
+    build_evolve_prompt,
+    apply_evolution_diff,
+    parse_llm_output,
+)
+
 # Entity graph (NEW in v3)
 from .graph import (
     store_relationship,
@@ -164,4 +184,11 @@ __all__ = [
     # Graph
     "store_relationship", "query_entity", "find_path",
     "related_entities", "entity_stats",
+    # Vault
+    "atomic_write", "read_source_file", "update_section",
+    "append_entry", "get_recent_entries", "archive_old_entries",
+    # Mirror
+    "generate_mirrors",
+    # Identity evolution
+    "build_evolve_prompt", "apply_evolution_diff", "parse_llm_output",
 ]

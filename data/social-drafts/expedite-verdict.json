@@ -1,0 +1,16 @@
+{
+  "verdict": "PASS",
+  "feedback": "Clean package. No kill switches triggered across either draft. Bluesky is tight and native to the platform — lowercase, conversational, genuine closing question. LinkedIn earns its depth: personal credential (20 years design) grounds the DESIGN.md angle, Rayni is named specifically, and the Apple framing lands without overclaiming motive. Voice fingerprint checks out on both — contractions, fragments, first-person, asymmetric paragraphs. Framing is one coherent thought, not a stacked listicle. Epistemic calibration matches HIGH confidence in the brief: facts stated as facts, inference flagged as inference ('I keep looking at the timing'). Art is absent (no image provided) — noted but not penalizing. X draft was not provided.",
+  "platform_verdicts": {
+    "bluesky": "PASS",
+    "linkedin": "PASS"
+  },
+  "scores": {
+    "voice_match": 8,
+    "framing_authenticity": 9,
+    "platform_genre_fit": 8,
+    "epistemic_calibration": 9,
+    "structural_variation": 8,
+    "rhetorical_framework": 8
+  }
+}

@@ -1,0 +1,25 @@
+---
+type: social
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+---
+
+# Social Posts Log
+
+{% if posts %}
+{% for post in posts | reverse %}
+## {{ post.date }} - {{ post.platform }}
+
+{{ post.content }}
+
+- **Gate 1**: {{ post.gate1_outcome | default('n/a') }}
+- **Gate 2**: {{ post.gate2_outcome | default('n/a') }}
+- **Posted**: {{ 'Yes' if post.posted else 'No' }}
+- **Daily log**: [[daily/{{ post.date }}]]
+
+---
+
+{% endfor %}
+{% else %}
+No social posts recorded yet.
+{% endif %}
