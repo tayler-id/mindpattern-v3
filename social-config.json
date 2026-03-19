@@ -59,8 +59,6 @@
   "engagement": {
     "platforms": ["bluesky", "linkedin"],
     "max_replies_per_day": 30,
-    "max_follows_x_per_day": 75,
-    "max_follows_bluesky_per_day": 100,
     "reply_cooldown_days": 7,
     "min_follower_count": 10,
     "min_likes": 0,

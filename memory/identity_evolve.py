@@ -32,6 +32,30 @@ VALID_ACTIONS = {"update", "none", "append"}
 # Maximum characters per content field.
 MAX_CONTENT_LENGTH = 500
 
+# Patterns that must not appear in LLM-produced content written to vault files.
+# Prevents YAML frontmatter injection, Obsidian wikilink/templater injection, and HTML.
+_UNSAFE_PATTERNS = re.compile(
+    r"^---\s*$"         # YAML frontmatter delimiter
+    r"|<%%|%%>"          # Obsidian templater directives
+    r"|<script|<iframe"  # HTML injection
+    , re.MULTILINE | re.IGNORECASE
+)
+# Section names must be safe heading text only.
+_SAFE_SECTION_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$")
+
+
+def _sanitize_vault_content(text: str) -> str:
+    """Strip Obsidian-active patterns from LLM-produced content."""
+    # Strip YAML frontmatter blocks
+    text = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text, flags=re.DOTALL)
+    # Neutralize wikilinks: [[target]] -> \[\[target\]\]
+    text = text.replace("[[", r"\[\[").replace("]]", r"\]\]")
+    # Neutralize templater directives
+    text = text.replace("<%", r"\<%").replace("%>", r"\%>")
+    # Strip HTML tags
+    text = re.sub(r"<(script|iframe|object|embed)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return text
+
 
 # ── Prompt builder ──────────────────────────────────────────────────────────
 
@@ -258,7 +282,7 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
                 errors.append(f"action='append' is only valid for 'decisions', not '{key}'")
                 continue
 
-            content = spec.get("content", "")
+            content = _sanitize_vault_content(spec.get("content", ""))
             if not content:
                 errors.append(f"Missing 'content' for append on '{key}'")
                 continue
@@ -278,12 +302,15 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
 
         # action == "update"
         elif action == "update":
-            section = spec.get("section")
+            section = spec.get("section", "")
             if not section:
                 errors.append(f"Missing 'section' for update on '{key}'")
                 continue
+            if not _SAFE_SECTION_NAME.match(section):
+                errors.append(f"Invalid section name '{section}' for key '{key}'")
+                continue
 
-            content = spec.get("content", "")
+            content = _sanitize_vault_content(spec.get("content", ""))
             if not content:
                 errors.append(f"Missing 'content' for update on '{key}'")
                 continue

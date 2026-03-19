@@ -29,10 +29,14 @@ RSS_ROUTING = {
 }
 
 
+DEDUP_SIMILARITY_THRESHOLD = 0.85
+DEDUP_LOOKBACK_DAYS = 7
+
+
 def _dedup_annotate(
     items: list[dict],
     existing_fn=None,
-    threshold: float = 0.85,
+    threshold: float = DEDUP_SIMILARITY_THRESHOLD,
     db=None,
 ) -> list[dict]:
     """Tag each item as NEW or ALREADY_COVERED via batch embedding comparison.
@@ -79,7 +83,7 @@ def _dedup_batch(items: list[dict], db, threshold: float) -> list[dict]:
     from memory.embeddings import embed_texts, deserialize_f32
     from datetime import datetime, timedelta
 
-    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now() - timedelta(days=DEDUP_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     rows = db.execute(
         """SELECT f.title, f.agent, f.run_date, e.embedding
            FROM findings f
@@ -143,12 +147,12 @@ def _assign_to_agents(items: list[dict]) -> dict[str, list[dict]]:
         elif source == "exa":
             primary = "news-researcher"
             secondaries = []
-            title_lower = item.get("title", "").lower() + " " + item.get("content_preview", "").lower()
-            if any(kw in title_lower for kw in ["saas", "fintech", "startup", "venture"]):
+            search_text = item.get("title", "").lower() + " " + item.get("content_preview", "").lower()
+            if any(kw in search_text for kw in ["saas", "fintech", "startup", "venture"]):
                 secondaries.append("saas-disruption-researcher")
-            if any(kw in title_lower for kw in ["agent", "mcp", "tool use"]):
+            if any(kw in search_text for kw in ["agent", "mcp", "tool use"]):
                 secondaries.append("agents-researcher")
-            if any(kw in title_lower for kw in ["vibe", "cursor", "copilot", "coding"]):
+            if any(kw in search_text for kw in ["vibe", "cursor", "copilot", "coding"]):
                 secondaries.append("vibe-coding-researcher")
         else:
             route = SOURCE_ROUTING.get(source, (None, []))

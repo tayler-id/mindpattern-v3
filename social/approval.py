@@ -94,19 +94,11 @@ class ApprovalGateway:
                 guidance: str           # any editorial guidance from approver
             }
         """
-        # Format topics for display
-        items = []
-        for i, t in enumerate(topics):
-            items.append({
-                "index": i,
-                "title": t.get("title", f"Topic {i + 1}"),
-                "summary": t.get("summary", ""),
-                "score": t.get("score", 0),
-            })
-
         # Slack primary, iMessage fallback
         message = self._format_topic_message(topics)
         reply = self._slack_approval(message, self.gate_timeout)
+        if reply is None:
+            reply = self._imessage_approval(message, self.gate_timeout)
         return self._parse_topic_reply(reply, len(topics))
 
     def request_draft_approval(self, drafts: dict, images: dict) -> dict:
@@ -143,6 +135,8 @@ class ApprovalGateway:
         # Slack primary, iMessage fallback
         message = self._format_draft_message(drafts, images)
         reply = self._slack_approval(message, self.gate_timeout)
+        if reply is None:
+            reply = self._imessage_approval(message, self.gate_timeout)
         return self._parse_draft_reply(reply, list(drafts.keys()))
 
     def request_engagement_approval(self, candidates: list[dict]) -> dict:
@@ -170,6 +164,8 @@ class ApprovalGateway:
         # Slack primary, iMessage fallback
         message = self._format_engagement_message(candidates)
         reply = self._slack_approval(message, self.gate_timeout)
+        if reply is None:
+            reply = self._imessage_approval(message, self.gate_timeout)
 
         return self._parse_engagement_reply(reply, len(candidates))
 
@@ -570,7 +566,7 @@ class ApprovalGateway:
                 # Use sqlite3 CLI (inherits FDA from bash) instead of
                 # Python's sqlite3 module which lacks FDA under launchd.
                 where_clauses = " OR ".join(
-                    f"h.id LIKE '{p}'" for p in identity_patterns
+                    f"h.id LIKE '{p.replace(chr(39), chr(39)*2)}'" for p in identity_patterns
                 )
                 chat_query = f"""
                     SELECT DISTINCT cmj.chat_id
@@ -592,6 +588,7 @@ class ApprovalGateway:
                     WHERE m.ROWID > {min_rowid}
                       AND m.text IS NOT NULL
                       AND m.text != ''
+                      AND m.is_from_me = 0
                       AND cmj.chat_id IN ({chat_id_list})
                     ORDER BY m.ROWID ASC;
                 """
@@ -682,7 +679,7 @@ class ApprovalGateway:
                 lines.append(f"... ({len(text)} chars total)")
             lines.append("")
 
-        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'x linkedin')")
+        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'bluesky linkedin')")
 
         return "\n".join(lines)
 
