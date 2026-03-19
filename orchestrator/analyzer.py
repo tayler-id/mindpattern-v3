@@ -4,7 +4,6 @@ Reads agent trace logs, compares behavior vs skill instructions,
 identifies deviations, and produces a JSON diff of skill file changes.
 """
 
-import hashlib
 import json
 import logging
 import re
@@ -272,7 +271,10 @@ def apply_analyzer_changes(
 
     # Apply changes
     for change in changes.get("changes", []):
-        file_path = project_root / change["file"]
+        file_path = (project_root / change["file"]).resolve()
+        if not file_path.is_relative_to(project_root.resolve()):
+            result["errors"].append(f"Path traversal rejected: {change['file']}")
+            continue
         diff = change.get("diff", {})
         reason = change.get("reason", "")
 
@@ -326,8 +328,13 @@ def apply_analyzer_changes(
         git_hash = reversion.get("revert_to_hash", "")
         reason = reversion.get("reason", "")
 
-        if not git_hash:
-            result["errors"].append(f"No hash for reversion: {reversion['file']}")
+        if not git_hash or not re.fullmatch(r"[0-9a-f]{7,40}", git_hash):
+            result["errors"].append(f"Invalid or missing hash for reversion: {reversion['file']}")
+            continue
+
+        rev_path = (project_root / reversion["file"]).resolve()
+        if not rev_path.is_relative_to(project_root.resolve()):
+            result["errors"].append(f"Path traversal rejected: {reversion['file']}")
             continue
 
         try:

@@ -818,7 +818,7 @@ class ResearchPipeline:
 
         pipeline_results = {
             "date": self.date_str,
-            "findings_count": len(self.agent_results) if self.agent_results else 0,
+            "findings_count": sum(len(r.findings) for r in self.agent_results) if self.agent_results else 0,
             "newsletter_generated": bool(self.newsletter_text),
             "newsletter_eval": self.newsletter_eval,
             "social": social,

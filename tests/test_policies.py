@@ -257,22 +257,22 @@ class TestRateLimits:
 
     def test_allowed_when_under_limit(self, social_engine, in_memory_db):
         """Returns allowed=True when no posts today."""
-        result = social_engine.validate_rate_limits(in_memory_db, "x", "post")
+        result = social_engine.validate_rate_limits(in_memory_db, "bluesky", "post")
         assert result["allowed"] is True
         assert result["current"] == 0
 
     def test_blocked_when_at_limit(self, social_engine, in_memory_db):
         """Returns allowed=False when post count equals limit."""
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        # X allows max_posts_per_day=3 per social.json
+        # Bluesky allows max_posts_per_day=3 per social.json
         for _ in range(3):
             in_memory_db.execute(
                 "INSERT INTO engagements (platform, action_type, created_at) VALUES (?, ?, ?)",
-                ("x", "post", f"{today}T12:00:00"),
+                ("bluesky", "post", f"{today}T12:00:00"),
             )
         in_memory_db.commit()
 
-        result = social_engine.validate_rate_limits(in_memory_db, "x", "post")
+        result = social_engine.validate_rate_limits(in_memory_db, "bluesky", "post")
         assert result["allowed"] is False
         assert result["current"] == 3
         assert result["limit"] == 3
@@ -282,23 +282,23 @@ class TestRateLimits:
 class TestPostRateLimit:
     """PolicyEngine.validate_post_rate_limit checks social_posts history."""
 
-    def test_rejects_4th_post_when_x_limit_is_3(self, social_engine):
+    def test_rejects_4th_post_when_bluesky_limit_is_3(self, social_engine):
         """Mock memory DB returns 3 posted today; 4th post must be rejected."""
         db = MagicMock()
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # Simulate 3 already-posted entries for today on X
+        # Simulate 3 already-posted entries for today on Bluesky
         mock_posts = [
-            {"id": i, "date": today, "platform": "x", "content": f"post {i}",
+            {"id": i, "date": today, "platform": "bluesky", "content": f"post {i}",
              "anchor_text": f"anchor {i}", "gate2_action": "approved", "posted": 1}
             for i in range(1, 4)
         ]
 
         with patch("policies.engine.recent_posts", return_value=mock_posts):
-            error = social_engine.validate_post_rate_limit("x", db)
+            error = social_engine.validate_post_rate_limit("bluesky", db)
 
         assert error is not None
-        assert "x" in error.lower()
+        assert "bluesky" in error.lower()
         assert "3" in error  # mentions the limit or count
 
     def test_allows_post_when_under_limit(self, social_engine):
@@ -307,12 +307,12 @@ class TestPostRateLimit:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         mock_posts = [
-            {"id": 1, "date": today, "platform": "x", "content": "post 1",
+            {"id": 1, "date": today, "platform": "bluesky", "content": "post 1",
              "anchor_text": "anchor 1", "gate2_action": "approved", "posted": 1}
         ]
 
         with patch("policies.engine.recent_posts", return_value=mock_posts):
-            error = social_engine.validate_post_rate_limit("x", db)
+            error = social_engine.validate_post_rate_limit("bluesky", db)
 
         assert error is None
 
@@ -347,16 +347,16 @@ class TestPostRateLimit:
 
         # 3 posts returned but only 2 have posted=1
         mock_posts = [
-            {"id": 1, "date": today, "platform": "x", "content": "p1",
+            {"id": 1, "date": today, "platform": "bluesky", "content": "p1",
              "anchor_text": "a1", "gate2_action": "approved", "posted": 1},
-            {"id": 2, "date": today, "platform": "x", "content": "p2",
+            {"id": 2, "date": today, "platform": "bluesky", "content": "p2",
              "anchor_text": "a2", "gate2_action": "approved", "posted": 1},
-            {"id": 3, "date": today, "platform": "x", "content": "p3",
+            {"id": 3, "date": today, "platform": "bluesky", "content": "p3",
              "anchor_text": "a3", "gate2_action": "skip", "posted": 0},
         ]
 
         with patch("policies.engine.recent_posts", return_value=mock_posts):
-            error = social_engine.validate_post_rate_limit("x", db)
+            error = social_engine.validate_post_rate_limit("bluesky", db)
 
         # 2 posted < 3 limit, so should be allowed
         assert error is None

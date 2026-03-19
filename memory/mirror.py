@@ -101,9 +101,10 @@ def _query_findings_for_source_domain(
     db: sqlite3.Connection, domain: str
 ) -> list[dict]:
     """Fetch findings whose source_url contains a given domain."""
-    pattern = f"%{domain}%"
+    escaped = domain.replace("%", r"\%").replace("_", r"\_")
+    pattern = f"%{escaped}%"
     rows = db.execute(
-        "SELECT * FROM findings WHERE source_url LIKE ? ORDER BY run_date DESC, id",
+        "SELECT * FROM findings WHERE source_url LIKE ? ESCAPE '\\' ORDER BY run_date DESC, id",
         (pattern,),
     ).fetchall()
     return [dict(r) for r in rows]

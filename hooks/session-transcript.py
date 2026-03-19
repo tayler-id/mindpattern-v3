@@ -21,9 +21,25 @@ reliably in Claude Code's subprocess context.
 
 import json
 import os
+import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+# ── Sanitization ─────────────────────────────────────────────────────────────
+
+
+def _sanitize_obsidian(text: str) -> str:
+    """Neutralize Obsidian-active patterns in external content.
+
+    Prevents wikilink resolution, templater execution, and HTML injection
+    when tool results from external APIs are written into vault markdown.
+    """
+    text = text.replace("[[", r"\[\[").replace("]]", r"\]\]")
+    text = text.replace("<%", r"\<%").replace("%>", r"\%>")
+    text = re.sub(r"<(script|iframe|object|embed)", r"&lt;\1", text, flags=re.IGNORECASE)
+    return text
 
 
 # ── Stdin ────────────────────────────────────────────────────────────────────
@@ -257,6 +273,8 @@ def format_agent_log(
         lines.append("## Research Results")
         lines.append("")
         for i, tr in enumerate(log_data["tool_results"]):
+            # Sanitize external content to prevent Obsidian injection
+            tr = _sanitize_obsidian(tr)
             lines.append(f"<details><summary>Result {i + 1} ({len(tr)} chars)</summary>")
             lines.append("")
             lines.append(tr)
@@ -302,7 +320,7 @@ def atomic_write(path: Path, content: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
         tmp.write_bytes(content.encode("utf-8"))
-        os.rename(tmp, path)
+        os.replace(tmp, path)
     except BaseException:
         try:
             tmp.unlink()
@@ -327,7 +345,7 @@ def main() -> None:
         return
 
     # Determine date and vault path
-    date_str = os.environ.get("MINDPATTERN_DATE", datetime.now().strftime("%Y-%m-%d"))
+    date_str = os.environ.get("MINDPATTERN_DATE", datetime.now(tz=timezone.utc).strftime("%Y-%m-%d"))
     vault_dir = os.environ.get("MINDPATTERN_VAULT")
     if not vault_dir:
         cwd = hook_input.get("cwd", "")
@@ -369,6 +387,8 @@ def main() -> None:
     markdown = format_agent_log(agent_name, date_str, log_data)
 
     # Write to agent folder
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", agent_name):
+        return  # Invalid agent name, skip
     output_path = vault_path / "agents" / agent_name / f"{date_str}.md"
     atomic_write(output_path, markdown)
 
@@ -376,6 +396,7 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        # Never block session end
-        pass
+    except Exception as e:
+        # Never block session end, but log for debugging
+        import sys
+        print(f"session-transcript hook error: {e}", file=sys.stderr)

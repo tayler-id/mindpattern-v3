@@ -386,7 +386,7 @@ def _get_platform_rules(platform: str) -> str:
             "- URLs count toward the 300 limit\n"
             "- SINGLE POST ONLY. Never a thread.\n"
             "- Must include https://mindpattern.ai at end\n"
-            "- Most technical depth of the 3 platforms\n"
+            "- Most technical depth of the 2 platforms\n"
             "- No viral-bait tactics\n"
             "- Conversational, community-oriented, lowercase fine\n"
             "- Tone: delightfully specific micro-take, like posting in a Discord\n"

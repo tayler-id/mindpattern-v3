@@ -5,10 +5,18 @@ Each source module exports a `fetch() -> list[dict]` function
 that returns items in the standard preflight entry schema.
 """
 
+import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 TOOLS_DIR = PROJECT_ROOT / "tools"
+
+
+def _sanitize_external_text(text: str) -> str:
+    """Strip control characters and known prompt injection delimiters from external content."""
+    # Remove null bytes and control chars except newline/tab
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    return text
 
 
 def make_entry(
@@ -27,10 +35,10 @@ def make_entry(
     return {
         "source": source,
         "source_name": source_name,
-        "title": title,
+        "title": _sanitize_external_text(title),
         "url": url,
         "published": published,
-        "content_preview": content_preview[:500],
+        "content_preview": _sanitize_external_text(content_preview[:500]),
         "metrics": metrics or {},
         "already_covered": already_covered,
         "match_info": match_info,
@@ -47,5 +55,7 @@ def parse_ndjson(text: str) -> list[dict]:
             try:
                 items.append(json.loads(line))
             except json.JSONDecodeError:
+                import logging
+                logging.getLogger(__name__).debug(f"Skipping non-JSON line: {line[:100]}")
                 continue
     return items

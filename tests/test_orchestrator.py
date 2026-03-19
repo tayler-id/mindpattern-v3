@@ -948,7 +948,7 @@ class TestPolicyRateLimits:
         return conn
 
     def test_allowed_when_under_limit(self, engine, db):
-        result = engine.validate_rate_limits(db, "x", "post")
+        result = engine.validate_rate_limits(db, "bluesky", "post")
         assert result["allowed"] is True
 
     def test_blocked_when_at_limit(self, engine, db):
@@ -957,10 +957,10 @@ class TestPolicyRateLimits:
         for _ in range(3):
             db.execute(
                 "INSERT INTO engagements (platform, action_type, created_at) VALUES (?, ?, ?)",
-                ("x", "post", f"{today}T10:00:00"),
+                ("bluesky", "post", f"{today}T10:00:00"),
             )
         db.commit()
-        result = engine.validate_rate_limits(db, "x", "post")
+        result = engine.validate_rate_limits(db, "bluesky", "post")
         assert result["allowed"] is False
         assert result["current"] == 3
         assert result["limit"] == 3

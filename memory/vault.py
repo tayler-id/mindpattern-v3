@@ -8,12 +8,32 @@ The vault root is data/ramsay/mindpattern/ but all functions accept explicit
 paths so tests can use a temporary directory.
 """
 
+import fcntl
 import os
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
 MAX_SECTION_LENGTH = 500
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """Acquire an exclusive file lock for read-modify-write operations.
+
+    Uses a .lock sibling file with fcntl.flock to prevent concurrent
+    modifications from multiple processes/agents.
+    """
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = open(lock_path, "w")
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
 
 
 # ── Core I/O ────────────────────────────────────────────────────────────────
@@ -119,30 +139,31 @@ def update_section(path: Path, section_name: str, new_content: str) -> None:
         )
 
     path = Path(path)
-    existing = read_source_file(path)
-    target_norm = _normalise_heading(section_name)
+    with _file_lock(path):
+        existing = read_source_file(path)
+        target_norm = _normalise_heading(section_name)
 
-    sections = _split_sections(existing)
+        sections = _split_sections(existing)
 
-    found = False
-    for idx, (heading, _body) in enumerate(sections):
-        if heading.startswith("## "):
-            heading_text = heading[3:]  # strip "## "
-            if _normalise_heading(heading_text) == target_norm:
-                sections[idx] = (heading, f"\n\n{new_content}\n")
-                found = True
-                break
+        found = False
+        for idx, (heading, _body) in enumerate(sections):
+            if heading.startswith("## "):
+                heading_text = heading[3:]  # strip "## "
+                if _normalise_heading(heading_text) == target_norm:
+                    sections[idx] = (heading, f"\n\n{new_content}\n")
+                    found = True
+                    break
 
-    if not found:
-        # Append new section
-        display_name = section_name.replace("_", " ")
-        # Capitalise first letter of each word for a clean heading
-        display_name = display_name.title() if display_name.islower() else display_name
-        sections.append((f"## {display_name}", f"\n\n{new_content}\n"))
+        if not found:
+            # Append new section
+            display_name = section_name.replace("_", " ")
+            # Capitalise first letter of each word for a clean heading
+            display_name = display_name.title() if display_name.islower() else display_name
+            sections.append((f"## {display_name}", f"\n\n{new_content}\n"))
 
-    # Reassemble
-    result = "".join(h + b for h, b in sections)
-    atomic_write(path, result)
+        # Reassemble
+        result = "".join(h + b for h, b in sections)
+        atomic_write(path, result)
 
 
 # ── Append-only log ─────────────────────────────────────────────────────────
@@ -158,17 +179,18 @@ def append_entry(path: Path, entry: str) -> None:
         entry: Entry text to append.
     """
     path = Path(path)
-    existing = read_source_file(path)
-    today = datetime.now().strftime("%Y-%m-%d")
+    with _file_lock(path):
+        existing = read_source_file(path)
+        today = datetime.now().strftime("%Y-%m-%d")
 
-    new_section = f"## {today}\n\n{entry}\n"
+        new_section = f"## {today}\n\n{entry}\n"
 
-    if existing:
-        combined = existing.rstrip("\n") + "\n\n" + new_section
-    else:
-        combined = new_section
+        if existing:
+            combined = existing.rstrip("\n") + "\n\n" + new_section
+        else:
+            combined = new_section
 
-    atomic_write(path, combined)
+        atomic_write(path, combined)
 
 
 # ── Entry retrieval ──────────────────────────────────────────────────────────
@@ -222,41 +244,43 @@ def archive_old_entries(
     path = Path(path)
     archive_path = Path(archive_path)
 
-    text = read_source_file(path)
-    if not text:
-        return
+    # Lock both source and archive to prevent concurrent archival races
+    with _file_lock(path):
+        text = read_source_file(path)
+        if not text:
+            return
 
-    cutoff = datetime.now() - timedelta(days=max_age_days)
-    sections = _split_sections(text)
-    date_re = re.compile(r"^## (\d{4}-\d{2}-\d{2})")
+        cutoff = datetime.now() - timedelta(days=max_age_days)
+        sections = _split_sections(text)
+        date_re = re.compile(r"^## (\d{4}-\d{2}-\d{2})")
 
-    keep: list[tuple[str, str]] = []
-    archive: list[tuple[str, str]] = []
+        keep: list[tuple[str, str]] = []
+        archive: list[tuple[str, str]] = []
 
-    for heading, body in sections:
-        m = date_re.match(heading)
-        if m:
-            entry_date = datetime.strptime(m.group(1), "%Y-%m-%d")
-            if entry_date < cutoff:
-                archive.append((heading, body))
+        for heading, body in sections:
+            m = date_re.match(heading)
+            if m:
+                entry_date = datetime.strptime(m.group(1), "%Y-%m-%d")
+                if entry_date < cutoff:
+                    archive.append((heading, body))
+                else:
+                    keep.append((heading, body))
             else:
+                # Preamble or non-dated section stays in the source
                 keep.append((heading, body))
+
+        if not archive:
+            return  # nothing to archive
+
+        # Write archived entries to archive file
+        archive_text = "".join(h + b for h, b in archive).strip() + "\n"
+        existing_archive = read_source_file(archive_path)
+        if existing_archive:
+            combined_archive = existing_archive.rstrip("\n") + "\n\n" + archive_text
         else:
-            # Preamble or non-dated section stays in the source
-            keep.append((heading, body))
+            combined_archive = archive_text
+        atomic_write(archive_path, combined_archive)
 
-    if not archive:
-        return  # nothing to archive
-
-    # Write archived entries to archive file
-    archive_text = "".join(h + b for h, b in archive).strip() + "\n"
-    existing_archive = read_source_file(archive_path)
-    if existing_archive:
-        combined_archive = existing_archive.rstrip("\n") + "\n\n" + archive_text
-    else:
-        combined_archive = archive_text
-    atomic_write(archive_path, combined_archive)
-
-    # Rewrite source with only the kept entries
-    kept_text = "".join(h + b for h, b in keep).strip() + "\n"
-    atomic_write(path, kept_text)
+        # Rewrite source with only the kept entries
+        kept_text = "".join(h + b for h, b in keep).strip() + "\n"
+        atomic_write(path, kept_text)
