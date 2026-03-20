@@ -1,5 +1,5 @@
 PLATFORM: bluesky
 TYPE: single
 ---
-apple blocked replit the same week google shipped DESIGN.md for free. i've been losing fidelity in that handoff for 20 years. i keep looking at the timing. who's tried stitch? https://www.macrumors.com/2026/03/18/apple-blocks-updates-for-vibe-coding-apps/ https://mindpattern.ai
+saastr q1: 140% revenue. 1.25 humans in sales. 20 ai agents. i ran $16B through fintech for years with 30+ salespeople. i keep doing that math. doesn't add up. same week: fortune coined 'CEO AI churn' for adobe. i don't know a sales leader who reads this calmly. https://mindpattern.ai
 ---
