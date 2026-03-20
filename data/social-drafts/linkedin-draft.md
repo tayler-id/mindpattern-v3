@@ -1,17 +1,21 @@
 PLATFORM: linkedin
 TYPE: single
 ---
-I've been losing design fidelity in the handoff to code for twenty years. Google shipped something this week that might actually fix it. Apple blocked the tools that use it the same week.
+We've been watching for AI to displace junior roles first. That's not what's happening.
 
-Came up as a visual communications designer before I wrote code. That gap between what's in the design file and what gets shipped has never fully closed.
+I came from FinTech before I went independent. Versatile Credit ran $16B+ annually with a sales team of thirty people. SaaStr just posted Q1: 140% of last year's revenue, 1.25 human salespeople, 20+ AI agents. One $70K sponsorship closed entirely by an agent. A $100K deal on New Year's Eve with zero human involvement.
 
-Google's Stitch 2.0 introduced DESIGN.md, a portable format that exports design system rules directly to Claude Code, Cursor, and Gemini via an MCP server. Not a static handoff link. A structured file a coding agent can actually read and reason about. I thought about Rayni immediately, where I've been manually translating Figma decisions into component specs for months. That workflow could shrink from hours to minutes.
+I kept doing the math on what that would look like at my old company. Couldn't make it add up the same way.
 
-Apple's stated reason for blocking Replit and Vibecode: these apps display AI-generated apps in embedded web views, letting users build software outside the App Store ecosystem. Replit dropped from #1 to #3 in developer tools since January. Technically accurate. And it tells you exactly what they're protecting.
+Same week, Fortune coined "CEO AI churn" to describe Shantanu Narayen stepping down after 18 years at Adobe. Shares down 23% YTD. The market's explicit read: too slow on the AI transition. Feature releases weren't structural transformation.
 
-One platform opened the pipeline the same week the other welded it shut. Not a coincidence.
+Sales floor automated. Corner office held accountable for not automating fast enough. Same week.
 
-I'm going to test Stitch with my next project. Real question: does the exported HTML hold up in production, or is this another tool that looks good until you ship it?
+We expected this to be bottom-up. Junior roles first, management eventually, executives years from now. That's not what the calendar says.
+
+I don't know if SaaStr's numbers scale to enterprise deals with six-month procurement cycles. Probably a different equation. But I can't name a single sales leader who reads those numbers and doesn't immediately recalculate headcount.
 
 https://mindpattern.ai
+
+How many incumbent SaaS CEOs are reading the Fortune piece right now and quietly updating their timelines?
 ---

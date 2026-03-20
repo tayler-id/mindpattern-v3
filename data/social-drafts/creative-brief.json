@@ -1,59 +1,58 @@
 {
-  "editorial_angle": "The design-to-code handoff has been the leaky pipe in software development for decades. Fidelity dies in translation. Google just patched it with a portable format and free tools that speak directly to the coding agents builders are already using. Apple, the same week, used its platform control to freeze the vibe coding apps that were closing this gap on mobile. This isn't a coincidence. It's a fork in the road for AI-native creation: one platform opening the pipeline, the other welding it shut. Tayler's 20 years as a designer before becoming an engineer gives him standing to say what most commentators can't: this handoff problem is real, DESIGN.md is the most promising attempt at solving it he's seen, and Apple's move tells you exactly how threatened the status quo is.",
-  "key_message": "Apple froze the tools closing the design-to-code gap on mobile the same week Google made those tools free on desktop — and the timing isn't an accident.",
+  "editorial_angle": "The conventional assumption was that AI disruption would work its way up the org chart — bots first, managers later, executives eventually. That model is dead. SaaStr proves the sales floor is already automated at 140% productivity. Adobe proves the CEO chair is already forfeit if you moved too slowly. The squeeze happened simultaneously, not sequentially. There's no tier left that can credibly say 'we'll get to AI later' — the waiting period is over and the market is already scoring the results.",
+  "key_message": "AI didn't climb the org chart — it hit the sales floor and the corner office at the same time, and the companies still treating it as a roadmap item are already behind.",
   "emotional_register": "surprised",
   "tone": "conversational-authoritative",
   "source_attribution": {
     "primary": {
-      "name": "MacRumors — Apple Blocks Updates for Vibe Coding Apps",
-      "url": "https://www.macrumors.com/2026/03/18/apple-blocks-updates-for-vibe-coding-apps/"
+      "name": "SaaStr",
+      "url": "https://www.saastr.com/we-hit-140-of-last-years-revenue-in-q1-with-1-25-humans-in-sales-and-20-ai-agents/"
     },
     "supporting": [
       {
-        "name": "Google AI Blog — Stitch AI UI Design",
-        "url": "https://blog.google/innovation-and-ai/models-and-research/google-labs/stitch-ai-ui-design/"
+        "name": "Fortune",
+        "url": "https://fortune.com/2026/03/19/ceo-ai-churn-turnover-adobe-shantanu-narayen/"
       }
     ]
   },
   "visual_metaphor_direction": {
-    "core_tension": "Two gates side by side: Apple's is slammed shut with a padlock and a 'Blocked' sign on the Replit logo. Google's gate is wide open with a free-entry sign and a clear path through. A builder figure stands between them holding a design file, forced to choose a side.",
+    "core_tension": "A corporate org chart being crushed from both ends simultaneously — AI agents pressing up from the bottom, shareholders and falling stock charts pressing down from the top. The people in the middle are still there, untouched for now, but visibly trapped between two forces that have already decided the outcome.",
     "suggested_approach": "symbolic",
     "mood": "stark",
     "key_elements": [
-      "Apple logo on a locked gate or wall",
-      "Google logo on an open gate or door",
-      "Replit logo visibly blocked/frozen",
-      "DESIGN.md as a document or blueprint passing freely through the Google side",
-      "A single builder/developer figure caught between the two"
+      "Adobe logo — prominently visible on the corporate building or org chart header",
+      "A CEO figure at the top being forced out or ejected upward",
+      "Robot / AI agent figures at the base, numerous and organized, doing the work the humans used to do",
+      "A descending stock chart or falling share price indicator as the top-down pressure mechanism",
+      "The org chart itself as the central structure — a pyramid or hierarchy diagram being crushed in an industrial vise or press"
     ],
     "avoid": [
-      "Generic tech imagery with no named brands",
-      "Happy or optimistic framing for both sides — this is a conflict, not a partnership",
-      "Literal App Store screenshots or UI mockups",
-      "Both companies depicted as equal — Apple is the antagonist this week"
+      "Humanoid robots that look threatening or sci-fi — keep it corporate and bureaucratic",
+      "Layoff imagery (boxes, pink slips) — the story is about replacement structure, not individual job loss",
+      "Anything that reads as generic 'AI takes over' — the specificity is the simultaneous top-and-bottom squeeze",
+      "Happy or optimistic framing — the mood is reckoning, not celebration",
+      "Literal illustration of a sales call or a board meeting — keep it structural and metaphorical"
     ]
   },
   "platform_hooks": {
     "x": {
-      "hook": "Apple blocked Replit. Google shipped free design-to-code tools. Same week.",
-      "angle": "The timing is too clean to be coincidental — Apple knows what's at stake if AI-native creation tools mature outside their ecosystem, and blocking updates is the only lever they have left"
+      "hook": "AI didn't climb the org chart. It hit both ends at once.",
+      "angle": "SaaStr closed deals with zero humans. Adobe's CEO just got fired for moving too slow. The org chart has no safe tier anymore — that's the story nobody's saying out loud."
     },
     "linkedin": {
-      "hook": "I spent 20 years losing fidelity in the design-to-code handoff. DESIGN.md might actually fix it — if Apple lets the tools that use it survive.",
-      "angle": "Frame it as a practical question for engineering and product leaders: what does your design-to-code workflow cost you today, and how exposed is it to platform gatekeeping decisions you can't control?"
+      "hook": "We've been watching for AI to displace junior roles first. That's not what's happening.",
+      "angle": "SaaStr just posted 140% revenue with 1.25 human salespeople. Same week, Fortune named the Adobe CEO exit the first case of 'CEO AI churn.' If you're a sales leader or a C-suite exec still treating AI as a Q3 roadmap item, this week's numbers are worth a hard look."
     },
     "bluesky": {
-      "hook": "Apple froze Replit updates this week. Google shipped DESIGN.md for free. I keep looking at the timing.",
-      "angle": "Conversational, builder-to-builder: who's tried Stitch yet? Does the HTML export actually hold up in production? This is a genuine question Tayler wants answered."
+      "hook": "I keep doing the math on my old company's headcount and I can't make it work anymore.",
+      "angle": "SaaStr posted Q1: 140% of last year's revenue, 1.25 humans in sales, 20+ AI agents. I spent years in FinTech where we ran 30+ people to process $16B annually. I don't know a sales leader who reads this and doesn't immediately recalculate. Then Fortune names Adobe's CEO exit 'CEO AI churn' and it stops being abstract."
     }
   },
   "do_not_include": [
-    "Paul Graham's vague Replit tease — too speculative without a product name",
-    "Claude Code v2.1.79 release notes — incremental update",
-    "JetBrains Koog Java framework — niche enterprise",
-    "NVIDIA AI-Q blueprint — enterprise infrastructure story",
-    "Any mention of the post being AI-generated, automated, or pipeline-produced",
-    "References to 'agents', 'pipelines', or how the content was found"
+    "Meta 16K layoffs — related theme but makes the post a listicle",
+    "Block 4,000 layoffs — same concern",
+    "YC W26 batch 60% AI companies — too inside-baseball for this angle",
+    "Corvera CPG agent revenue — interesting but dilutes the two-story thread"
   ],
   "mindpattern_link": "https://mindpattern.ai"
 }

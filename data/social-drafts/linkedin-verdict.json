@@ -1,14 +1,14 @@
 {
   "verdict": "APPROVED",
-  "feedback": "Strong post. The Rayni personal moment ('I've been manually translating Figma decisions into component specs for months') earns the take. Sentence variation is natural — 'Technically accurate.' and 'Not a coincidence.' land well against the longer expository paragraphs. The ending question is specific and earned, not an engagement farm.",
+  "feedback": "Strong draft. The SaaStr + Adobe pairing works because they're not redundant — one shows automation succeeding at sales, the other shows the market punishing CEOs who didn't automate fast enough. Together they make the same point from opposite angles, which is different from stacking two independent findings. Personal credibility is established early and the hedge at the end ('I don't know if SaaStr's numbers scale') is honest and specific. Minor flag: two hedges ('I don't know if' and 'Probably a different equation') slightly exceeds the max-1-hedge rule, but both are specific and earned, not generic — acceptable here. The ending question is genuinely specific rather than engagement-farmed.",
   "scores": {
-    "voice_authenticity": 9,
+    "voice_authenticity": 8,
     "platform_fit": 8,
-    "engagement_potential": 8
+    "engagement_potential": 9
   },
   "rubric_scores": {
-    "voice_match": 9,
-    "framing_authenticity": 8,
+    "voice_match": 8,
+    "framing_authenticity": 7,
     "platform_genre_fit": 8,
     "epistemic_calibration": 8,
     "structural_variation": 9,
@@ -16,11 +16,11 @@
   },
   "kill_switches": "pass",
   "dimension_notes": {
-    "voice": "pass — multiple fragments, 5+ first-person refs, one hedge, natural burstiness",
-    "framing": "pass — grounded in personal workflow (Rayni), nothing from do_not_include, one narrative",
-    "platform": "pass — ~1360 chars in sweet spot, hook works in first 210 chars, genuine specific question",
-    "epistemic": "pass — surprised register matches brief, cautious on Stitch production quality",
-    "structure": "pass — asymmetric paragraphs, strong short-long contrast, no neat-bow close",
-    "framework": "pass — nut-graf structure, facts → analysis → opinion, claims traceable to brief sources"
+    "voice": "pass — 3 first-person references, multiple fragments ('Couldn't make it add up the same way.', 'Same week.', 'Probably a different equation.'), excellent sentence length variation, no banned words or phrases, no em dashes",
+    "framing": "pass with flag — two findings (SaaStr + Fortune/Adobe) but they function as counterpoint not stacking; genuine personal moment via Versatile Credit history and doing the math on his old company",
+    "platform": "pass — estimated ~1380 chars (within 1200-1500 sweet spot), first 210 chars work as a strong hook, URL present, ends with a specific non-generic question",
+    "epistemic": "pass — 'I don't know if SaaStr's numbers scale to enterprise deals with six-month procurement cycles' is honest and specific; opinion ('I can't name a single sales leader') framed as personal",
+    "structure": "pass — strong burstiness with 'Same week.' (2 words) against longer paragraphs, asymmetric paragraph lengths, no rhythmic pattern, no neat-bow closing",
+    "framework": "pass — Nut-graf structure: provocative thesis → credentials → evidence → evidence (counterpoint angle) → hedged opinion → open question; evidence grammar holds (facts > analysis > opinion in order)"
   }
 }
