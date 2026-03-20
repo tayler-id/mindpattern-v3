@@ -138,8 +138,8 @@ def sync_to_fly(
                 ),
             )
             traces_conn.commit()
-        except Exception:
-            pass  # Don't fail sync because of trace logging
+        except Exception as e:
+            log.debug(f"Failed to log sync event: {e}")
 
     return {
         "success": True,

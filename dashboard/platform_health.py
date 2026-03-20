@@ -38,8 +38,9 @@ def check_linkedin_token_health(
     try:
         config = json.loads(cfg_path.read_text())
         expires_days = config.get("platforms", {}).get("linkedin", {}).get("token_expires_days", 60)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to parse platform health config: {e}")
 
     # Read last refresh date
     if not path.exists():

@@ -331,8 +331,8 @@ class ApprovalGateway:
             )
             if result.returncode == 0:
                 return result.stdout.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Keychain Slack token lookup failed: {e}")
         return None
 
     def _slack_post(self, token: str, text: str, thread_ts: str | None = None) -> dict | None:
@@ -485,6 +485,9 @@ class ApprovalGateway:
         # message. This prevents picking up stale replies from previous runs
         # (whose ROWIDs are below messages sent between runs in other chats).
         self._last_rowid = self._get_max_rowid()
+        if self._last_rowid is None:
+            logger.warning("Cannot determine baseline ROWID — skipping iMessage polling")
+            return None
         logger.info(f"iMessage sent to {self.phone}, waiting for reply (baseline ROWID={self._last_rowid})...")
 
         # Poll for response
@@ -622,16 +625,21 @@ class ApprovalGateway:
         logger.warning(f"iMessage approval timed out after {timeout_seconds}s")
         return None
 
-    def _get_max_rowid(self) -> int:
-        """Get the current maximum ROWID from Messages.db."""
+    def _get_max_rowid(self) -> int | None:
+        """Get the current maximum ROWID from Messages.db.
+
+        Returns None if the ROWID cannot be determined (caller should
+        skip iMessage polling in that case).
+        """
         if not MESSAGES_DB.exists():
             return 0
 
         try:
             rows = _sqlite3_cli_query("SELECT MAX(ROWID) FROM message;")
             return int(rows[0][0]) if rows and rows[0][0] else 0
-        except Exception:
-            return 0
+        except Exception as e:
+            logger.error(f"Failed to get max ROWID: {e}")
+            return None
 
     # ── Message formatting ────────────────────────────────────────────
 

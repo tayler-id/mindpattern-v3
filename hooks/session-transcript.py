@@ -50,7 +50,8 @@ def read_stdin() -> dict:
     try:
         raw = sys.stdin.read()
         return json.loads(raw)
-    except Exception:
+    except Exception as e:
+        print(f"session-transcript: failed to read stdin: {e}", file=sys.stderr)
         return {}
 
 

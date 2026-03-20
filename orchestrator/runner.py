@@ -973,7 +973,11 @@ class ResearchPipeline:
             return subprocess.check_output(
                 ["security", "find-generic-password", "-s", service_name, "-w"],
                 stderr=subprocess.DEVNULL,
+                timeout=10,
             ).decode().strip()
+        except subprocess.TimeoutExpired:
+            logger.error("Keychain lookup timed out for '%s'", service_name)
+            return None
         except subprocess.CalledProcessError:
             return None
 

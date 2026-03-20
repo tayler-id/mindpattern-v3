@@ -12,6 +12,7 @@ Errors are printed to stderr as structured JSON. Exit codes: 0=success, 1=partia
 
 import argparse
 import json
+import socket
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Tuple
@@ -120,6 +121,9 @@ def main() -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=args.hours)
     total_feeds = len(feeds)
     failed_feeds = 0
+
+    # Prevent feedparser from hanging indefinitely on unresponsive servers
+    socket.setdefaulttimeout(30)
 
     for feed_def in feeds:
         if not isinstance(feed_def, dict) or "url" not in feed_def:

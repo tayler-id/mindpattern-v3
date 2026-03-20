@@ -235,7 +235,9 @@ class PipelineMonitor:
                 return None
             # Handle both tuple and Row results
             return [r[1] if isinstance(r, tuple) else r["name"] for r in rows]
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Failed to get column names: {e}")
             return None
 
     def start_phase(self, pipeline_run_id: str, phase_name: str) -> int:
