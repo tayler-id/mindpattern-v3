@@ -29,16 +29,22 @@ log = logging.getLogger(__name__)
 # ── Shared helpers ───────────────────────────────────────────────────────
 
 
-def keychain_get(service_name: str) -> str:
+def keychain_get(service_name: str) -> str | None:
     """Read a secret from macOS Keychain.
 
-    Raises RuntimeError if the key is not found.
+    Returns the secret string, or None if the lookup times out.
+    Raises RuntimeError if the key is not found (non-timeout failure).
     """
-    result = subprocess.run(
-        ["security", "find-generic-password", "-s", service_name, "-w"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service_name, "-w"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("Keychain lookup timed out for '%s'", service_name)
+        return None
     if result.returncode != 0:
         raise RuntimeError(
             f"Could not read '{service_name}' from macOS Keychain: {result.stderr.strip()}"
@@ -111,6 +117,9 @@ def compress_image(path: Path, max_bytes: int = 950_000) -> Path:
     Uses PIL/Pillow to progressively reduce JPEG quality.
     Returns the path to the (possibly new) compressed file.
     If the original is already small enough, returns it unchanged.
+
+    Note: When a new compressed file is created, the caller is responsible
+    for cleanup (e.g. ``compressed.unlink(missing_ok=True)`` after upload).
     """
     if path.stat().st_size <= max_bytes:
         return path

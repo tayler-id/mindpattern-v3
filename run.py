@@ -98,6 +98,7 @@ def acquire_lock() -> int:
 
 def send_imessage(phone: str, message: str) -> None:
     """Send iMessage via AppleScript."""
+    logger = logging.getLogger(__name__)
     try:
         # Escape double quotes in message
         safe_msg = message.replace('"', '\\"')
@@ -106,8 +107,8 @@ def send_imessage(phone: str, message: str) -> None:
             ["osascript", "-e", script],
             capture_output=True, timeout=10,
         )
-    except Exception:
-        pass  # Best effort
+    except Exception as e:
+        logger.error(f"Failed to send iMessage: {e}")
 
 
 def main():
@@ -188,8 +189,8 @@ def main():
                         f"exit={exit_code}"
                     )
                     send_imessage(phone, summary)
-            except Exception:
-                pass  # Best effort
+            except Exception as e:
+                logging.getLogger(__name__).debug(f"Failed to send summary iMessage: {e}")
 
     finally:
         # ── Cleanup ────────────────────────────────────────────────────

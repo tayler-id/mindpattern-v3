@@ -8,8 +8,12 @@ Refactored from v2's memory.py CLI monolith. All functions take a db
 (sqlite3.Connection) parameter and return data structures.
 """
 
+import logging
 import sqlite3
+import time
 from datetime import datetime
+
+import requests
 
 from memory.embeddings import (
     cosine_similarity,
@@ -17,6 +21,30 @@ from memory.embeddings import (
     embed_text,
     serialize_f32,
 )
+
+_log = logging.getLogger(__name__)
+
+
+def _api_get(url: str, headers: dict, timeout: int = 30, retries: int = 3) -> dict:
+    """GET with retry and exponential backoff for Resend API calls.
+
+    Returns parsed JSON dict on success.
+    Raises requests.RequestException after exhausting retries.
+    """
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            if attempt == retries - 1:
+                raise
+            delay = 2 ** attempt
+            _log.warning(
+                "Resend API retry %d/%d for %s: %s — retrying in %ds",
+                attempt + 1, retries, url, e, delay,
+            )
+            time.sleep(delay)
 
 
 # ── Feedback functions ────────────────────────────────────────────────
@@ -37,21 +65,17 @@ def fetch_feedback(
     Returns:
         {"fetched": int, "total_received": int, "pending_feedback": int}
     """
-    import requests
-
     headers = {
         "Authorization": f"Bearer {resend_api_key}",
         "User-Agent": "MindPattern/3.0",
     }
 
-    # List received emails from Resend
-    resp = requests.get(
+    # List received emails from Resend (with retry)
+    data = _api_get(
         "https://api.resend.com/emails/receiving?limit=100",
         headers=headers,
         timeout=30,
     )
-    resp.raise_for_status()
-    data = resp.json()
 
     emails = data.get("data", [])
     new_count = 0
@@ -69,15 +93,13 @@ def fetch_feedback(
         if existing:
             continue
 
-        # Fetch full email body
+        # Fetch full email body (with retry)
         try:
-            detail_resp = requests.get(
+            detail = _api_get(
                 f"https://api.resend.com/emails/receiving/{email_id}",
                 headers=headers,
                 timeout=30,
             )
-            detail_resp.raise_for_status()
-            detail = detail_resp.json()
         except requests.RequestException:
             continue
 
@@ -143,8 +165,11 @@ def fetch_feedback(
                     "INSERT OR REPLACE INTO feedback_embeddings (feedback_id, embedding) VALUES (?, ?)",
                     (feedback_id, serialize_f32(vec)),
                 )
-            except Exception:
-                pass  # Embedding failure is non-fatal
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Failed to store embedding for feedback {feedback_id}: {e}"
+                )
             new_count += 1
 
     db.commit()

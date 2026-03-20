@@ -85,10 +85,14 @@ def _fetch_with_retry(
 
 def get_keychain(service: str) -> str:
     """Read a secret from macOS Keychain."""
-    result = subprocess.run(
-        ["security", "find-generic-password", "-s", service, "-w"],
-        capture_output=True, text=True
-    )
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-w"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        _log_error(f"Keychain lookup timed out for '{service}'")
+        sys.exit(2)
     if result.returncode != 0:
         _log_error(f"Could not read '{service}' from Keychain")
         sys.exit(2)

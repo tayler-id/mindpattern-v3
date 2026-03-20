@@ -34,6 +34,10 @@ def _file_lock(path: Path):
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         fd.close()
+        try:
+            lock_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ── Core I/O ────────────────────────────────────────────────────────────────
