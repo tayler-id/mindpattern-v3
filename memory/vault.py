@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-MAX_SECTION_LENGTH = 500
+MAX_SECTION_LENGTH = 3000
 
 
 @contextmanager
@@ -135,11 +135,11 @@ def update_section(path: Path, section_name: str, new_content: str) -> None:
         new_content: New body for the section.
 
     Raises:
-        ValueError: If *new_content* exceeds MAX_SECTION_LENGTH (500) chars.
+        ValueError: If *new_content* exceeds MAX_SECTION_LENGTH chars.
     """
     if len(new_content) > MAX_SECTION_LENGTH:
         raise ValueError(
-            f"Section content is {len(new_content)} chars, max is {MAX_SECTION_LENGTH} (500)"
+            f"Section content is {len(new_content)} chars, max is {MAX_SECTION_LENGTH}"
         )
 
     path = Path(path)

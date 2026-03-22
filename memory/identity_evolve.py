@@ -30,7 +30,9 @@ FILE_MAP = {
 VALID_ACTIONS = {"update", "none", "append"}
 
 # Maximum characters per content field.
-MAX_CONTENT_LENGTH = 500
+# Decisions entries include topic, gate outcomes, scores, and pattern notes,
+# which regularly exceed 500 chars. 3000 is generous but still bounded.
+MAX_CONTENT_LENGTH = 3000
 
 # Patterns that must not appear in LLM-produced content written to vault files.
 # Prevents YAML frontmatter injection, Obsidian wikilink/templater injection, and HTML.
@@ -158,7 +160,7 @@ Output a single JSON object with these rules:
 - Each value is an object with:
   - "action": one of "update", "append", or "none"
   - "section": (required for "update") the ## section heading to update
-  - "content": (required for "update" and "append") the new text (max 500 chars)
+  - "content": (required for "update" and "append") the new text (max 3000 chars)
 - "append" is only valid for "decisions" — it adds a new dated entry.
 - "update" replaces the body of the named ## section in the target file.
 - "none" means no change needed for that file.
@@ -289,7 +291,7 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
 
             if len(content) > MAX_CONTENT_LENGTH:
                 errors.append(
-                    f"Content for '{key}' is {len(content)} chars, exceeds max 500"
+                    f"Content for '{key}' is {len(content)} chars, exceeds max {MAX_CONTENT_LENGTH}"
                 )
                 continue
 
@@ -306,6 +308,9 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
             if not section:
                 errors.append(f"Missing 'section' for update on '{key}'")
                 continue
+            # LLMs sometimes include the markdown heading prefix ("## ").
+            # Strip it so the regex validates the heading text only.
+            section = re.sub(r"^#{1,6}\s+", "", section).strip()
             if not _SAFE_SECTION_NAME.match(section):
                 errors.append(f"Invalid section name '{section}' for key '{key}'")
                 continue
@@ -317,7 +322,7 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
 
             if len(content) > MAX_CONTENT_LENGTH:
                 errors.append(
-                    f"Content for '{key}' is {len(content)} chars, exceeds max 500"
+                    f"Content for '{key}' is {len(content)} chars, exceeds max {MAX_CONTENT_LENGTH}"
                 )
                 continue
 

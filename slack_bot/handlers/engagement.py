@@ -102,7 +102,7 @@ class EngagementHandler(BaseHandler):
         )
 
         # Wait for approval
-        approval = self.wait_for_reply(ts, timeout=43200)
+        approval = self.wait_for_reply(ts)
         if not approval or approval.lower() in ("skip", "no", "cancel"):
             self.reply("Skipped.", thread_ts=ts)
             return
@@ -143,7 +143,7 @@ class EngagementHandler(BaseHandler):
             self.reply("\n".join(lines), thread_ts=ts)
 
             # Wait for selection
-            selection = self.wait_for_reply(ts, timeout=43200)
+            selection = self.wait_for_reply(ts)
             if not selection or selection.lower() in ("skip", "cancel"):
                 self.reply("Skipped.", thread_ts=ts)
                 return
@@ -195,7 +195,7 @@ class EngagementHandler(BaseHandler):
             thread_ts=ts,
         )
 
-        approval = self.wait_for_reply(ts, timeout=43200)
+        approval = self.wait_for_reply(ts)
         if not approval or approval.lower() in ("skip", "no", "cancel"):
             self.reply("Skipped.", thread_ts=ts)
             return

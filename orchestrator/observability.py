@@ -1,7 +1,7 @@
 """Pipeline monitoring and metrics collection.
 
 Provides phase-level tracing, per-agent metrics, cost tracking,
-quality regression detection, and iMessage-friendly summaries.
+quality regression detection, and pipeline summaries.
 
 Works against the traces.db schema (pipeline_runs, agent_runs, events,
 daily_metrics tables).
@@ -443,7 +443,7 @@ class PipelineMonitor:
         }
 
     def generate_summary(self, run_date: str) -> str:
-        """Generate iMessage-ready summary string.
+        """Generate pipeline summary string.
 
         Format: '87 findings | $1.34 | 18 min | Quality: 0.85 | 2 warnings'
 
@@ -451,7 +451,7 @@ class PipelineMonitor:
             run_date: ISO date string.
 
         Returns:
-            Single-line summary string suitable for iMessage notification.
+            Single-line summary string suitable for Slack notification.
         """
         # Total findings from agent_metrics
         row = self.conn.execute(

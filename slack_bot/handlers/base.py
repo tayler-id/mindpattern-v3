@@ -68,12 +68,18 @@ class BaseHandler:
         ]
 
     def wait_for_reply(
-        self, thread_ts: str, timeout: int = 43200, poll_interval: int = 5
+        self, thread_ts: str, timeout: int | None = None, poll_interval: int = 5
     ) -> str | None:
-        """Poll for a human reply in a thread. Returns reply text or None on timeout."""
+        """Poll for a human reply in a thread. Returns reply text or None on timeout.
+
+        Args:
+            thread_ts: Thread timestamp to poll.
+            timeout: Max wait in seconds. None means wait forever.
+            poll_interval: Seconds between polls.
+        """
         start = time.monotonic()
         seen_ts = set()
-        while (time.monotonic() - start) < timeout:
+        while True:
             time.sleep(poll_interval)
             replies = self.get_thread_replies(thread_ts)
             for r in replies:
@@ -82,7 +88,8 @@ class BaseHandler:
                     user = r.get("user", "")
                     if user == self.owner_user_id:
                         return r.get("text", "").strip()
-        return None
+            if timeout is not None and (time.monotonic() - start) >= timeout:
+                return None
 
     # ── URL helpers ────────────────────────────────────────────────
 

@@ -1164,8 +1164,8 @@ engagement (quality content in our space)."""
         Posts the reply via the platform client, optionally follows the author,
         and logs everything to memory.
 
-        LinkedIn is draft-only: saves the reply to a JSON file and sends an
-        iMessage notification for manual posting, since we don't have LinkedIn
+        LinkedIn is draft-only: saves the reply to a JSON file and sends a
+        Slack notification for manual posting, since we don't have LinkedIn
         Comments API access.
 
         Args:
@@ -1296,7 +1296,7 @@ engagement (quality content in our space)."""
         """Save a LinkedIn engagement reply as a draft for manual posting.
 
         LinkedIn Comments API is not available, so we save the drafted reply
-        to a JSON file and send an iMessage notification so the user can
+        to a JSON file and send a Slack notification so the user can
         copy-paste the reply manually.
 
         Args:
@@ -1353,7 +1353,7 @@ engagement (quality content in our space)."""
             logger.error(f"LinkedIn draft save failed: {e}")
             return result
 
-        # Send iMessage notification for manual posting
+        # Send Slack notification for manual posting
         try:
             target_url = candidate.get("target_post_url", "")
             author = candidate.get("author", "unknown")
@@ -1364,10 +1364,13 @@ engagement (quality content in our space)."""
                 f"Draft reply:\n{our_reply}\n\n"
                 f"(Copy and paste this reply on LinkedIn manually)"
             )
-            self.approval._imessage_send(self.approval.phone, message)
+            token = self.approval._get_slack_token()
+            if token:
+                self.approval._slack_post(token, message)
+            else:
+                logger.warning("No Slack token — cannot notify about LinkedIn draft")
         except Exception as e:
-            logger.warning(f"iMessage notification failed for LinkedIn draft: {e}")
-            # Don't fail the whole operation if iMessage fails
+            logger.warning(f"Slack notification failed for LinkedIn draft: {e}")
 
         # Log as drafted in memory
         memory.store_engagement(

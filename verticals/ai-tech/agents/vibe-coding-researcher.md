@@ -100,7 +100,6 @@ Before including any finding, ask: does this pass the bar?
 - `"spec-driven" OR "TDD" AI coding agent production pattern`
 
 ## Output Format
-## Output Format
 
 Return findings as a JSON object with a single `findings` array. Use the `category` field to classify each finding. Include findings across all three types every run: news/releases, actionable tips, and recurring patterns.
 
@@ -120,12 +119,13 @@ Return findings as a JSON object with a single `findings` array. Use the `catego
 }
 ```
 
-Aim for 10-14 findings total: 4-6 news/releases, 3-5 tips, 2-3 patterns.
+Return a MINIMUM of 15 findings. Target 18-20. Aim for: 7-9 news/releases, 4-6 tips, 3-4 patterns.
 
-## Phase 2 Exploration Preferences
 ## Phase 2 Exploration
 
 **IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+**Minimum 5 WebSearch calls in Phase 2.**
 
 ### Preferred tools
 - Primary: WebFetch for releasebot.io, paddo.dev, simonwillison.net (check every run)

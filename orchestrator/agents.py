@@ -199,7 +199,7 @@ def build_agent_prompt(
 
 Below are {len(new_items)} NEW items pre-fetched from your domain sources.
 
-Select the 8-12 most important NEW items as findings. For each:
+Select ALL qualifying new items as findings (minimum 15, target 18-20). For each:
 - Verify the content is real and recent (not old news resurfacing)
 - Write a 2-3 sentence summary with specific details (names, numbers, dates)
 - Rate importance (high/medium/low)
@@ -216,7 +216,7 @@ Select the 8-12 most important NEW items as findings. For each:
 ## Phase 2: Explore Beyond Preflight
 
 The preflight data covers known sources. Now find what it MISSED.
-Use these tools to discover 2-5 additional findings:
+Use these tools to discover 3-5 additional findings:
 
 - Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
 - Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
@@ -229,7 +229,7 @@ Look for:
 - Primary sources not in our feed list
 - Reactions and follow-ups to stories in the preflight data
 
-Target: 10-15 total findings (8-12 from Phase 1 + 2-5 from Phase 2).
+Target: 20-25 total findings (15-20 from Phase 1 + 3-5 from Phase 2).
 
 """
 
@@ -334,6 +334,10 @@ def run_single_agent(
     # Block global skills from polluting pipeline agent context
     cmd.extend(["--disallowedTools", "Skill"])
 
+    logger.info(
+        f"run_single_agent START: agent={agent_name}, model={model}, "
+        f"prompt_size={len(prompt)} chars, max_turns={max_turns}, timeout={timeout}s"
+    )
     start = time.monotonic()
     result = AgentResult(agent_name=agent_name)
 
@@ -355,7 +359,11 @@ def run_single_agent(
 
         if proc.returncode != 0:
             result.error = proc.stderr[:500] if proc.stderr else "Non-zero exit code"
-            logger.warning(f"Agent {agent_name} exited with code {proc.returncode}")
+            logger.warning(
+                f"Agent {agent_name} exited with code {proc.returncode}, "
+                f"duration={result.duration_ms}ms, "
+                f"stderr_preview='{(proc.stderr or '')[:200]}'"
+            )
             return result
 
         # Parse JSON findings from output
@@ -656,6 +664,14 @@ def run_claude_prompt(
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
 
+    logger.info(
+        f"run_claude_prompt START: task_type={task_type}, model={model}, "
+        f"prompt_size={len(prompt)} chars, max_turns={max_turns}, timeout={timeout}s"
+        + (f", system_prompt_file={system_prompt_file}" if system_prompt_file else "")
+        + (f", stdin_mode=True" if use_stdin else "")
+    )
+    call_start = time.monotonic()
+
     try:
         proc = subprocess.run(
             cmd,
@@ -666,10 +682,24 @@ def run_claude_prompt(
             cwd=str(PROJECT_ROOT),
             env=env,
         )
+        call_duration = time.monotonic() - call_start
+        logger.info(
+            f"run_claude_prompt END: task_type={task_type}, "
+            f"exit_code={proc.returncode}, output_len={len(proc.stdout)}, "
+            f"duration={call_duration:.1f}s"
+        )
         return proc.stdout, proc.returncode
     except subprocess.TimeoutExpired:
-        logger.error(f"Claude call timed out after {timeout}s for {task_type}")
+        call_duration = time.monotonic() - call_start
+        logger.error(
+            f"run_claude_prompt TIMEOUT: task_type={task_type}, "
+            f"timeout={timeout}s, duration={call_duration:.1f}s"
+        )
         return "", 1
     except Exception as e:
-        logger.error(f"Claude call failed for {task_type}: {e}")
+        call_duration = time.monotonic() - call_start
+        logger.error(
+            f"run_claude_prompt ERROR: task_type={task_type}, "
+            f"error={e}, duration={call_duration:.1f}s"
+        )
         return "", 1

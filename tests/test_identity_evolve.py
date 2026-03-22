@@ -240,21 +240,21 @@ class TestApplyEvolutionDiff:
         assert any("evil_file" in e for e in result["errors"])
 
     def test_oversized_content_rejected(self, vault_dir):
-        """Content exceeding 500 chars is rejected with an error, not an exception."""
-        from memory.identity_evolve import apply_evolution_diff
+        """Content exceeding MAX_CONTENT_LENGTH chars is rejected with an error, not an exception."""
+        from memory.identity_evolve import MAX_CONTENT_LENGTH, apply_evolution_diff
 
         diff = {
             "soul": {
                 "action": "update",
                 "section": "Core Values",
-                "content": "x" * 501,
+                "content": "x" * (MAX_CONTENT_LENGTH + 1),
             }
         }
 
         result = apply_evolution_diff(vault_dir, diff)
 
         assert len(result["errors"]) >= 1
-        assert any("500" in e or "too long" in e.lower() or "exceed" in e.lower()
+        assert any("exceed" in e.lower() or str(MAX_CONTENT_LENGTH) in e
                     for e in result["errors"])
         assert len(result["changes_made"]) == 0
 

@@ -57,11 +57,7 @@ No results found for this query.
 def mock_config():
     """Minimal social-config.json for testing."""
     return {
-        "imessage": {
-            "phone": "+17175783243",
-            "identities": ["+17175783243"],
-            "gate_timeout_seconds": 10,
-        },
+        "gate_timeout_seconds": 10,
         "platforms": {
             "bluesky": {
                 "enabled": True,
@@ -343,18 +339,19 @@ class TestLinkedInDraftOnly:
 
     @patch("social.engagement.memory")
     @patch("social.posting.keychain_get", return_value="fake-secret")
-    def test_linkedin_sends_imessage_notification(
+    def test_linkedin_sends_slack_notification(
         self, mock_keychain, mock_memory, mock_config, mock_db, tmp_path
     ):
-        """LinkedIn draft sends iMessage notification for manual posting."""
+        """LinkedIn draft sends Slack notification for manual posting."""
         pipeline = EngagementPipeline("test-user", mock_config, mock_db)
 
         drafts_dir = tmp_path / "social-drafts"
         drafts_dir.mkdir(exist_ok=True)
         pipeline._linkedin_drafts_dir = drafts_dir
 
-        # Mock the approval gateway's _imessage_send
-        pipeline.approval._imessage_send = MagicMock()
+        # Mock the approval gateway's Slack methods
+        pipeline.approval._get_slack_token = MagicMock(return_value="xoxb-fake")
+        pipeline.approval._slack_post = MagicMock(return_value={"ok": True})
 
         candidate = {
             "platform": "linkedin",
@@ -373,9 +370,9 @@ class TestLinkedInDraftOnly:
 
         pipeline._post_engagement(candidate)
 
-        # Should have sent an iMessage notification
-        pipeline.approval._imessage_send.assert_called_once()
-        sent_message = pipeline.approval._imessage_send.call_args[0][1]
+        # Should have sent a Slack notification
+        pipeline.approval._slack_post.assert_called_once()
+        sent_message = pipeline.approval._slack_post.call_args[0][1]
         assert "linkedin" in sent_message.lower()
         assert "draft" in sent_message.lower()
 

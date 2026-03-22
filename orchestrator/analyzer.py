@@ -184,7 +184,11 @@ def parse_analyzer_output(raw_output: str) -> dict | None:
 
 
 def _find_and_replace_section(content: str, section_name: str, new_body: str) -> str:
-    """Replace the body of a ## section in markdown, preserving other sections."""
+    """Replace the body of a ## section in markdown, preserving other sections.
+
+    If multiple sections share the same heading, the first is replaced with
+    *new_body* and all subsequent duplicates are silently removed.
+    """
     lines = content.split("\n")
     result = []
     in_target = False
@@ -197,11 +201,14 @@ def _find_and_replace_section(content: str, section_name: str, new_body: str) ->
         if line.startswith("## "):
             heading = line.lstrip("#").strip().lower()
             if heading == target:
-                result.append(line)  # Keep the heading
-                result.append(new_body.rstrip())
-                result.append("")
+                if not replaced:
+                    # First occurrence: keep heading + new body
+                    result.append(line)
+                    result.append(new_body.rstrip())
+                    result.append("")
+                    replaced = True
+                # Whether first or duplicate, skip old body
                 in_target = True
-                replaced = True
                 continue
             else:
                 in_target = False
@@ -219,32 +226,129 @@ def _find_and_replace_section(content: str, section_name: str, new_body: str) ->
     return "\n".join(result)
 
 
+def _section_already_contains(section_lines: list[str], new_content: str, threshold: float = 0.8) -> bool:
+    """Return True if >threshold of *new_content* lines already exist in *section_lines*."""
+    new_lines = [l.strip() for l in new_content.strip().splitlines() if l.strip()]
+    if not new_lines:
+        return True  # nothing to add
+
+    existing = {l.strip() for l in section_lines if l.strip()}
+    matches = sum(1 for l in new_lines if l in existing)
+    return (matches / len(new_lines)) >= threshold
+
+
 def _append_to_section(content: str, section_name: str, new_content: str) -> str:
-    """Append content to the end of a ## section in markdown."""
+    """Append content to the end of a ## section in markdown.
+
+    Skips the append if >80% of the new lines already exist in the target
+    section (prevents duplicate accumulation).
+    """
     lines = content.split("\n")
     result = []
     target = section_name.lstrip("#").strip().lower()
     in_target = False
     appended = False
+    section_body: list[str] = []  # collect body lines of the target section
 
-    for i, line in enumerate(lines):
+    for line in lines:
         if line.startswith("## "):
             heading = line.lstrip("#").strip().lower()
             if in_target and not appended:
                 # We were in the target section and hit the next section
-                result.append(new_content.rstrip())
-                result.append("")
+                if not _section_already_contains(section_body, new_content):
+                    result.append(new_content.rstrip())
+                    result.append("")
+                else:
+                    logger.debug("Skipping append to '%s': content already present", section_name)
                 appended = True
+                section_body = []
             in_target = (heading == target)
+
+        if in_target:
+            section_body.append(line)
 
         result.append(line)
 
     # If we were in the target section at end of file
     if in_target and not appended:
-        result.append(new_content.rstrip())
-        result.append("")
+        if not _section_already_contains(section_body, new_content):
+            result.append(new_content.rstrip())
+            result.append("")
+        else:
+            logger.debug("Skipping append to '%s': content already present", section_name)
 
     return "\n".join(result)
+
+
+def _dedup_sections(content: str) -> str:
+    """Remove duplicate ## sections from markdown content.
+
+    Keeps the first occurrence of each heading and drops subsequent duplicates.
+    """
+    lines = content.split("\n")
+    result: list[str] = []
+    seen_headings: set[str] = set()
+    skipping = False
+
+    for line in lines:
+        if line.startswith("## "):
+            heading = line.lstrip("#").strip().lower()
+            if heading in seen_headings:
+                # Duplicate heading — skip it and its body
+                skipping = True
+                continue
+            else:
+                seen_headings.add(heading)
+                skipping = False
+
+        if not skipping:
+            result.append(line)
+
+    return "\n".join(result)
+
+
+# Known vertical directory names for path normalization
+_VERTICAL_NAMES = frozenset([
+    "ai-tech",
+])
+
+# Prefixes to try when a file path doesn't resolve
+_PATH_PREFIXES = [
+    "verticals/",
+    "agents/",
+]
+
+
+def _normalize_path(file_path: str, project_root: Path) -> str:
+    """Try to fix LLM-generated paths that are missing directory prefixes.
+
+    If the literal path doesn't exist on disk, attempt common corrections:
+    1. If path starts with a known vertical name (e.g. 'ai-tech/'), prepend 'verticals/'.
+    2. Try each entry in _PATH_PREFIXES.
+    """
+    resolved = project_root / file_path
+    if resolved.exists():
+        return file_path
+
+    # Check if path starts with a known vertical name
+    first_segment = file_path.split("/")[0] if "/" in file_path else ""
+    if first_segment in _VERTICAL_NAMES:
+        candidate = f"verticals/{file_path}"
+        if (project_root / candidate).exists():
+            logger.info("Path normalized: %s -> %s", file_path, candidate)
+            return candidate
+
+    # Brute-force prefix search
+    for prefix in _PATH_PREFIXES:
+        if file_path.startswith(prefix):
+            continue  # already has this prefix
+        candidate = f"{prefix}{file_path}"
+        if (project_root / candidate).exists():
+            logger.info("Path normalized: %s -> %s", file_path, candidate)
+            return candidate
+
+    # Return original — caller will report file-not-found
+    return file_path
 
 
 def apply_analyzer_changes(
@@ -271,7 +375,9 @@ def apply_analyzer_changes(
 
     # Apply changes
     for change in changes.get("changes", []):
-        file_path = (project_root / change["file"]).resolve()
+        # Normalize path before resolving (fixes LLM-generated short paths)
+        normalized = _normalize_path(change["file"], project_root)
+        file_path = (project_root / normalized).resolve()
         if not file_path.is_relative_to(project_root.resolve()):
             result["errors"].append(f"Path traversal rejected: {change['file']}")
             continue
@@ -308,6 +414,9 @@ def apply_analyzer_changes(
             else:
                 result["errors"].append(f"Unknown action '{action}' for {change['file']}")
                 continue
+
+            # Final dedup pass — removes any duplicate sections
+            content = _dedup_sections(content)
 
             atomic_write(file_path, content)
 

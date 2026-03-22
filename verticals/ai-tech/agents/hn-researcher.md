@@ -58,7 +58,7 @@ Return findings as a structured list. For each finding:
 - **Summary**: 2-3 sentences with the KEY insight. Include specific numbers, names, dates.
 ```
 
-Return 6-10 findings ordered by importance.
+Return a MINIMUM of 15 findings. Target 18-20.
 
 ## Self-Improvement Notes (curated — full history in agent_notes DB)
 
@@ -72,10 +72,11 @@ Return 6-10 findings ordered by importance.
 - **HN front page via Firebase API** catches non-AI stories with AI relevance
 
 
-## Phase 2 Exploration Preferences
 ## Phase 2 Exploration
 
 **IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
+
+**Minimum 5 WebSearch calls in Phase 2.**
 
 ### Preferred tools
 - Primary: WebFetch for deep reads on top HN discussions

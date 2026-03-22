@@ -1,6 +1,6 @@
-"""Tests for social/approval.py — Slack primary, iMessage fallback approval system.
+"""Tests for social/approval.py — Slack-only approval system.
 
-All network calls (Slack API, iMessage) are mocked.
+All network calls (Slack API) are mocked.
 No real HTTP requests or subprocess calls are made.
 """
 
@@ -22,10 +22,7 @@ from social.approval import ApprovalGateway
 def gateway():
     """ApprovalGateway with a minimal config."""
     return ApprovalGateway({
-        "imessage": {
-            "phone": "+15551234567",
-            "gate_timeout_seconds": 5,  # short for tests
-        },
+        "gate_timeout_seconds": 5,  # short for tests
     })
 
 
@@ -499,37 +496,24 @@ class TestSlackApproval:
 
 
 # ════════════════════════════════════════════════════════════════════════
-# Request Topic Approval — Slack -> iMessage fallback
+# Request Topic Approval — Slack only
 # ════════════════════════════════════════════════════════════════════════
 
 
 class TestRequestTopicApproval:
     """Tests for ApprovalGateway.request_topic_approval()."""
 
-    @patch.object(ApprovalGateway, "_imessage_approval")
     @patch.object(ApprovalGateway, "_slack_approval", return_value="go")
-    def test_slack_success_skips_imessage(self, mock_slack, mock_imessage, gateway, sample_topics):
-        """When Slack returns a reply, iMessage is not called."""
+    def test_slack_success_returns_go(self, mock_slack, gateway, sample_topics):
+        """When Slack returns a reply, approval succeeds."""
         result = gateway.request_topic_approval(sample_topics)
 
         assert result["action"] == "go"
         mock_slack.assert_called_once()
-        mock_imessage.assert_not_called()
 
-    @patch.object(ApprovalGateway, "_imessage_approval", return_value="skip")
     @patch.object(ApprovalGateway, "_slack_approval", return_value=None)
-    def test_slack_none_falls_back_to_imessage(self, mock_slack, mock_imessage, gateway, sample_topics):
-        """When Slack returns None, iMessage fallback is used."""
-        result = gateway.request_topic_approval(sample_topics)
-
-        assert result["action"] == "skip"
-        mock_slack.assert_called_once()
-        mock_imessage.assert_called_once()
-
-    @patch.object(ApprovalGateway, "_imessage_approval", return_value=None)
-    @patch.object(ApprovalGateway, "_slack_approval", return_value=None)
-    def test_both_timeout_returns_skip(self, mock_slack, mock_imessage, gateway, sample_topics):
-        """When both Slack and iMessage time out, returns skip."""
+    def test_slack_timeout_returns_skip(self, mock_slack, gateway, sample_topics):
+        """When Slack times out, returns skip."""
         result = gateway.request_topic_approval(sample_topics)
 
         assert result["action"] == "skip"
@@ -556,31 +540,43 @@ class TestRequestTopicApproval:
 class TestRequestDraftApproval:
     """Tests for ApprovalGateway.request_draft_approval()."""
 
-    @patch.object(ApprovalGateway, "_imessage_approval")
     @patch.object(ApprovalGateway, "_slack_approval", return_value="all")
-    def test_slack_all_approves_all_platforms(self, mock_slack, mock_imessage, gateway, sample_drafts):
+    def test_slack_all_approves_all_platforms(self, mock_slack, gateway, sample_drafts):
         """'all' from Slack approves all platforms."""
         result = gateway.request_draft_approval(sample_drafts, {})
 
         assert result["action"] == "all"
         assert set(result["platforms"]) == {"bluesky", "linkedin"}
-        mock_imessage.assert_not_called()
+
+    @patch.object(ApprovalGateway, "_slack_approval", return_value=None)
+    def test_slack_timeout_returns_skip(self, mock_slack, gateway, sample_drafts):
+        """When Slack times out, returns skip."""
+        result = gateway.request_draft_approval(sample_drafts, {})
+
+        assert result["action"] == "skip"
+        assert result["platforms"] == []
 
 
 class TestRequestEngagementApproval:
     """Tests for ApprovalGateway.request_engagement_approval()."""
 
     def test_empty_candidates_returns_immediately(self, gateway):
-        """Empty candidates list returns without calling Slack/iMessage."""
+        """Empty candidates list returns without calling Slack."""
         result = gateway.request_engagement_approval([])
         assert result["approved_indices"] == []
         assert "No candidates" in result["reason"]
 
-    @patch.object(ApprovalGateway, "_imessage_approval")
     @patch.object(ApprovalGateway, "_slack_approval", return_value="1 3")
-    def test_selective_approval(self, mock_slack, mock_imessage, gateway, sample_candidates):
+    def test_selective_approval(self, mock_slack, gateway, sample_candidates):
         """Selective number reply approves only those candidates."""
         result = gateway.request_engagement_approval(sample_candidates)
 
         assert result["approved_indices"] == [0, 2]
-        mock_imessage.assert_not_called()
+
+    @patch.object(ApprovalGateway, "_slack_approval", return_value=None)
+    def test_slack_timeout_returns_empty(self, mock_slack, gateway, sample_candidates):
+        """When Slack times out, returns empty with timeout reason."""
+        result = gateway.request_engagement_approval(sample_candidates)
+
+        assert result["approved_indices"] == []
+        assert "Timed out" in result["reason"]

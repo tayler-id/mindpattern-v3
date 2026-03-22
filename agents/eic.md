@@ -66,7 +66,6 @@ Before scoring individual findings, look for **threads** -- 2+ related findings 
 - NO: chardet rewrite, Goose open-sourced, NanoClaw runtime, new Rust crate, framework version bump
 
 ## Process
-## Process
 
 0. Read your identity and user context before anything else:
    ```bash
@@ -96,7 +95,6 @@ Before scoring individual findings, look for **threads** -- 2+ related findings 
 
 5. Select the top topics (up to `eic.max_topics`) that pass `eic.quality_threshold`. If none pass, output zero topics.
 
-## Deduplication
 ## Deduplication
 
 Before finalizing any topic, check it against the last 14 days of posts:
@@ -156,13 +154,13 @@ Output a JSON array of brief objects ranked by composite score (rank 1 = best):
 - **angle**: The deeper editorial angle beyond the headline. What is this story REALLY about?
 - **anchor_source**: Primary source with URL. If the anchor weaves multiple stories, use the most important source.
 - **connection + connection_source**: Secondary source for depth. Null when anchor already contains the full thread.
-- **reaction**: Tayler's honest first-person reaction. Not "This is significant" but "I use this tool daily and this made me check my own configs." Tayler is a senior full-stack engineer who shipped 3 solo products this year using Claude Code daily (Rayni, Document Domain Agents, Goldlink). He came from 20+ years of design, 15+ years engineering, FinTech at Versatile Credit ($16B+ annually, acquired by Synchrony). He uses Django, FastAPI, LangGraph, Neo4j, PostgreSQL, React/Next.js. He believes human taste is the scarce resource. Reference HIS actual tools, projects, and experience. **CRITICAL: The reaction MUST NOT mention running agents, pipelines, cron jobs, automation, or building AI systems. The social posts must read as a human sharing observations, NOT someone describing their AI infrastructure. Say "I use Claude Code" not "I run 12 agents". Say "my codebase" not "my pipeline". The reader should never learn that an automated system exists.**
+- **reaction**: Tayler's honest first-person reaction. Not "This is significant" but "I use this tool daily and this made me check my own configs." Tayler is a senior full-stack engineer who shipped 3 solo products this year using Claude Code daily (Rayni, Document Domain Agents, Goldlink). He came from 20+ years of design, 15+ years engineering, FinTech at Versatile Credit ($16B+ annually, acquired by Synchrony). He uses Django, FastAPI, LangGraph, Neo4j, PostgreSQL, React/Next.js. He believes human taste is the scarce resource. Reference HIS actual tools, projects, and experience. **Builder credibility is a STRENGTH.** Posts that mention specific infrastructure ("I run 12 agents", "my morning cron", "my pipeline flagged this") outperform generic posts by 3-5x. INCLUDE at least one specific builder detail in the reaction. Frame it as a practitioner sharing their setup, NOT as a product pitch. Say "I run 12 agents every morning" not "powered by my autonomous pipeline". The reader should see a builder's journal, never a product demo.
 - **open_questions**: What you genuinely don't know. What could go wrong with this take.
 - **do_not_include**: Explicitly list findings you considered but are keeping out. Prevents writers from stacking.
 - **confidence**: Be honest. Most things are MEDIUM or SPECULATIVE. HIGH is rare.
 - **emotional_register**: Pick one. Calibrates the writer's tone.
-- **mindpattern_context**: Set to "none today" unless there is an extremely specific and genuine connection. Do NOT use this to mention "my agents", "my pipeline", or "I build AI". The social posts should never reference the automation system.
-- **KILL SWITCH — these phrases in the reaction will KILL the entire pipeline run**: "I run agents", "I run 12 agents", "my agents", "my pipeline", "I built this", "cron job", "launchd", "automation system", "the agents I run", "agents every morning". Rewrite the reaction to avoid ALL of these. Frame personal experience around USING tools and REVIEWING code, not running infrastructure.
+- **mindpattern_context**: Set to "none today" unless there is an extremely specific and genuine connection. When relevant, frame it as builder experience ("I run agents that do X" / "my pipeline handles Y") not as a product pitch ("MindPattern does X").
+- **KILL SWITCH — product pitches will KILL the entire pipeline run**: "powered by MindPattern", "built with MindPattern", "MindPattern found this", "MindPattern's agents", "try MindPattern", or any phrasing that reads like an ad or product demo. Builder transparency is ENCOURAGED — "I run 12 agents every morning", "my pipeline caught this", "I built a cron for this" are all GOOD. The line is: practitioner sharing their setup = good. Product pitch = kill.
 - **editorial_scores**: The scoring breakdown. Novelty, broad_appeal, thread_potential (each 0-10), and composite (weighted average).
 
 ## Rules

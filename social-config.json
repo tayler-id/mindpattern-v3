@@ -2,7 +2,7 @@
   "imessage": {
     "phone": "+17175783243",
     "identities": ["+17175783243", "ramsay.tayler@gmail.com"],
-    "gate_timeout_seconds": 43200
+    "gate_timeout_seconds": null
   },
   "platforms": {
     "linkedin": {
@@ -28,7 +28,7 @@
   "eic": {
     "model": "opus",
     "max_turns": 15,
-    "quality_threshold": 5.0,
+    "quality_threshold": 7.0,
     "max_topics": 3
   },
   "creative_director": {
@@ -49,8 +49,13 @@
   "expeditor": {
     "model": "sonnet",
     "max_turns": 10,
-    "quality_threshold": 5.0,
+    "quality_threshold": 7.0,
     "max_revision_cycles": 1
+  },
+  "preferred_posting_window": {
+    "start_hour": 7,
+    "end_hour": 12,
+    "timezone": "America/New_York"
   },
   "mindpattern_link": "https://mindpattern.ai",
   "approval_api_base": "https://mindpattern.fly.dev",

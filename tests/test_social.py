@@ -806,7 +806,7 @@ class TestSocialPipeline:
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
         }
         mock_db = MagicMock()
 
@@ -836,15 +836,25 @@ class TestSocialPipeline:
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
             "eic": {},
         }
         mock_db = MagicMock()
 
         with patch("social.pipeline.PolicyEngine") as MockPE, \
              patch("social.pipeline.ApprovalGateway"), \
-             patch("social.pipeline.select_topic", return_value=None):
-            MockPE.load_social.return_value = MagicMock()
+             patch("social.pipeline.select_topic", return_value=None), \
+             patch("social.pipeline.memory") as mock_memory:
+            mock_policy = MagicMock()
+            # Rate limit checks must return None (no error) to allow
+            # the pipeline to proceed past Step 0b to topic selection
+            mock_policy.validate_post_rate_limit.return_value = None
+            mock_policy.validate_rate_limits.return_value = {
+                "allowed": True, "reason": "", "current": 0, "limit": 1,
+            }
+            MockPE.load_social.return_value = mock_policy
+            # No pending posts to process in Step 0a
+            mock_memory.get_pending_posts.return_value = []
 
             from social.pipeline import SocialPipeline
 
@@ -852,36 +862,6 @@ class TestSocialPipeline:
             result = pipeline.run()
 
         assert result["kill_day"] is True
-
-
-# ────────────────────────────────────────────────────────────────────────
-# social/approval.py — _imessage_send
-# ────────────────────────────────────────────────────────────────────────
-
-
-class TestImessageSend:
-    """Tests for ApprovalGateway._imessage_send."""
-
-    def test_constructs_correct_osascript_command(self):
-        """_imessage_send builds the right osascript tell-block."""
-        from social.approval import ApprovalGateway
-
-        gateway = ApprovalGateway({"imessage": {"phone": "+15551234567"}})
-
-        with patch("social.approval.subprocess.run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr=""
-            )
-            gateway._imessage_send("+15551234567", "Test message")
-
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert call_args[0][0][0] == "osascript"
-        assert call_args[0][0][1] == "-e"
-        script = call_args[0][0][2]
-        assert "Messages" in script
-        assert "+15551234567" in script
-        assert "Test message" in script
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -909,7 +889,7 @@ class TestEngagementPipeline:
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
             "engagement": {"max_replies_per_day": 30},
         }
         mock_db = MagicMock()
@@ -942,7 +922,7 @@ class TestEngagementPipeline:
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
             "engagement": {"max_replies_per_day": 30},
         }
         mock_db = MagicMock()
