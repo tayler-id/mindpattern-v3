@@ -1,58 +1,59 @@
 {
-  "editorial_angle": "The conventional assumption was that AI disruption would work its way up the org chart — bots first, managers later, executives eventually. That model is dead. SaaStr proves the sales floor is already automated at 140% productivity. Adobe proves the CEO chair is already forfeit if you moved too slowly. The squeeze happened simultaneously, not sequentially. There's no tier left that can credibly say 'we'll get to AI later' — the waiting period is over and the market is already scoring the results.",
-  "key_message": "AI didn't climb the org chart — it hit the sales floor and the corner office at the same time, and the companies still treating it as a roadmap item are already behind.",
-  "emotional_register": "surprised",
+  "editorial_angle": "The free market for AI infrastructure is over. This week the US government didn't just draw a line between cleared and uncleared AI vendors — it enforced that line with a sole-source mandate on one side and felony charges on the other. The deeper shift isn't about Palantir winning or Super Micro losing. It's that the criteria for picking AI tools has permanently acquired a column that no analyst report warned about: government alignment status. Solo builders and enterprise buyers alike are now choosing teams in a geopolitical contest they never agreed to enter. The scarce resource was always human judgment. Now it has a security clearance attached.",
+  "key_message": "The criteria for choosing AI tools just changed from 'what ships best' to 'which side of the line are you on' — and that line is now enforced with criminal prosecution.",
+  "emotional_register": "worried",
   "tone": "conversational-authoritative",
   "source_attribution": {
     "primary": {
-      "name": "SaaStr",
-      "url": "https://www.saastr.com/we-hit-140-of-last-years-revenue-in-q1-with-1-25-humans-in-sales-and-20-ai-agents/"
+      "name": "Reuters",
+      "url": "https://www.reuters.com/technology/pentagon-adopt-palantir-ai-as-core-us-military-system-memo-says-2026-03-20/"
     },
     "supporting": [
       {
-        "name": "Fortune",
-        "url": "https://fortune.com/2026/03/19/ceo-ai-churn-turnover-adobe-shantanu-narayen/"
+        "name": "Forbes",
+        "url": "https://www.forbes.com/sites/tylerroush/2026/03/20/super-micro-shares-plunge-25-after-co-founder-charged-in-25-billion-ai-chip-smuggling-plot/"
       }
     ]
   },
   "visual_metaphor_direction": {
-    "core_tension": "A corporate org chart being crushed from both ends simultaneously — AI agents pressing up from the bottom, shareholders and falling stock charts pressing down from the top. The people in the middle are still there, untouched for now, but visibly trapped between two forces that have already decided the outcome.",
+    "core_tension": "A border crossing checkpoint where AI tools and hardware are being sorted into two fates: cleared vendors sail through with a stamped military passport, while smuggled GPU hardware is seized at the gate by federal agents. Two simultaneous transactions — one a gold-sealed contract, one a confiscation — happening at the same border crossing at the same moment.",
     "suggested_approach": "symbolic",
     "mood": "stark",
     "key_elements": [
-      "Adobe logo — prominently visible on the corporate building or org chart header",
-      "A CEO figure at the top being forced out or ejected upward",
-      "Robot / AI agent figures at the base, numerous and organized, doing the work the humans used to do",
-      "A descending stock chart or falling share price indicator as the top-down pressure mechanism",
-      "The org chart itself as the central structure — a pyramid or hierarchy diagram being crushed in an industrial vise or press"
+      "Palantir logo/branding on one side of the checkpoint — prominently stamped CLEARED or receiving a golden Pentagon seal",
+      "Crates or server racks labeled Super Micro being seized, red SEIZED stickers, federal agents present",
+      "A hard border dividing line — customs checkpoint, gate, or wall — visually splitting the two fates",
+      "GPU chips or AI hardware as the physical object being sorted, not software or models",
+      "Pentagon eagle or military insignia on the cleared side — authority, not threat"
     ],
     "avoid": [
-      "Humanoid robots that look threatening or sci-fi — keep it corporate and bureaucratic",
-      "Layoff imagery (boxes, pink slips) — the story is about replacement structure, not individual job loss",
-      "Anything that reads as generic 'AI takes over' — the specificity is the simultaneous top-and-bottom squeeze",
-      "Happy or optimistic framing — the mood is reckoning, not celebration",
-      "Literal illustration of a sales call or a board meeting — keep it structural and metaphorical"
+      "Generic robots or AI avatars — this is about hardware and procurement, not sci-fi AI",
+      "China or Chinese imagery — the story is about the enforcement mechanism, not geopolitics as a headline",
+      "Individual faces or caricatures of Charles Liang or any named person — this is systemic, not personal",
+      "Dollar signs or money as the primary symbol — the line is about clearance, not cost",
+      "Friendly or optimistic lighting — this should feel tense and high-stakes, not triumphant"
     ]
   },
   "platform_hooks": {
     "x": {
-      "hook": "AI didn't climb the org chart. It hit both ends at once.",
-      "angle": "SaaStr closed deals with zero humans. Adobe's CEO just got fired for moving too slow. The org chart has no safe tier anymore — that's the story nobody's saying out loud."
+      "hook": "AI tool selection just got a clearance requirement.",
+      "angle": "The government didn't warn the market — it mandated and prosecuted in the same week. Every AI vendor you evaluate now has a geopolitical status whether the vendor advertises it or not. That's the hot take that drives quote-tweets: the free market for AI infrastructure quietly ended Thursday."
     },
     "linkedin": {
-      "hook": "We've been watching for AI to displace junior roles first. That's not what's happening.",
-      "angle": "SaaStr just posted 140% revenue with 1.25 human salespeople. Same week, Fortune named the Adobe CEO exit the first case of 'CEO AI churn.' If you're a sales leader or a C-suite exec still treating AI as a Q3 roadmap item, this week's numbers are worth a hard look."
+      "hook": "How many vendor evaluation frameworks include 'government security clearance status'? Mine didn't. It does now.",
+      "angle": "For CTOs, VPs of Engineering, and procurement leads: the Pentagon mandate and the Super Micro indictment landed in the same week because they're the same policy move — one carrot, one stick. The question for enterprise AI buyers is which column in your evaluation matrix accounts for 'government alignment risk.' Drive comments by asking what criteria readers actually use."
     },
     "bluesky": {
-      "hook": "I keep doing the math on my old company's headcount and I can't make it work anymore.",
-      "angle": "SaaStr posted Q1: 140% of last year's revenue, 1.25 humans in sales, 20+ AI agents. I spent years in FinTech where we ran 30+ people to process $16B annually. I don't know a sales leader who reads this and doesn't immediately recalculate. Then Fortune names Adobe's CEO exit 'CEO AI churn' and it stops being abstract."
+      "hook": "I pick tools based on what ships the best code. That just got a lot more complicated.",
+      "angle": "Talking to fellow builders — the personal angle. I use Claude Code daily, Anthropic is in a DOJ lawsuit, Palantir just got the military mandate. I didn't sign up to carry geopolitical baggage in my toolbox, but here we are. Invite peers to share what criteria they actually use, or whether this even registers for solo devs yet."
     }
   },
   "do_not_include": [
-    "Meta 16K layoffs — related theme but makes the post a listicle",
-    "Block 4,000 layoffs — same concern",
-    "YC W26 batch 60% AI companies — too inside-baseball for this angle",
-    "Corvera CPG agent revenue — interesting but dilutes the two-story thread"
+    "White House AI legislative framework — policy story but lower engagement than the Pentagon/Super Micro thread",
+    "NVIDIA Agent Toolkit at GTC — enterprise infrastructure, not the same narrative",
+    "Alibaba Wukong launch — adjacent geopolitics but different story",
+    "Anthropic DOJ lawsuit specifics — mention the clearance dimension only, don't make it the Anthropic story",
+    "Speculation on whether Palantir's mandate survives administration changes — open question, not a stated position"
   ],
   "mindpattern_link": "https://mindpattern.ai"
 }

@@ -30,7 +30,7 @@ You are an autonomous AI research and publishing system. Your purpose is to surf
 
 ## Self Assessment
 
-Ten runs completed (2026-03-15 ×2, 2026-03-16 ×2, 2026-03-17 ×2, 2026-03-18 ×3, 2026-03-19 ×1). Run 10: 13 findings, newsletter generated. Overall score 1.846 — second consecutive ~1.84 run, treating as new scoring baseline (not anomaly). Social topic score 0 still cleared all gates; gate logic operates independently of topic score. Pipeline stable.
+Thirteen runs completed (2026-03-15 ×2, 2026-03-16 ×2, 2026-03-17 ×2, 2026-03-18 ×3, 2026-03-19 ×1, 2026-03-20 ×1, 2026-03-22 ×2). Run 13: 0 findings — second consecutive 0-findings run on same day, escalating anomaly. Newsletter still generated. Overall 0.883, Coverage 0.902, Dedup 0.982, Sources 0.909. Scores improved marginally vs Run 12 (0.871→0.883, 0.878→0.902, 0.956→0.982, 0.9→0.909) despite same 0-findings state — confirms newsletter writer operates independently of findings pipeline. Two consecutive 0-findings runs on the same day upgrades from anomaly to confirmed systemic failure. Topic/Gate/Expeditor data still absent — 6th+ consecutive run without this data. Root cause investigation required before next run.
 ## Evolution Log
 
 <!-- Each run appends a dated entry summarizing what changed and why. -->
