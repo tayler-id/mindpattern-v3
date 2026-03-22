@@ -174,26 +174,26 @@ class TestUpdateSection:
 
     def test_max_length_enforcement(self, vault_dir):
         """update_section raises ValueError if content exceeds MAX_SECTION_LENGTH."""
-        from memory.vault import atomic_write, update_section
+        from memory.vault import MAX_SECTION_LENGTH, atomic_write, update_section
 
         target = vault_dir / "long.md"
         atomic_write(target, "# Doc\n\n## Section\n\nBody.\n")
 
-        with pytest.raises(ValueError, match="500"):
-            update_section(target, "Section", "x" * 501)
+        with pytest.raises(ValueError, match=str(MAX_SECTION_LENGTH)):
+            update_section(target, "Section", "x" * (MAX_SECTION_LENGTH + 1))
 
     def test_exactly_max_length_is_ok(self, vault_dir):
         """update_section accepts content that is exactly MAX_SECTION_LENGTH."""
-        from memory.vault import atomic_write, update_section
+        from memory.vault import MAX_SECTION_LENGTH, atomic_write, update_section
 
         target = vault_dir / "exact.md"
         atomic_write(target, "# Doc\n\n## Section\n\nBody.\n")
 
         # Should not raise
-        update_section(target, "Section", "x" * 500)
+        update_section(target, "Section", "x" * MAX_SECTION_LENGTH)
 
         text = target.read_text(encoding="utf-8")
-        assert "x" * 500 in text
+        assert "x" * MAX_SECTION_LENGTH in text
 
     def test_creates_file_if_missing(self, vault_dir):
         """update_section creates the file if it doesn't exist."""

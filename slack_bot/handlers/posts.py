@@ -89,7 +89,7 @@ class PostsHandler(BaseHandler):
         self.reply(draft_msg, thread_ts=ts)
 
         # Step 8: Wait for approval
-        reply_text = self.wait_for_reply(ts, timeout=43200)
+        reply_text = self.wait_for_reply(ts)
         if not reply_text:
             self.reply("No response — cancelling.", thread_ts=ts)
             return

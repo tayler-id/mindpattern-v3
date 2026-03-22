@@ -1,6 +1,5 @@
 #!/bin/bash
-# Wrapper for launchd — /bin/bash has Full Disk Access, python3 may not.
-# This ensures Messages.db is readable for iMessage approval gates.
+# Wrapper for launchd — runs the pipeline with concurrency guard.
 #
 # Idempotent: checks if today's run already completed before starting.
 # Safe to trigger on schedule AND on wake — won't double-run.
@@ -54,23 +53,6 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
             exit 0
         fi
     fi
-fi
-
-# Check FDA for python3
-if ! /opt/homebrew/bin/python3 -c "
-import sqlite3, os
-db_path = os.path.expanduser('~/Library/Messages/chat.db')
-try:
-    conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
-    conn.execute('SELECT 1 FROM message LIMIT 1')
-    conn.close()
-except Exception as e:
-    print(f'FDA_CHECK_FAILED: {e}')
-    exit(1)
-" 2>/dev/null; then
-    log "ERROR: Python3 cannot read Messages.db — Full Disk Access not granted"
-    log "FIX: System Settings → Privacy & Security → Full Disk Access → add /opt/homebrew/opt/python@3.14/bin/python3.14"
-    # Continue anyway — pipeline will work except iMessage gates
 fi
 
 log "START: Beginning pipeline for $TODAY"

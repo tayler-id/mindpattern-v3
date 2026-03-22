@@ -12,8 +12,9 @@ import logging
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import memory
 from orchestrator.agents import run_claude_prompt
@@ -84,7 +85,7 @@ class SocialPipeline:
             6. validate() — Deterministic policy checks (Python)
             7. humanize() — Remove AI patterns (Sonnet)
             8. expedite() — Final quality gate (Sonnet, FAIL on error)
-            9. approve() — Dashboard + iMessage approval
+            9. approve() — Slack approval
             10. post() — Platform API calls with jitter
             11. log_feedback() — Store editorial corrections
 
@@ -110,6 +111,8 @@ class SocialPipeline:
             "gate2_outcome": "unknown",
             "gate2_edits": [],
             "expeditor_verdict": "unknown",
+            "pending_deferred": [],
+            "pending_posted": [],
         }
         target_platforms = self._enabled_platforms(platforms)
 
@@ -117,8 +120,40 @@ class SocialPipeline:
             result["errors"].append("No enabled platforms found")
             return result
 
+        # ── Step 0a: Post any pending (deferred) posts first ──────────
+        logger.info("Step 0a: Checking for pending deferred posts")
+        pending_posted = self._post_pending(target_platforms)
+        if pending_posted:
+            result["pending_posted"] = pending_posted
+            result["platforms_posted"].extend(
+                [p["platform"] for p in pending_posted if not p.get("error")]
+            )
+            result["posts"].extend(pending_posted)
+
+        # ── Step 0b: Early rate limit check ───────────────────────────
+        # Check rate limits BEFORE burning LLM calls on topic/brief/writing.
+        # Remove platforms that have already hit their daily post limit.
+        rate_limited = []
+        for platform in list(target_platforms):
+            rate_error = self.policy.validate_post_rate_limit(platform, self.db)
+            if rate_error:
+                logger.info(
+                    f"Early rate limit: skipping {platform} — {rate_error}"
+                )
+                rate_limited.append(platform)
+                target_platforms.remove(platform)
+                result["skipped_platforms"].append(platform)
+
+        if not target_platforms:
+            logger.info(
+                "All platforms rate-limited for today — nothing to do. "
+                f"Rate-limited: {rate_limited}"
+            )
+            return result
+
         # ── Step 1: Topic selection (Opus, max 3 retries) ─────────────
         logger.info("Step 1: Topic selection (EIC)")
+        step1_start = time.monotonic()
         topic = None
         for attempt in range(3):
             try:
@@ -141,7 +176,7 @@ class SocialPipeline:
 
         result["topic"] = topic
         anchor = topic.get("anchor", topic.get("topic", "unknown"))
-        logger.info(f"Topic selected: {anchor}")
+        logger.info(f"Step 1 complete: topic='{anchor}', duration={time.monotonic() - step1_start:.1f}s")
 
         # ── Step 1b: Gate 1 — Topic approval ──────────────────────────
         logger.info("Step 1b: Gate 1 — requesting topic approval")
@@ -183,12 +218,14 @@ class SocialPipeline:
 
         # ── Step 2: Creative brief (Sonnet) ───────────────────────────
         logger.info("Step 2: Creative brief")
+        step2_start = time.monotonic()
         try:
             brief = create_brief(
                 db=self.db,
                 topic=topic,
                 date_str=self.date_str,
             )
+            logger.info(f"Step 2 complete: duration={time.monotonic() - step2_start:.1f}s")
         except Exception as e:
             logger.error(f"Creative brief failed: {e}")
             result["errors"].append(f"Brief creation: {e}")
@@ -214,6 +251,7 @@ class SocialPipeline:
 
         # ── Step 4: Write drafts (Sonnet, parallel per platform) ──────
         logger.info("Step 4: Writing drafts")
+        step4_start = time.monotonic()
         try:
             drafts = write_drafts(
                 db=self.db,
@@ -221,6 +259,7 @@ class SocialPipeline:
                 config=self.config.get("writers", {}),
                 platforms=target_platforms,
             )
+            logger.info(f"Step 4 complete: {len(drafts) if drafts else 0} drafts, duration={time.monotonic() - step4_start:.1f}s")
         except Exception as e:
             logger.error(f"Draft writing failed: {e}")
             result["errors"].append(f"Writing: {e}")
@@ -233,6 +272,7 @@ class SocialPipeline:
 
         # ── Step 5: Critic review (Sonnet, parallel per platform) ─────
         logger.info("Step 5: Critic review")
+        step5_start = time.monotonic()
         max_critic_rounds = self.config.get("writers", {}).get("critic_max_rounds", 3)
 
         for round_num in range(1, max_critic_rounds + 1):
@@ -284,8 +324,11 @@ class SocialPipeline:
                     f"Max critic rounds reached, proceeding with current drafts"
                 )
 
+        logger.info(f"Step 5 complete: duration={time.monotonic() - step5_start:.1f}s")
+
         # ── Step 6: Deterministic policy validation + retry ────────────
         logger.info("Step 6: Policy validation")
+        step6_start = time.monotonic()
         max_policy_retries = 2
         for policy_attempt in range(max_policy_retries + 1):
             failed_platforms = {}
@@ -334,8 +377,11 @@ class SocialPipeline:
             result["errors"].append("All drafts failed policy validation")
             return result
 
+        logger.info(f"Step 6 complete: duration={time.monotonic() - step6_start:.1f}s")
+
         # ── Step 7: Humanize (Sonnet) ─────────────────────────────────
         logger.info("Step 7: Humanize")
+        step7_start = time.monotonic()
         for platform in list(drafts.keys()):
             try:
                 content = drafts[platform]
@@ -352,8 +398,11 @@ class SocialPipeline:
             except Exception as e:
                 logger.warning(f"Humanize failed for {platform} (non-fatal): {e}")
 
+        logger.info(f"Step 7 complete: duration={time.monotonic() - step7_start:.1f}s")
+
         # ── Step 8: Expedite — final quality gate (Sonnet) ────────────
         logger.info("Step 8: Expedite (final quality gate)")
+        step8_start = time.monotonic()
         try:
             exp_result = expedite(drafts, brief, images)
             result["expeditor_verdict"] = exp_result.get("verdict", "unknown")
@@ -366,6 +415,8 @@ class SocialPipeline:
             logger.error(f"Expeditor crashed: {e}")
             result["errors"].append(f"Expeditor crash: {e}")
             return result
+
+        logger.info(f"Step 8 complete: verdict={exp_result.get('verdict', '?')}, duration={time.monotonic() - step8_start:.1f}s")
 
         # Re-validate after humanize/expedite changes
         for platform in list(drafts.keys()):
@@ -385,10 +436,12 @@ class SocialPipeline:
             logger.error("All drafts failed post-expedite validation")
             return result
 
-        # ── Step 9: Approval (dashboard + iMessage fallback) ──────────
+        # ── Step 9: Approval (Slack) ──────────────────────────────────
         logger.info("Step 9: Approval")
+        step9_start = time.monotonic()
         try:
             approval_response = self.approval.request_draft_approval(drafts, images)
+            logger.info(f"Step 9 complete: action={approval_response.get('action', '?')}, duration={time.monotonic() - step9_start:.1f}s")
         except Exception as e:
             logger.error(f"Approval gateway failed: {e}")
             result["errors"].append(f"Approval: {e}")
@@ -421,11 +474,26 @@ class SocialPipeline:
             logger.info("No platforms approved after filtering")
             return result
 
-        # ── Step 10: Post with jitter ─────────────────────────────────
-        logger.info(f"Step 10: Posting to {list(drafts.keys())}")
-        posted = self._post_with_jitter(drafts, images)
-        result["posts"] = posted
-        result["platforms_posted"] = [p["platform"] for p in posted if not p.get("error")]
+        # ── Step 10: Post with jitter (or defer to posting window) ────
+        step10_start = time.monotonic()
+        if self._in_posting_window():
+            logger.info(f"Step 10: Posting to {list(drafts.keys())}")
+            posted = self._post_with_jitter(drafts, images)
+            result["posts"].extend(posted)
+            result["platforms_posted"].extend(
+                [p["platform"] for p in posted if not p.get("error")]
+            )
+        else:
+            # Outside posting window — defer approved drafts
+            logger.info(
+                "Step 10: Outside posting window — deferring approved drafts"
+            )
+            deferred = self._defer_posts(drafts, images)
+            result["pending_deferred"] = deferred
+            logger.info(
+                f"Deferred {len(deferred)} posts to next morning window"
+            )
+        logger.info(f"Step 10 complete: duration={time.monotonic() - step10_start:.1f}s")
 
         # ── Step 11: Log feedback and editorial corrections ───────────
         logger.info("Step 11: Logging feedback")
@@ -440,11 +508,204 @@ class SocialPipeline:
 
         return result
 
+    def _get_posting_window(self) -> tuple[int, int, ZoneInfo]:
+        """Get the preferred posting window from config.
+
+        Returns:
+            (start_hour, end_hour, timezone) tuple.
+        """
+        window = self.config.get("preferred_posting_window", {})
+        start = window.get("start_hour", 7)
+        end = window.get("end_hour", 12)
+        tz_name = window.get("timezone", "America/New_York")
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            logger.warning(
+                f"Invalid timezone '{tz_name}' in posting window config, "
+                f"falling back to America/New_York"
+            )
+            tz = ZoneInfo("America/New_York")
+        return start, end, tz
+
+    def _in_posting_window(self) -> bool:
+        """Check if the current time is within the preferred posting window.
+
+        If no preferred_posting_window is configured, always returns True
+        (backwards-compatible: post anytime).
+        """
+        if "preferred_posting_window" not in self.config:
+            return True
+
+        start_hour, end_hour, tz = self._get_posting_window()
+        now = datetime.now(tz)
+        return start_hour <= now.hour < end_hour
+
+    def _next_posting_window_start(self) -> str:
+        """Calculate the next posting window start time as an ISO string.
+
+        If we're before today's window, returns today at start_hour.
+        If we're past today's window, returns tomorrow at start_hour.
+        """
+        start_hour, end_hour, tz = self._get_posting_window()
+        now = datetime.now(tz)
+
+        if now.hour < start_hour:
+            # Before today's window — post later today
+            next_start = now.replace(
+                hour=start_hour, minute=0, second=0, microsecond=0
+            )
+        else:
+            # Past today's window — post tomorrow morning
+            next_start = (now + timedelta(days=1)).replace(
+                hour=start_hour, minute=0, second=0, microsecond=0
+            )
+
+        return next_start.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _defer_posts(self, drafts: dict, images: dict) -> list[dict]:
+        """Store approved drafts as pending posts for the next posting window.
+
+        Args:
+            drafts: {platform: content_str} dict of approved drafts.
+            images: {platform: image_path_or_url} dict.
+
+        Returns:
+            List of {platform, pending_id, post_after} dicts.
+        """
+        post_after = self._next_posting_window_start()
+        deferred = []
+
+        for platform, content in drafts.items():
+            if isinstance(content, dict):
+                content = content.get("content", content.get("text", str(content)))
+
+            image = images.get(platform)
+            image_str = str(image) if image else None
+
+            try:
+                pending_id = memory.store_pending_post(
+                    self.db,
+                    platform=platform,
+                    content=content,
+                    post_after=post_after,
+                    image_path=image_str,
+                )
+                deferred.append({
+                    "platform": platform,
+                    "pending_id": pending_id,
+                    "post_after": post_after,
+                })
+                logger.info(
+                    f"Draft approved, deferring {platform} post to "
+                    f"morning window ({post_after})"
+                )
+            except Exception as e:
+                logger.error(f"Failed to defer {platform} post: {e}")
+
+        return deferred
+
+    def _post_pending(self, target_platforms: list[str]) -> list[dict]:
+        """Check for and post any pending (deferred) posts that are ready.
+
+        Called at the start of each pipeline run. Posts pending drafts that
+        have passed their post_after time and are within the posting window.
+
+        Args:
+            target_platforms: List of platform names to check.
+
+        Returns:
+            List of {platform, url, id, error} dicts for posted items.
+        """
+        if not self._in_posting_window():
+            return []
+
+        results = []
+
+        for platform in target_platforms:
+            pending = memory.get_pending_posts(self.db, platform=platform)
+
+            for post in pending:
+                # Re-check rate limit before each pending post
+                rate_error = self.policy.validate_post_rate_limit(
+                    platform, self.db
+                )
+                if rate_error:
+                    logger.info(
+                        f"Rate limit reached for {platform}, "
+                        f"skipping remaining pending posts"
+                    )
+                    break
+
+                client = self._platform_clients.get(platform)
+                if not client:
+                    continue
+
+                content = post["content"]
+                image = post.get("image_path")
+                if image:
+                    image = Path(image)
+                    if not image.exists():
+                        image = None
+
+                try:
+                    post_result = client.post(content, image_path=image)
+
+                    # Record the post in both tables
+                    memory.store_post(
+                        self.db,
+                        date=self.date_str,
+                        platform=platform,
+                        content=content,
+                        posted=True,
+                    )
+                    memory.store_engagement(
+                        self.db,
+                        user_id=self.user_id,
+                        platform=platform,
+                        engagement_type="post",
+                        status="posted",
+                    )
+
+                    # Mark the pending post as done
+                    memory.mark_pending_posted(self.db, post["id"])
+
+                    results.append({
+                        "platform": platform,
+                        "url": post_result.get("url"),
+                        "id": post_result.get("id"),
+                        "error": None,
+                        "source": "pending",
+                    })
+                    logger.info(
+                        f"Posted pending {platform} draft "
+                        f"(pending_id={post['id']}): "
+                        f"{post_result.get('url', 'no url')}"
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"Failed to post pending {platform} draft "
+                        f"(pending_id={post['id']}): {e}"
+                    )
+                    results.append({
+                        "platform": platform,
+                        "url": None,
+                        "id": None,
+                        "error": str(e),
+                        "source": "pending",
+                    })
+
+        return results
+
     def _post_with_jitter(self, drafts: dict, images: dict) -> list[dict]:
         """Post to all platforms with random delay between posts.
 
         Jitter range from config (60-300 seconds default).
-        Enforces rate limits via PolicyEngine BEFORE each API call.
+        Enforces rate limits via BOTH PolicyEngine.validate_rate_limits
+        (engagements table) AND validate_post_rate_limit (social_posts table)
+        BEFORE each API call. Both checks now use count_posts_today() which
+        queries both tables and takes the higher count.
 
         Args:
             drafts: {platform: content_str} dict.
@@ -470,7 +731,8 @@ class SocialPipeline:
 
             image = images.get(platform)
 
-            # Rate limit check BEFORE posting
+            # Rate limit check BEFORE posting — uses both social_posts
+            # and engagements tables via count_posts_today()
             rate_check = self.policy.validate_rate_limits(
                 self.db, platform, "post"
             )
@@ -481,6 +743,18 @@ class SocialPipeline:
                     "url": None,
                     "id": None,
                     "error": rate_check["reason"],
+                })
+                continue
+
+            # Double-check with validate_post_rate_limit (belt and suspenders)
+            rate_error = self.policy.validate_post_rate_limit(platform, self.db)
+            if rate_error:
+                logger.warning(f"Post rate limit hit for {platform}: {rate_error}")
+                results.append({
+                    "platform": platform,
+                    "url": None,
+                    "id": None,
+                    "error": rate_error,
                 })
                 continue
 
@@ -504,7 +778,8 @@ class SocialPipeline:
                     "error": None,
                 })
 
-                # Store in memory
+                # Store in memory — IMMEDIATELY after posting so subsequent
+                # rate limit checks within this same run will see it
                 memory.store_post(
                     self.db,
                     date=self.date_str,

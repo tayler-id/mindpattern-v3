@@ -41,14 +41,22 @@ AI agents, developer tools, agentic coding, vibe coding. Uses Claude Code every 
 
 <!-- Populated automatically by the EVOLVE phase after each run. -->
 
-## Kill Switches
+## Builder Transparency & Kill Switches
 
-NEVER mention in any public-facing content:
-- "I run agents"
-- "my agents"
-- "my pipeline"
-- "cron job"
-- "automation"
-- "I build AI" (in the context of this pipeline)
+Builder transparency is a STRENGTH. Mentioning specific infrastructure as a practitioner ("I run 12 agents every morning", "my pipeline caught this", "I built a cron job for this") is the top-performing content pattern. The audience connects with a builder sharing their actual setup.
 
-Posts must read as human voice. The pipeline is invisible.
+ALLOWED — sharing what you do as a builder:
+- "I run agents" / "I run 12 agents every morning on a cron job"
+- "my pipeline" / "my agents" — when describing your personal workflow
+- "I built this" — when sharing a project or tool you made
+- "cron job", "automation" — when describing your daily practice
+- Any first-person infrastructure detail that sounds like a builder's journal entry
+
+STILL BANNED — product marketing and pitches:
+- "powered by MindPattern" / "built with MindPattern"
+- "built with my autonomous pipeline" — anything that frames the system as a product
+- "MindPattern's agents" / "MindPattern found this" — the brand as grammatical subject doing work
+- Any phrasing that reads like an ad, demo, or sales pitch for an automation tool
+- "Try MindPattern" / "check out what MindPattern can do"
+
+The rule: mention infrastructure naturally as a practitioner, never as a pitch. "I run 12 agents every morning" is a builder sharing their setup. "Powered by my AI pipeline" is a product demo. The first builds credibility; the second loses it.

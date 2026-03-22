@@ -302,7 +302,7 @@ class TestRouter:
 
     def test_get_max_turns_known(self):
         assert get_max_turns("trend_scan") == 5
-        assert get_max_turns("research_agent") == 25
+        assert get_max_turns("research_agent") == 35
 
     def test_get_max_turns_unknown_defaults_to_10(self):
         assert get_max_turns("unknown_task") == 10
@@ -936,11 +936,25 @@ class TestPolicyRateLimits:
     @pytest.fixture()
     def db(self):
         conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        # Use the real schema columns: engagement_type (not action_type)
         conn.execute("""
             CREATE TABLE engagements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
                 platform TEXT,
-                action_type TEXT,
+                engagement_type TEXT,
+                created_at TEXT
+            )
+        """)
+        # count_posts_today also checks social_posts
+        conn.execute("""
+            CREATE TABLE social_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT,
+                platform TEXT,
+                content TEXT,
+                posted INTEGER DEFAULT 0,
                 created_at TEXT
             )
         """)
@@ -956,7 +970,7 @@ class TestPolicyRateLimits:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         for _ in range(3):
             db.execute(
-                "INSERT INTO engagements (platform, action_type, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO engagements (platform, engagement_type, created_at) VALUES (?, ?, ?)",
                 ("bluesky", "post", f"{today}T10:00:00"),
             )
         db.commit()
@@ -964,6 +978,20 @@ class TestPolicyRateLimits:
         assert result["allowed"] is False
         assert result["current"] == 3
         assert result["limit"] == 3
+
+    def test_blocked_via_social_posts_table(self, engine, db):
+        """Rate limit is enforced even if only social_posts has records."""
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        for _ in range(3):
+            db.execute(
+                "INSERT INTO social_posts (date, platform, content, posted) VALUES (?, ?, ?, ?)",
+                (today, "bluesky", "test post", 1),
+            )
+        db.commit()
+        result = engine.validate_rate_limits(db, "bluesky", "post")
+        assert result["allowed"] is False
+        assert result["current"] >= 3
 
     def test_unknown_platform_blocked(self, engine, db):
         result = engine.validate_rate_limits(db, "tiktok", "post")

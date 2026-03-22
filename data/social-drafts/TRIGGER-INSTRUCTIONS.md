@@ -68,14 +68,14 @@ for platform, draft in drafts.items():
 
 ### Option B: Use Gate 1 Custom Topic Flow
 
-The pipeline already supports injecting custom topics via Gate 1 (iMessage approval). When the normal pipeline runs:
+The pipeline already supports injecting custom topics via Gate 1 (Slack approval). When the normal pipeline runs:
 
 1. EIC selects a topic
-2. Gate 1 sends it to you via iMessage
+2. Gate 1 sends it to you via Slack (#mindpattern-approvals)
 3. Instead of replying "GO", you reply with a custom topic text
 4. The pipeline sets `topic["anchor"]` to your custom text (line 160 of `social/pipeline.py`)
 
-To use this: let the normal pipeline run (`python3 run.py --user ramsay`), wait for the Gate 1 iMessage, then reply with the GitAgent angle as free text.
+To use this: let the normal pipeline run (`python3 run.py --user ramsay`), wait for the Gate 1 Slack message, then reply with the GitAgent angle as free text.
 
 Limitation: This only replaces the anchor text. It doesn't carry the full brief structure (reaction, sources, scores, etc.). The creative director would have to work from just the anchor.
 

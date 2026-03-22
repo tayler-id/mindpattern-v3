@@ -42,7 +42,7 @@ MODEL_ROUTING: dict[str, str] = {
 # Max turns per task type
 MAX_TURNS: dict[str, int] = {
     "trend_scan": 5,
-    "research_agent": 25,
+    "research_agent": 35,
     "synthesis_pass1": 10,
     "synthesis_pass2": 30,
     "learnings_update": 5,

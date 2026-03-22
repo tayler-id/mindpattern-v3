@@ -184,3 +184,233 @@ def test_apply_analyzer_changes_rejects_missing_trace(tmp_path):
     result = apply_analyzer_changes(changes, project_root=tmp_path, traced_files=set())
     assert result["applied"] == 0
     assert result["skipped"] == 1
+
+
+# ── Bug fix tests: section duplication ───────────────────────────
+
+from orchestrator.analyzer import (
+    _find_and_replace_section,
+    _append_to_section,
+    _dedup_sections,
+    _normalize_path,
+    _section_already_contains,
+)
+
+
+def test_find_and_replace_removes_duplicate_sections():
+    """When a file has multiple sections with the same heading,
+    replace should keep only the first (with new body) and drop the rest."""
+    content = (
+        "# Title\n\n"
+        "## Focus\nOld focus 1\n\n"
+        "## Notes\nSome notes\n\n"
+        "## Focus\nOld focus 2\n\n"
+        "## Focus\nOld focus 3\n"
+    )
+    result = _find_and_replace_section(content, "Focus", "New focus content")
+    assert result.count("## Focus") == 1
+    assert "New focus content" in result
+    assert "Old focus 1" not in result
+    assert "Old focus 2" not in result
+    assert "Old focus 3" not in result
+    assert "Some notes" in result  # Other sections preserved
+
+
+def test_find_and_replace_single_section_still_works():
+    """Normal case: single section gets replaced."""
+    content = "# Title\n\n## Focus\nOld\n\n## Notes\nKeep\n"
+    result = _find_and_replace_section(content, "Focus", "New")
+    assert result.count("## Focus") == 1
+    assert "New" in result
+    assert "Old" not in result
+    assert "Keep" in result
+
+
+def test_find_and_replace_creates_section_if_missing():
+    """If the section doesn't exist, it should be appended."""
+    content = "# Title\n\n## Notes\nSome notes\n"
+    result = _find_and_replace_section(content, "Focus", "Brand new")
+    assert "## Focus" in result
+    assert "Brand new" in result
+    assert "Some notes" in result
+
+
+def test_append_skips_duplicate_content():
+    """If >80% of lines to append already exist, skip the append."""
+    content = "# Title\n\n## Notes\n- Line A\n- Line B\n- Line C\n- Line D\n- Line E\n"
+    # Try appending content that's 100% already there
+    new_content = "- Line A\n- Line B\n- Line C\n- Line D\n- Line E"
+    result = _append_to_section(content, "Notes", new_content)
+    # Count occurrences of "Line A" — should still be 1, not 2
+    assert result.count("- Line A") == 1
+
+
+def test_append_allows_genuinely_new_content():
+    """If the content is mostly new, the append should proceed."""
+    content = "# Title\n\n## Notes\n- Existing line\n"
+    new_content = "- Brand new line 1\n- Brand new line 2\n- Brand new line 3"
+    result = _append_to_section(content, "Notes", new_content)
+    assert "Brand new line 1" in result
+    assert "Brand new line 2" in result
+    assert "Brand new line 3" in result
+
+
+def test_append_skips_when_most_lines_match():
+    """80% threshold: 4 of 5 lines match -> skip."""
+    content = "# Title\n\n## Notes\n- A\n- B\n- C\n- D\n"
+    # 4 of 5 lines already exist = 80% -> should skip
+    new_content = "- A\n- B\n- C\n- D\n- E"
+    result = _append_to_section(content, "Notes", new_content)
+    # "- E" should NOT appear because 80% threshold was met
+    assert result.count("- E") == 0
+
+
+def test_append_allows_when_below_threshold():
+    """Below 80% threshold: should append."""
+    content = "# Title\n\n## Notes\n- A\n- B\n"
+    # 2 of 5 lines match = 40% -> should append
+    new_content = "- A\n- B\n- X\n- Y\n- Z"
+    result = _append_to_section(content, "Notes", new_content)
+    assert "- X" in result
+    assert "- Y" in result
+    assert "- Z" in result
+
+
+def test_section_already_contains_helper():
+    """Direct test of the fuzzy match helper."""
+    section = ["## Notes", "- A", "- B", "- C", "- D", ""]
+
+    # 100% match
+    assert _section_already_contains(section, "- A\n- B\n- C\n- D") is True
+    # 75% match (below 80% threshold)
+    assert _section_already_contains(section, "- A\n- B\n- C\n- NEW") is False
+    # 0% match
+    assert _section_already_contains(section, "- X\n- Y\n- Z") is False
+    # Empty new content -> considered already present
+    assert _section_already_contains(section, "") is True
+    assert _section_already_contains(section, "   \n  \n") is True
+
+
+def test_dedup_sections_removes_duplicates():
+    """_dedup_sections should keep first occurrence, drop subsequent."""
+    content = (
+        "# Title\n\n"
+        "## Focus\nFirst focus\n\n"
+        "## Notes\nSome notes\n\n"
+        "## Focus\nDuplicate focus\n\n"
+        "## Focus\nTriple focus\n"
+    )
+    result = _dedup_sections(content)
+    assert result.count("## Focus") == 1
+    assert "First focus" in result
+    assert "Duplicate focus" not in result
+    assert "Triple focus" not in result
+    assert "Some notes" in result
+
+
+def test_dedup_sections_preserves_unique():
+    """No duplicates -> no changes."""
+    content = "# Title\n\n## A\nBody A\n\n## B\nBody B\n\n## C\nBody C\n"
+    result = _dedup_sections(content)
+    assert result == content
+
+
+def test_dedup_sections_case_insensitive():
+    """Headings should be matched case-insensitively."""
+    content = "# Title\n\n## Focus\nFirst\n\n## focus\nDup\n\n## FOCUS\nTrip\n"
+    result = _dedup_sections(content)
+    assert result.count("First") == 1
+    assert "Dup" not in result
+    assert "Trip" not in result
+
+
+# ── Bug fix tests: path resolution ───────────────────────────────
+
+def test_normalize_path_existing_file(tmp_path):
+    """If the path already exists, return it unchanged."""
+    (tmp_path / "agents").mkdir()
+    (tmp_path / "agents" / "eic.md").write_text("# EIC")
+    result = _normalize_path("agents/eic.md", tmp_path)
+    assert result == "agents/eic.md"
+
+
+def test_normalize_path_prepends_verticals(tmp_path):
+    """ai-tech/agents/x.md should resolve to verticals/ai-tech/agents/x.md."""
+    (tmp_path / "verticals" / "ai-tech" / "agents").mkdir(parents=True)
+    (tmp_path / "verticals" / "ai-tech" / "agents" / "rss-researcher.md").write_text("# RSS")
+
+    result = _normalize_path("ai-tech/agents/rss-researcher.md", tmp_path)
+    assert result == "verticals/ai-tech/agents/rss-researcher.md"
+
+
+def test_normalize_path_prefix_brute_force(tmp_path):
+    """If no vertical match, try other prefixes."""
+    (tmp_path / "agents").mkdir()
+    (tmp_path / "agents" / "eic.md").write_text("# EIC")
+
+    # LLM might produce just "eic.md" without agents/ prefix
+    result = _normalize_path("eic.md", tmp_path)
+    assert result == "agents/eic.md"
+
+
+def test_normalize_path_returns_original_if_not_found(tmp_path):
+    """If nothing resolves, return the original path."""
+    result = _normalize_path("nonexistent/file.md", tmp_path)
+    assert result == "nonexistent/file.md"
+
+
+def test_apply_changes_with_path_normalization(tmp_path):
+    """End-to-end: apply_analyzer_changes should normalize paths."""
+    (tmp_path / "verticals" / "ai-tech" / "agents").mkdir(parents=True)
+    skill = tmp_path / "verticals" / "ai-tech" / "agents" / "hn-researcher.md"
+    skill.write_text("# HN Researcher\n\n## Focus\nOld focus\n")
+
+    changes = {
+        "changes": [{
+            "file": "ai-tech/agents/hn-researcher.md",  # Missing verticals/ prefix
+            "reason": "test path normalization",
+            "diff": {"section": "Focus", "action": "replace", "content": "New focus"},
+        }],
+        "reversions": [],
+        "no_changes": [],
+    }
+
+    result = apply_analyzer_changes(changes, project_root=tmp_path)
+    assert result["applied"] == 1
+    assert result["errors"] == []
+    updated = skill.read_text()
+    assert "New focus" in updated
+    assert "Old focus" not in updated
+
+
+def test_apply_changes_dedup_runs_after_modification(tmp_path):
+    """After replace/append, final dedup should clean up any stray duplicates."""
+    skill = tmp_path / "agent.md"
+    # File already has duplicate sections from prior buggy runs
+    skill.write_text(
+        "# Agent\n\n"
+        "## Focus\nFocus v1\n\n"
+        "## Notes\nNotes\n\n"
+        "## Focus\nFocus v2 (dup)\n\n"
+        "## Focus\nFocus v3 (dup)\n"
+    )
+
+    changes = {
+        "changes": [{
+            "file": str(skill),
+            "reason": "test dedup",
+            "diff": {"section": "Focus", "action": "replace", "content": "Clean focus"},
+        }],
+        "reversions": [],
+        "no_changes": [],
+    }
+
+    result = apply_analyzer_changes(changes, project_root=tmp_path)
+    assert result["applied"] == 1
+    updated = skill.read_text()
+    # _find_and_replace_section removes dups, then _dedup_sections double-checks
+    assert updated.count("## Focus") == 1
+    assert "Clean focus" in updated
+    assert "Focus v1" not in updated
+    assert "Focus v2" not in updated
+    assert "Focus v3" not in updated

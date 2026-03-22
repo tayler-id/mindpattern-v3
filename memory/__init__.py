@@ -63,6 +63,10 @@ from .social import (
     store_engagement,
     check_engagement,
     list_engagements,
+    store_pending_post,
+    get_pending_posts,
+    mark_pending_posted,
+    count_posts_today,
 )
 
 # Agent evolution
@@ -167,6 +171,8 @@ __all__ = [
     "store_post", "recent_posts", "check_duplicate", "get_exemplars",
     "store_social_feedback", "get_feedback_patterns",
     "store_engagement", "check_engagement", "list_engagements",
+    "store_pending_post", "get_pending_posts", "mark_pending_posted",
+    "count_posts_today",
     # Evolution
     "get_candidates", "check_agent_performance", "compute_overlap",
     "log_evolution", "spawn_agent", "retire_agent", "merge_agents",

@@ -67,7 +67,11 @@ def _make_memory_db() -> sqlite3.Connection:
         );
         CREATE TABLE IF NOT EXISTS engagements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            platform TEXT, action_type TEXT, created_at TEXT
+            user_id TEXT, platform TEXT, engagement_type TEXT,
+            target_post_url TEXT, target_author TEXT,
+            target_author_id TEXT, target_content TEXT,
+            our_reply TEXT, status TEXT DEFAULT 'drafted',
+            finding_id INTEGER, created_at TEXT, posted_at TEXT
         );
         CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -552,7 +556,7 @@ class TestPhaseResearch:
     @patch("orchestrator.runner.memory.log_agent_run")
     @patch("orchestrator.runner.memory.store_finding")
     @patch("orchestrator.runner.memory.search_findings", return_value=[
-        {"similarity": 0.95, "title": "Existing finding"}
+        {"similarity": 0.97, "title": "Existing finding"}
     ])
     @patch("orchestrator.runner.memory.get_signal_context", return_value="")
     @patch("orchestrator.runner.memory.get_context", return_value="")
@@ -654,7 +658,9 @@ class TestPhaseSynthesis:
 
         mock_claude.side_effect = [
             ("Selected stories", 0),  # pass1 OK
-            ("", 1),                  # pass2 fails
+            ("", 1),                  # pass2 attempt 1 fails
+            ("", 1),                  # pass2 attempt 2 fails
+            ("", 1),                  # pass2 attempt 3 fails
         ]
 
         with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):

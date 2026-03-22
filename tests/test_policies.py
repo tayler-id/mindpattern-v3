@@ -49,17 +49,27 @@ def valid_finding():
 
 @pytest.fixture
 def in_memory_db():
-    """In-memory SQLite database with an engagements table."""
+    """In-memory SQLite database with engagements and social_posts tables."""
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute("""
         CREATE TABLE engagements (
             id INTEGER PRIMARY KEY,
             platform TEXT,
-            action_type TEXT,
+            engagement_type TEXT,
             created_at TEXT,
             user_id TEXT,
             status TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE social_posts (
+            id INTEGER PRIMARY KEY,
+            date TEXT,
+            platform TEXT,
+            content TEXT,
+            posted INTEGER DEFAULT 0,
+            created_at TEXT
         )
     """)
     conn.commit()
@@ -267,7 +277,7 @@ class TestRateLimits:
         # Bluesky allows max_posts_per_day=3 per social.json
         for _ in range(3):
             in_memory_db.execute(
-                "INSERT INTO engagements (platform, action_type, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO engagements (platform, engagement_type, created_at) VALUES (?, ?, ?)",
                 ("bluesky", "post", f"{today}T12:00:00"),
             )
         in_memory_db.commit()
@@ -280,21 +290,13 @@ class TestRateLimits:
 
 
 class TestPostRateLimit:
-    """PolicyEngine.validate_post_rate_limit checks social_posts history."""
+    """PolicyEngine.validate_post_rate_limit checks both social_posts and engagements."""
 
     def test_rejects_4th_post_when_bluesky_limit_is_3(self, social_engine):
-        """Mock memory DB returns 3 posted today; 4th post must be rejected."""
+        """count_posts_today returns 3; 4th post must be rejected."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # Simulate 3 already-posted entries for today on Bluesky
-        mock_posts = [
-            {"id": i, "date": today, "platform": "bluesky", "content": f"post {i}",
-             "anchor_text": f"anchor {i}", "gate2_action": "approved", "posted": 1}
-            for i in range(1, 4)
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
+        with patch("policies.engine.count_posts_today", return_value=3):
             error = social_engine.validate_post_rate_limit("bluesky", db)
 
         assert error is not None
@@ -304,14 +306,8 @@ class TestPostRateLimit:
     def test_allows_post_when_under_limit(self, social_engine):
         """When only 1 post exists today, a new post should be allowed."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        mock_posts = [
-            {"id": 1, "date": today, "platform": "bluesky", "content": "post 1",
-             "anchor_text": "anchor 1", "gate2_action": "approved", "posted": 1}
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
+        with patch("policies.engine.count_posts_today", return_value=1):
             error = social_engine.validate_post_rate_limit("bluesky", db)
 
         assert error is None
@@ -319,14 +315,8 @@ class TestPostRateLimit:
     def test_linkedin_rejects_2nd_post(self, social_engine):
         """LinkedIn has max_posts_per_day=1; a 2nd post must be rejected."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        mock_posts = [
-            {"id": 1, "date": today, "platform": "linkedin", "content": "post 1",
-             "anchor_text": "anchor", "gate2_action": "approved", "posted": 1}
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
+        with patch("policies.engine.count_posts_today", return_value=1):
             error = social_engine.validate_post_rate_limit("linkedin", db)
 
         assert error is not None
@@ -335,28 +325,21 @@ class TestPostRateLimit:
     def test_unknown_platform_returns_error(self, social_engine):
         """Unknown platform returns an error string."""
         db = MagicMock()
-        with patch("policies.engine.recent_posts", return_value=[]):
+        with patch("policies.engine.count_posts_today", return_value=0):
             error = social_engine.validate_post_rate_limit("tiktok", db)
         assert error is not None
         assert "tiktok" in error.lower()
 
-    def test_only_counts_posted_entries(self, social_engine):
-        """Only posts with posted=1 should count against the limit."""
+    def test_count_posts_today_is_used(self, social_engine):
+        """validate_post_rate_limit uses count_posts_today which checks both tables."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # 3 posts returned but only 2 have posted=1
-        mock_posts = [
-            {"id": 1, "date": today, "platform": "bluesky", "content": "p1",
-             "anchor_text": "a1", "gate2_action": "approved", "posted": 1},
-            {"id": 2, "date": today, "platform": "bluesky", "content": "p2",
-             "anchor_text": "a2", "gate2_action": "approved", "posted": 1},
-            {"id": 3, "date": today, "platform": "bluesky", "content": "p3",
-             "anchor_text": "a3", "gate2_action": "skip", "posted": 0},
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
+        # 2 posted < 3 bluesky limit, so should be allowed
+        with patch("policies.engine.count_posts_today", return_value=2):
             error = social_engine.validate_post_rate_limit("bluesky", db)
-
-        # 2 posted < 3 limit, so should be allowed
         assert error is None
+
+        # 3 posted = 3 bluesky limit, should be blocked
+        with patch("policies.engine.count_posts_today", return_value=3):
+            error = social_engine.validate_post_rate_limit("bluesky", db)
+        assert error is not None

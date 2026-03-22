@@ -16,13 +16,13 @@
     ],
     "banned_patterns": [
         "\u2014",
-        "(?i)i run \\d* ?agents",
-        "(?i)my agents",
-        "(?i)my pipeline",
-        "(?i)cron job",
-        "(?i)agents every morning",
-        "(?i)i build ai",
-        "(?i)i built this"
+        "(?i)powered by mindpattern",
+        "(?i)built with mindpattern",
+        "(?i)mindpattern found",
+        "(?i)mindpattern's agents",
+        "(?i)try mindpattern",
+        "(?i)built with my autonomous pipeline",
+        "(?i)check out what mindpattern"
     ],
     "rate_limits": {
         "bluesky": {"max_posts_per_day": 3, "max_follows_per_day": 100},
