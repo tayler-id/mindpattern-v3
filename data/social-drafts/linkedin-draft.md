@@ -1,21 +1,21 @@
 PLATFORM: linkedin
 TYPE: single
 ---
-We've been watching for AI to displace junior roles first. That's not what's happening.
+How many vendor evaluation frameworks include "government security clearance status"? Mine didn't. It does now.
 
-I came from FinTech before I went independent. Versatile Credit ran $16B+ annually with a sales team of thirty people. SaaStr just posted Q1: 140% of last year's revenue, 1.25 human salespeople, 20+ AI agents. One $70K sponsorship closed entirely by an agent. A $100K deal on New Year's Eve with zero human involvement.
+The Pentagon designated Palantir as the core AI platform for all US military operations this week. Sole-source mandate. Then the DOJ charged Super Micro's co-founder in a $2.5B conspiracy to smuggle AI chips. Same week. Stock down 25%.
 
-I kept doing the math on what that would look like at my old company. Couldn't make it add up the same way.
+That's not two separate news items. That's one policy move with a carrot and a stick.
 
-Same week, Fortune coined "CEO AI churn" to describe Shantanu Narayen stepping down after 18 years at Adobe. Shares down 23% YTD. The market's explicit read: too slow on the AI transition. Feature releases weren't structural transformation.
+I use Claude Code daily to ship production software. Anthropic is in an active DOJ lawsuit over their safety policies, which means the tool I rely on every day has a clearance status, whether I thought about that column before or not. I didn't. I picked it because it ships the best code.
 
-Sales floor automated. Corner office held accountable for not automating fast enough. Same week.
+The evaluation matrix for AI tooling used to be capability, cost, and integration complexity. That's still the matrix on every analyst deck I've seen. But the Pentagon mandate and the Super Micro indictment landed in the same week because they're the same signal: who gets AI infrastructure is now a matter of law, not market dynamics. Criminal prosecution, not just sanctions.
 
-We expected this to be bottom-up. Junior roles first, management eventually, executives years from now. That's not what the calendar says.
+For CTOs and procurement leads making vendor decisions right now, there's a question your current framework probably doesn't have a column for: where does this vendor sit on the cleared/uncleared line, and does that exposure matter to your business?
 
-I don't know if SaaStr's numbers scale to enterprise deals with six-month procurement cycles. Probably a different equation. But I can't name a single sales leader who reads those numbers and doesn't immediately recalculate headcount.
+I don't have a clean answer. Still figuring out what it means for my own tool choices.
 
 https://mindpattern.ai
 
-How many incumbent SaaS CEOs are reading the Fortune piece right now and quietly updating their timelines?
+What criteria are you actually using when you evaluate AI vendors right now, and is government alignment risk anywhere in that list?
 ---
