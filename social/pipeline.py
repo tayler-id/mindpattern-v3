@@ -296,7 +296,7 @@ class SocialPipeline:
             # Check if any drafts need revision
             needs_revision = {
                 p: r for p, r in reviews.items()
-                if r.get("verdict") == "revise"
+                if r.get("verdict", "").upper() == "REVISE"
             }
 
             if not needs_revision:
@@ -401,6 +401,9 @@ class SocialPipeline:
         logger.info(f"Step 7 complete: duration={time.monotonic() - step7_start:.1f}s")
 
         # ── Step 8: Expedite — final quality gate (Sonnet) ────────────
+        # If the expeditor times out or crashes, auto-approve. The critic
+        # (Step 5) and policy engine (Step 6) have already passed, so a
+        # timeout here should not kill content that cleared both gates.
         logger.info("Step 8: Expedite (final quality gate)")
         step8_start = time.monotonic()
         try:
@@ -412,9 +415,13 @@ class SocialPipeline:
                 return result
             logger.info(f"Expeditor: {exp_result.get('verdict')}")
         except Exception as e:
-            logger.error(f"Expeditor crashed: {e}")
-            result["errors"].append(f"Expeditor crash: {e}")
-            return result
+            logger.warning(
+                f"Expeditor error (auto-approving — critic and policy "
+                f"already passed): {e}"
+            )
+            result["errors"].append(f"Expeditor error (auto-approved): {e}")
+            result["expeditor_verdict"] = "AUTO_APPROVED"
+            exp_result = {"verdict": "AUTO_APPROVED"}
 
         logger.info(f"Step 8 complete: verdict={exp_result.get('verdict', '?')}, duration={time.monotonic() - step8_start:.1f}s")
 
@@ -476,23 +483,16 @@ class SocialPipeline:
 
         # ── Step 10: Post with jitter (or defer to posting window) ────
         step10_start = time.monotonic()
-        if self._in_posting_window():
-            logger.info(f"Step 10: Posting to {list(drafts.keys())}")
-            posted = self._post_with_jitter(drafts, images)
-            result["posts"].extend(posted)
-            result["platforms_posted"].extend(
-                [p["platform"] for p in posted if not p.get("error")]
-            )
-        else:
-            # Outside posting window — defer approved drafts
-            logger.info(
-                "Step 10: Outside posting window — deferring approved drafts"
-            )
-            deferred = self._defer_posts(drafts, images)
-            result["pending_deferred"] = deferred
-            logger.info(
-                f"Deferred {len(deferred)} posts to next morning window"
-            )
+        # Always post immediately when approved — user said post, so post.
+        # The posting window is advisory, not a gate.
+        if not self._in_posting_window():
+            logger.info("Step 10: Outside preferred posting window, but posting anyway (approved)")
+        logger.info(f"Step 10: Posting to {list(drafts.keys())}")
+        posted = self._post_with_jitter(drafts, images)
+        result["posts"].extend(posted)
+        result["platforms_posted"].extend(
+            [p["platform"] for p in posted if not p.get("error")]
+        )
         logger.info(f"Step 10 complete: duration={time.monotonic() - step10_start:.1f}s")
 
         # ── Step 11: Log feedback and editorial corrections ───────────

@@ -79,12 +79,3 @@ Return a MINIMUM of 15 findings. Target 18-20.
 
 
 ## Phase 2 Exploration
-
-**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 2-5 additional findings not in the preflight data, then include them in your JSON.
-
-**Minimum 5 WebSearch calls in Phase 2.**
-
-### Preferred tools
-- Primary: WebSearch for new open-source AI tool launches
-- Secondary: WebFetch for README analysis of trending repos
-- Skip: Twitter, YouTube

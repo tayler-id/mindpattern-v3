@@ -38,7 +38,7 @@ class TestPhaseEnum:
 
     EXPECTED_PHASES = [
         "init", "trend_scan", "research", "synthesis", "deliver",
-        "learn", "social", "engagement", "evolve", "mirror",
+        "learn", "social", "engagement", "evolve", "identity", "mirror",
         "sync", "completed", "failed",
     ]
 
@@ -69,7 +69,7 @@ class TestPhaseOrder:
         expected = [
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            Phase.EVOLVE, Phase.ANALYZE, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
+            Phase.EVOLVE, Phase.IDENTITY, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
         ]
         assert PHASE_ORDER == expected
 
@@ -286,7 +286,7 @@ class TestRouter:
         assert get_model("trend_scan") == "haiku"
 
     def test_get_model_research_agent(self):
-        assert get_model("research_agent") == "sonnet"
+        assert get_model("research_agent") == "opus"
 
     def test_get_model_synthesis(self):
         assert get_model("synthesis_pass1") == "claude-opus-4-6[1m]"

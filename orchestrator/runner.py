@@ -46,6 +46,7 @@ class ResearchPipeline:
         self.newsletter_text: str = ""
         self.newsletter_eval: dict = {}
         self.social_result: dict = {}
+        self.evolve_result: dict = {}
 
         # Traces DB for observability
         self.traces_conn = get_traces_db()
@@ -205,7 +206,7 @@ class ResearchPipeline:
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
             Phase.EVOLVE: self._phase_evolve,
-            Phase.ANALYZE: self._phase_analyze,
+            Phase.IDENTITY: self._phase_identity,
             Phase.MIRROR: self._phase_mirror,
             Phase.SYNC: self._phase_sync,
         }.get(phase)
@@ -369,11 +370,11 @@ class ResearchPipeline:
                     if not title or not summary:
                         continue
 
-                    # Dedup: check if a near-identical finding exists in the last 7 days
+                    # Dedup: check if a near-identical finding exists in the last 10 days
                     existing = memory.search_findings(
-                        self.db, f"{title}. {summary}", limit=1, days=7,
+                        self.db, f"{title}. {summary}", limit=1, days=10,
                     )
-                    if existing and existing[0].get("similarity", 0) > 0.95:
+                    if existing and existing[0].get("similarity", 0) > 0.90:
                         logger.debug(
                             f"Skipping duplicate: '{title[:50]}' "
                             f"(sim={existing[0]['similarity']:.2f} with '{existing[0]['title'][:50]}')"
@@ -581,8 +582,22 @@ class ResearchPipeline:
                 f"- [{fl['category']}] {fl['lesson']}" for fl in failures
             )
 
+        # Load identity files for editorial voice
+        identity_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
+        soul_text = ""
+        voice_text = ""
+        if identity_dir.exists():
+            soul_file = identity_dir / "soul.md"
+            if soul_file.exists():
+                soul_text = f"## Editorial Identity\n{soul_file.read_text()}\n\n"
+            voice_file = identity_dir / "voice.md"
+            if voice_file.exists():
+                voice_text = f"## Voice Guide\n{voice_file.read_text()}\n\n"
+
         pass2_prompt = (
             f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
+            f"{soul_text}"
+            f"{voice_text}"
             f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
             f"## Story Selection\n{pass1_output or 'Use your judgment to select the Top 5.'}\n\n"
             f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
@@ -894,63 +909,6 @@ class ResearchPipeline:
         return result
 
     def _phase_evolve(self) -> dict:
-        """Phase: Evolve identity files based on today's results."""
-        from memory.identity_evolve import build_evolve_prompt, apply_evolution_diff, parse_llm_output
-
-        vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
-
-        # Build enriched pipeline results for the evolve prompt
-        social = {}
-        if self.social_result:
-            topic = self.social_result.get("topic") or {}
-            social = {
-                "topic": topic.get("anchor", topic.get("topic", "")),
-                "topic_score": topic.get("composite_score", 0),
-                "gate1_outcome": self.social_result.get("gate1_outcome", "unknown"),
-                "gate1_guidance": self.social_result.get("gate1_guidance", ""),
-                "gate2_outcome": self.social_result.get("gate2_outcome", "unknown"),
-                "gate2_edits": self.social_result.get("gate2_edits", []),
-                "expeditor_verdict": self.social_result.get("expeditor_verdict", "unknown"),
-                "platforms_posted": self.social_result.get("platforms_posted", []),
-            }
-
-        pipeline_results = {
-            "date": self.date_str,
-            "findings_count": (
-                sum(len(r.findings) for r in self.agent_results)
-                if self.agent_results
-                else self.db.execute(
-                    "SELECT COUNT(*) FROM findings WHERE run_date = ?",
-                    (self.date_str,),
-                ).fetchone()[0]
-            ),
-            "newsletter_generated": bool(self.newsletter_text),
-            "newsletter_eval": self.newsletter_eval,
-            "social": social,
-        }
-
-        prompt = build_evolve_prompt(vault_dir, pipeline_results)
-        output, exit_code = agent_dispatch.run_claude_prompt(prompt, task_type="evolve")
-
-        if exit_code != 0 or not output:
-            logger.warning("EVOLVE: LLM call failed, skipping identity evolution")
-            return {"evolved": False, "reason": "LLM call failed"}
-
-        diff = parse_llm_output(output)
-        if diff is None:
-            logger.warning("EVOLVE: Could not parse LLM output as JSON")
-            return {"evolved": False, "reason": "JSON parse failed"}
-
-        result = apply_evolution_diff(vault_dir, diff)
-
-        if result.get("changes_made"):
-            logger.info(f"EVOLVE: {result['changes_made']}")
-        if result.get("errors"):
-            logger.warning(f"EVOLVE errors: {result['errors']}")
-
-        return {"evolved": True, **result}
-
-    def _phase_analyze(self) -> dict:
         """Phase: Analyze agent traces and improve skill files."""
         from orchestrator.analyzer import (
             build_analyzer_prompt,
@@ -996,17 +954,17 @@ class ResearchPipeline:
         )
 
         output, exit_code = agent_dispatch.run_claude_prompt(
-            prompt, task_type="analyzer",
+            prompt, task_type="evolve",
         )
 
         if exit_code != 0 or not output:
-            logger.warning("ANALYZE: LLM call failed")
-            return {"analyzed": False, "reason": "LLM call failed"}
+            logger.warning("EVOLVE: LLM call failed")
+            return {"evolved": False, "reason": "LLM call failed"}
 
         changes = parse_analyzer_output(output)
         if changes is None:
-            logger.warning("ANALYZE: Could not parse output as JSON")
-            return {"analyzed": False, "reason": "JSON parse failed"}
+            logger.warning("EVOLVE: Could not parse output as JSON")
+            return {"evolved": False, "reason": "JSON parse failed"}
 
         result = apply_analyzer_changes(
             changes,
@@ -1015,7 +973,7 @@ class ResearchPipeline:
             prompt_tracker=self.prompt_tracker,
         )
 
-        # Record quality snapshots for ANALYZE-phase changes so regressions
+        # Record quality snapshots for EVOLVE-phase changes so regressions
         # can be detected on subsequent runs.  The LEARN phase already
         # computed quality, so we pull the latest overall_score from
         # run_quality and stamp every file the analyzer just touched.
@@ -1038,9 +996,6 @@ class ResearchPipeline:
                     changed_paths.append(r["file"])
                 for path in changed_paths:
                     try:
-                        # apply_analyzer_changes already called record_version
-                        # with quality_snapshot=None.  UPDATE the most-recent
-                        # row for this file so the snapshot is populated.
                         self.prompt_tracker.conn.execute(
                             """UPDATE prompt_tracker
                                SET quality_snapshot = ?
@@ -1056,18 +1011,90 @@ class ResearchPipeline:
                         self.prompt_tracker.conn.commit()
                     except Exception as e:
                         logger.warning(
-                            f"ANALYZE: Failed to record quality snapshot for {path}: {e}"
+                            f"EVOLVE: Failed to record quality snapshot for {path}: {e}"
                         )
 
+        result_dict = {
+            "applied": result.get("applied", 0),
+            "reverted": result.get("reverted", 0),
+            "skipped": result.get("skipped", 0),
+        }
+
         logger.info(
-            f"ANALYZE: {result['applied']} changes, {result['reverted']} reversions, "
-            f"{result['skipped']} skipped"
+            f"EVOLVE: {result_dict['applied']} changes, {result_dict['reverted']} reversions, "
+            f"{result_dict['skipped']} skipped"
         )
 
         log_event(self.traces_conn, self.traces_run_id,
-                  "analyze_complete", json.dumps(result))
+                  "evolve_complete", json.dumps(result))
 
-        return {"analyzed": True, **result}
+        self.evolve_result = result_dict
+
+        return {"evolved": True, **result}
+
+    def _phase_identity(self) -> dict:
+        """Phase: Evolve identity files based on today's results."""
+        from memory.identity_evolve import build_evolve_prompt, apply_evolution_diff, parse_llm_output
+
+        vault_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern"
+
+        # Build enriched pipeline results for the identity prompt
+        social = {}
+        if self.social_result:
+            topic = self.social_result.get("topic") or {}
+            social = {
+                "topic": topic.get("anchor", topic.get("topic", "")),
+                "topic_score": topic.get("composite_score", 0),
+                "gate1_outcome": self.social_result.get("gate1_outcome", "unknown"),
+                "gate1_guidance": self.social_result.get("gate1_guidance", ""),
+                "gate2_outcome": self.social_result.get("gate2_outcome", "unknown"),
+                "gate2_edits": self.social_result.get("gate2_edits", []),
+                "expeditor_verdict": self.social_result.get("expeditor_verdict", "unknown"),
+                "platforms_posted": self.social_result.get("platforms_posted", []),
+            }
+
+        pipeline_results = {
+            "date": self.date_str,
+            "findings_count": (
+                sum(len(r.findings) for r in self.agent_results)
+                if self.agent_results
+                else self.db.execute(
+                    "SELECT COUNT(*) FROM findings WHERE run_date = ?",
+                    (self.date_str,),
+                ).fetchone()[0]
+            ),
+            "newsletter_generated": bool(self.newsletter_text),
+            "newsletter_eval": self.newsletter_eval,
+            "social": social,
+        }
+
+        # Enrich with skill evolution data from the EVOLVE phase
+        pipeline_results["skill_evolution"] = {
+            "agents_patched": self.evolve_result.get("applied", 0),
+            "agents_reverted": self.evolve_result.get("reverted", 0),
+            "patterns_observed": self.evolve_result.get("skipped", 0),
+        }
+
+        prompt = build_evolve_prompt(vault_dir, pipeline_results)
+        output, exit_code = agent_dispatch.run_claude_prompt(prompt, task_type="identity")
+
+        if exit_code != 0 or not output:
+            logger.warning("IDENTITY: LLM call failed, skipping identity evolution")
+            return {"evolved": False, "reason": "LLM call failed"}
+
+        diff = parse_llm_output(output)
+        if diff is None:
+            logger.warning("IDENTITY: Could not parse LLM output as JSON")
+            return {"evolved": False, "reason": "JSON parse failed"}
+
+        result = apply_evolution_diff(vault_dir, diff)
+
+        if result.get("changes_made"):
+            logger.info(f"IDENTITY: {result['changes_made']}")
+        if result.get("errors"):
+            logger.warning(f"IDENTITY errors: {result['errors']}")
+
+        return {"evolved": True, **result}
 
     def _collect_all_skill_files(self) -> list[Path]:
         """Collect all .md skill files used as agent prompts."""

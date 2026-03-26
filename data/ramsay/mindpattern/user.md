@@ -39,8 +39,13 @@ AI agents, developer tools, agentic coding, vibe coding. Uses Claude Code every 
 
 ## Observed Patterns
 
-<!-- Populated automatically by the EVOLVE phase after each run. -->
+AI labor displacement and engineering hiring signal stories consistently approved and elevated. User actively curates compound topics via Gate 1 'custom' injections — adds counter-narrative or confirming data points to build richer thesis (Run 15: FRED job growth counter-narrative; Run 16: Snowflake 70-person tech writing elimination added to Salesforce/Karpathy compound). Runs 17 and 18: straight approves — custom injection is selective, not automatic. Triggers for compound-narrative assembly; clean single-thesis topics with strong named-actor triangulation pass without augmentation. Gate 1 custom behavior is deliberate editorial curation for compound stories; straight approval for topics where thesis already triangulates on its own.
 
+Three-actor convergence pattern confirmed as a distinct clean-approve structure: when multiple independent named actors publish the same signal in the same 24-hour window, the topic passes without custom injection (Run 18: Senator Warner + Meta + Anthropic all publishing on AI labor in the same day). This differs from compound narrative building where user injects the second signal.
+
+Government/geopolitics AI power plays are approved topics — China Manus AI travel ban + Trump PCAST council (Run 17), Senator Warner tax proposal + Meta layoffs + Anthropic economic impact (Run 18) — both approved without modification. Topics with strong builder-relevant specificity — exact unemployment predictions, specific dollar figures, named legislators and companies — resonate most and appear to drive newsletter Sources and Coverage scores.
+
+Distribution pipeline has three observed Expeditor failure modes: (1) FAIL + no posts (Run 16), (2) PASS + no posts (Run 17), (3) FAIL + apparent posts (Run 18). Gate 2 'unknown' is now a repeating state (Runs 16 and 18) — systemic concern, not noise. Newsletter quality peaked at 0.971 (Run 18) after Run 17 regression — full recovery. Labor/policy topics with named-actor specificity appear to drive stronger newsletter sourcing.
 ## Builder Transparency & Kill Switches
 
 Builder transparency is a STRENGTH. Mentioning specific infrastructure as a practitioner ("I run 12 agents every morning", "my pipeline caught this", "I built a cron job for this") is the top-performing content pattern. The audience connects with a builder sharing their actual setup.

@@ -13,14 +13,72 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _format_agent_history(agent_history: dict | None) -> str:
+    """Format agent history dict into a prompt section."""
+    if not agent_history:
+        return ""
+
+    lines = ["## Agent Performance History (Last 7 Days)\n"]
+    for name, hist in sorted(agent_history.items()):
+        lines.append(f"### {name}")
+        lines.append(f"- Runs: {hist.get('runs', 0)}")
+        lines.append(f"- Avg findings/run: {hist.get('avg_findings', 0)}")
+        lines.append(f"- Avg duration: {hist.get('avg_duration_ms', 0):.0f}ms")
+        trend = hist.get("quality_trend", [])
+        if trend:
+            lines.append(f"- Quality trend (recent): {' -> '.join(f'{s:.2f}' for s in trend[-5:])}")
+        failures = hist.get("failure_count", 0)
+        if failures:
+            lines.append(f"- Failures: {failures}")
+        issues = hist.get("common_issues", [])
+        if issues:
+            lines.append("- Common issues:")
+            for issue in issues[:5]:
+                lines.append(f"  - {issue}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _format_agent_scorecards(agent_scorecards: dict | None) -> str:
+    """Format agent scorecards dict into a prompt section."""
+    if not agent_scorecards:
+        return ""
+
+    lines = ["## Agent Scorecards\n"]
+    lines.append("| Agent | Total Findings | High-Importance | HI Ratio | Avg/Run | Quality Trend |")
+    lines.append("|-------|---------------|-----------------|----------|---------|---------------|")
+    for name, card in sorted(agent_scorecards.items()):
+        trend = card.get("quality_trend", [])
+        trend_str = " -> ".join(f"{s:.2f}" for s in trend[-5:]) if trend else "n/a"
+        lines.append(
+            f"| {name} "
+            f"| {card.get('total_findings', 0)} "
+            f"| {card.get('high_importance_count', 0)} "
+            f"| {card.get('high_importance_ratio', 0):.0%} "
+            f"| {card.get('avg_findings_per_run', 0):.1f} "
+            f"| {trend_str} |"
+        )
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 def build_analyzer_prompt(
     trace_dir: Path,
     skill_files: list[Path],
     date_str: str,
     metrics: dict,
     regression_data: list[dict],
+    agent_history: dict | None = None,
+    agent_scorecards: dict | None = None,
 ) -> str:
-    """Assemble the analyzer prompt with traces, skills, metrics, and regression data."""
+    """Assemble the analyzer prompt with traces, skills, metrics, and regression data.
+
+    Optional cross-run context:
+        agent_history: mapping of agent_name -> history dict from get_agent_history()
+        agent_scorecards: mapping of agent_name -> scorecard dict from get_agent_scorecard()
+    """
 
     # Collect trace logs for today only
     traces_section = ""
@@ -98,6 +156,9 @@ Identify deviations and output a JSON diff to fix the skill files for next run.
 
 {regression_section}
 {metrics_section}
+
+{_format_agent_history(agent_history)}
+{_format_agent_scorecards(agent_scorecards)}
 
 ## Agent Trace Logs
 {traces_section}

@@ -872,16 +872,18 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 "our_reply": "",
             }
         else:
-            # Generic fallback
+            # Generic fallback -- handles both "author" and "author_handle"
+            # field names (Jina search returns "author_handle")
+            author = post.get("author_handle", post.get("author", ""))
             return {
                 "platform": platform,
                 "post_id": post.get("id", post.get("uri", "")),
                 "post_cid": post.get("cid", ""),
-                "author": post.get("author", ""),
+                "author": author,
                 "author_id": post.get("author_id", post.get("author_did", "")),
                 "content": post.get("text", ""),
                 "target_post_url": post.get("url", ""),
-                "target_author": post.get("author_name", post.get("author", "")),
+                "target_author": post.get("author_name", author),
                 "target_author_id": post.get("author_id", post.get("author_did", "")),
                 "target_content": post.get("text", ""),
                 "followers": post.get("followers_count", 0),
@@ -890,6 +892,80 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 "relevance": 0,
                 "our_reply": "",
             }
+
+    # ── Validation: reject hallucinated/placeholder candidates ────────
+
+    @staticmethod
+    def _is_placeholder(value: str) -> bool:
+        """Check if a string looks like LLM-hallucinated placeholder data.
+
+        Catches common patterns: johndoe, janedoe, example.com, placeholder
+        activity IDs (123456), and obviously fake handles.
+        """
+        if not value:
+            return False
+        lower = value.lower()
+        # Common LLM placeholder names
+        placeholder_names = [
+            "johndoe", "janedoe", "john_doe", "jane_doe",
+            "jdoe", "testuser", "sampleuser", "exampleuser",
+            "user123", "placeholder",
+        ]
+        for name in placeholder_names:
+            if name in lower:
+                return True
+        # Placeholder activity IDs (sequential digits like 123456)
+        if re.search(r"activity-\d{6}$", lower):
+            # Check if it's a suspiciously round number
+            match = re.search(r"activity-(\d+)$", lower)
+            if match:
+                num = match.group(1)
+                # Sequential digits or all same digit = placeholder
+                if num == "123456" or len(set(num)) == 1:
+                    return True
+        # example.com or example domains
+        if "example.com" in lower or "example.org" in lower:
+            return True
+        return False
+
+    def _validate_candidate(self, candidate: dict) -> bool:
+        """Validate that a candidate has real data, not hallucinated placeholders.
+
+        Returns True if the candidate looks legitimate, False if it should
+        be rejected.
+        """
+        url = candidate.get("target_post_url", "")
+        author = candidate.get("author", "")
+        content = candidate.get("content", "")
+
+        # Must have a URL and author
+        if not url or not author:
+            logger.debug(f"Rejected candidate: missing url or author")
+            return False
+
+        # Reject placeholder data
+        if self._is_placeholder(url) or self._is_placeholder(author):
+            logger.warning(
+                f"Rejected placeholder candidate: @{author} url={url}"
+            )
+            return False
+
+        # Must have some content
+        if len(content.strip()) < 10:
+            logger.debug(f"Rejected candidate: content too short ({len(content)} chars)")
+            return False
+
+        # URL must look like a real platform URL
+        if candidate.get("platform") == "bluesky":
+            if not ("bsky.app" in url or "bsky.social" in url or url.startswith("at://")):
+                logger.warning(f"Rejected candidate: invalid Bluesky URL: {url}")
+                return False
+        elif candidate.get("platform") == "linkedin":
+            if "linkedin.com" not in url:
+                logger.warning(f"Rejected candidate: invalid LinkedIn URL: {url}")
+                return False
+
+        return True
 
     # ── _find_candidates: the main search orchestrator ────────────────
 
@@ -1013,6 +1089,15 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                     logger.info("All LinkedIn posts filtered out")
             else:
                 logger.info("No LinkedIn posts found via Jina search")
+
+        # Final validation: reject any candidates with placeholder/hallucinated data
+        pre_validation = len(all_candidates)
+        all_candidates = [c for c in all_candidates if self._validate_candidate(c)]
+        rejected = pre_validation - len(all_candidates)
+        if rejected:
+            logger.warning(
+                f"Rejected {rejected} candidates with placeholder/invalid data"
+            )
 
         logger.info(f"Total candidates across all platforms: {len(all_candidates)}")
         return all_candidates

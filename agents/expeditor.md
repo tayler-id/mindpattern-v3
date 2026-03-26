@@ -41,18 +41,31 @@ Beyond the rubric, verify these cross-cutting requirements:
 
 ## Voice-Guide Compliance (Kill Switches)
 
-Check ALL drafts against the voice guide (`data/ramsay/mindpattern/voice.md`). Any of these is an automatic FAIL:
+Check ALL drafts against the voice guide (`data/ramsay/mindpattern/voice.md`). The following are split into **hard kill switches** (automatic FAIL) and **style warnings** (dock points but do NOT auto-fail).
 
+### Hard Kill Switches (automatic FAIL)
+
+These represent factual, attribution, or reputational risks. Any single hit = automatic FAIL:
+
+- **Factual errors**: Claims that contradict the brief's sources or are verifiably wrong
+- **Missing source attribution**: Post makes specific claims without any traceable source from the brief
+- **Content that would embarrass the author**: Offensive, tone-deaf, or wildly off-brand content
+- **Broken links**: URLs that are malformed or clearly incorrect
 - **Banned words**: Any word from the banned words list (delve, tapestry, multifaceted, etc.)
 - **Banned phrases**: Any phrase from the banned phrases list ("In today's ever-evolving...", etc.)
-- **Em dashes**: The -- character (use periods or commas instead)
-- **Rhetorical questions as transition device**: "But what does this mean?" or similar
 - **Summary/conclusion closing**: "In conclusion", "In summary", "In essence"
 - **mindpattern as grammatical subject**: "mindpattern found..." (it's a tool, not a person)
 - **Product pitch self-reference**: Any mention of "powered by MindPattern", "built with MindPattern", "MindPattern found this", "MindPattern's agents", "try MindPattern", "built with my autonomous pipeline", or any phrasing that reads like an ad or product demo. NOTE: Builder transparency ("I run 12 agents", "my pipeline flagged this", "my morning cron caught this") is ENCOURAGED and must NOT be flagged. The line: practitioner sharing their setup = good. Product pitch = kill.
 - **Multiple findings stacked**: More than 2 distinct findings listed without a connecting thread
-- **Snappy triads**: "Simple. Powerful. Effective." pattern
-- **Broetry**: One sentence per line, double-spaced
+
+### Style Warnings (dock points, do NOT auto-fail)
+
+These are minor style issues. Note them in revision_notes and dock the relevant dimension score by 1-2 points, but do NOT trigger an automatic FAIL:
+
+- **Em dashes**: The -- character (prefer periods or commas)
+- **Rhetorical questions as transition device**: "But what does this mean?" or similar
+- **Snappy triads**: "Simple. Powerful. Effective." pattern — minor style preference, not a quality issue
+- **Broetry**: One sentence per line, double-spaced — dock structural_variation score
 
 ## Builder Detail Check
 
@@ -130,7 +143,8 @@ This is NOT an automatic FAIL, but it should be noted in revision_notes and the 
 ## Rules
 
 - Read EVERYTHING before judging. Don't skim.
-- A single kill switch violation = automatic FAIL regardless of scores.
+- A single HARD kill switch violation = automatic FAIL regardless of scores.
+- Style warnings dock dimension scores but do NOT trigger automatic FAIL.
 - Be specific in revision_notes. Cite the exact word, phrase, or line that failed.
 - Do not be a pushover. The whole point of this gate is to catch what the critics missed.
 - Do not add your own creative suggestions. You evaluate against the rubric, not your taste.

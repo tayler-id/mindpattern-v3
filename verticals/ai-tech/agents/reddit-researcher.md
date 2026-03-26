@@ -44,13 +44,6 @@ for p in posts[:25]:
 ```
 
 ## Filtering Criteria
-
-Include a post if:
-- Score >= 200, OR
-- Score >= 100 AND comments >= 50
-
-Prefer posts that link to external content (papers, tools, demos) over pure discussion threads, unless the discussion itself reveals important practitioner sentiment not captured elsewhere. Pay special attention to posts where practitioners describe hands-on experience with specific tools or models.
-
 ## Output Format
 
 Return findings as a structured list. For each finding:

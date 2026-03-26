@@ -16,7 +16,7 @@ MODELS = {
 MODEL_ROUTING: dict[str, str] = {
     # Research pipeline
     "trend_scan": "haiku",          # cheap, just URL scanning
-    "research_agent": "sonnet",     # good enough for search + extract
+    "research_agent": "opus_1m",      # deep research with full 1M context for papers, repos, long reads
     "synthesis_pass1": "opus_1m",    # editorial judgment + needs full findings in context
     "synthesis_pass2": "opus_1m",    # writing quality + full findings, 1M context
     "learnings_update": "sonnet",   # summarization
@@ -36,7 +36,8 @@ MODEL_ROUTING: dict[str, str] = {
     "engagement_writer": "sonnet",  # reply writing
 
     # Self-optimization
-    "analyzer": "opus_1m",          # needs 1M context for all traces + skills
+    "evolve": "opus_1m",            # needs 1M context for all traces + skills
+    "identity": "sonnet",           # identity maintenance
 }
 
 # Max turns per task type
@@ -56,7 +57,8 @@ MAX_TURNS: dict[str, int] = {
     "humanizer": 5,
     "engagement_finder": 10,
     "engagement_writer": 5,
-    "analyzer": 10,
+    "evolve": 10,
+    "identity": 5,
 }
 
 # Timeout per task type (seconds)
@@ -72,11 +74,12 @@ TIMEOUTS: dict[str, int] = {
     "illustrator": 180,
     "writer": 300,
     "critic": 120,
-    "expeditor": 120,
+    "expeditor": 180,
     "humanizer": 120,
     "engagement_finder": 300,
     "engagement_writer": 120,
-    "analyzer": 600,
+    "evolve": 600,
+    "identity": 300,
 }
 
 # Cost per 1M tokens (for budget tracking)

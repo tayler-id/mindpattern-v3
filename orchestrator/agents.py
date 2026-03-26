@@ -49,7 +49,7 @@ def _agent_env(agent_name: str) -> dict[str, str]:
 
 # Tools each agent is allowed to use
 AGENT_ALLOWED_TOOLS = [
-    "Bash", "WebSearch", "WebFetch", "Read", "Glob", "Grep",
+    "Agent", "Bash", "WebSearch", "WebFetch", "Read", "Glob", "Grep",
 ]
 
 
@@ -288,17 +288,60 @@ Do not explain your full reasoning — just output the finding.
 ## NOVELTY REQUIREMENT (CRITICAL)
 
 You MUST find NEW content that is NOT in the "Recent Findings" list above.
-If a topic, company, product, or event is already listed, DO NOT include it
-unless there is a genuinely new development (new data, new announcement,
-new reaction). "More coverage of the same story" is NOT new.
+The recent findings list covers the LAST 10 DAYS of published newsletters.
+If a topic, company, product, or event was covered in ANY of the last 10 days,
+DO NOT include it unless ALL of these are true:
+- There is genuinely new data, a new announcement, or a material update
+- The new information changes the story meaningfully (not just "more coverage")
+- You can cite a specific new source published in the last 48 hours
 
-Search for what happened in the LAST 24 HOURS. Prioritize:
-- Brand new announcements, launches, releases
+"More coverage of the same story" is NOT new. "A blog post summarizing what
+we already reported" is NOT new. "An old paper trending on social media" is NOT new.
+
+Search for what happened in the LAST 48 HOURS. Prioritize:
+- Brand new announcements, launches, releases from the last 24 hours
 - Breaking developments not yet widely covered
-- Primary sources (blog posts, papers, repos) over secondary coverage
+- Primary sources (official blogs, papers, repos) over secondary coverage
+- ArXiv papers must have been published in the last 7 days (check the arXiv ID date prefix)
 
 Every finding you return must pass this test: "Would someone who read
-yesterday's newsletter learn something NEW from this?"
+the last 10 issues of this newsletter learn something genuinely NEW from this?"
+
+---
+
+## RESEARCH METHODOLOGY
+
+Follow this structured approach for high-quality findings:
+
+### Source Verification (REQUIRED)
+- For every major finding, verify the claim from at least 2 independent sources
+- If you can only find a single source, mark importance as "low"
+- Prefer primary sources (official blogs, release notes, papers) over secondary coverage (news articles, rewrites)
+- Cross-reference metrics: if a source claims "10K stars," verify on the actual GitHub repo
+
+### Competing Hypotheses
+When evaluating a story's importance, consider:
+- What's the strongest counter-argument to this being important?
+- Is this a genuine development or marketing hype?
+- Could this be old news resurfacing? Check the actual publication date, not when it was shared.
+
+### Subagent Delegation
+For high-signal stories that need deep investigation, spawn a subagent:
+- Use the Agent tool to delegate deep reads of long documents
+- Spawn subagents for parallel verification across multiple sources
+- Do NOT spawn subagents for simple searches — use WebSearch directly
+
+### Self-Critique Gate (MANDATORY — do this BEFORE outputting JSON)
+Review EVERY finding against these checks before including it:
+
+1. **Recency**: Is the primary source from the last 48 hours? If older, DROP IT.
+2. **10-Day Dedup**: Was this topic covered in any newsletter in the last 10 days (check the Recent Findings list)? If yes and no genuinely new data, DROP IT.
+3. **Source Quality**: Is this from a primary source or a rewrite? If rewrite with no new information, DROP IT.
+4. **Verification**: Can you verify this from at least one other source? If single-source, mark importance "low".
+5. **Analysis**: Did you add your own analysis, or just restate the headline? Add what it means for builders.
+6. **ArXiv Date Check**: If citing an arXiv paper, verify the ID date prefix matches the last 7 days (e.g., "2603" = March 2026). Papers from months ago are NOT new.
+
+Drop any finding that fails checks 1, 2, or 3. Downgrade any finding that fails checks 4 or 5.
 {preflight_section}{search_section}
 ---
 
@@ -331,7 +374,7 @@ def run_single_agent(
     for tool in AGENT_ALLOWED_TOOLS:
         cmd.extend(["--allowedTools", tool])
 
-    # Block global skills from polluting pipeline agent context
+    # Block skills but allow subagent delegation for deep research
     cmd.extend(["--disallowedTools", "Skill"])
 
     logger.info(
@@ -364,6 +407,16 @@ def run_single_agent(
                 f"duration={result.duration_ms}ms, "
                 f"stderr_preview='{(proc.stderr or '')[:200]}'"
             )
+            # Still try to parse findings — agent may have produced valid output
+            # before a hook failure set exit code to non-zero
+            if proc.stdout and proc.stdout.strip():
+                result.findings = _parse_findings(proc.stdout, agent_name)
+                if result.findings:
+                    logger.info(
+                        f"Agent {agent_name} had non-zero exit but produced "
+                        f"{len(result.findings)} findings — recovering output"
+                    )
+                    result.error = None  # Clear error since we got findings
             return result
 
         # Parse JSON findings from output
