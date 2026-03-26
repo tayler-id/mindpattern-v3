@@ -738,6 +738,180 @@ def log_quality_history(
 
 
 # ---------------------------------------------------------------------------
+# Cross-run learning helpers
+# ---------------------------------------------------------------------------
+
+
+def get_agent_history(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    lookback_days: int = 7,
+) -> dict:
+    """Query agent_metrics and agent_runs for the last N days.
+
+    Returns a summary dict with run count, avg findings, avg duration,
+    quality trend, failure count, and common issues.
+    """
+    # --- agent_metrics aggregates ---
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS runs,
+            COALESCE(AVG(findings_count), 0.0) AS avg_findings,
+            COALESCE(AVG(duration_ms), 0.0) AS avg_duration_ms
+        FROM agent_metrics
+        WHERE agent_name = ?
+          AND run_date >= date('now', ? || ' days')
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchone()
+
+    runs = row["runs"] if row else 0
+    avg_findings = round(row["avg_findings"], 2) if row else 0.0
+    avg_duration_ms = round(row["avg_duration_ms"], 2) if row else 0.0
+
+    # --- quality trend from agent_runs (last N runs, ordered chronologically) ---
+    quality_rows = conn.execute(
+        """
+        SELECT quality_score
+        FROM agent_runs
+        WHERE agent_name = ?
+          AND date(started_at) >= date('now', ? || ' days')
+          AND quality_score IS NOT NULL
+        ORDER BY started_at ASC
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchall()
+    quality_trend = [r["quality_score"] for r in quality_rows]
+
+    # --- failure count from agent_runs ---
+    fail_row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM agent_runs
+        WHERE agent_name = ?
+          AND date(started_at) >= date('now', ? || ' days')
+          AND status = 'failed'
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchone()
+    failure_count = fail_row["cnt"] if fail_row else 0
+
+    # --- common issues (deduplicated non-null errors) ---
+    error_rows = conn.execute(
+        """
+        SELECT DISTINCT error
+        FROM agent_runs
+        WHERE agent_name = ?
+          AND date(started_at) >= date('now', ? || ' days')
+          AND error IS NOT NULL
+          AND error != ''
+        ORDER BY started_at DESC
+        LIMIT 10
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchall()
+    common_issues = [r["error"] for r in error_rows]
+
+    return {
+        "agent_name": agent_name,
+        "runs": runs,
+        "avg_findings": avg_findings,
+        "avg_duration_ms": avg_duration_ms,
+        "quality_trend": quality_trend,
+        "failure_count": failure_count,
+        "common_issues": common_issues,
+    }
+
+
+def get_agent_scorecard(
+    conn: sqlite3.Connection,
+    agent_name: str,
+    lookback_days: int = 7,
+) -> dict:
+    """Return a scorecard dict with findings totals, high-importance ratio, and quality trend.
+
+    Queries agent_metrics for findings data and agent_runs for quality scores.
+    """
+    # --- findings totals from agent_metrics ---
+    row = conn.execute(
+        """
+        SELECT
+            COALESCE(SUM(findings_count), 0) AS total_findings,
+            COUNT(*) AS run_count,
+            COALESCE(AVG(findings_count), 0.0) AS avg_findings_per_run
+        FROM agent_metrics
+        WHERE agent_name = ?
+          AND run_date >= date('now', ? || ' days')
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchone()
+
+    total_findings = row["total_findings"] if row else 0
+    run_count = row["run_count"] if row else 0
+    avg_findings_per_run = round(row["avg_findings_per_run"], 2) if row else 0.0
+
+    # --- quality trend from agent_runs ---
+    quality_rows = conn.execute(
+        """
+        SELECT quality_score
+        FROM agent_runs
+        WHERE agent_name = ?
+          AND date(started_at) >= date('now', ? || ' days')
+          AND quality_score IS NOT NULL
+        ORDER BY started_at ASC
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchall()
+    quality_trend = [r["quality_score"] for r in quality_rows]
+
+    # --- high-importance count from quality_scores dimension='importance' ---
+    # Fall back to counting runs with quality_score >= 0.8 as a proxy
+    hi_row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM quality_scores qs
+        JOIN agent_runs ar ON qs.agent_run_id = ar.id
+        WHERE ar.agent_name = ?
+          AND date(ar.started_at) >= date('now', ? || ' days')
+          AND qs.dimension = 'importance'
+          AND qs.score >= 0.8
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchone()
+    high_importance_count = hi_row["cnt"] if hi_row else 0
+
+    # Total importance-scored findings for ratio
+    total_importance_row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM quality_scores qs
+        JOIN agent_runs ar ON qs.agent_run_id = ar.id
+        WHERE ar.agent_name = ?
+          AND date(ar.started_at) >= date('now', ? || ' days')
+          AND qs.dimension = 'importance'
+        """,
+        (agent_name, f"-{lookback_days}"),
+    ).fetchone()
+    total_importance = total_importance_row["cnt"] if total_importance_row else 0
+
+    high_importance_ratio = (
+        round(high_importance_count / total_importance, 2)
+        if total_importance > 0
+        else 0.0
+    )
+
+    return {
+        "agent_name": agent_name,
+        "total_findings": total_findings,
+        "high_importance_count": high_importance_count,
+        "high_importance_ratio": high_importance_ratio,
+        "avg_findings_per_run": avg_findings_per_run,
+        "quality_trend": quality_trend,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------
 

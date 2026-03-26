@@ -38,13 +38,6 @@ for item in items[:30]:
 Sort by points descending and focus on the top stories.
 
 ## Filtering Criteria
-
-Include a story if:
-- Points >= 100, OR
-- Points >= 50 AND comments >= 30
-
-Prefer stories with external URLs (papers, tools, demos, articles) over Ask/Show HN posts unless the HN discussion itself contains high-value practitioner insight not found in the linked content.
-
 ## Output Format
 
 Return findings as a structured list. For each finding:

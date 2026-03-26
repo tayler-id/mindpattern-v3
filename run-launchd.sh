@@ -29,10 +29,10 @@ if [ -f "$MARKER" ]; then
     exit 0
 fi
 
-# Only run between 6 AM and 9 AM (prevents midnight/late-night triggers)
+# Only run between 6 AM and 12 PM (prevents midnight/late-night triggers)
 HOUR=$(date +%H)
-if [ "$HOUR" -lt 6 ] || [ "$HOUR" -ge 9 ]; then
-    log "SKIP: Outside run window (hour=$HOUR, allowed=06-08)"
+if [ "$HOUR" -lt 6 ] || [ "$HOUR" -ge 12 ]; then
+    log "SKIP: Outside run window (hour=$HOUR, allowed=06-11)"
     exit 0
 fi
 

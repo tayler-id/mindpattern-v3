@@ -432,10 +432,10 @@ class TestLinkedInInFindCandidates:
 
         mock_search.return_value = [
             {
-                "url": "https://linkedin.com/posts/johndoe_ai-activity-123",
+                "url": "https://linkedin.com/posts/marcuschen_ai-agents-production-activity-7293847561",
                 "text": "AI agents are great for building tools" * 3,
-                "author_handle": "johndoe",
-                "author_name": "John Doe",
+                "author_handle": "marcuschen",
+                "author_name": "Marcus Chen",
                 "followers_count": 500,
                 "like_count": 10,
                 "reply_count": 3,

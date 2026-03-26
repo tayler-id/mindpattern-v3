@@ -21,6 +21,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _load_social_config() -> dict:
+    """Load social-config.json from project root."""
+    config_path = PROJECT_ROOT / "social-config.json"
+    with open(config_path) as f:
+        return json.load(f)
+
+
 class EngagementHandler(BaseHandler):
     """Handle messages in #mp-engagement."""
 
@@ -116,27 +123,79 @@ class EngagementHandler(BaseHandler):
         self._post_reply(url, final_reply, ts)
 
     def _handle_search(self, query: str, ts: str) -> None:
-        """Search for conversations matching a query and show candidates."""
+        """Search for real conversations matching a query and show candidates.
+
+        Uses BlueskyClient.search() (AT Protocol API) and search_via_jina()
+        (LinkedIn via Jina Reader) to find REAL posts. Never generates
+        placeholder or hallucinated candidates.
+        """
         self.react("mag", ts)
         self.reply(f"Searching for conversations about: *{query}*...", thread_ts=ts)
 
         try:
-            from social.posting import BlueskyClient
+            config = _load_social_config()
+            results = []
 
-            client = BlueskyClient()
-            results = client.search(query, limit=10)
+            # Search Bluesky via AT Protocol API
+            bsky_config = config.get("platforms", {}).get("bluesky", {})
+            if bsky_config.get("enabled"):
+                try:
+                    from social.posting import BlueskyClient
+                    client = BlueskyClient(bsky_config)
+                    bsky_results = client.search(query, max_results=10)
+                    for post in bsky_results:
+                        post["_source"] = "bluesky_api"
+                    results.extend(bsky_results)
+                except Exception as e:
+                    logger.warning(f"Bluesky search failed: {e}")
+
+            # Search LinkedIn via Jina Reader
+            engagement_platforms = config.get("engagement", {}).get("platforms", [])
+            if "linkedin" in engagement_platforms:
+                try:
+                    from social.engagement import search_via_jina
+                    li_results = search_via_jina(query, max_results=5)
+                    for post in li_results:
+                        post["_source"] = "jina_search"
+                    results.extend(li_results)
+                except Exception as e:
+                    logger.warning(f"LinkedIn search failed: {e}")
+
+            # Validate: reject any results without real URLs or handles
+            validated = []
+            for post in results:
+                url = post.get("url", "")
+                handle = post.get("author_handle", post.get("author", ""))
+                text = post.get("text", "")
+
+                # Reject placeholder/hallucinated data
+                if not url or not handle:
+                    continue
+                if "johndoe" in handle.lower() or "example" in url.lower():
+                    logger.warning(f"Rejected placeholder candidate: @{handle} {url}")
+                    continue
+                if len(text.strip()) < 10:
+                    continue
+
+                validated.append(post)
+
+            results = validated
 
             if not results:
-                self.reply("No conversations found. Try a different query.", thread_ts=ts)
+                self.reply("No engagement candidates found. Try a different query.", thread_ts=ts)
                 return
 
-            # Format results
+            # Format results -- use flat field names from BlueskyClient.search()
             lines = [f"Found {len(results)} posts about *{query}*:\n"]
             for i, post in enumerate(results[:5], 1):
-                author = post.get("author", {}).get("handle", "unknown")
+                platform = post.get("platform", "bluesky")
+                author = post.get("author_handle", post.get("author", "unknown"))
                 text = post.get("text", "")[:150]
-                lines.append(f"*{i}.* @{author}")
+                url = post.get("url", "")
+                lines.append(f"*{i}.* [{platform}] @{author}")
                 lines.append(f"   {text}")
+                if url:
+                    lines.append(f"   {url}")
                 lines.append("")
 
             lines.append("Reply with a number (1-5) to draft a reply, or *SKIP* to cancel.")
@@ -153,9 +212,9 @@ class EngagementHandler(BaseHandler):
                 idx = int(selection.strip()) - 1
                 if 0 <= idx < len(results):
                     selected = results[idx]
-                    post_uri = selected.get("uri", "")
+                    post_uri = selected.get("uri", selected.get("url", ""))
                     post_text = selected.get("text", "")
-                    author = selected.get("author", {}).get("handle", "unknown")
+                    author = selected.get("author_handle", selected.get("author", "unknown"))
 
                     self.reply(f"Drafting reply to @{author}...", thread_ts=ts)
                     self._draft_and_approve_reply(post_text, author, post_uri, ts)
@@ -206,8 +265,17 @@ class EngagementHandler(BaseHandler):
 
         # Post the reply
         try:
+            config = _load_social_config()
+            bsky_config = config.get("platforms", {}).get("bluesky", {})
+            if not bsky_config.get("enabled"):
+                self.reply(
+                    f"Bluesky is not enabled. Here's your reply to post manually:\n"
+                    f"```{final}```",
+                    thread_ts=ts,
+                )
+                return
             from social.posting import BlueskyClient
-            client = BlueskyClient()
+            client = BlueskyClient(bsky_config)
             client.reply(final, post_uri)
             self.reply(f"Replied to @{author}", thread_ts=ts)
         except Exception as e:
@@ -217,9 +285,17 @@ class EngagementHandler(BaseHandler):
         """Post a reply to the correct platform based on URL."""
         if "bsky.app" in url or "bsky.social" in url:
             try:
+                config = _load_social_config()
+                bsky_config = config.get("platforms", {}).get("bluesky", {})
+                if not bsky_config.get("enabled"):
+                    self.reply(
+                        f"Bluesky is not enabled. Here's your reply to post manually:\n"
+                        f"```{reply_text}```",
+                        thread_ts=ts,
+                    )
+                    return
                 from social.posting import BlueskyClient
-                client = BlueskyClient()
-                # Extract post URI from URL — this is simplified
+                client = BlueskyClient(bsky_config)
                 client.reply(reply_text, url)
                 self.reply("Reply posted to Bluesky", thread_ts=ts)
             except Exception as e:

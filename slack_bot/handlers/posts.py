@@ -231,10 +231,17 @@ class PostsHandler(BaseHandler):
                 approved.append(p)
         return approved if approved else []
 
+    def _load_social_config(self) -> dict:
+        """Load social-config.json from project root."""
+        config_path = PROJECT_ROOT / "social-config.json"
+        with open(config_path) as f:
+            return json.load(f)
+
     def _post_to_platforms(self, drafts: dict, platforms: list[str]) -> dict:
         """Post drafts to approved platforms. Returns {platform: result}."""
         from social.posting import BlueskyClient, LinkedInClient
 
+        config = self._load_social_config()
         results = {}
         for platform in platforms:
             draft = drafts.get(platform)
@@ -244,13 +251,13 @@ class PostsHandler(BaseHandler):
 
             try:
                 if platform == "bluesky":
-                    client = BlueskyClient()
+                    client = BlueskyClient(config["platforms"]["bluesky"])
                     post_result = client.post(draft)
-                    results[platform] = {"success": True, "uri": post_result.get("uri", "")}
+                    results[platform] = {"success": True, "url": post_result.get("url", ""), "uri": post_result.get("uri", "")}
                 elif platform == "linkedin":
-                    client = LinkedInClient()
+                    client = LinkedInClient(config["platforms"]["linkedin"])
                     post_result = client.post(draft)
-                    results[platform] = {"success": True}
+                    results[platform] = {"success": True, "url": post_result.get("url", "")}
                 else:
                     results[platform] = {"success": False, "error": f"Unknown platform: {platform}"}
             except Exception as e:

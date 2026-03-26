@@ -143,11 +143,28 @@ incremental updates to keep the identity files accurate and useful.
 
 ## Instructions
 
-Based on the run results, decide whether any identity files need updating.
-Most runs should produce NO changes to soul/user/voice — only update when
-there is a genuine lesson, preference shift, or pattern worth recording.
+Based on the run results, actively update the identity files to accumulate learnings.
 
-However, you MUST ALWAYS append to decisions.md with a detailed entry including:
+### soul.md — UPDATE every run:
+- **Self Assessment**: Update with this run's findings count, newsletter scores, what
+  worked and what didn't. This should read as editorial learning, not just metrics.
+  Example: "Coverage score dropped because agents over-indexed on security. Next run
+  should rebalance toward builder tools."
+- **Learned Preferences**: Accumulate what topics get approved vs rejected, what the
+  user gravitates toward, what gets killed at gates. This section should grow over time.
+- **Evolution Log**: Append a dated one-line entry summarizing what changed this run.
+
+### voice.md — UPDATE when you notice patterns:
+- If the user's gate feedback suggests voice issues (edits, rejections with style notes),
+  update the relevant voice section.
+- If the newsletter evaluation shows recurring patterns (low actionability, hedging),
+  add guidance to prevent it.
+
+### user.md — UPDATE when preferences shift:
+- Track topic preference changes from gate feedback.
+- Note what the user approves enthusiastically vs what they edit heavily.
+
+### decisions.md — ALWAYS append a detailed entry including:
 - Topic selected/killed + score + reasoning
 - Gate 1 outcome (approved/rejected/custom + any user guidance)
 - Gate 2 outcome (approved/rejected/edits made)

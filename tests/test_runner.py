@@ -367,7 +367,7 @@ class TestPipelineInit:
         expected_phases = {
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            Phase.EVOLVE, Phase.ANALYZE, Phase.MIRROR, Phase.SYNC,
+            Phase.EVOLVE, Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
         }
         for phase in expected_phases:
             handler = pipeline._get_phase_handler(phase)
@@ -871,59 +871,7 @@ class TestPhaseEngagement:
 
 
 class TestPhaseEvolve:
-    """_phase_evolve: identity evolution via LLM."""
-
-    def test_happy_path(self, pipeline, tmp_path):
-        diff = {"changes": [{"file": "soul.md", "action": "update"}]}
-        apply_result = {"changes_made": 1, "errors": []}
-
-        with (
-            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
-            patch("memory.identity_evolve.build_evolve_prompt",
-                  return_value="evolve prompt"),
-            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                  return_value=(json.dumps(diff), 0)),
-            patch("memory.identity_evolve.parse_llm_output",
-                  return_value=diff),
-            patch("memory.identity_evolve.apply_evolution_diff",
-                  return_value=apply_result),
-        ):
-            result = pipeline._phase_evolve()
-
-        assert result["evolved"] is True
-        assert result["changes_made"] == 1
-
-    def test_llm_failure_returns_not_evolved(self, pipeline, tmp_path):
-        with (
-            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
-            patch("memory.identity_evolve.build_evolve_prompt",
-                  return_value="prompt"),
-            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                  return_value=("", 1)),
-        ):
-            result = pipeline._phase_evolve()
-
-        assert result["evolved"] is False
-        assert "LLM call failed" in result["reason"]
-
-    def test_json_parse_failure(self, pipeline, tmp_path):
-        with (
-            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
-            patch("memory.identity_evolve.build_evolve_prompt",
-                  return_value="prompt"),
-            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                  return_value=("not json", 0)),
-            patch("memory.identity_evolve.parse_llm_output",
-                  return_value=None),
-        ):
-            result = pipeline._phase_evolve()
-
-        assert result["evolved"] is False
-        assert "JSON parse failed" in result["reason"]
-
-
-class TestPhaseAnalyze:
-    """_phase_analyze: agent trace analysis and skill improvement."""
+    """_phase_evolve: agent trace analysis and skill improvement."""
 
     def test_happy_path(self, pipeline, tmp_path):
         changes = [{"file": "agents/researcher.md", "action": "update"}]
@@ -944,12 +892,12 @@ class TestPhaseAnalyze:
             trace_dir = tmp_path / "data" / "testuser" / "mindpattern" / "agents"
             trace_dir.mkdir(parents=True, exist_ok=True)
 
-            result = pipeline._phase_analyze()
+            result = pipeline._phase_evolve()
 
-        assert result["analyzed"] is True
+        assert result["evolved"] is True
         assert result["applied"] == 1
 
-    def test_llm_failure(self, pipeline, tmp_path):
+    def test_llm_failure_returns_not_evolved(self, pipeline, tmp_path):
         with (
             patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
             patch("orchestrator.analyzer.build_analyzer_prompt",
@@ -957,9 +905,65 @@ class TestPhaseAnalyze:
             patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
                   return_value=("", 1)),
         ):
-            result = pipeline._phase_analyze()
+            result = pipeline._phase_evolve()
 
-        assert result["analyzed"] is False
+        assert result["evolved"] is False
+        assert "LLM call failed" in result["reason"]
+
+    def test_json_parse_failure(self, pipeline, tmp_path):
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("orchestrator.analyzer.build_analyzer_prompt",
+                  return_value="prompt"),
+            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
+                  return_value=("not json", 0)),
+            patch("orchestrator.analyzer.parse_analyzer_output",
+                  return_value=None),
+        ):
+            result = pipeline._phase_evolve()
+
+        assert result["evolved"] is False
+        assert "JSON parse failed" in result["reason"]
+
+
+class TestPhaseIdentity:
+    """_phase_identity: identity maintenance via LLM."""
+
+    def test_happy_path(self, pipeline, tmp_path):
+        diff = {"changes": [{"file": "soul.md", "action": "update"}]}
+        apply_result = {"changes_made": 1, "errors": []}
+        pipeline.evolve_result = {"applied": 2, "reverted": 0, "skipped": 1}
+
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("memory.identity_evolve.build_evolve_prompt",
+                  return_value="evolve prompt"),
+            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
+                  return_value=(json.dumps(diff), 0)),
+            patch("memory.identity_evolve.parse_llm_output",
+                  return_value=diff),
+            patch("memory.identity_evolve.apply_evolution_diff",
+                  return_value=apply_result),
+        ):
+            result = pipeline._phase_identity()
+
+        assert result["evolved"] is True
+        assert result["changes_made"] == 1
+
+    def test_llm_failure(self, pipeline, tmp_path):
+        pipeline.evolve_result = {}
+
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("memory.identity_evolve.build_evolve_prompt",
+                  return_value="prompt"),
+            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
+                  return_value=("", 1)),
+        ):
+            result = pipeline._phase_identity()
+
+        assert result["evolved"] is False
+        assert "LLM call failed" in result["reason"]
 
 
 class TestPhaseMirror:
@@ -1022,7 +1026,7 @@ class TestPipelineRun:
             Phase.SOCIAL: {"posts": []},
             Phase.ENGAGEMENT: {"replies_posted": 0},
             Phase.EVOLVE: {"evolved": False},
-            Phase.ANALYZE: {"analyzed": False},
+            Phase.IDENTITY: {"evolved": False},
             Phase.MIRROR: {"mirrored": True},
             Phase.SYNC: {"success": True},
         }

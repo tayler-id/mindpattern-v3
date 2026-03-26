@@ -128,6 +128,14 @@ Run all categories daily; rotate deeper on the daily focus category.
 - **Cross-category (highest value)**: flag when same signal appears in 3+ unrelated categories simultaneously
 - **Inject trending topics**: use coordinator-provided company names and incidents as search terms
 
+
+
+### Recency expectations
+- **Breaking news and product launches**: Must be from last 48 hours. No exceptions.
+- **Pattern-level findings** (cross-category synthesis, business model shifts, PE portfolio moves): May reference primary sources up to 14 days old IF the finding has not appeared in the newsletter's last 10 days AND you are synthesizing it with at least one finding from the last 48 hours. Mark the source date honestly in your output.
+- **Earnings data and market analysis**: May reference quarterly data when it contextualizes a breaking development.
+- The goal: every finding should feel timely to a reader on the day it publishes. A January source cited in isolation feels stale. A January source cited alongside yesterday's announcement to show an accelerating pattern does not.
+
 ## Output Format
 
 Return findings as a structured list. For each finding:

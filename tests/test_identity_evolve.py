@@ -487,7 +487,7 @@ class TestEnrichedPrompt:
         }
         prompt = build_evolve_prompt(vault_dir, pipeline_results)
         assert "Findings: 10" in prompt
-        assert "MUST ALWAYS append to decisions" in prompt
+        assert "ALWAYS append a detailed entry" in prompt
 
     def test_decisions_instruction_requires_detailed_entry(self, vault_dir):
         """Prompt tells LLM to always append detailed decisions."""
@@ -496,6 +496,6 @@ class TestEnrichedPrompt:
         pipeline_results = {"date": "2026-03-15", "findings_count": 5,
                             "newsletter_generated": True, "social": {}}
         prompt = build_evolve_prompt(vault_dir, pipeline_results)
-        assert "MUST ALWAYS append to decisions" in prompt
+        assert "ALWAYS append a detailed entry" in prompt
         assert "Gate 1 outcome" in prompt
         assert "Expeditor verdict" in prompt

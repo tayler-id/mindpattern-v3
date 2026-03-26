@@ -66,26 +66,6 @@ Before including any finding, ask: does this pass the bar?
 - Security patterns: sandboxing, credential scoping, injection defense
 
 ## Priority Sources
-
-**Check every run:**
-- paddo.dev — highest-signal individual Claude Code blogger
-- simonwillison.net — authoritative on MCP security, context engineering
-- releasebot.io/updates/anthropic/claude-code — version-by-version Claude Code changes
-- ykdojo/claude-code-tips (GitHub) — 45+ tips, regularly updated
-- Hacker News — site:news.ycombinator.com Claude Code / vibe coding
-- awesome-skills.com — curated skill directory
-
-**High-signal, check when relevant:**
-- anthropic.com/engineering/ — context engineering, architecture posts
-- cursor.com/changelog, windsurf.com/changelog
-- blog.modelcontextprotocol.io — official MCP announcements
-- Reddit: r/ClaudeAI, r/cursor, r/vibecoding
-- semgrep.dev/blog, adversa.ai/blog — agent security
-- addyosmani.com/blog — agent team patterns
-
-**Deprioritize:**
-- dev.to, softtechhub.us, vibecoding.app, softr.io — low signal, beginner content
-
 ## Search Queries to Try
 
 - `"Claude Code" v2.1 changelog new feature February March 2026`
