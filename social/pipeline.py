@@ -181,9 +181,7 @@ class SocialPipeline:
         # ── Step 1b: Gate 1 — Topic approval ──────────────────────────
         logger.info("Step 1b: Gate 1 — requesting topic approval")
         try:
-            from social.approval import ApprovalGateway
-            gateway = ApprovalGateway(self.config)
-            gate1 = gateway.request_topic_approval([topic])
+            gate1 = self.approval.request_topic_approval([topic])
 
             action = gate1.get("action", "go")
             if action == "skip":
@@ -494,6 +492,16 @@ class SocialPipeline:
             [p["platform"] for p in posted if not p.get("error")]
         )
         logger.info(f"Step 10 complete: duration={time.monotonic() - step10_start:.1f}s")
+
+        # Notify approvals channel with post results
+        post_lines = []
+        for p in posted:
+            if p.get("error"):
+                post_lines.append(f":x: {p['platform']}: {p['error']}")
+            else:
+                post_lines.append(f":white_check_mark: {p['platform']}: {p.get('url', 'posted')}")
+        if post_lines:
+            self.approval.notify("\n".join(post_lines))
 
         # ── Step 11: Log feedback and editorial corrections ───────────
         logger.info("Step 11: Logging feedback")

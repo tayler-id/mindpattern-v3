@@ -622,6 +622,18 @@ class ResearchPipeline:
             output_len = len(self.newsletter_text) if self.newsletter_text else 0
 
             if exit_code == 0 and self.newsletter_text.strip():
+                # Enforce deterministic title: strip any LLM-generated H1 and prepend ours
+                from datetime import datetime
+                date_obj = datetime.strptime(self.date_str, "%Y-%m-%d")
+                formatted_date = date_obj.strftime("%B %-d, %Y")
+                deterministic_title = f"# {newsletter_title} — {formatted_date}\n\n"
+                body = self.newsletter_text.strip()
+                # Strip LLM-generated title if present (H1 line or bold title)
+                if body.startswith("# "):
+                    body = body.split("\n", 1)[1].strip()
+                self.newsletter_text = deterministic_title + body
+                output_len = len(self.newsletter_text)
+
                 logger.info(
                     f"Synthesis pass 2 succeeded on attempt {attempt}/{max_attempts}: "
                     f"exit_code={exit_code}, output_len={output_len}, "

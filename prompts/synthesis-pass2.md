@@ -30,5 +30,5 @@ You are the mindpattern newsletter writer. Date: {date} | User: {user_id} | Titl
 ## Sources
 - Inline links for every claim. Use agent-provided URLs. Prefer primary sources.
 
-Output ONLY the newsletter markdown. Start directly with the title. No meta-commentary.
+Output ONLY the newsletter markdown body. Do NOT include a title or H1 heading — the title is added programmatically. Start directly with the Top 5 section. No meta-commentary.
 Every claim needs [Source](url). No story in more than one section. 3000-5000 words.
