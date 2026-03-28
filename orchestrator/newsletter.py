@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from pathlib import Path
 
 import markdown2
@@ -325,7 +326,7 @@ def send_newsletter(
     payload = {
         "from": f"{newsletter_title} <{reply_to}>",
         "to": [user_email],
-        "subject": f"{newsletter_title} — {date_str}",
+        "subject": f"{newsletter_title} — {datetime.strptime(date_str, '%Y-%m-%d').strftime('%B %-d, %Y')}",
         "html": html_content,
         "text": report_content,
         "reply_to": [reply_to],

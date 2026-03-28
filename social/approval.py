@@ -37,8 +37,17 @@ class ApprovalGateway:
         """
         self.gate_timeout = config.get("gate_timeout_seconds", None)
         self.api_base = config.get("approval_api_base", "")
+        self.thread_ts = None  # Shared thread for all gates in one pipeline run
 
     # ── Public gates ──────────────────────────────────────────────────
+
+    def notify(self, message: str) -> None:
+        """Post a notification to the approvals channel (no reply expected)."""
+        token = self._get_slack_token()
+        if not token:
+            logger.warning("No Slack token — skipping notification")
+            return
+        self._slack_post(token, message, thread_ts=self.thread_ts)
 
     def request_topic_approval(self, topics: list[dict]) -> dict:
         """Gate 1: Topic approval.
@@ -292,15 +301,15 @@ class ApprovalGateway:
             logger.warning(f"Slack post error: {e}")
             return None
 
-    def _slack_poll_replies(self, token: str, thread_ts: str, timeout_seconds: int | None = None) -> str | None:
-        """Poll Slack channel for any reply after our message.
+    def _slack_poll_replies(self, token: str, after_ts: str, timeout_seconds: int | None = None) -> str | None:
+        """Poll Slack channel for any reply after a specific message.
 
         Accepts both threaded replies AND new channel messages posted after
         the bot's message. Ignores bot messages (only human replies count).
 
         Args:
             token: Slack bot token.
-            thread_ts: Timestamp of the bot's message (used as baseline).
+            after_ts: Timestamp of the bot's message to look for replies after.
             timeout_seconds: Max wait time. None means wait forever.
 
         Returns:
@@ -308,6 +317,9 @@ class ApprovalGateway:
         """
         poll_interval = 10
         start_time = time.monotonic()
+        # Use the shared thread parent for fetching thread replies,
+        # but only accept replies with ts > after_ts
+        thread_parent = self.thread_ts or after_ts
 
         while True:
             time.sleep(poll_interval)
@@ -316,8 +328,8 @@ class ApprovalGateway:
                 # Check for threaded replies first
                 params = urllib.parse.urlencode({
                     "channel": SLACK_CHANNEL,
-                    "ts": thread_ts,
-                    "limit": 10,
+                    "ts": thread_parent,
+                    "limit": 20,
                 })
                 req = urllib.request.Request(
                     f"https://slack.com/api/conversations.replies?{params}",
@@ -328,7 +340,12 @@ class ApprovalGateway:
 
                 if result.get("ok"):
                     messages = result.get("messages", [])
-                    replies = [m for m in messages[1:] if m.get("text") and not m.get("bot_id")]
+                    # Only consider replies posted AFTER our specific message
+                    replies = [
+                        m for m in messages[1:]
+                        if m.get("text") and not m.get("bot_id")
+                        and m.get("ts", "0") > after_ts
+                    ]
                     if replies:
                         reply_text = replies[0]["text"]
                         logger.info(f"Slack threaded reply: {reply_text[:50]}")
@@ -337,7 +354,7 @@ class ApprovalGateway:
                 # Also check for new channel messages after our post
                 params = urllib.parse.urlencode({
                     "channel": SLACK_CHANNEL,
-                    "oldest": thread_ts,
+                    "oldest": after_ts,
                     "limit": 10,
                 })
                 req = urllib.request.Request(
@@ -351,7 +368,7 @@ class ApprovalGateway:
                     messages = result.get("messages", [])
                     # Find human messages posted AFTER our bot message
                     for m in messages:
-                        if m.get("ts") != thread_ts and not m.get("bot_id") and m.get("text"):
+                        if m.get("ts", "0") > after_ts and not m.get("bot_id") and m.get("text"):
                             reply_text = m["text"]
                             logger.info(f"Slack channel reply: {reply_text[:50]}")
                             return reply_text
@@ -369,24 +386,36 @@ class ApprovalGateway:
                 return None
 
     def _slack_approval(self, message: str, timeout_seconds: int | None = None) -> str | None:
-        """Send approval request to Slack, poll for threaded reply."""
+        """Send approval request to Slack, poll for threaded reply.
+
+        All gates in a single pipeline run share one thread. Gate 1 creates
+        the parent message; Gate 2+ reply in that thread so the full
+        conversation stays in one place.
+        """
         token = self._get_slack_token()
         if not token:
             logger.error("No Slack token in Keychain — cannot request approval")
             return None
 
-        result = self._slack_post(token, message)
+        # Post in existing thread if we have one (Gate 2+ replies to Gate 1)
+        result = self._slack_post(token, message, thread_ts=self.thread_ts)
         if not result:
             logger.error("Slack post failed — cannot request approval")
             return None
 
-        thread_ts = result.get("message", {}).get("ts") or result.get("ts")
-        if not thread_ts:
+        msg_ts = result.get("message", {}).get("ts") or result.get("ts")
+        if not msg_ts:
             logger.error("No thread_ts from Slack — cannot poll for reply")
             return None
 
+        # Save the parent thread_ts from the first gate
+        if self.thread_ts is None:
+            self.thread_ts = msg_ts
+
+        # Poll for replies after THIS message, not the thread parent.
+        # Otherwise Gate 2 picks up Gate 1's reply immediately.
         logger.info(f"Slack approval posted to #mindpattern-approvals, waiting for reply...")
-        return self._slack_poll_replies(token, thread_ts, timeout_seconds)
+        return self._slack_poll_replies(token, msg_ts, timeout_seconds)
 
     # ── Message formatting ────────────────────────────────────────────
 
