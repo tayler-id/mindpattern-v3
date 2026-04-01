@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from memory.embeddings import embed_texts
 from . import router
 
 logger = logging.getLogger(__name__)
@@ -551,6 +552,105 @@ def _parse_findings(output: str, agent_name: str) -> list[dict]:
         f"({len(output)} chars): {output[:200]!r}"
     )
     return []
+
+
+def _finding_quality_score(finding: dict) -> float:
+    """Score a finding for dedup tiebreaking: higher = better quality."""
+    summary_len = len(finding.get("summary", ""))
+    importance_weight = {"high": 3, "medium": 2, "low": 1}.get(
+        finding.get("importance", "medium"), 2
+    )
+    url_bonus = 1.0 if finding.get("source_url") else 0.5
+    return summary_len * importance_weight * url_bonus
+
+
+def dedup_cross_agent_findings(
+    agent_results: list[AgentResult],
+    threshold: float = 0.85,
+) -> tuple[list[AgentResult], dict]:
+    """Remove near-duplicate findings across different agents.
+
+    Embeds all finding summaries, computes pairwise cosine similarity via
+    matrix multiplication, and for each duplicate pair keeps the higher-quality
+    finding.
+
+    Returns (modified agent_results, summary dict).
+    """
+    # Collect all (result_idx, finding_idx, finding) triples
+    all_items: list[tuple[int, int, dict]] = []
+    for ri, result in enumerate(agent_results):
+        for fi, finding in enumerate(result.findings):
+            all_items.append((ri, fi, finding))
+
+    total = len(all_items)
+    if total == 0:
+        return agent_results, {"total": 0, "removed": 0, "kept": 0}
+
+    if total == 1:
+        return agent_results, {"total": 1, "removed": 0, "kept": 1}
+
+    # Batch-embed all finding texts
+    texts = [
+        f"{item[2].get('title', '')}. {item[2].get('summary', '')}"
+        for item in all_items
+    ]
+    embeddings = embed_texts(texts)
+
+    # Build matrix and compute pairwise similarities
+    import numpy as np
+    matrix = np.array(embeddings, dtype=np.float32)
+    # Normalize rows (defensive — bge-small is already normalized)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    matrix = matrix / norms
+    sim_matrix = matrix @ matrix.T
+
+    # Find duplicate pairs above threshold (only cross-agent, upper triangle)
+    remove_set: set[int] = set()
+    for i in range(total):
+        if i in remove_set:
+            continue
+        for j in range(i + 1, total):
+            if j in remove_set:
+                continue
+            # Only dedup across different agents
+            if agent_results[all_items[i][0]].agent_name == agent_results[all_items[j][0]].agent_name:
+                continue
+            if sim_matrix[i, j] >= threshold:
+                score_i = _finding_quality_score(all_items[i][2])
+                score_j = _finding_quality_score(all_items[j][2])
+                if score_i >= score_j:
+                    remove_set.add(j)
+                    # Tag the kept finding
+                    all_items[i][2]["cross_agent_dedup"] = True
+                    all_items[i][2]["dedup_kept_from"] = agent_results[all_items[j][0]].agent_name
+                else:
+                    remove_set.add(i)
+                    all_items[j][2]["cross_agent_dedup"] = True
+                    all_items[j][2]["dedup_kept_from"] = agent_results[all_items[i][0]].agent_name
+                    break  # i is removed, stop comparing it
+
+    # Rebuild findings lists, excluding removed indices
+    removed_by_result: dict[int, set[int]] = {}
+    for idx in remove_set:
+        ri, fi, _ = all_items[idx]
+        removed_by_result.setdefault(ri, set()).add(fi)
+
+    for ri, result in enumerate(agent_results):
+        if ri in removed_by_result:
+            result.findings = [
+                f for fi, f in enumerate(result.findings)
+                if fi not in removed_by_result[ri]
+            ]
+
+    removed = len(remove_set)
+    logger.info(f"Cross-agent dedup: removed {removed} duplicates from {total} total findings")
+
+    return agent_results, {
+        "total": total,
+        "removed": removed,
+        "kept": total - removed,
+    }
 
 
 def dispatch_research_agents(
