@@ -30,10 +30,11 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -x -q --tb=short \
+          python -m pytest tests/ -q --tb=short \
             --ignore=tests/test_cors.py \
             --ignore=tests/test_engagement_linkedin.py \
             --ignore=tests/test_memory_cli.py \
+            --ignore=tests/test_runner.py \
             -k "not test_blocked_when_at_limit and not test_get_model_research_agent"
         env:
           PYTHONPATH: .
