@@ -31,6 +31,7 @@ RSS_ROUTING = {
 
 DEDUP_SIMILARITY_THRESHOLD = 0.80
 DEDUP_LOOKBACK_DAYS = 10
+DEDUP_DECAY_RATE = 0.25
 
 
 def _dedup_annotate(
@@ -78,7 +79,12 @@ def _dedup_annotate(
 
 
 def _dedup_batch(items: list[dict], db, threshold: float) -> list[dict]:
-    """Batch dedup: embed all items at once, compare against stored findings vectorized."""
+    """Batch dedup: embed all items at once, compare against stored findings vectorized.
+
+    Applies freshness-weighted time-decay: recent findings get a lower threshold
+    (aggressive dedup for true duplicates), older findings keep threshold near base
+    (allows evolved stories through).
+    """
     import numpy as np
     from memory.embeddings import embed_texts, deserialize_f32
     from datetime import datetime, timedelta
@@ -105,17 +111,42 @@ def _dedup_batch(items: list[dict], db, threshold: float) -> list[dict]:
 
     sim_matrix = item_vecs @ stored_matrix.T
 
+    today = datetime.now()
+    rescued_count = 0
+    min_effective = threshold * (1 - DEDUP_DECAY_RATE)
+
     for i, item in enumerate(items):
         max_idx = int(np.argmax(sim_matrix[i]))
         max_sim = float(sim_matrix[i, max_idx])
-        if max_sim >= threshold:
+
+        # Calculate age of the matched finding
+        match_date_str = stored_dates[max_idx]
+        try:
+            match_date = datetime.strptime(match_date_str, "%Y-%m-%d")
+            age_days = (today - match_date).days
+        except (ValueError, TypeError):
+            age_days = 0
+
+        # Freshness decay: freshness=1 for brand-new, 0 at lookback boundary
+        freshness = max(0.0, 1.0 - age_days / DEDUP_LOOKBACK_DAYS)
+        effective_threshold = threshold * (1 - DEDUP_DECAY_RATE * freshness)
+
+        if max_sim >= effective_threshold:
             item["already_covered"] = True
             item["match_info"] = {
                 "matched_finding": stored_titles[max_idx],
                 "matched_date": stored_dates[max_idx],
                 "matched_agent": stored_agents[max_idx],
                 "similarity": round(max_sim, 3),
+                "age_days": age_days,
+                "effective_threshold": round(effective_threshold, 3),
             }
+        elif max_sim >= min_effective:
+            # Would have been caught if the finding were very recent
+            rescued_count += 1
+
+    if rescued_count > 0:
+        logger.info(f"Dedup decay rescued {rescued_count} items from ALREADY_COVERED")
 
     return items
 
