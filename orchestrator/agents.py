@@ -8,6 +8,7 @@ gets a focused prompt with its context. Python controls the orchestration.
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -354,12 +355,13 @@ def run_single_agent(
     agent_name: str,
     prompt: str,
     task_type: str = "research_agent",
+    model_override: str | None = None,
 ) -> AgentResult:
     """Run a single claude -p call for one agent.
 
     Returns AgentResult with parsed findings or error.
     """
-    model = router.get_model(task_type)
+    model = model_override or router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
@@ -562,6 +564,7 @@ def dispatch_research_agents(
     max_workers: int = 6,
     vertical: str = "ai-tech",
     preflight_data: dict | None = None,
+    traces_conn: "sqlite3.Connection | None" = None,
 ) -> list[AgentResult]:
     """Dispatch all research agents in parallel via concurrent.futures.
 
@@ -618,7 +621,16 @@ def dispatch_research_agents(
                 identity_dir=identity_dir,
             )
 
-            future = executor.submit(run_single_agent, agent_name, prompt)
+            # Use adaptive model routing if traces_conn is provided
+            model_override = None
+            if traces_conn is not None:
+                try:
+                    model_override = router.get_adaptive_model(traces_conn, agent_name)
+                    logger.info(f"Adaptive routing: {agent_name} → {model_override}")
+                except Exception as e:
+                    logger.warning(f"Adaptive routing failed for {agent_name}, using static: {e}")
+
+            future = executor.submit(run_single_agent, agent_name, prompt, "research_agent", model_override)
             futures[future] = agent_name
 
         for future in as_completed(futures):
