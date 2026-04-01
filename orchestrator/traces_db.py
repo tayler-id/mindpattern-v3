@@ -209,6 +209,15 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
             score REAL NOT NULL,
             delta_from_avg REAL
         );
+
+        CREATE TABLE IF NOT EXISTS model_routing_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_name TEXT NOT NULL,
+            run_date TEXT NOT NULL,
+            assigned_model TEXT NOT NULL,
+            quality_score REAL,
+            reason TEXT
+        );
     """)
 
     return conn
