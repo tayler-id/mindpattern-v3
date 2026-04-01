@@ -1,0 +1,19 @@
+{
+  "verdict": "PASS",
+  "quality_score": 8.5,
+  "scores": {
+    "voice_match": 9,
+    "framing_authenticity": 8,
+    "platform_genre_fit": 9,
+    "epistemic_calibration": 9,
+    "structural_variation": 8,
+    "rhetorical_framework": 8
+  },
+  "feedback": "Strong package. No kill switches triggered. Both drafts are tonally distinct and native to their platforms. LinkedIn's 'For a minute I just stared at the terminal' is the best line in the package — it earns the credibility without citing credentials. Bluesky hits the webdevdad peer energy exactly. The three-incident structure in LinkedIn has a clear connecting thread (defaults nobody audited) so the multiple-findings check passes. One note: neither draft includes a specific pipeline/infrastructure reference ('my morning cron', 'my agents') — 'I build with Bun, I publish packages' is solid practitioner grounding but a more specific infrastructure detail would strengthen engagement. Not a failure condition. LinkedIn lacks source URLs (only mindpattern.ai linked), which is consistent with platform norms but worth noting for human review. Art is absent — not an auto-fail.",
+  "platform_verdicts": {
+    "bluesky": "PASS",
+    "linkedin": "PASS"
+  },
+  "cross_platform": "consistent",
+  "kill_switches": "none triggered"
+}
