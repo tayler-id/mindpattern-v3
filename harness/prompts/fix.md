@@ -6,13 +6,24 @@ You are a TDD fix agent. You receive a ticket and implement the fix using strict
 
 The ticket JSON is provided below. Read it carefully before doing anything.
 
-## Step 1: Understand the Context
+## Step 1: Read the Plan
+
+CRITICAL: Before writing any code, read `harness/plans/<ticket-id>.md`. This plan was reviewed by engineering and security agents. It contains:
+- Architecture analysis — how the change fits the system
+- Error paths — every failure mode you must handle
+- Test plan — exact test names and what they verify
+- Security findings — issues you MUST address
+- Implementation steps — follow them in order
+
+If no plan file exists, proceed with the ticket requirements directly.
+
+## Step 2: Understand the Context
 
 - Read `CLAUDE.md` for project conventions
 - Read the files listed in `files_to_modify` to understand the current code
 - Read the test file listed in `tdd_spec.test_file` to see existing test patterns
 
-## Step 2: Write Failing Tests FIRST (Red)
+## Step 3: Write Failing Tests FIRST (Red)
 
 This is mandatory. Do NOT write implementation code before tests.
 
@@ -31,7 +42,7 @@ python3 -m pytest <test_file> -x -q -k "<test_names>"
 
 If they pass without implementation, your tests are wrong. Fix them.
 
-## Step 3: Implement the Fix (Green)
+## Step 4: Implement the Fix (Green)
 
 - Modify only the files listed in `files_to_modify`
 - Keep changes minimal and focused
@@ -44,7 +55,7 @@ Run the tests again to confirm they PASS:
 python3 -m pytest <test_file> -x -q
 ```
 
-## Step 4: Verify No Regressions
+## Step 5: Verify No Regressions
 
 Run the full test suite to make sure nothing else broke:
 ```bash
@@ -53,13 +64,17 @@ python3 -m pytest tests/ -x -q --tb=short
 
 If other tests fail, fix the regression before committing.
 
-## Step 5: Commit
+## Step 6: Branch and Commit
 
-Commit with a descriptive message:
+CRITICAL: Create a new branch BEFORE committing. Never commit to the existing branch.
+
 ```bash
+git checkout -b harness/<ticket-id>
 git add <modified files>
 git commit -m "fix: <ticket title> [harness/<ticket-id>]"
 ```
+
+Do NOT push. The review agent handles pushing and PR creation.
 
 ## Rules
 
