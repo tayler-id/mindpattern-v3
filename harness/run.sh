@@ -52,6 +52,13 @@ if ! mkdir "${LOCK}.d" 2>/dev/null; then
 fi
 echo "$$" > "$LOCK"
 
+# Pull latest main before running
+BRANCH=$(git branch --show-current 2>/dev/null)
+if [ "$BRANCH" = "main" ]; then
+    log "Pulling latest main..."
+    git pull origin main --ff-only >> "$LOGFILE" 2>&1 || log "WARN: git pull failed"
+fi
+
 log "=== Harness started | parallel=$PARALLEL_AGENTS max=$MAX_TICKETS mode=$MODE ==="
 
 # ── Helpers ────────────────────────────────────────────────────────
