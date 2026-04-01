@@ -20,6 +20,7 @@ def _ensure_table(conn: sqlite3.Connection):
             pipeline_run_id TEXT NOT NULL,
             phase TEXT NOT NULL,
             state_data TEXT,
+            user_id TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             UNIQUE(pipeline_run_id, phase)
         )
@@ -27,6 +28,14 @@ def _ensure_table(conn: sqlite3.Connection):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON checkpoints(pipeline_run_id)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_checkpoints_user ON checkpoints(user_id)"
+    )
+    # Migrate: add user_id column if table already existed without it
+    try:
+        conn.execute("ALTER TABLE checkpoints ADD COLUMN user_id TEXT")
+    except Exception:
+        pass  # Column already exists
     conn.commit()
 
 
@@ -37,15 +46,18 @@ class Checkpoint:
         self.conn = traces_conn
         _ensure_table(self.conn)
 
-    def save(self, pipeline_run_id: str, phase: Phase, state_data: dict | None = None):
+    def save(self, pipeline_run_id: str, phase: Phase, state_data: dict | None = None,
+             user_id: str | None = None):
         """Write a checkpoint for a completed phase."""
         self.conn.execute(
-            """INSERT INTO checkpoints (pipeline_run_id, phase, state_data)
-               VALUES (?, ?, ?)
+            """INSERT INTO checkpoints (pipeline_run_id, phase, state_data, user_id)
+               VALUES (?, ?, ?, ?)
                ON CONFLICT(pipeline_run_id, phase) DO UPDATE SET
                    state_data = excluded.state_data,
+                   user_id = COALESCE(excluded.user_id, checkpoints.user_id),
                    created_at = datetime('now')""",
-            (pipeline_run_id, phase.value, json.dumps(state_data) if state_data else None),
+            (pipeline_run_id, phase.value,
+             json.dumps(state_data) if state_data else None, user_id),
         )
         self.conn.commit()
 
@@ -108,8 +120,9 @@ class Checkpoint:
         rows = self.conn.execute(
             """SELECT DISTINCT pipeline_run_id FROM checkpoints
                WHERE pipeline_run_id LIKE ?
+                 AND user_id = ?
                ORDER BY created_at DESC""",
-            (f"%-{run_date}-%",),
+            (f"%-{run_date}-%", user_id),
         ).fetchall()
 
         for row in rows:
