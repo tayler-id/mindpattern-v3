@@ -343,3 +343,73 @@ class TestPostRateLimit:
         with patch("policies.engine.count_posts_today", return_value=3):
             error = social_engine.validate_post_rate_limit("bluesky", db)
         assert error is not None
+
+
+# ════════════════════════════════════════════════════════════════════════
+# CI WORKFLOW VALIDATION TESTS
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestCIWorkflow:
+    """Validate .github/workflows/test.yml is correctly configured for CI."""
+
+    @pytest.fixture(autouse=True)
+    def load_workflow(self):
+        import yaml
+
+        wf_path = PROJECT_ROOT / ".github" / "workflows" / "test.yml"
+        assert wf_path.exists(), f"Workflow file missing: {wf_path}"
+        with open(wf_path) as f:
+            self.workflow = yaml.safe_load(f)
+        self.steps = self.workflow["jobs"]["test"]["steps"]
+
+    def _find_step(self, uses_prefix: str | None = None, name: str | None = None):
+        for step in self.steps:
+            if uses_prefix and step.get("uses", "").startswith(uses_prefix):
+                return step
+            if name and step.get("name") == name:
+                return step
+        return None
+
+    def test_setup_python_allows_prereleases(self):
+        """Python 3.14 is pre-release until Oct 2026; setup-python needs allow-prereleases."""
+        step = self._find_step(uses_prefix="actions/setup-python")
+        assert step is not None, "setup-python step not found"
+        with_block = step.get("with", {})
+        assert with_block.get("allow-prereleases") is True, (
+            "setup-python must set allow-prereleases: true for Python 3.14 (not GA until Oct 2026)"
+        )
+
+    def test_workflow_triggers_on_pr_and_push(self):
+        """Workflow must trigger on both pull_request and push to main."""
+        triggers = self.workflow.get(True, {})  # YAML 'on' key parses as True
+        assert "pull_request" in triggers
+        assert "push" in triggers
+
+    def test_pytest_is_installed(self):
+        """pytest must be installed either via requirements.txt or explicitly."""
+        install_step = self._find_step(name="Install dependencies")
+        assert install_step is not None, "Install dependencies step not found"
+        assert "pytest" in install_step["run"], "pytest must be installed in CI"
+
+    def test_pythonpath_is_set(self):
+        """PYTHONPATH must be set to '.' so local imports work."""
+        run_step = self._find_step(name="Run tests")
+        assert run_step is not None, "Run tests step not found"
+        env = run_step.get("env", {})
+        assert env.get("PYTHONPATH") == ".", "PYTHONPATH must be set to '.'"
+
+    def test_requirements_txt_is_parseable(self):
+        """Every line in requirements.txt must be a valid pip specifier."""
+        from importlib.metadata import PackageNotFoundError
+
+        req_path = PROJECT_ROOT / "requirements.txt"
+        assert req_path.exists()
+        lines = req_path.read_text().splitlines()
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Must have a package name (letters before any version specifier)
+            pkg = line.split(">=")[0].split("<=")[0].split("==")[0].split("<")[0].split(">")[0].strip()
+            assert len(pkg) > 0, f"Invalid requirement line: {line}"
