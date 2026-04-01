@@ -18,6 +18,7 @@ HANDLER_CLASSES: dict[str, str] = {
     "engagement": "slack_bot.handlers.engagement.EngagementHandler",
     "approvals": "slack_bot.handlers.approvals.ApprovalsHandler",
     "briefing": "slack_bot.handlers.briefing.BriefingHandler",
+    "harness": "slack_bot.handlers.harness.HarnessHandler",
 }
 
 

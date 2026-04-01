@@ -1,0 +1,11 @@
+{
+  "stages": {
+    "scout":    {"model": "sonnet", "max_turns": 20, "timeout_s": 600},
+    "research": {"model": "sonnet", "max_turns": 25, "timeout_s": 600},
+    "fix":      {"model": "sonnet", "max_turns": 40, "timeout_s": 1200},
+    "review":   {"model": "opus",   "max_turns": 20, "timeout_s": 600}
+  },
+  "parallel_agents": 3,
+  "max_tickets_per_run": 10,
+  "ticket_decay_days": 7
+}

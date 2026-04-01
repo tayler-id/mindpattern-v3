@@ -1,0 +1,37 @@
+{
+  "id": "2026-03-31-004",
+  "title": "Add test coverage for orchestrator/traces_db.py helper functions",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "traces_db.py has 14 tables and critical helper functions (get_agent_history, get_agent_scorecard, log_agent_metrics, create_alert) with no dedicated tests. The harness scout depends on these queries returning correct data.",
+  "requirements": [
+    "Test get_agent_history returns correct structure",
+    "Test get_agent_scorecard with sample data",
+    "Test log_agent_metrics inserts correctly",
+    "Test create_alert with different severities",
+    "Test schema initialization creates all tables"
+  ],
+  "done_criteria": [
+    "tests/test_traces_db.py exists with at least 6 test functions",
+    "Uses in-memory SQLite for isolation",
+    "All tests pass"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_traces_db.py",
+    "tests_to_write": [
+      "test_schema_creates_all_tables",
+      "test_get_agent_history_empty",
+      "test_get_agent_history_with_data",
+      "test_get_agent_scorecard",
+      "test_log_agent_metrics",
+      "test_create_alert"
+    ]
+  },
+  "files_to_modify": ["tests/test_traces_db.py"],
+  "context": "traces_db.py is the observability backbone. 14 tables, 0 dedicated tests.",
+  "created_at": "2026-04-01T01:18:49Z",
+  "expires_at": "2026-04-08T01:18:49Z",
+  "feedback_history": []
+}

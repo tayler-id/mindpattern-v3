@@ -1,0 +1,41 @@
+{
+  "id": "2026-04-01-003",
+  "title": "Add test coverage for memory/embeddings.py pure math functions",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "memory/embeddings.py contains pure math functions (cosine_similarity, dot_similarity, serialize_f32, deserialize_f32, batch_similarities) with zero test coverage. These are used throughout the deduplication and similarity search pipeline. The functions require only numpy — no ML model or network access needed. A regression in serialize/deserialize would silently corrupt all stored embeddings.",
+  "requirements": [
+    "tests/test_embeddings.py covers cosine_similarity, dot_similarity, serialize_f32, deserialize_f32, and batch_similarities",
+    "Tests do NOT import or invoke embed_text / embed_texts (those require fastembed model download)",
+    "No network access or API keys required"
+  ],
+  "done_criteria": [
+    "test_cosine_similarity_orthogonal_vectors returns 0.0",
+    "test_cosine_similarity_identical_vectors returns 1.0",
+    "test_cosine_similarity_zero_vector returns 0.0 (no divide-by-zero)",
+    "test_serialize_deserialize_roundtrip preserves vector values",
+    "test_batch_similarities_threshold_filters_results passes",
+    "pytest tests/test_embeddings.py -q exits 0"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_embeddings.py",
+    "tests_to_write": [
+      "test_cosine_similarity_orthogonal_vectors",
+      "test_cosine_similarity_identical_vectors",
+      "test_cosine_similarity_zero_vector",
+      "test_dot_similarity_known_values",
+      "test_serialize_deserialize_roundtrip",
+      "test_batch_similarities_threshold_filters_results",
+      "test_batch_similarities_sorted_descending"
+    ]
+  },
+  "files_to_modify": [
+    "tests/test_embeddings.py"
+  ],
+  "context": "memory/embeddings.py line 77 also uses Optional[float] from typing instead of float | None — fix that convention violation as a drive-by when writing tests.",
+  "created_at": "2026-04-01T00:00:00Z",
+  "expires_at": "2026-04-08T00:00:00Z",
+  "feedback_history": []
+}
