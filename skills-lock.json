@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "session-handoff": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "computedHash": "8a73adac79d965a57dc5e898a498c479b749a8fad5ba03b08aa033ad9b710437"
+    }
+  }
+}
