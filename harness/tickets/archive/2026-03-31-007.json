@@ -1,0 +1,32 @@
+{
+  "id": "2026-03-31-007",
+  "title": "Fix failing test: test_successful_slack_approval ignores thread_ts kwarg",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P1",
+  "status": "done",
+  "description": "test_approval.py::TestSlackApproval::test_successful_slack_approval asserts `mock_post.assert_called_once_with('xoxb-fake-token', 'Test message')` but the real call is `_slack_post(token, message, thread_ts=self.thread_ts)` which passes `thread_ts=None`. The keyword argument mismatch causes the assertion to fail. The test was written before thread_ts was added to the _slack_approval path.",
+  "requirements": [
+    "test_successful_slack_approval must pass without modifying production code",
+    "The fix must use assert_called_once_with including thread_ts=None, or use assert_called_once() + call_args inspection"
+  ],
+  "done_criteria": [
+    "python3 -m pytest tests/test_approval.py -x -q exits 0",
+    "Full test suite passes: python3 -m pytest tests/ -x -q"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_approval.py",
+    "tests_to_write": [
+      "test_successful_slack_approval"
+    ]
+  },
+  "files_to_modify": [
+    "tests/test_approval.py"
+  ],
+  "context": "_slack_post signature is `def _slack_post(self, token: str, text: str, thread_ts: str | None = None)`. The approval path at line 401 calls `self._slack_post(token, message, thread_ts=self.thread_ts)` where `self.thread_ts` starts as None.",
+  "created_at": "2026-03-31T00:00:00Z",
+  "expires_at": "2026-04-07T00:00:00Z",
+  "feedback_history": [],
+  "pr_url": "https://github.com/tayler-id/mindpattern-v3/pull/2",
+  "completed_at": "2026-04-01T13:55:55.184914+00:00"
+}
