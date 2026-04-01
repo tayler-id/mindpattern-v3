@@ -1,67 +1,136 @@
 # MindPattern Autonomous Harness
 
-Self-improving outer loop. Agents find issues, create TDD tickets, fix in worktrees, test, review, and create PRs.
+Self-improving outer loop. Agents find issues, plan fixes with engineering rigor, implement with TDD, validate deterministically, review independently, and create PRs.
+
+## Deterministic vs Agentic Boundary
+
+**DETERMINISTIC (Python, no LLM):**
+- Ticket validation (JSON schema, file existence)
+- Security sensitivity detection (path matching)
+- Review depth routing (type → depth mapping)
+- Test execution (pytest)
+- Syntax validation (ast.parse)
+- Secret scanning (regex)
+- Debug statement detection (regex)
+- Diff scope checking (git diff vs allowed files)
+- Ticket lifecycle (pick, mark, decay, archive)
+- Slack notifications (API calls)
+- Audit logging (JSONL append)
+
+**AGENTIC (Opus 4.6, requires judgment):**
+- Scout: finding issues that require reading + understanding code
+- Research: searching the web for ideas
+- Plan: architecture analysis, error mapping, threat modeling
+- Fix: writing tests + implementation
+- Review: code quality assessment, specialist analysis
+
+**Rule: if Python can do it reliably, Python does it. LLMs only for judgment.**
+
+## Pipeline Flow
+
+```
+TICKET CREATED
+     │
+     ▼
+┌─ DETERMINISTIC: validate_ticket() ─────────────────────┐
+│  JSON schema valid? files_to_modify exist?              │
+│  FAIL → reject ticket immediately                       │
+└─────────────────────────────────────────────────────────┘
+     │ PASS
+     ▼
+┌─ DETERMINISTIC: determine_review_depth() ──────────────┐
+│  Bug/improvement → eng-only                            │
+│  Feature/research → full (CEO + eng)                   │
+│  Touches auth/API/data → +security                     │
+└─────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─ AGENTIC: Plan Agent (Opus, worktree) ─────────────────┐
+│  Reads gstack skill files for methodology:              │
+│  • /plan-eng-review → architecture, errors, tests       │
+│  • /plan-ceo-review → premise, alternatives (features)  │
+│  • /cso → OWASP, STRIDE (if security-sensitive)         │
+│  Writes: harness/plans/<ticket-id>.md                   │
+└─────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─ AGENTIC: Fix Agent (Opus, worktree) ──────────────────┐
+│  Reads ticket + plan. TDD: tests first, then code.      │
+│  Creates branch: harness/<ticket-id>                     │
+│  Commits.                                                │
+└─────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─ DETERMINISTIC: post-fix gates ────────────────────────┐
+│  gate_tests_pass()      → pytest full suite             │
+│  gate_syntax_valid()    → ast.parse all changed files   │
+│  gate_no_secrets()      → regex scan for secrets        │
+│  gate_no_debug()        → no pdb/breakpoint left        │
+│  gate_diff_scoped()     → only ticket files modified    │
+│  ALL must pass. Any failure → ticket rejected.          │
+└─────────────────────────────────────────────────────────┘
+     │ ALL PASS
+     ▼
+┌─ AGENTIC: Review Agent (Opus, SEPARATE worktree) ──────┐
+│  3 specialist subagents in parallel:                     │
+│  • Testing specialist: coverage gaps, edge cases         │
+│  • Security specialist: OWASP checks on the diff        │
+│  • Maintainability specialist: DRY, naming, complexity   │
+│  Quality score computed. >= 7 = PASS.                    │
+│  PASS → push branch, create PR with evidence             │
+│  FAIL → reject with detailed findings                    │
+└─────────────────────────────────────────────────────────┘
+     │
+     ▼
+┌─ DETERMINISTIC: CI (GitHub Actions) ───────────────────┐
+│  pytest on Ubuntu. Hard pass/fail on PR.                │
+└─────────────────────────────────────────────────────────┘
+     │
+     ▼
+  Human merges or closes → feedback.json → scout learns
+
+## Claude Code Hooks
+
+hooks fire on every tool call:
+
+**PreToolUse (Bash):** `harness/hooks/pre_commit_gate.py`
+- Blocks git commit if: syntax errors, hardcoded secrets, debug statements
+- Only fires in harness worktrees (checks cwd)
+
+**PostToolUse (Bash):** `harness/hooks/post_tool_audit.py`
+- Logs every tool call to `harness/audit.jsonl`
+- Deterministic audit trail, no LLM
 
 ## Ticket JSON Schema
 
 ```json
 {
   "id": "YYYY-MM-DD-NNN",
-  "title": "Short description of the issue or improvement",
+  "title": "Short description",
   "type": "bug|improvement|feature|research",
   "source": "scout|research",
   "priority": "P1|P2|P3",
   "status": "open|in_progress|done|failed|held",
-  "description": "Detailed description with context",
-  "requirements": ["Requirement 1", "Requirement 2"],
-  "done_criteria": ["What success looks like 1", "What success looks like 2"],
+  "description": "Detailed description",
+  "requirements": ["..."],
+  "done_criteria": ["..."],
   "tdd_spec": {
     "test_file": "tests/test_something.py",
-    "tests_to_write": ["test_function_name_1", "test_function_name_2"]
+    "tests_to_write": ["test_name"]
   },
   "files_to_modify": ["path/to/file.py"],
-  "context": "Additional context, links to traces, error messages",
+  "context": "Additional context",
   "created_at": "ISO-8601",
-  "expires_at": "ISO-8601 (created_at + 7 days)",
+  "expires_at": "ISO-8601 (+ 7 days)",
   "feedback_history": []
 }
 ```
 
-## Priority Levels
+## gstack Skills Used
 
-- **P1**: Failures, regressions, broken functionality. Fix immediately.
-- **P2**: Performance issues, quality degradation, missing error handling. Fix soon.
-- **P3**: Improvements, refactors, new features, research proposals. Fix when capacity.
-
-## For Scout Agent
-
-- Query `data/ramsay/traces.db` via `sqlite3` CLI
-- Check `agent_runs` for failures in last 7 days
-- Check `quality_scores` and `quality_history` for regressions
-- Check `pipeline_phases` for slow or failed phases
-- Check `alerts` for unacknowledged issues
-- Scan `TODO|FIXME|HACK|XXX` in Python files (exclude .venv, node_modules)
-- Read `harness/feedback.json` for past PR outcomes
-- Read existing tickets in `harness/tickets/` to avoid duplicates
-- Generate 3-5 tickets per run, prioritized by impact
-
-## For Fix Agent
-
-- ALWAYS write tests first (TDD — red, green, refactor)
-- Read the ticket JSON for exact requirements
-- Run the specific test file with `python3 -m pytest <test_file> -x -q` before and after
-- Keep changes minimal and focused on the ticket scope
-- Do not modify unrelated files
-- Follow existing code patterns (look at neighboring code)
-- Commit with: `fix: <ticket title> [harness/<ticket-id>]`
-
-## For Review Agent
-
-- Read the diff: `git diff main...HEAD`
-- Check: does the diff match the ticket requirements?
-- Check: are tests meaningful (not just passing trivially)?
-- Check: no regressions in existing tests
-- Check: follows CLAUDE.md conventions
-- Push the fix branch to origin before creating the PR
-- If approved: `gh pr create --title "<title>" --body "<evidence>"`
-- If rejected: do NOT create PR, document rejection reason
+| Stage | Skill | When | What it provides |
+|-------|-------|------|------------------|
+| Plan | `/plan-eng-review` | All tickets | Architecture, error paths, test plan |
+| Plan | `/plan-ceo-review` | Features/research | Premise challenge, alternatives |
+| Plan | `/cso` | Security-sensitive files | OWASP Top 10, STRIDE threats |
+| Review | `/review` | All PRs | Specialist subagents (testing, security, maintainability) |

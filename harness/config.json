@@ -1,11 +1,30 @@
 {
   "stages": {
-    "scout":    {"model": "sonnet", "max_turns": 20, "timeout_s": 600},
-    "research": {"model": "sonnet", "max_turns": 25, "timeout_s": 600},
-    "fix":      {"model": "sonnet", "max_turns": 40, "timeout_s": 1200},
-    "review":   {"model": "opus",   "max_turns": 20, "timeout_s": 600}
+    "scout":    {"model": "opus", "max_turns": 20, "timeout_s": 900},
+    "research": {"model": "opus", "max_turns": 25, "timeout_s": 900},
+    "plan":     {"model": "opus", "max_turns": 30, "timeout_s": 900},
+    "fix":      {"model": "opus", "max_turns": 40, "timeout_s": 1200},
+    "review":   {"model": "opus", "max_turns": 25, "timeout_s": 900}
   },
   "parallel_agents": 3,
   "max_tickets_per_run": 10,
-  "ticket_decay_days": 7
+  "ticket_decay_days": 7,
+  "review_pass_threshold": 7,
+  "security_sensitive_paths": [
+    "social/approval.py",
+    "social/posting.py",
+    "memory/db.py",
+    "orchestrator/sync.py",
+    "dashboard/",
+    "slack_bot/"
+  ],
+  "deterministic_checks": {
+    "test_pass":        "python3 -m pytest tests/ -x -q --tb=short",
+    "lint_imports":     "python3 -c \"import ast, sys; [ast.parse(open(f).read()) for f in sys.argv[1:]]\"",
+    "no_secrets":       "grep -rn 'PRIVATE_KEY\\|SECRET_KEY\\|password.*=.*[\"'\\']' --include='*.py'",
+    "no_debug":         "grep -rn 'import pdb\\|breakpoint()\\|print(' --include='*.py'",
+    "branch_exists":    "git rev-parse --verify",
+    "diff_not_empty":   "git diff main...HEAD --stat | wc -l",
+    "no_untracked":     "git status --porcelain | grep '^??' | wc -l"
+  }
 }
