@@ -436,15 +436,58 @@ def run_single_agent(
     return result
 
 
+def _extract_balanced_json_blocks(text: str) -> list[str]:
+    """Extract all top-level balanced { } blocks from text.
+
+    Walks through the string character by character, tracking brace depth
+    and whether we are inside a JSON string (so braces inside string
+    values are ignored). Returns candidate JSON substrings.
+    """
+    blocks: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == "{":
+            # Start tracking a balanced block
+            start = i
+            depth = 0
+            in_string = False
+            escape = False
+            j = i
+            while j < n:
+                ch = text[j]
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    if in_string:
+                        escape = True
+                elif ch == '"':
+                    in_string = not in_string
+                elif not in_string:
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0:
+                            blocks.append(text[start : j + 1])
+                            i = j  # advance outer pointer past this block
+                            break
+                j += 1
+        i += 1
+    return blocks
+
+
 def _parse_findings(output: str, agent_name: str) -> list[dict]:
     """Parse JSON findings from agent output.
 
-    Tries to find a JSON object with a "findings" array in the output.
-    Falls back to extracting the largest JSON block.
+    Strategy:
+    1. Try direct json.loads on the full (stripped) output.
+    2. Extract all top-level balanced { } blocks, try json.loads on each,
+       and return findings from the first block that has a "findings" key.
+    3. Fall back to extracting balanced [ ] blocks for bare arrays.
+    4. Log a WARNING with the first 200 chars if nothing parses.
     """
-    import re
-
-    # Try direct JSON parse
+    # 1. Try direct JSON parse
     try:
         data = json.loads(output.strip())
         if isinstance(data, dict) and "findings" in data:
@@ -452,27 +495,61 @@ def _parse_findings(output: str, agent_name: str) -> list[dict]:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON block in output (agent might have prefixed text)
-    json_match = re.search(r'\{[\s\S]*"findings"[\s\S]*\}', output)
-    if json_match:
+    # 2. Balanced-brace extraction: find all top-level { } blocks, try each
+    for block in _extract_balanced_json_blocks(output):
         try:
-            data = json.loads(json_match.group())
+            data = json.loads(block)
             if isinstance(data, dict) and "findings" in data:
                 return data["findings"]
         except json.JSONDecodeError:
-            pass
+            continue
 
-    # Try to find a JSON array directly
-    array_match = re.search(r'\[[\s\S]*\]', output)
-    if array_match:
-        try:
-            items = json.loads(array_match.group())
-            if isinstance(items, list) and items and isinstance(items[0], dict):
-                return items
-        except json.JSONDecodeError:
-            pass
+    # 3. Fall back to balanced [ ] array extraction
+    # Walk through looking for top-level [ ] balanced blocks
+    i = 0
+    n = len(output)
+    while i < n:
+        if output[i] == "[":
+            start = i
+            depth = 0
+            in_string = False
+            escape = False
+            j = i
+            while j < n:
+                ch = output[j]
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    if in_string:
+                        escape = True
+                elif ch == '"':
+                    in_string = not in_string
+                elif not in_string:
+                    if ch == "[":
+                        depth += 1
+                    elif ch == "]":
+                        depth -= 1
+                        if depth == 0:
+                            candidate = output[start : j + 1]
+                            try:
+                                items = json.loads(candidate)
+                                if (
+                                    isinstance(items, list)
+                                    and items
+                                    and isinstance(items[0], dict)
+                                ):
+                                    return items
+                            except json.JSONDecodeError:
+                                pass
+                            i = j
+                            break
+                j += 1
+        i += 1
 
-    logger.warning(f"Could not parse findings from {agent_name} output ({len(output)} chars)")
+    logger.warning(
+        f"Could not parse findings from {agent_name} output "
+        f"({len(output)} chars): {output[:200]!r}"
+    )
     return []
 
 
