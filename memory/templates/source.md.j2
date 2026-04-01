@@ -1,0 +1,45 @@
+---
+type: source
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+url: "{{ url }}"
+finding_count: {{ findings | length }}
+eic_selection_rate: {{ eic_selection_rate | default(0.0) }}
+---
+
+# {{ name }}
+
+## URL
+
+{{ url }}
+
+## Finding History
+
+{% if findings %}
+{% for finding in findings %}
+- **{{ finding.title }}** ({{ finding.importance }}, {{ finding.run_date }}) - [[daily/{{ finding.run_date }}]]
+  - {{ finding.summary | default('') }}
+{% endfor %}
+{% else %}
+No findings from this source yet.
+{% endif %}
+
+## Topics Covered
+
+{% if topics %}
+{% for topic in topics %}
+- [[topics/{{ topic.slug }}]] ({{ topic.count }} findings)
+{% endfor %}
+{% else %}
+No topics yet.
+{% endif %}
+
+## Recent Findings
+
+{% if recent_findings %}
+{% for finding in recent_findings %}
+- {{ finding.title }} ({{ finding.run_date }}) - [[daily/{{ finding.run_date }}]]
+{% endfor %}
+{% else %}
+No recent findings.
+{% endif %}

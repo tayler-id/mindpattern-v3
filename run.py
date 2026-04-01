@@ -3,7 +3,7 @@
 
 Replaces run-all-users.sh, run-user-research.sh, and all other shell scripts.
 Handles: PATH setup, concurrency guard, caffeinate, structured logging,
-user iteration, and iMessage summary.
+user iteration, and Slack summary.
 
 Usage:
     python3 run.py                      # Run for all active users
@@ -96,18 +96,36 @@ def acquire_lock() -> int:
         sys.exit(0)
 
 
-def send_imessage(phone: str, message: str) -> None:
-    """Send iMessage via AppleScript."""
+def send_slack_summary(message: str) -> None:
+    """Send pipeline summary to Slack #mindpattern-approvals."""
+    logger = logging.getLogger(__name__)
     try:
-        # Escape double quotes in message
-        safe_msg = message.replace('"', '\\"')
-        script = f'tell application "Messages" to send "{safe_msg}" to buddy "{phone}"'
-        subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, timeout=10,
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", "slack-bot-token", "-w"],
+            capture_output=True, text=True, timeout=10,
         )
-    except Exception:
-        pass  # Best effort
+        if result.returncode != 0:
+            logger.warning("No Slack token in Keychain for summary")
+            return
+
+        token = result.stdout.strip()
+        import json
+        import urllib.request
+        payload = json.dumps({
+            "channel": "C0ALSRHAATH",
+            "text": message,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://slack.com/api/chat.postMessage",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        urllib.request.urlopen(req, timeout=15)
+    except Exception as e:
+        logger.error(f"Failed to send Slack summary: {e}")
 
 
 def main():
@@ -171,25 +189,20 @@ def main():
         total_duration = int((time.monotonic() - pipeline_start))
         logger.info(f"Pipeline finished: {total_duration}s, exit={exit_code}")
 
-        # ── iMessage summary ───────────────────────────────────────────
+        # ── Slack summary ─────────────────────────────────────────────
         if not args.dry_run:
-            # Find phone number from first user's config
             try:
-                from orchestrator.agents import load_user_config
-                user_cfg = load_user_config(users[0]["id"])
-                phone = user_cfg.get("phone")
-                if phone:
-                    from memory import get_stats, open_db
-                    with open_db(user_id=users[0]["id"]) as db:
-                        stats = get_stats(db)
-                    summary = (
-                        f"{stats['findings']} findings | "
-                        f"{total_duration}s | "
-                        f"exit={exit_code}"
-                    )
-                    send_imessage(phone, summary)
-            except Exception:
-                pass  # Best effort
+                from memory import get_stats, open_db
+                with open_db(user_id=users[0]["id"]) as db:
+                    stats = get_stats(db)
+                summary = (
+                    f"{stats['findings']} findings | "
+                    f"{total_duration}s | "
+                    f"exit={exit_code}"
+                )
+                send_slack_summary(summary)
+            except Exception as e:
+                logging.getLogger(__name__).debug(f"Failed to send Slack summary: {e}")
 
     finally:
         # ── Cleanup ────────────────────────────────────────────────────

@@ -431,13 +431,13 @@ class TestApiCallWithRetry:
 class TestDeterministicValidate:
     """Tests for deterministic_validate()."""
 
-    def test_catches_over_length_x_post(self):
-        """Posts >280 chars are flagged for X."""
+    def test_catches_over_length_bluesky_post_graphemes(self):
+        """Posts >300 graphemes are flagged for Bluesky."""
         from social.critics import deterministic_validate
 
-        long_post = "A" * 281 + " https://mindpattern.ai"
-        errors = deterministic_validate("x", long_post)
-        assert any("character limit" in e.lower() or "char" in e.lower() for e in errors)
+        long_post = "A" * 301 + " https://mindpattern.ai"
+        errors = deterministic_validate("bluesky", long_post)
+        assert any("grapheme" in e.lower() for e in errors)
 
     def test_catches_over_length_bluesky_post(self):
         """Posts >300 graphemes are flagged for Bluesky."""
@@ -452,7 +452,7 @@ class TestDeterministicValidate:
         from social.critics import deterministic_validate
 
         post = "This is a game-changer for AI https://mindpattern.ai"
-        errors = deterministic_validate("x", post)
+        errors = deterministic_validate("bluesky", post)
         assert any("game-changer" in e.lower() for e in errors)
 
     def test_catches_em_dash(self):
@@ -460,7 +460,7 @@ class TestDeterministicValidate:
         from social.critics import deterministic_validate
 
         post = "This is cool \u2014 really cool https://mindpattern.ai"
-        errors = deterministic_validate("x", post)
+        errors = deterministic_validate("bluesky", post)
         assert any("\u2014" in e for e in errors)
 
     def test_passes_valid_post(self):
@@ -468,7 +468,7 @@ class TestDeterministicValidate:
         from social.critics import deterministic_validate
 
         post = "Interesting take on LLM evals. https://mindpattern.ai"
-        errors = deterministic_validate("x", post)
+        errors = deterministic_validate("bluesky", post)
         assert errors == []
 
 
@@ -796,20 +796,17 @@ class TestSocialPipeline:
         """SocialPipeline.__init__ accepts a config dict with platforms."""
         config = {
             "platforms": {
-                "x": {
+                "bluesky": {
                     "enabled": True,
-                    "handle": "@test",
-                    "api_base": "https://api.x.com/2",
-                    "max_chars": 280,
+                    "handle": "@test.bsky.social",
+                    "api_base": "https://bsky.social",
+                    "max_chars": 300,
                     "keychain": {
-                        "api_key": "k1",
-                        "api_secret": "k2",
-                        "access_token": "k3",
-                        "access_token_secret": "k4",
+                        "app_password": "bluesky-app-password",
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
         }
         mock_db = MagicMock()
 
@@ -823,34 +820,41 @@ class TestSocialPipeline:
 
         assert pipeline.user_id == "test"
         assert pipeline.config is config
-        assert "x" in pipeline._platform_clients
+        assert "bluesky" in pipeline._platform_clients
 
     def test_run_returns_kill_day_when_no_topic(self, mock_keychain):
         """Pipeline returns kill_day=True when select_topic returns None."""
         config = {
             "platforms": {
-                "x": {
+                "bluesky": {
                     "enabled": True,
-                    "handle": "@test",
-                    "api_base": "https://api.x.com/2",
-                    "max_chars": 280,
+                    "handle": "@test.bsky.social",
+                    "api_base": "https://bsky.social",
+                    "max_chars": 300,
                     "keychain": {
-                        "api_key": "k1",
-                        "api_secret": "k2",
-                        "access_token": "k3",
-                        "access_token_secret": "k4",
+                        "app_password": "bluesky-app-password",
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
             "eic": {},
         }
         mock_db = MagicMock()
 
         with patch("social.pipeline.PolicyEngine") as MockPE, \
              patch("social.pipeline.ApprovalGateway"), \
-             patch("social.pipeline.select_topic", return_value=None):
-            MockPE.load_social.return_value = MagicMock()
+             patch("social.pipeline.select_topic", return_value=None), \
+             patch("social.pipeline.memory") as mock_memory:
+            mock_policy = MagicMock()
+            # Rate limit checks must return None (no error) to allow
+            # the pipeline to proceed past Step 0b to topic selection
+            mock_policy.validate_post_rate_limit.return_value = None
+            mock_policy.validate_rate_limits.return_value = {
+                "allowed": True, "reason": "", "current": 0, "limit": 1,
+            }
+            MockPE.load_social.return_value = mock_policy
+            # No pending posts to process in Step 0a
+            mock_memory.get_pending_posts.return_value = []
 
             from social.pipeline import SocialPipeline
 
@@ -858,36 +862,6 @@ class TestSocialPipeline:
             result = pipeline.run()
 
         assert result["kill_day"] is True
-
-
-# ────────────────────────────────────────────────────────────────────────
-# social/approval.py — _imessage_send
-# ────────────────────────────────────────────────────────────────────────
-
-
-class TestImessageSend:
-    """Tests for ApprovalGateway._imessage_send."""
-
-    def test_constructs_correct_osascript_command(self):
-        """_imessage_send builds the right osascript tell-block."""
-        from social.approval import ApprovalGateway
-
-        gateway = ApprovalGateway({"imessage": {"phone": "+15551234567"}})
-
-        with patch("social.approval.subprocess.run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr=""
-            )
-            gateway._imessage_send("+15551234567", "Test message")
-
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert call_args[0][0][0] == "osascript"
-        assert call_args[0][0][1] == "-e"
-        script = call_args[0][0][2]
-        assert "Messages" in script
-        assert "+15551234567" in script
-        assert "Test message" in script
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -915,7 +889,7 @@ class TestEngagementPipeline:
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
             "engagement": {"max_replies_per_day": 30},
         }
         mock_db = MagicMock()
@@ -948,7 +922,7 @@ class TestEngagementPipeline:
                     },
                 },
             },
-            "imessage": {"phone": ""},
+            "gate_timeout_seconds": 5,
             "engagement": {"max_replies_per_day": 30},
         }
         mock_db = MagicMock()

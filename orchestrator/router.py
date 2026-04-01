@@ -16,7 +16,7 @@ MODELS = {
 MODEL_ROUTING: dict[str, str] = {
     # Research pipeline
     "trend_scan": "haiku",          # cheap, just URL scanning
-    "research_agent": "sonnet",     # good enough for search + extract
+    "research_agent": "opus_1m",      # deep research with full 1M context for papers, repos, long reads
     "synthesis_pass1": "opus_1m",    # editorial judgment + needs full findings in context
     "synthesis_pass2": "opus_1m",    # writing quality + full findings, 1M context
     "learnings_update": "sonnet",   # summarization
@@ -34,12 +34,16 @@ MODEL_ROUTING: dict[str, str] = {
     # Engagement
     "engagement_finder": "sonnet",  # search + match
     "engagement_writer": "sonnet",  # reply writing
+
+    # Self-optimization
+    "evolve": "opus_1m",            # needs 1M context for all traces + skills
+    "identity": "sonnet",           # identity maintenance
 }
 
 # Max turns per task type
 MAX_TURNS: dict[str, int] = {
     "trend_scan": 5,
-    "research_agent": 15,
+    "research_agent": 35,
     "synthesis_pass1": 10,
     "synthesis_pass2": 30,
     "learnings_update": 5,
@@ -53,12 +57,14 @@ MAX_TURNS: dict[str, int] = {
     "humanizer": 5,
     "engagement_finder": 10,
     "engagement_writer": 5,
+    "evolve": 10,
+    "identity": 5,
 }
 
 # Timeout per task type (seconds)
 TIMEOUTS: dict[str, int] = {
     "trend_scan": 60,
-    "research_agent": 1200,     # 20 minutes per agent
+    "research_agent": 1800,     # 30 minutes per agent (Jina deep reads need time)
     "synthesis_pass1": 600,     # 10 minutes — Opus needs time for story selection
     "synthesis_pass2": 900,     # 15 minutes — Opus writing full newsletter
     "learnings_update": 120,
@@ -68,10 +74,12 @@ TIMEOUTS: dict[str, int] = {
     "illustrator": 180,
     "writer": 300,
     "critic": 120,
-    "expeditor": 120,
+    "expeditor": 180,
     "humanizer": 120,
     "engagement_finder": 300,
     "engagement_writer": 120,
+    "evolve": 600,
+    "identity": 300,
 }
 
 # Cost per 1M tokens (for budget tracking)

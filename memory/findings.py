@@ -630,7 +630,7 @@ def get_context(
     if agent == "orchestrator":
         return _orchestrator_context(db, date)
 
-    cutoff = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=7)).strftime(
+    cutoff = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=10)).strftime(
         "%Y-%m-%d"
     )
 
@@ -665,7 +665,7 @@ def get_context(
 
     if recent:
         lines.append(
-            f"### Your Recent Findings (last 7 days, {len(recent)} total)"
+            f"### Your Recent Findings (last 10 days, {len(recent)} total)"
         )
         lines.append(
             "Avoid re-researching these unless there are major updates:"

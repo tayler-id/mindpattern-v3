@@ -1,8 +1,8 @@
-"""Approval system — web dashboard API + iMessage fallback.
+"""Approval system — Slack only.
 
-Two-tier approval: tries the authenticated web dashboard first (instant push
-notifications), falls back to iMessage (AppleScript send + Messages.db polling)
-if the dashboard is unreachable or times out.
+Posts approval requests to Slack #mindpattern-approvals channel and polls
+for threaded replies. If Slack is unavailable, logs an error and returns
+a timeout/skip result.
 
 All approval methods return structured dicts so the pipeline can act on them
 without parsing free-text responses.
@@ -11,43 +11,48 @@ without parsing free-text responses.
 import json
 import logging
 import secrets
-import sqlite3
 import subprocess
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Messages.db path on macOS
-MESSAGES_DB = Path.home() / "Library" / "Messages" / "chat.db"
+# Slack config
+SLACK_CHANNEL = "C0ALSRHAATH"  # #mindpattern-approvals
+SLACK_KEYCHAIN_KEY = "slack-bot-token"
 
 
 class ApprovalGateway:
-    """Unified approval interface — dashboard API with iMessage fallback."""
+    """Unified approval interface — Slack only."""
 
     def __init__(self, config: dict):
         """Initialize from social-config.json.
 
         Args:
             config: Full social-config.json dict. Reads:
-                - imessage.phone: phone number for iMessage fallback
-                - imessage.gate_timeout_seconds: max wait (default 43200 = 12h)
+                - gate_timeout_seconds: max wait (None = wait forever)
                 - approval_api_base: dashboard API URL
         """
-        imessage_config = config.get("imessage", {})
-        self.phone = imessage_config.get("phone", "")
-        self.gate_timeout = imessage_config.get("gate_timeout_seconds", 43200)
+        self.gate_timeout = config.get("gate_timeout_seconds", None)
         self.api_base = config.get("approval_api_base", "")
-        self._last_rowid: int | None = None
+        self.thread_ts = None  # Shared thread for all gates in one pipeline run
 
     # ── Public gates ──────────────────────────────────────────────────
+
+    def notify(self, message: str) -> None:
+        """Post a notification to the approvals channel (no reply expected)."""
+        token = self._get_slack_token()
+        if not token:
+            logger.warning("No Slack token — skipping notification")
+            return
+        self._slack_post(token, message, thread_ts=self.thread_ts)
 
     def request_topic_approval(self, topics: list[dict]) -> dict:
         """Gate 1: Topic approval.
 
-        Presents candidate topics and waits for human selection.
-        Tries web dashboard first, falls back to iMessage.
+        Presents candidate topics and waits for human selection via Slack.
 
         Args:
             topics: List of topic dicts with at least {title, summary, score}.
@@ -59,26 +64,14 @@ class ApprovalGateway:
                 guidance: str           # any editorial guidance from approver
             }
         """
-        # Format topics for display
-        items = []
-        for i, t in enumerate(topics):
-            items.append({
-                "index": i,
-                "title": t.get("title", f"Topic {i + 1}"),
-                "summary": t.get("summary", ""),
-                "score": t.get("score", 0),
-            })
-
-        # iMessage-only approval (no dashboard)
         message = self._format_topic_message(topics)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_topic_reply(reply, len(topics))
 
     def request_draft_approval(self, drafts: dict, images: dict) -> dict:
         """Gate 2: Draft approval.
 
-        Presents final drafts (with images) for approval before posting.
-        Tries web dashboard first, falls back to iMessage with previews.
+        Presents final drafts (with images) for approval before posting via Slack.
 
         Args:
             drafts: {platform: content_str} dict.
@@ -91,27 +84,12 @@ class ApprovalGateway:
                 edits: dict             # {platform: edited_content} for inline edits
             }
         """
-        # Build proof package for dashboard
-        items = []
-        for platform, content in drafts.items():
-            if isinstance(content, dict):
-                text = content.get("content", content.get("text", str(content)))
-            else:
-                text = content
-            items.append({
-                "platform": platform,
-                "content_type": "post",
-                "content": text,
-                "image_url": images.get(platform),
-            })
-
-        # iMessage-only approval (no dashboard)
         message = self._format_draft_message(drafts, images)
-        reply = self._imessage_approval(message, self.gate_timeout)
+        reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_draft_reply(reply, list(drafts.keys()))
 
     def request_engagement_approval(self, candidates: list[dict]) -> dict:
-        """Engagement gate: approve/reject reply candidates.
+        """Engagement gate: approve/reject reply candidates via Slack.
 
         Args:
             candidates: List of dicts with {platform, author, content, our_reply}.
@@ -122,20 +100,8 @@ class ApprovalGateway:
         if not candidates:
             return {"approved_indices": [], "reason": "No candidates"}
 
-        items = []
-        for i, c in enumerate(candidates):
-            items.append({
-                "index": i,
-                "platform": c.get("platform", "?"),
-                "author": c.get("author", "unknown"),
-                "content_preview": (c.get("content", "")[:200]),
-                "our_reply": c.get("our_reply", ""),
-            })
-
-        # iMessage-only approval (no dashboard)
         message = self._format_engagement_message(candidates)
-        reply = self._imessage_approval(message, self.gate_timeout)
-
+        reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_engagement_reply(reply, len(candidates))
 
     # ── Web dashboard ─────────────────────────────────────────────────
@@ -151,7 +117,7 @@ class ApprovalGateway:
             gate_type: Type of gate (topic, draft, engagement).
 
         Returns:
-            Response dict or None (triggers iMessage fallback).
+            Response dict or None if dashboard is unavailable.
         """
         if not self.api_base:
             logger.debug("No approval_api_base configured, skipping web approval")
@@ -181,30 +147,30 @@ class ApprovalGateway:
 
             if resp.status_code not in (200, 201):
                 logger.warning(
-                    f"Dashboard API returned {resp.status_code}, "
-                    f"falling back to iMessage"
+                    f"Dashboard API returned {resp.status_code}"
                 )
                 return None
 
         except Exception as e:
-            logger.warning(f"Dashboard API unreachable: {e}, falling back to iMessage")
+            logger.warning(f"Dashboard API unreachable: {e}")
             return None
 
         # Poll for decision
         poll_url = f"{self.api_base}/api/approvals/{token}"
         poll_interval = 30  # seconds
-        max_polls = self.gate_timeout // poll_interval
         logger.info(
             f"Approval submitted to dashboard (token={token[:8]}...), "
             f"polling every {poll_interval}s"
         )
 
-        for poll_num in range(max_polls):
+        poll_num = 0
+        while True:
             time.sleep(poll_interval)
 
             try:
                 poll_resp = requests.get(poll_url, timeout=10)
                 if poll_resp.status_code != 200:
+                    poll_num += 1
                     continue
 
                 data = poll_resp.json()
@@ -216,6 +182,7 @@ class ApprovalGateway:
                             f"Still waiting for {gate_type} approval "
                             f"({poll_num * poll_interval}s elapsed)"
                         )
+                    poll_num += 1
                     continue
 
                 # Decision received
@@ -224,10 +191,8 @@ class ApprovalGateway:
 
             except Exception as e:
                 logger.debug(f"Poll error (will retry): {e}")
+                poll_num += 1
                 continue
-
-        logger.warning("Dashboard approval timed out, falling back to iMessage")
-        return None
 
     def _normalize_web_response(self, data: dict, gate_type: str) -> dict:
         """Convert dashboard API response to standard gate format."""
@@ -289,172 +254,173 @@ class ApprovalGateway:
 
         return {"action": "skip"}
 
-    # ── iMessage fallback ─────────────────────────────────────────────
+    # ── Slack approval (primary) ─────────────────────────────────────
 
-    def _imessage_approval(self, message: str, timeout_seconds: int = 43200) -> str | None:
-        """Send iMessage via AppleScript, poll Messages.db for reply.
-
-        Args:
-            message: Message text to send.
-            timeout_seconds: Max wait time (default 12 hours).
-
-        Returns:
-            Reply text or None if timed out.
-        """
-        if not self.phone:
-            logger.warning("No iMessage phone configured, cannot request approval")
-            return None
-
-        # Record current max ROWID before sending so we only read new messages
-        self._last_rowid = self._get_max_rowid()
-
-        # Send the approval request
-        self._imessage_send(self.phone, message)
-        logger.info(f"iMessage sent to {self.phone}, waiting for reply...")
-
-        # Poll for response
-        return self._imessage_poll(self.phone, timeout_seconds)
-
-    def _imessage_send(self, phone: str, message: str):
-        """Send iMessage via osascript.
-
-        Args:
-            phone: Phone number to send to.
-            message: Message text.
-        """
-        # Normalize phone number
-        if not phone.startswith("+"):
-            phone = f"+1{phone}"
-
-        # Escape special characters for AppleScript
-        escaped = message.replace("\\", "\\\\").replace('"', '\\"')
-
-        script = f'''
-        tell application "Messages"
-            send "{escaped}" to buddy "{phone}"
-        end tell
-        '''
-
+    def _get_slack_token(self) -> str | None:
+        """Get Slack bot token from macOS Keychain."""
         try:
-            subprocess.run(
-                ["osascript", "-e", script],
-                capture_output=True,
-                text=True,
-                timeout=30,
+            result = subprocess.run(
+                ["security", "find-generic-password", "-s", SLACK_KEYCHAIN_KEY, "-w"],
+                capture_output=True, text=True, timeout=10,
             )
-            logger.debug(f"iMessage sent to {phone}")
-        except subprocess.TimeoutExpired:
-            logger.error("osascript timed out sending iMessage")
-            raise
+            if result.returncode == 0:
+                return result.stdout.strip()
         except Exception as e:
-            logger.error(f"Failed to send iMessage: {e}")
-            raise
+            logger.warning(f"Keychain Slack token lookup failed: {e}")
+        return None
 
-    def _imessage_poll(self, phone: str, timeout_seconds: int) -> str | None:
-        """Poll Messages.db for replies from the given phone number.
+    def _slack_post(self, token: str, text: str, thread_ts: str | None = None) -> dict | None:
+        """Post a message to the Slack approvals channel.
 
-        Tracks ROWID to skip old messages. Skips echo messages (messages
-        we sent ourselves via is_from_me=1).
-
-        Args:
-            phone: Phone number to monitor.
-            timeout_seconds: Max wait time.
-
-        Returns:
-            Reply text or None if timed out.
+        Returns the Slack API response dict with 'ts' (message timestamp) on success.
         """
-        if not MESSAGES_DB.exists():
-            logger.error(f"Messages.db not found at {MESSAGES_DB}")
+        payload = {
+            "channel": SLACK_CHANNEL,
+            "text": text,
+        }
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            "https://slack.com/api/chat.postMessage",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                result = json.loads(resp.read().decode())
+                if result.get("ok"):
+                    return result
+                logger.warning(f"Slack post failed: {result.get('error')}")
+                return None
+        except Exception as e:
+            logger.warning(f"Slack post error: {e}")
             return None
 
-        poll_interval = 15  # seconds
+    def _slack_poll_replies(self, token: str, after_ts: str, timeout_seconds: int | None = None) -> str | None:
+        """Poll Slack channel for any reply after a specific message.
+
+        Accepts both threaded replies AND new channel messages posted after
+        the bot's message. Ignores bot messages (only human replies count).
+
+        Args:
+            token: Slack bot token.
+            after_ts: Timestamp of the bot's message to look for replies after.
+            timeout_seconds: Max wait time. None means wait forever.
+
+        Returns:
+            First human reply text, or None if timed out.
+        """
+        poll_interval = 10
         start_time = time.monotonic()
-        min_rowid = self._last_rowid or 0
+        # Use the shared thread parent for fetching thread replies,
+        # but only accept replies with ts > after_ts
+        thread_parent = self.thread_ts or after_ts
 
-        # Normalize phone for matching (strip spaces, dashes)
-        normalized_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-
-        while (time.monotonic() - start_time) < timeout_seconds:
+        while True:
             time.sleep(poll_interval)
 
             try:
-                conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
-                conn.row_factory = sqlite3.Row
+                # Check for threaded replies first
+                params = urllib.parse.urlencode({
+                    "channel": SLACK_CHANNEL,
+                    "ts": thread_parent,
+                    "limit": 20,
+                })
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.replies?{params}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
 
-                # Query for new messages in this conversation
-                # Match by phone number OR email-based chat identifier
-                # (iMessage conversations can be associated with either)
-                phone_pattern = f"%{normalized_phone[-10:]}%"
-                rows = conn.execute(
-                    """
-                    SELECT m.ROWID, m.text, m.is_from_me, m.date
-                    FROM message m
-                    JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-                    JOIN chat c ON c.ROWID = cmj.chat_id
-                    WHERE m.ROWID > ?
-                      AND m.text IS NOT NULL
-                      AND m.text != ''
-                      AND c.ROWID IN (
-                          SELECT cmj2.chat_id FROM chat_message_join cmj2
-                          JOIN message m2 ON m2.ROWID = cmj2.message_id
-                          JOIN handle h ON h.ROWID = m2.handle_id
-                          WHERE h.id LIKE ?
-                      )
-                    ORDER BY m.ROWID ASC
-                    """,
-                    (min_rowid, phone_pattern),
-                ).fetchall()
+                if result.get("ok"):
+                    messages = result.get("messages", [])
+                    # Only consider replies posted AFTER our specific message
+                    replies = [
+                        m for m in messages[1:]
+                        if m.get("text") and not m.get("bot_id")
+                        and m.get("ts", "0") > after_ts
+                    ]
+                    if replies:
+                        reply_text = replies[0]["text"]
+                        logger.info(f"Slack threaded reply: {reply_text[:50]}")
+                        return reply_text
 
-                conn.close()
+                # Also check for new channel messages after our post
+                params = urllib.parse.urlencode({
+                    "channel": SLACK_CHANNEL,
+                    "oldest": after_ts,
+                    "limit": 10,
+                })
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.history?{params}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    result = json.loads(resp.read().decode())
 
-                if rows:
-                    # Return the first new reply
-                    reply_text = rows[0]["text"]
-                    logger.info(
-                        f"iMessage reply received ({len(rows)} new messages)"
-                    )
-                    return reply_text
+                if result.get("ok"):
+                    messages = result.get("messages", [])
+                    # Find human messages posted AFTER our bot message
+                    for m in messages:
+                        if m.get("ts", "0") > after_ts and not m.get("bot_id") and m.get("text"):
+                            reply_text = m["text"]
+                            logger.info(f"Slack channel reply: {reply_text[:50]}")
+                            return reply_text
 
-            except sqlite3.OperationalError as e:
-                err_str = str(e).lower()
-                if "unable to open" in err_str or "authorization denied" in err_str or "readonly" in err_str:
-                    if not getattr(self, "_fda_warned", False):
-                        logger.error(
-                            f"Cannot read Messages.db — likely Full Disk Access issue. "
-                            f"Grant FDA to Python in System Settings → Privacy & Security → "
-                            f"Full Disk Access. Error: {e}"
-                        )
-                        self._fda_warned = True
-                else:
-                    logger.debug(f"Messages.db poll error (will retry): {e}")
             except Exception as e:
-                logger.warning(f"Unexpected error polling Messages.db: {e}")
+                logger.debug(f"Slack poll error (will retry): {e}")
 
             elapsed = int(time.monotonic() - start_time)
             if elapsed > 0 and elapsed % 3600 == 0:
                 hours = elapsed // 3600
-                logger.info(f"Still waiting for iMessage reply ({hours}h elapsed)")
+                logger.info(f"Still waiting for Slack reply ({hours}h elapsed)")
 
-        logger.warning(f"iMessage approval timed out after {timeout_seconds}s")
-        return None
+            if timeout_seconds is not None and (time.monotonic() - start_time) >= timeout_seconds:
+                logger.warning(f"Slack approval timed out after {timeout_seconds}s")
+                return None
 
-    def _get_max_rowid(self) -> int:
-        """Get the current maximum ROWID from Messages.db."""
-        if not MESSAGES_DB.exists():
-            return 0
+    def _slack_approval(self, message: str, timeout_seconds: int | None = None) -> str | None:
+        """Send approval request to Slack, poll for threaded reply.
 
-        try:
-            conn = sqlite3.connect(f"file:{MESSAGES_DB}?mode=ro", uri=True)
-            row = conn.execute("SELECT MAX(ROWID) FROM message").fetchone()
-            conn.close()
-            return row[0] if row and row[0] else 0
-        except Exception:
-            return 0
+        All gates in a single pipeline run share one thread. Gate 1 creates
+        the parent message; Gate 2+ reply in that thread so the full
+        conversation stays in one place.
+        """
+        token = self._get_slack_token()
+        if not token:
+            logger.error("No Slack token in Keychain — cannot request approval")
+            return None
+
+        # Post in existing thread if we have one (Gate 2+ replies to Gate 1)
+        result = self._slack_post(token, message, thread_ts=self.thread_ts)
+        if not result:
+            logger.error("Slack post failed — cannot request approval")
+            return None
+
+        msg_ts = result.get("message", {}).get("ts") or result.get("ts")
+        if not msg_ts:
+            logger.error("No thread_ts from Slack — cannot poll for reply")
+            return None
+
+        # Save the parent thread_ts from the first gate
+        if self.thread_ts is None:
+            self.thread_ts = msg_ts
+
+        # Poll for replies after THIS message, not the thread parent.
+        # Otherwise Gate 2 picks up Gate 1's reply immediately.
+        logger.info(f"Slack approval posted to #mindpattern-approvals, waiting for reply...")
+        return self._slack_poll_replies(token, msg_ts, timeout_seconds)
 
     # ── Message formatting ────────────────────────────────────────────
 
     def _format_topic_message(self, topics: list[dict]) -> str:
-        """Format topic candidates for iMessage with full details."""
+        """Format topic candidates for Slack approval message."""
         lines = ["MindPattern Social - Topic Approval", ""]
         for i, t in enumerate(topics):
             # Support both title and anchor keys
@@ -481,7 +447,7 @@ class ApprovalGateway:
         return "\n".join(lines)
 
     def _format_draft_message(self, drafts: dict, images: dict) -> str:
-        """Format draft previews for iMessage with actual draft text."""
+        """Format draft previews for Slack approval message."""
         lines = ["MindPattern Social - Draft Approval", ""]
 
         for platform, content in drafts.items():
@@ -497,12 +463,12 @@ class ApprovalGateway:
                 lines.append(f"... ({len(text)} chars total)")
             lines.append("")
 
-        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'x linkedin')")
+        lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'bluesky linkedin')")
 
         return "\n".join(lines)
 
     def _format_engagement_message(self, candidates: list[dict]) -> str:
-        """Format engagement candidates for iMessage."""
+        """Format engagement candidates for Slack approval message."""
         lines = [f"MindPattern Engagement - {len(candidates)} Reply Candidates", ""]
 
         for i, c in enumerate(candidates):
@@ -525,24 +491,27 @@ class ApprovalGateway:
     # ── Reply parsing ─────────────────────────────────────────────────
 
     def _parse_topic_reply(self, reply: str | None, num_topics: int) -> dict:
-        """Parse iMessage reply for topic approval."""
+        """Parse reply for topic approval."""
         if not reply:
             return {"action": "skip", "topic_index": 0, "guidance": "Timed out"}
 
-        reply = reply.strip().lower()
+        original = reply.strip()
+        lower = original.lower()
 
-        if reply in ("skip", "kill", "no", "pass"):
+        if lower in ("skip", "kill", "no", "pass"):
             return {"action": "skip", "topic_index": 0, "guidance": ""}
 
-        if reply in ("retry", "again", "redo"):
+        if lower in ("go", "yes", "approve", "ok", "approved"):
+            return {"action": "go", "topic_index": 0, "guidance": ""}
+
+        if lower in ("retry", "again", "redo"):
             return {"action": "retry", "topic_index": 0, "guidance": ""}
 
         # Check for number selection
         try:
-            num = int(reply.split()[0])
+            num = int(lower.split()[0])
             if 1 <= num <= num_topics:
-                # Check if there's additional guidance after the number
-                parts = reply.split(maxsplit=1)
+                parts = original.split(maxsplit=1)
                 guidance = parts[1] if len(parts) > 1 else ""
                 return {
                     "action": "go",
@@ -552,11 +521,11 @@ class ApprovalGateway:
         except (ValueError, IndexError):
             pass
 
-        # Treat as custom topic
-        return {"action": "custom", "topic_index": 0, "guidance": reply}
+        # Anything else = custom topic (preserve original case)
+        return {"action": "custom", "topic_index": 0, "guidance": original}
 
     def _parse_draft_reply(self, reply: str | None, platforms: list[str]) -> dict:
-        """Parse iMessage reply for draft approval."""
+        """Parse reply for draft approval."""
         if not reply:
             return {"action": "skip", "platforms": [], "edits": {}}
 
@@ -591,7 +560,7 @@ class ApprovalGateway:
     def _parse_engagement_reply(
         self, reply: str | None, num_candidates: int
     ) -> dict:
-        """Parse iMessage reply for engagement approval."""
+        """Parse reply for engagement approval."""
         if not reply:
             return {"approved_indices": [], "reason": "Timed out"}
 

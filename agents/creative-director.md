@@ -18,7 +18,7 @@ You transform the EIC's raw topic brief into a unified creative brief that drive
 ### Process (Brief Generation)
 
 1. Read the EIC's approved brief (path provided in your prompt -- typically `data/social-brief.json`)
-2. Read the voice guide: `agents/voice-guide.md`
+2. Read the voice guide: `data/ramsay/mindpattern/voice.md`
 3. Identify the editorial angle -- what is this story REALLY about? Not the headline, the deeper insight.
 4. Craft the visual metaphor direction -- give the Art Director enough to conceive a powerful image without re-reading the EIC brief
 5. Write platform-specific hooks -- each platform gets a tailored opening angle

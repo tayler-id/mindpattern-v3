@@ -1,0 +1,35 @@
+{
+  "id": "2026-03-31-009",
+  "title": "Add test coverage for social/eic.py (editor-in-chief decision layer)",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "social/eic.py (412 lines) is the editorial decision layer that decides which topics become posts and what angle to take. It has no test coverage. Regressions here silently degrade content quality — wrong topic selection or skipped verdicts won't surface until the newsletter ships. Key logic around topic ranking, verdict parsing, and EIC gating should be tested.",
+  "requirements": [
+    "tests/test_eic.py exists with at least 5 tests",
+    "Test topic selection/ranking logic",
+    "Test verdict parsing from Claude response",
+    "Test behavior when Claude returns malformed verdict JSON",
+    "No real Claude API calls — mock run_claude_prompt or equivalent"
+  ],
+  "done_criteria": [
+    "python3 -m pytest tests/test_eic.py -v exits 0",
+    "Verdict parsing edge cases (missing fields, bad JSON) are exercised"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_eic.py",
+    "tests_to_write": [
+      "test_topic_ranking_prefers_higher_scores",
+      "test_verdict_parsing_valid_json",
+      "test_verdict_parsing_malformed_returns_fallback",
+      "test_eic_skips_topics_below_threshold",
+      "test_eic_gates_on_approval_when_configured"
+    ]
+  },
+  "files_to_modify": ["tests/test_eic.py"],
+  "context": "social/eic.py is called during the SOCIAL phase. It reads candidate topics, calls Claude for editorial verdict, and decides the final post angle. Verdicts are JSON blobs saved to data/social-drafts/.",
+  "created_at": "2026-03-31T00:00:00Z",
+  "expires_at": "2026-04-07T00:00:00Z",
+  "feedback_history": []
+}

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from memory.social import recent_posts
+from memory.social import count_posts_today, recent_posts
 
 try:
     import unicodedata
@@ -238,13 +238,14 @@ class PolicyEngine:
     ) -> str | None:
         """Check if posting is allowed based on today's actual post history.
 
-        Loads max_posts_per_day from social.json rate_limits, then queries
-        memory.social.recent_posts(db, days=1, platform) to count how many
-        posts with posted=1 exist for today.
+        Checks BOTH the social_posts table (posted=1 with today's date)
+        AND the engagements table (engagement_type='post' with today's date).
+        Uses the higher count to prevent any table being out of sync from
+        bypassing the limit.
 
         Args:
             platform: Platform name (x, bluesky, linkedin).
-            db: SQLite database connection with a social_posts table.
+            db: SQLite database connection with social_posts and engagements tables.
 
         Returns:
             Error string if at or over the limit, None if within limit.
@@ -258,9 +259,7 @@ class PolicyEngine:
             )
 
         max_per_day = rate_limits[platform].get("max_posts_per_day", 3)
-
-        posts_today = recent_posts(db, days=1, platform=platform, limit=max_per_day + 10)
-        posted_count = sum(1 for p in posts_today if p.get("posted"))
+        posted_count = count_posts_today(db, platform)
 
         if posted_count >= max_per_day:
             return (
@@ -301,7 +300,9 @@ class PolicyEngine:
 
         if action_type == "post":
             limit = platform_limits.get("max_posts_per_day", 3)
-            current = self._count_actions_today(db, platform, "post", today)
+            # Check both engagements and social_posts tables; use the
+            # higher count so an out-of-sync table can never bypass the limit
+            current = count_posts_today(db, platform)
             allowed = current < limit
             reason = "" if allowed else (
                 f"Post limit reached for {platform}: {current}/{limit} today"
@@ -429,7 +430,7 @@ class PolicyEngine:
             cursor = db.execute(
                 """
                 SELECT COUNT(*) FROM engagements
-                WHERE platform = ? AND action_type = ?
+                WHERE platform = ? AND engagement_type = ?
                 AND date(created_at) = ?
                 """,
                 (platform, action_type, today),
@@ -448,7 +449,7 @@ class PolicyEngine:
             cursor = db.execute(
                 """
                 SELECT created_at FROM engagements
-                WHERE platform = ? AND action_type = ?
+                WHERE platform = ? AND engagement_type = ?
                 ORDER BY created_at DESC LIMIT 1
                 """,
                 (platform, action_type),

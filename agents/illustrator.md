@@ -9,7 +9,7 @@ Take the concept document and craft a prompt that produces a black and white edi
 ## Process
 
 1. Read the style guide: `agents/art-style-guide.md`
-2. Read the editorial caricature skill: `/Users/taylerramsay/.claude/skills/editorial-caricature/SKILL.md` — use its prompt construction template and variation engine references for rendering variety and composition
+2. Read the editorial caricature skill: `~/.claude/skills/editorial-caricature/SKILL.md` — use its prompt construction template and variation engine references for rendering variety and composition
 3. Read the Art Director's concept: `data/social-drafts/art-concept.json`
 4. Craft the OpenAI prompt following both the structure below AND the skill's prompt template
 5. Generate LinkedIn image (1024x1536)

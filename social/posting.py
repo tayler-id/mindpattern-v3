@@ -29,16 +29,22 @@ log = logging.getLogger(__name__)
 # ── Shared helpers ───────────────────────────────────────────────────────
 
 
-def keychain_get(service_name: str) -> str:
+def keychain_get(service_name: str) -> str | None:
     """Read a secret from macOS Keychain.
 
-    Raises RuntimeError if the key is not found.
+    Returns the secret string, or None if the lookup times out.
+    Raises RuntimeError if the key is not found (non-timeout failure).
     """
-    result = subprocess.run(
-        ["security", "find-generic-password", "-s", service_name, "-w"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service_name, "-w"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("Keychain lookup timed out for '%s'", service_name)
+        return None
     if result.returncode != 0:
         raise RuntimeError(
             f"Could not read '{service_name}' from macOS Keychain: {result.stderr.strip()}"
@@ -111,6 +117,9 @@ def compress_image(path: Path, max_bytes: int = 950_000) -> Path:
     Uses PIL/Pillow to progressively reduce JPEG quality.
     Returns the path to the (possibly new) compressed file.
     If the original is already small enough, returns it unchanged.
+
+    Note: When a new compressed file is created, the caller is responsible
+    for cleanup (e.g. ``compressed.unlink(missing_ok=True)`` after upload).
     """
     if path.stat().st_size <= max_bytes:
         return path
@@ -690,9 +699,14 @@ class BlueskyClient:
         """
         self._ensure_session()
 
+        # Only search posts from the last 72 hours
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc) - timedelta(hours=72)).strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {
             "q": query,
             "limit": min(max_results, 100),
+            "since": since,
+            "sort": "latest",
         }
 
         try:
@@ -935,8 +949,56 @@ class LinkedInClient:
             log.error("LinkedIn image binary upload failed: %s", exc)
             return None
 
-    def post(self, content: str, image_path: Path | None = None) -> dict:
-        """Post to LinkedIn via the Posts API (/rest/posts) with optional image.
+    def _upload_document(self, doc_path: Path) -> str | None:
+        """Upload a document (PDF) via the Documents API (initializeUpload + binary PUT).
+
+        Returns the document URN (``urn:li:document:…``) or None on failure.
+
+        See: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/documents-api
+        """
+        person_urn = self._get_person_urn()
+
+        init_payload = {
+            "initializeUploadRequest": {
+                "owner": person_urn,
+            }
+        }
+
+        try:
+            resp = _api_call_with_retry(
+                self.session,
+                "POST",
+                f"{self.api_base}/rest/documents?action=initializeUpload",
+                json=init_payload,
+            )
+            init_data = resp.json()
+
+            upload_url = init_data["value"]["uploadUrl"]
+            document_urn = init_data["value"]["document"]
+        except Exception as exc:
+            log.error("LinkedIn document initializeUpload failed: %s", exc)
+            return None
+
+        try:
+            with open(doc_path, "rb") as f:
+                doc_data = f.read()
+
+            _api_call_with_retry(
+                self.session,
+                "PUT",
+                upload_url,
+                headers={"Content-Type": "application/octet-stream"},
+                data=doc_data,
+                timeout=60,
+            )
+            log.info("Uploaded document to LinkedIn: %s", document_urn)
+            return document_urn
+        except Exception as exc:
+            log.error("LinkedIn document binary upload failed: %s", exc)
+            return None
+
+    def post(self, content: str, image_path: Path | None = None, document_path: Path | None = None) -> dict:
+        """Post to LinkedIn via the Posts API (/rest/posts) with optional image or document.
 
         Returns {success, url, id, error}.
         """
@@ -955,7 +1017,16 @@ class LinkedInClient:
             "isReshareDisabledByAuthor": False,
         }
 
-        if image_path:
+        if document_path:
+            document_urn = self._upload_document(document_path)
+            if document_urn:
+                payload["content"] = {
+                    "media": {
+                        "title": document_path.stem.replace("-", " ").replace("_", " ").title(),
+                        "id": document_urn,
+                    }
+                }
+        elif image_path:
             image_urn = self._upload_image(image_path)
             if image_urn:
                 payload["content"] = {

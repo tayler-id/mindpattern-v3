@@ -1,0 +1,11 @@
+---
+type: index
+date: 2026-03-22
+tags: index, people
+---
+
+# People
+
+People and authors we engage with.
+
+- [[people/engaged-authors|Engaged Authors]]

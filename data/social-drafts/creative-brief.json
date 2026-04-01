@@ -1,45 +1,59 @@
 {
-  "editorial_angle": "Google just published a protocol that treats your UI as an API for AI agents. Not accessibility. Not automation. A first-class citizen spec for machines navigating interfaces built for humans. The deeper story: we're entering a world where UIs have two audiences — humans and agents — and nobody's figured out what happens when those audiences want different things. This isn't the agentic web arriving. It's the moment someone tried to write the spec for it.",
-  "key_message": "Google's A2UI protocol means the 'user' in user interface is no longer assumed to be human.",
-  "emotional_register": "curious",
+  "editorial_angle": "The free market for AI infrastructure is over. This week the US government didn't just draw a line between cleared and uncleared AI vendors — it enforced that line with a sole-source mandate on one side and felony charges on the other. The deeper shift isn't about Palantir winning or Super Micro losing. It's that the criteria for picking AI tools has permanently acquired a column that no analyst report warned about: government alignment status. Solo builders and enterprise buyers alike are now choosing teams in a geopolitical contest they never agreed to enter. The scarce resource was always human judgment. Now it has a security clearance attached.",
+  "key_message": "The criteria for choosing AI tools just changed from 'what ships best' to 'which side of the line are you on' — and that line is now enforced with criminal prosecution.",
+  "emotional_register": "worried",
   "tone": "conversational-authoritative",
   "source_attribution": {
-    "primary": {"name": "Google A2UI on GitHub", "url": "https://github.com/google/A2UI"},
-    "supporting": []
+    "primary": {
+      "name": "Reuters",
+      "url": "https://www.reuters.com/technology/pentagon-adopt-palantir-ai-as-core-us-military-system-memo-says-2026-03-20/"
+    },
+    "supporting": [
+      {
+        "name": "Forbes",
+        "url": "https://www.forbes.com/sites/tylerroush/2026/03/20/super-micro-shares-plunge-25-after-co-founder-charged-in-25-billion-ai-chip-smuggling-plot/"
+      }
+    ]
   },
   "visual_metaphor_direction": {
-    "core_tension": "A human hand and a robotic arm both reaching for the same UI control — the interface was designed for one, now claimed by both. Neither fully owns it.",
-    "suggested_approach": "caricature",
-    "mood": "surreal",
+    "core_tension": "A border crossing checkpoint where AI tools and hardware are being sorted into two fates: cleared vendors sail through with a stamped military passport, while smuggled GPU hardware is seized at the gate by federal agents. Two simultaneous transactions — one a gold-sealed contract, one a confiscation — happening at the same border crossing at the same moment.",
+    "suggested_approach": "symbolic",
+    "mood": "stark",
     "key_elements": [
-      "Google logo or 'G' branding on the interface or screen",
-      "A physical control panel or dashboard with human-centric affordances: buttons, dials, labeled inputs",
-      "A mechanical or skeletal robot arm reaching in from one side, finger extended toward a control",
-      "A human hand reaching from the other side, slightly displaced or uncertain",
-      "A placard or label reading 'USER' that has been partially relabeled or overlaid with 'AGENT'"
+      "Palantir logo/branding on one side of the checkpoint — prominently stamped CLEARED or receiving a golden Pentagon seal",
+      "Crates or server racks labeled Super Micro being seized, red SEIZED stickers, federal agents present",
+      "A hard border dividing line — customs checkpoint, gate, or wall — visually splitting the two fates",
+      "GPU chips or AI hardware as the physical object being sorted, not software or models",
+      "Pentagon eagle or military insignia on the cleared side — authority, not threat"
     ],
     "avoid": [
-      "Friendly robots or cute AI mascots — this is not a consumer product launch",
-      "Abstract neural network imagery, glowing nodes, or digital particle effects",
-      "Smartphones or laptops as the primary interface device — too generic",
-      "Any sense of triumph or celebration — the mood is unresolved curiosity, not victory",
-      "Dystopian darkness or threat — surreal and curious, not ominous"
+      "Generic robots or AI avatars — this is about hardware and procurement, not sci-fi AI",
+      "China or Chinese imagery — the story is about the enforcement mechanism, not geopolitics as a headline",
+      "Individual faces or caricatures of Charles Liang or any named person — this is systemic, not personal",
+      "Dollar signs or money as the primary symbol — the line is about clearance, not cost",
+      "Friendly or optimistic lighting — this should feel tense and high-stakes, not triumphant"
     ]
   },
   "platform_hooks": {
     "x": {
-      "hook": "The 'user' in UI might not be you anymore.",
-      "angle": "Google just published a protocol for AI agents to navigate UIs. That's not a feature. That's a new primary audience."
+      "hook": "AI tool selection just got a clearance requirement.",
+      "angle": "The government didn't warn the market — it mandated and prosecuted in the same week. Every AI vendor you evaluate now has a geopolitical status whether the vendor advertises it or not. That's the hot take that drives quote-tweets: the free market for AI infrastructure quietly ended Thursday."
     },
     "linkedin": {
-      "hook": "Your product has two users now. One of them is an AI.",
-      "angle": "Google's A2UI spec formalizes something product teams have been ignoring: agents are using your interfaces, and they weren't designed for them. What does it actually mean to do UX for a machine?"
+      "hook": "How many vendor evaluation frameworks include 'government security clearance status'? Mine didn't. It does now.",
+      "angle": "For CTOs, VPs of Engineering, and procurement leads: the Pentagon mandate and the Super Micro indictment landed in the same week because they're the same policy move — one carrot, one stick. The question for enterprise AI buyers is which column in your evaluation matrix accounts for 'government alignment risk.' Drive comments by asking what criteria readers actually use."
     },
     "bluesky": {
-      "hook": "Google dropped a spec for AI agents to navigate UIs and I can't stop thinking about it.",
-      "angle": "A2UI is basically: here's how an agent should understand a button. Fifty years of designing UIs for human perception and now we're writing the machine-readable version. Weird moment to be paying attention."
+      "hook": "I pick tools based on what ships the best code. That just got a lot more complicated.",
+      "angle": "Talking to fellow builders — the personal angle. I use Claude Code daily, Anthropic is in a DOJ lawsuit, Palantir just got the military mandate. I didn't sign up to carry geopolitical baggage in my toolbox, but here we are. Invite peers to share what criteria they actually use, or whether this even registers for solo devs yet."
     }
   },
-  "do_not_include": [],
+  "do_not_include": [
+    "White House AI legislative framework — policy story but lower engagement than the Pentagon/Super Micro thread",
+    "NVIDIA Agent Toolkit at GTC — enterprise infrastructure, not the same narrative",
+    "Alibaba Wukong launch — adjacent geopolitics but different story",
+    "Anthropic DOJ lawsuit specifics — mention the clearance dimension only, don't make it the Anthropic story",
+    "Speculation on whether Palantir's mandate survives administration changes — open question, not a stated position"
+  ],
   "mindpattern_link": "https://mindpattern.ai"
 }

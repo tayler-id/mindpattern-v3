@@ -1,22 +1,10 @@
 {
   "imessage": {
     "phone": "+17175783243",
-    "gate_timeout_seconds": 43200
+    "identities": ["+17175783243", "ramsay.tayler@gmail.com"],
+    "gate_timeout_seconds": null
   },
   "platforms": {
-    "x": {
-      "enabled": false,
-      "handle": "@mindpattern_ai",
-      "api_base": "https://api.x.com/2",
-      "keychain": {
-        "api_key": "x-api-key",
-        "api_secret": "x-api-secret",
-        "access_token": "x-access-token",
-        "access_token_secret": "x-access-token-secret"
-      },
-      "max_chars": 280,
-      "max_thread_posts": 6
-    },
     "linkedin": {
       "enabled": true,
       "keychain": {
@@ -40,7 +28,7 @@
   "eic": {
     "model": "opus",
     "max_turns": 15,
-    "quality_threshold": 5.0,
+    "quality_threshold": 7.0,
     "max_topics": 3
   },
   "creative_director": {
@@ -61,21 +49,24 @@
   "expeditor": {
     "model": "sonnet",
     "max_turns": 10,
-    "quality_threshold": 5.0,
+    "quality_threshold": 7.0,
     "max_revision_cycles": 1
+  },
+  "preferred_posting_window": {
+    "start_hour": 7,
+    "end_hour": 12,
+    "timezone": "America/New_York"
   },
   "mindpattern_link": "https://mindpattern.ai",
   "approval_api_base": "https://mindpattern.fly.dev",
   "social_log": "data/social-log.json",
   "social_brief": "data/social-brief.json",
   "engagement": {
-    "platforms": ["bluesky"],
+    "platforms": ["bluesky", "linkedin"],
     "max_replies_per_day": 30,
-    "max_follows_x_per_day": 75,
-    "max_follows_bluesky_per_day": 100,
     "reply_cooldown_days": 7,
-    "min_follower_count": 50,
-    "min_likes": 3,
+    "min_follower_count": 10,
+    "min_likes": 0,
     "max_likes": 5000,
     "search_queries_per_platform": 8,
     "candidates_per_platform": 20

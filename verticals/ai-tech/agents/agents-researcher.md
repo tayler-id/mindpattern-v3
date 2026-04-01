@@ -131,4 +131,7 @@ Return findings as a structured list. For each finding:
 - **Summary**: 2-3 sentences with the KEY insight. What's new, what's the capability, why does it matter?
 ```
 
-Return 8-12 findings, ordered by importance.
+Return a MINIMUM of 15 findings. Target 18-20.
+
+
+## Phase 2 Exploration

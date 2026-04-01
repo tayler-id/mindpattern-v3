@@ -32,7 +32,7 @@ def review_draft(platform: str, draft_text: str) -> dict:
     Scores: voice_authenticity, platform_fit, engagement_potential (each 1-10)
     """
     # Load voice guide for inline inclusion
-    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide_path = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
     voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
 
     # Platform-specific rules
@@ -218,7 +218,7 @@ def expedite(
             }
 
     # Load voice guide for inline inclusion
-    voice_guide_path = PROJECT_ROOT / "agents" / "voice-guide.md"
+    voice_guide_path = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
     voice_guide = voice_guide_path.read_text() if voice_guide_path.exists() else ""
 
     # Format proof package sections for the prompt
@@ -371,16 +371,6 @@ Write ONLY the JSON file. No other files, no other output.
 def _get_platform_rules(platform: str) -> str:
     """Return a human-readable summary of platform constraints."""
     rules = {
-        "x": (
-            "- HARD LIMIT: 280 characters per post\n"
-            "- URLs count as 23 characters regardless of actual length (t.co wrapping)\n"
-            "- Single posts preferred, not threads\n"
-            "- 0-1 hashtags (zero is usually better)\n"
-            "- No emoji formatting or emoji bullet points\n"
-            "- Must include https://mindpattern.ai at end\n"
-            "- Tone: sharp observation, like texting a colleague you respect\n"
-            "- Audience: tech/engineering professionals"
-        ),
         "linkedin": (
             "- Sweet spot: 1200-1500 characters\n"
             "- First 2 lines are the hook (truncated after ~210 chars)\n"
@@ -396,7 +386,7 @@ def _get_platform_rules(platform: str) -> str:
             "- URLs count toward the 300 limit\n"
             "- SINGLE POST ONLY. Never a thread.\n"
             "- Must include https://mindpattern.ai at end\n"
-            "- Most technical depth of the 3 platforms\n"
+            "- Most technical depth of the 2 platforms\n"
             "- No viral-bait tactics\n"
             "- Conversational, community-oriented, lowercase fine\n"
             "- Tone: delightfully specific micro-take, like posting in a Discord\n"

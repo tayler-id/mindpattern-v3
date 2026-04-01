@@ -1,0 +1,29 @@
+{
+  "id": "2026-03-31-R001",
+  "title": "Evaluate promptfoo or inspect-ai for agent eval framework",
+  "type": "research",
+  "source": "research",
+  "priority": "P3",
+  "status": "open",
+  "description": "The EVOLVE phase compares traces vs skill files but has no structured eval framework. Tools like promptfoo (already referenced in tests/prompts/promptfoo.yaml) and inspect-ai provide standardized eval runs with regression detection. Investigate whether either can replace the ad-hoc quality scoring in evaluator.py.",
+  "requirements": [
+    "Research promptfoo and inspect-ai capabilities",
+    "Compare against existing evaluator.py approach",
+    "Prototype a basic eval config for one research agent",
+    "Document findings and recommendation"
+  ],
+  "done_criteria": [
+    "A working promptfoo or inspect-ai config that evals one agent",
+    "Comparison doc: current approach vs proposed framework",
+    "Recommendation with effort estimate"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_evaluator.py",
+    "tests_to_write": ["test_eval_framework_integration"]
+  },
+  "files_to_modify": ["tests/prompts/promptfoo.yaml", "orchestrator/evaluator.py"],
+  "context": "tests/prompts/promptfoo.yaml already exists but appears unused. This could be the foundation for structured evals.",
+  "created_at": "2026-04-01T01:18:49Z",
+  "expires_at": "2026-04-08T01:18:49Z",
+  "feedback_history": []
+}

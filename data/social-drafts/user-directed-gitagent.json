@@ -1,0 +1,35 @@
+{
+  "rank": 1,
+  "anchor": "GitAgent just launched an open standard that turns any git repo into a callable AI agent via a standardized manifest, like robots.txt but for agent capabilities. 81 points on Show HN on launch day. This is the config-over-framework pattern in action: instead of locking your agent into LangChain or CrewAI, you define it once as files in a repo (SOUL.md, SKILL.md, agent.yaml) and export to Claude Code, OpenAI Agents SDK, CrewAI, or Lyzr. Same week, Docker shipped Docker Agent and Axe launched with the same thesis. Three different teams arrived at the same conclusion independently: the agent framework era is ending, the agent-as-config era is starting.",
+  "angle": "The agent ecosystem is undergoing a quiet but fundamental shift from framework lock-in to portable configuration. GitAgent, Docker Agent, and Axe all represent the same bet: agents should be defined declaratively and run anywhere, not married to a runtime. This mirrors what happened with containers (Docker) and infrastructure (Terraform). The winners won't be the frameworks, they'll be the standards.",
+  "anchor_source": "Show HN: GitAgent — https://www.gitagent.sh/",
+  "connection": "The learnings archive from March 15 research identified 'config-over-framework' as a recurring pattern: Axe, GitAgent, and Docker Agent all replacing LangChain-style products in the same window. This isn't one product launch — it's a category shift. mindpattern's own architecture (SOUL.md identity files, skill docs as markdown, agent definitions as .md files) already follows this pattern.",
+  "connection_source": "mindpattern research archive — pattern identified across March 14-15 findings",
+  "reaction": "I've been building mindpattern with agent definitions as markdown files for months. Every agent is an .md file with a system prompt, a process checklist, and output rules. No framework, no SDK dependency. When I saw GitAgent standardize this exact pattern into an open spec, I felt validated and slightly nervous. Validated because it confirms the approach works. Nervous because if a standard emerges and it's different from what I built, I'll have to migrate. I already export agents to Claude Code via claude -p with --append-system-prompt-file. GitAgent wants to make that portable across every runtime. That's the right direction.",
+  "open_questions": [
+    "Will GitAgent's manifest format gain adoption or will it fragment into competing specs?",
+    "Does portability actually matter if most builders are locked into one model provider anyway?",
+    "How does agent-as-config handle state and memory, which are the hardest parts to make portable?"
+  ],
+  "do_not_include": [
+    "Financial compliance frameworks (FINRA, SEC, CFPB, Federal Reserve) — GitAgent has nothing to do with financial regulation",
+    "Meta Avocado / Moonshot AI — different topic, already covered in today's EIC run",
+    "CrowdStrike AI code security — different topic, already in today's EIC selections",
+    "Docker Agent or Axe specifics — keep focus on the pattern, not a product roundup"
+  ],
+  "confidence": "MEDIUM",
+  "emotional_register": "curious",
+  "mindpattern_context": "mindpattern already follows this exact pattern — agent definitions as .md files, skills as markdown, no framework dependency. GitAgent standardizing this validates the architecture.",
+  "mindpattern_link": "https://mindpattern.ai",
+  "editorial_scores": {
+    "novelty": 7,
+    "broad_appeal": 6,
+    "thread_potential": 8,
+    "composite": 6.85
+  },
+  "source_urls": [
+    "https://www.gitagent.sh/"
+  ],
+  "_user_directed": true,
+  "_user_directed_note": "User requested this topic be posted through the social pipeline. Original request referenced financial compliance (FINRA/Fed/SEC/CFPB) but GitAgent is actually an open standard for agent portability, not a financial compliance tool. The compelling angle is the config-over-framework pattern shift, which connects to mindpattern's own architecture."
+}

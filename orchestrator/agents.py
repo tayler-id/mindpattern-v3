@@ -7,6 +7,7 @@ gets a focused prompt with its context. Python controls the orchestration.
 
 import json
 import logging
+import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,9 +22,34 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SOCIAL_DRAFTS_DIR = PROJECT_ROOT / "data" / "social-drafts"
 
+# Pipeline date — set by runner before dispatching agents
+_pipeline_date: str | None = None
+
+
+def set_pipeline_date(date_str: str) -> None:
+    """Set the pipeline date so subprocess env vars include it."""
+    global _pipeline_date
+    _pipeline_date = date_str
+
+
+def _agent_env(agent_name: str) -> dict[str, str]:
+    """Build environment dict for a claude -p subprocess.
+
+    Inherits the parent process environment and adds MINDPATTERN_AGENT,
+    MINDPATTERN_DATE, and MINDPATTERN_VAULT so the SessionEnd hook can
+    capture the transcript into the correct agent folder.
+    """
+    env = {**os.environ}
+    env["MINDPATTERN_AGENT"] = agent_name
+    if _pipeline_date:
+        env["MINDPATTERN_DATE"] = _pipeline_date
+    vault = PROJECT_ROOT / "data" / "ramsay" / "mindpattern"
+    env["MINDPATTERN_VAULT"] = str(vault)
+    return env
+
 # Tools each agent is allowed to use
 AGENT_ALLOWED_TOOLS = [
-    "Bash", "WebSearch", "WebFetch", "Read", "Glob", "Grep",
+    "Agent", "Bash", "WebSearch", "WebFetch", "Read", "Glob", "Grep",
 ]
 
 
@@ -94,6 +120,9 @@ def build_agent_prompt(
     context: str,
     trends: list[dict] | None = None,
     claims: list[str] | None = None,
+    preflight_items: list[dict] | None = None,
+    already_covered: list[dict] | None = None,
+    identity_dir: Path | None = None,
 ) -> str:
     """Build the prompt for a single research agent.
 
@@ -102,11 +131,22 @@ def build_agent_prompt(
     2. SOUL identity
     3. Agent skill definition
     4. Dynamic context (date, trends, memory context, claims)
-    5. Search instructions (SMTL: search ALL first, then reason)
-    6. Critical output rules repeated
+    5. Novelty requirement
+    6. Phase 1 (evaluate preflight) + Phase 2 (explore) — or legacy SMTL
+    7. Critical output rules repeated
     """
     soul_content = soul_path.read_text() if soul_path.exists() else ""
     skill_content = agent_skill_path.read_text() if agent_skill_path.exists() else ""
+
+    # Load identity files from vault if identity_dir provided
+    user_content = ""
+    if identity_dir:
+        vault_soul = identity_dir / "soul.md"
+        if vault_soul.exists():
+            soul_content = vault_soul.read_text()  # Override verticals version
+        vault_user = identity_dir / "user.md"
+        if vault_user.exists():
+            user_content = vault_user.read_text()
 
     trends_section = ""
     if trends:
@@ -120,6 +160,94 @@ def build_agent_prompt(
             + "\n".join(f"- {c}" for c in claims)
             + "\n"
         )
+
+    # Build preflight sections if data available
+    preflight_section = ""
+    if preflight_items:
+        new_items = [i for i in preflight_items if not i.get("already_covered")]
+        covered_items = already_covered or [i for i in preflight_items if i.get("already_covered")]
+
+        # Phase 1: Evaluate preflight data
+        items_md = []
+        for idx, item in enumerate(new_items, 1):
+            metrics_str = ""
+            if item.get("metrics"):
+                parts = [f"{k}={v}" for k, v in item["metrics"].items() if v]
+                if parts:
+                    metrics_str = f" ({', '.join(parts)})"
+            items_md.append(
+                f"{idx}. **[{item['source'].upper()}]** [{item.get('source_name', '')}] "
+                f"{item['title']}\n"
+                f"   URL: {item['url']}\n"
+                f"   {item.get('content_preview', '')[:200]}{metrics_str}"
+            )
+
+        covered_md = []
+        for item in (covered_items or [])[:20]:
+            mi = item.get("match_info") or {}
+            covered_md.append(
+                f"- ~~{item['title']}~~ — covered by {mi.get('matched_agent', '?')} "
+                f"on {mi.get('matched_date', '?')} (sim={mi.get('similarity', 0):.2f})"
+            )
+
+        nl = "\n"
+        preflight_section = f"""
+
+---
+
+## Phase 1: Evaluate Pre-Fetched Data
+
+Below are {len(new_items)} NEW items pre-fetched from your domain sources.
+
+Select ALL qualifying new items as findings (minimum 15, target 18-20). For each:
+- Verify the content is real and recent (not old news resurfacing)
+- Write a 2-3 sentence summary with specific details (names, numbers, dates)
+- Rate importance (high/medium/low)
+- Include the source_url from the preflight data
+
+{nl.join(items_md)}
+
+### ALREADY COVERED (skip unless major update)
+
+{nl.join(covered_md) if covered_md else 'None.'}
+
+---
+
+## Phase 2: Explore Beyond Preflight
+
+The preflight data covers known sources. Now find what it MISSED.
+Use these tools to discover 3-5 additional findings:
+
+- Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
+- Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
+- Twitter search: xreach search "query" --count 10 --json
+- YouTube transcripts: yt-dlp --dump-json "URL"
+- WebSearch (last resort): only if Exa doesn't cover it
+
+Look for:
+- Stories that broke in the last 6 hours (too recent for RSS/feeds)
+- Primary sources not in our feed list
+- Reactions and follow-ups to stories in the preflight data
+
+Target: 20-25 total findings (15-20 from Phase 1 + 3-5 from Phase 2).
+
+"""
+
+    # Old search instructions — only used when no preflight data
+    search_section = ""
+    if not preflight_items:
+        search_section = """
+---
+
+## Search Instructions (SMTL)
+
+PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
+PHASE B: Now reason over collected evidence. Score each finding.
+PHASE C: Filter against the Recent Findings list. Remove anything already covered.
+
+For each finding evaluation, use max 5 words per reasoning step.
+Do not explain your full reasoning — just output the finding.
+"""
 
     prompt = f"""CRITICAL: Output ONLY valid JSON matching this schema. No markdown, no commentary.
 {{
@@ -142,6 +270,10 @@ def build_agent_prompt(
 
 ---
 
+{user_content}
+
+---
+
 {skill_content}
 
 ---
@@ -153,14 +285,64 @@ def build_agent_prompt(
 
 ---
 
-## Search Instructions (SMTL)
+## NOVELTY REQUIREMENT (CRITICAL)
 
-PHASE A: Execute ALL search queries. Collect all results. Do NOT evaluate yet.
-PHASE B: Now reason over collected evidence. Score each finding.
+You MUST find NEW content that is NOT in the "Recent Findings" list above.
+The recent findings list covers the LAST 10 DAYS of published newsletters.
+If a topic, company, product, or event was covered in ANY of the last 10 days,
+DO NOT include it unless ALL of these are true:
+- There is genuinely new data, a new announcement, or a material update
+- The new information changes the story meaningfully (not just "more coverage")
+- You can cite a specific new source published in the last 48 hours
 
-For each finding evaluation, use max 5 words per reasoning step.
-Do not explain your full reasoning — just output the finding.
+"More coverage of the same story" is NOT new. "A blog post summarizing what
+we already reported" is NOT new. "An old paper trending on social media" is NOT new.
 
+Search for what happened in the LAST 48 HOURS. Prioritize:
+- Brand new announcements, launches, releases from the last 24 hours
+- Breaking developments not yet widely covered
+- Primary sources (official blogs, papers, repos) over secondary coverage
+- ArXiv papers must have been published in the last 7 days (check the arXiv ID date prefix)
+
+Every finding you return must pass this test: "Would someone who read
+the last 10 issues of this newsletter learn something genuinely NEW from this?"
+
+---
+
+## RESEARCH METHODOLOGY
+
+Follow this structured approach for high-quality findings:
+
+### Source Verification (REQUIRED)
+- For every major finding, verify the claim from at least 2 independent sources
+- If you can only find a single source, mark importance as "low"
+- Prefer primary sources (official blogs, release notes, papers) over secondary coverage (news articles, rewrites)
+- Cross-reference metrics: if a source claims "10K stars," verify on the actual GitHub repo
+
+### Competing Hypotheses
+When evaluating a story's importance, consider:
+- What's the strongest counter-argument to this being important?
+- Is this a genuine development or marketing hype?
+- Could this be old news resurfacing? Check the actual publication date, not when it was shared.
+
+### Subagent Delegation
+For high-signal stories that need deep investigation, spawn a subagent:
+- Use the Agent tool to delegate deep reads of long documents
+- Spawn subagents for parallel verification across multiple sources
+- Do NOT spawn subagents for simple searches — use WebSearch directly
+
+### Self-Critique Gate (MANDATORY — do this BEFORE outputting JSON)
+Review EVERY finding against these checks before including it:
+
+1. **Recency**: Is the primary source from the last 48 hours? If older, DROP IT.
+2. **10-Day Dedup**: Was this topic covered in any newsletter in the last 10 days (check the Recent Findings list)? If yes and no genuinely new data, DROP IT.
+3. **Source Quality**: Is this from a primary source or a rewrite? If rewrite with no new information, DROP IT.
+4. **Verification**: Can you verify this from at least one other source? If single-source, mark importance "low".
+5. **Analysis**: Did you add your own analysis, or just restate the headline? Add what it means for builders.
+6. **ArXiv Date Check**: If citing an arXiv paper, verify the ID date prefix matches the last 7 days (e.g., "2603" = March 2026). Papers from months ago are NOT new.
+
+Drop any finding that fails checks 1, 2, or 3. Downgrade any finding that fails checks 4 or 5.
+{preflight_section}{search_section}
 ---
 
 CRITICAL REMINDER: Output ONLY the JSON object with "findings" array. No other text.
@@ -192,8 +374,18 @@ def run_single_agent(
     for tool in AGENT_ALLOWED_TOOLS:
         cmd.extend(["--allowedTools", tool])
 
+    # Block skills but allow subagent delegation for deep research
+    cmd.extend(["--disallowedTools", "Skill"])
+
+    logger.info(
+        f"run_single_agent START: agent={agent_name}, model={model}, "
+        f"prompt_size={len(prompt)} chars, max_turns={max_turns}, timeout={timeout}s"
+    )
     start = time.monotonic()
     result = AgentResult(agent_name=agent_name)
+
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(agent_name)
 
     try:
         proc = subprocess.run(
@@ -202,6 +394,7 @@ def run_single_agent(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
         result.exit_code = proc.returncode
         result.raw_output = proc.stdout
@@ -209,7 +402,21 @@ def run_single_agent(
 
         if proc.returncode != 0:
             result.error = proc.stderr[:500] if proc.stderr else "Non-zero exit code"
-            logger.warning(f"Agent {agent_name} exited with code {proc.returncode}")
+            logger.warning(
+                f"Agent {agent_name} exited with code {proc.returncode}, "
+                f"duration={result.duration_ms}ms, "
+                f"stderr_preview='{(proc.stderr or '')[:200]}'"
+            )
+            # Still try to parse findings — agent may have produced valid output
+            # before a hook failure set exit code to non-zero
+            if proc.stdout and proc.stdout.strip():
+                result.findings = _parse_findings(proc.stdout, agent_name)
+                if result.findings:
+                    logger.info(
+                        f"Agent {agent_name} had non-zero exit but produced "
+                        f"{len(result.findings)} findings — recovering output"
+                    )
+                    result.error = None  # Clear error since we got findings
             return result
 
         # Parse JSON findings from output
@@ -277,6 +484,7 @@ def dispatch_research_agents(
     claims: list[str] | None = None,
     max_workers: int = 6,
     vertical: str = "ai-tech",
+    preflight_data: dict | None = None,
 ) -> list[AgentResult]:
     """Dispatch all research agents in parallel via concurrent.futures.
 
@@ -310,6 +518,15 @@ def dispatch_research_agents(
             # Build context for this agent
             context = context_fn(agent_name, date_str)
 
+            # Get preflight items assigned to this agent
+            agent_preflight = None
+            agent_covered = None
+            if preflight_data and preflight_data.get("assignments"):
+                agent_preflight = preflight_data["assignments"].get(agent_name, [])
+                agent_covered = preflight_data.get("already_covered", [])
+
+            identity_dir = PROJECT_ROOT / "data" / user_id / "mindpattern"
+
             prompt = build_agent_prompt(
                 agent_name=agent_name,
                 user_id=user_id,
@@ -319,6 +536,9 @@ def dispatch_research_agents(
                 context=context,
                 trends=trends,
                 claims=claims,
+                preflight_items=agent_preflight,
+                already_covered=agent_covered,
+                identity_dir=identity_dir,
             )
 
             future = executor.submit(run_single_agent, agent_name, prompt)
@@ -391,6 +611,12 @@ def run_agent_with_files(
     for tool in allowed_tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Prevent subagent dispatch — agents must do their own work
+    cmd.extend(["--disallowedTools", "Agent"])
+
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(task_type)
+
     proc = None
     try:
         proc = subprocess.run(
@@ -399,6 +625,7 @@ def run_agent_with_files(
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         logger.warning(f"Agent {task_type} timed out after {timeout}s")
@@ -448,18 +675,32 @@ def run_claude_prompt(
 ) -> tuple[str, int]:
     """Run a single claude -p call for non-agent tasks (synthesis, trends, etc.).
 
+    For large prompts (>100K chars), writes to a temp file and pipes via stdin
+    to avoid OS argument length limits.
+
     Returns (output_text, exit_code).
     """
     model = router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-    ]
+    # For large prompts, use stdin pipe instead of -p argument
+    use_stdin = len(prompt) > 100_000
+
+    if use_stdin:
+        cmd = [
+            "claude", "-p", "-",
+            "--model", model,
+            "--max-turns", str(max_turns),
+            "--output-format", "text",
+        ]
+    else:
+        cmd = [
+            "claude", "-p", prompt,
+            "--model", model,
+            "--max-turns", str(max_turns),
+            "--output-format", "text",
+        ]
 
     if system_prompt_file:
         cmd.extend(["--append-system-prompt-file", system_prompt_file])
@@ -468,18 +709,50 @@ def run_claude_prompt(
     for tool in tools:
         cmd.extend(["--allowedTools", tool])
 
+    # Prevent subagent dispatch and file writing — agents must return output
+    # via stdout, not write to files. Write/Edit would let the agent put the
+    # newsletter in a file instead of returning it.
+    cmd.extend(["--disallowedTools", "Agent,Write,Edit,NotebookEdit,Skill"])
+
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(task_type)
+
+    logger.info(
+        f"run_claude_prompt START: task_type={task_type}, model={model}, "
+        f"prompt_size={len(prompt)} chars, max_turns={max_turns}, timeout={timeout}s"
+        + (f", system_prompt_file={system_prompt_file}" if system_prompt_file else "")
+        + (f", stdin_mode=True" if use_stdin else "")
+    )
+    call_start = time.monotonic()
+
     try:
         proc = subprocess.run(
             cmd,
+            input=prompt if use_stdin else None,
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=str(PROJECT_ROOT),
+            env=env,
+        )
+        call_duration = time.monotonic() - call_start
+        logger.info(
+            f"run_claude_prompt END: task_type={task_type}, "
+            f"exit_code={proc.returncode}, output_len={len(proc.stdout)}, "
+            f"duration={call_duration:.1f}s"
         )
         return proc.stdout, proc.returncode
     except subprocess.TimeoutExpired:
-        logger.error(f"Claude call timed out after {timeout}s for {task_type}")
+        call_duration = time.monotonic() - call_start
+        logger.error(
+            f"run_claude_prompt TIMEOUT: task_type={task_type}, "
+            f"timeout={timeout}s, duration={call_duration:.1f}s"
+        )
         return "", 1
     except Exception as e:
-        logger.error(f"Claude call failed for {task_type}: {e}")
+        call_duration = time.monotonic() - call_start
+        logger.error(
+            f"run_claude_prompt ERROR: task_type={task_type}, "
+            f"error={e}, duration={call_duration:.1f}s"
+        )
         return "", 1

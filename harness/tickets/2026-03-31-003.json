@@ -1,0 +1,35 @@
+{
+  "id": "2026-03-31-003",
+  "title": "Add test coverage for orchestrator/pipeline.py phase transitions",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "orchestrator/pipeline.py defines the Phase enum, PHASE_ORDER, SKIPPABLE_PHASES, and CRITICAL_PHASES. No dedicated test file exists. Phase ordering bugs would cause the pipeline to run phases out of order or skip critical phases silently.",
+  "requirements": [
+    "Test Phase enum has all 12 phases",
+    "Test PHASE_ORDER is in correct sequence",
+    "Test CRITICAL_PHASES contains RESEARCH and SYNTHESIS",
+    "Test SKIPPABLE_PHASES does not contain critical phases",
+    "Test phase transition validation"
+  ],
+  "done_criteria": [
+    "tests/test_pipeline.py exists with at least 5 test functions",
+    "All tests pass"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_pipeline.py",
+    "tests_to_write": [
+      "test_all_phases_in_enum",
+      "test_phase_order_sequence",
+      "test_critical_phases",
+      "test_skippable_phases_excludes_critical",
+      "test_no_duplicate_phases_in_order"
+    ]
+  },
+  "files_to_modify": ["tests/test_pipeline.py"],
+  "context": "Pipeline state machine is the backbone. Currently only tested indirectly via test_analyzer.py.",
+  "created_at": "2026-04-01T01:18:49Z",
+  "expires_at": "2026-04-08T01:18:49Z",
+  "feedback_history": []
+}

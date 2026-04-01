@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from pathlib import Path
 
 import markdown2
@@ -265,6 +266,7 @@ def send_newsletter(
     user_config: dict,
     date_str: str,
     *,
+    report_content: str | None = None,
     traces_conn=None,
     pipeline_run_id: str | None = None,
 ) -> dict:
@@ -272,6 +274,17 @@ def send_newsletter(
 
     Sends BOTH HTML and plain text versions. Uses retry logic with
     exponential backoff (max 3 attempts).
+
+    Args:
+        report_path: Path to the markdown report file.
+        user_config: User configuration dict with email, newsletter_title, reply_to.
+        date_str: Date string for the email subject line.
+        report_content: Optional markdown content to use directly instead of
+            reading from report_path.  When provided, the full content (including
+            any appended footer) is guaranteed to be included in the email.
+            When None, the file is read from disk at send time.
+        traces_conn: Optional traces database connection.
+        pipeline_run_id: Optional pipeline run ID for tracing.
 
     Returns dict with keys: success, resend_id, error.
     """
@@ -288,17 +301,21 @@ def send_newsletter(
         )
         return asdict(result)
 
-    # Read report content
-    if not report_path.exists():
-        result = SendResult(False, error=f"Report file not found: {report_path}")
-        _trace_end(
-            traces_conn, agent_run_id, "failed",
-            error=result.error,
-            latency_ms=int((time.monotonic() - start) * 1000),
-        )
-        return asdict(result)
+    # Use provided content or read from file.
+    # Reading from the file at this point captures any content appended
+    # after validation (e.g. feedback footer).
+    if report_content is None:
+        if not report_path.exists():
+            result = SendResult(False, error=f"Report file not found: {report_path}")
+            _trace_end(
+                traces_conn, agent_run_id, "failed",
+                error=result.error,
+                latency_ms=int((time.monotonic() - start) * 1000),
+            )
+            return asdict(result)
 
-    report_content = report_path.read_text()
+        report_content = report_path.read_text()
+
     html_content = render_html(report_content)
 
     # Build email payload
@@ -309,7 +326,7 @@ def send_newsletter(
     payload = {
         "from": f"{newsletter_title} <{reply_to}>",
         "to": [user_email],
-        "subject": f"{newsletter_title} — {date_str}",
+        "subject": f"{newsletter_title} — {datetime.strptime(date_str, '%Y-%m-%d').strftime('%B %-d, %Y')}",
         "html": html_content,
         "text": report_content,
         "reply_to": [reply_to],

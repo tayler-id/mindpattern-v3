@@ -1,0 +1,36 @@
+{
+  "id": "2026-03-31-008",
+  "title": "Add test coverage for social/posting.py (LinkedIn/Bluesky posting client)",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "social/posting.py is 1065 lines and handles all LinkedIn and Bluesky API calls — the final step of the social pipeline — but has zero test coverage. Posting failures are silent until the pipeline runs live. Critical functions like upload_linkedin_document, post_to_linkedin, and post_to_bluesky should be unit tested with mocked HTTP calls.",
+  "requirements": [
+    "tests/test_posting.py exists with at least 6 tests",
+    "Test happy path for LinkedIn text post and Bluesky post",
+    "Test error handling when API returns non-200 response",
+    "Test LinkedIn document upload path",
+    "No real network calls — all HTTP mocked with unittest.mock"
+  ],
+  "done_criteria": [
+    "python3 -m pytest tests/test_posting.py -v exits 0",
+    "Coverage of at least the public post/upload functions"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_posting.py",
+    "tests_to_write": [
+      "test_post_to_linkedin_success",
+      "test_post_to_linkedin_api_error",
+      "test_post_to_bluesky_success",
+      "test_post_to_bluesky_api_error",
+      "test_upload_linkedin_document_success",
+      "test_upload_linkedin_document_missing_file"
+    ]
+  },
+  "files_to_modify": ["tests/test_posting.py"],
+  "context": "social/posting.py contains PostingClient class. Uses requests library for HTTP. LinkedIn uses OAuth token from env. Bluesky uses ATP protocol. No existing tests for this module.",
+  "created_at": "2026-03-31T00:00:00Z",
+  "expires_at": "2026-04-07T00:00:00Z",
+  "feedback_history": []
+}
