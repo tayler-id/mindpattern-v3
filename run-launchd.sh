@@ -60,6 +60,15 @@ log "START: Beginning pipeline for $TODAY"
 # Write lock with our PID
 echo "$$" > "$LOCK"
 
+# Pull latest code from main before running
+BRANCH=$(git branch --show-current 2>/dev/null)
+if [ "$BRANCH" = "main" ]; then
+    log "Pulling latest main..."
+    git pull origin main --ff-only >> "$LOGFILE" 2>&1 || log "WARN: git pull failed — running with local code"
+else
+    log "WARN: Not on main branch ($BRANCH) — skipping pull"
+fi
+
 # Keep Mac awake during run
 caffeinate -i -s -w "$$" &
 CAFF_PID=$!
