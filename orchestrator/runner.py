@@ -115,11 +115,13 @@ class ResearchPipeline:
                 if handler:
                     result = handler()
                     self.pipeline.complete_phase(phase, result)
-                    self.checkpoint.save(self.pipeline.run_id, phase, result)
+                    self.checkpoint.save(self.pipeline.run_id, phase, result,
+                                        user_id=self.user_id)
                 else:
                     logger.warning(f"No handler for phase {phase.value}, skipping")
                     self.pipeline.complete_phase(phase)
-                    self.checkpoint.save(self.pipeline.run_id, phase)
+                    self.checkpoint.save(self.pipeline.run_id, phase,
+                                        user_id=self.user_id)
                     result = {}
 
                 # Log phase completion
@@ -161,11 +163,13 @@ class ResearchPipeline:
                 else:
                     self.pipeline.fail_phase(phase, str(e))
                     logger.warning(f"Non-critical phase {phase.value} failed, continuing")
-                    self.checkpoint.save(self.pipeline.run_id, phase, {"error": str(e)})
+                    self.checkpoint.save(self.pipeline.run_id, phase, {"error": str(e)},
+                                        user_id=self.user_id)
 
         # Mark completed
         self.pipeline.transition(Phase.COMPLETED)
-        self.checkpoint.save(self.pipeline.run_id, Phase.COMPLETED)
+        self.checkpoint.save(self.pipeline.run_id, Phase.COMPLETED,
+                             user_id=self.user_id)
 
         warnings = self.pipeline.warnings
         if warnings:
