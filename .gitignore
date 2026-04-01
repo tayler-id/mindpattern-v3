@@ -38,3 +38,21 @@ Thumbs.db
 /tmp/
 *.lock
 .gstack/
+
+# SQLite WAL/SHM (runtime)
+*.db-shm
+*.db-wal
+
+# Claude Code worktrees and agent state
+.claude/worktrees/
+.agent/
+.agents/
+.pi/
+.kiro/
+
+# Obsidian
+.obsidian/
+
+# Misc
+Untitled.canvas
+skills-lock.json
