@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 # Handler classes registered here. Import is deferred to avoid circular deps.
 HANDLER_CLASSES: dict[str, str] = {
     "posts": "slack_bot.handlers.posts.PostsHandler",
+    "skills": "slack_bot.handlers.skills.SkillsHandler",
+    "tips": "slack_bot.handlers.tips.TipsHandler",
     "engagement": "slack_bot.handlers.engagement.EngagementHandler",
     "approvals": "slack_bot.handlers.approvals.ApprovalsHandler",
     "briefing": "slack_bot.handlers.briefing.BriefingHandler",
@@ -58,6 +60,8 @@ def load_channel_config() -> dict[str, str]:
     config = {}
     env_map = {
         "posts": "MP_SLACK_CHANNEL_POSTS",
+        "skills": "MP_SLACK_CHANNEL_SKILLS",
+        "tips": "MP_SLACK_CHANNEL_TIPS",
         "engagement": "MP_SLACK_CHANNEL_ENGAGEMENT",
         "approvals": "MP_SLACK_CHANNEL_APPROVALS",
         "briefing": "MP_SLACK_CHANNEL_BRIEFING",

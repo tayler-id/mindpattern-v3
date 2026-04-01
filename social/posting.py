@@ -699,9 +699,14 @@ class BlueskyClient:
         """
         self._ensure_session()
 
+        # Only search posts from the last 72 hours
+        from datetime import datetime, timezone, timedelta
+        since = (datetime.now(timezone.utc) - timedelta(hours=72)).strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {
             "q": query,
             "limit": min(max_results, 100),
+            "since": since,
+            "sort": "latest",
         }
 
         try:

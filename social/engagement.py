@@ -1046,26 +1046,11 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 f"{len(not_connected)} not connected -> {len(candidates)} ranked"
             )
 
-        # Step 2b: LinkedIn via Jina Reader search (no native search API)
-        # If "linkedin" is in engagement platforms but NOT in _platform_clients
-        # (LinkedInClient doesn't have search()), use search_via_jina() instead.
+        # LinkedIn: post-only, no engagement search.
+        # LinkedIn blocks external search (Jina, Exa both unreliable).
+        # Engagement is Bluesky-only until LinkedIn Community Management API is available.
         if "linkedin" in engagement_platforms and "linkedin" not in self._platform_clients:
-            logger.info("Searching LinkedIn via Jina Reader search...")
-            all_linkedin_posts = []
-            seen_urls = set()
-
-            for query in queries:
-                try:
-                    posts = search_via_jina(query, max_results=10)
-                    for p in posts:
-                        url = p.get("url", "")
-                        if url and url not in seen_urls:
-                            seen_urls.add(url)
-                            all_linkedin_posts.append(p)
-                except Exception as e:
-                    logger.warning(f"Jina search failed for '{query}': {e}")
-
-                time.sleep(random.uniform(0.5, 1.5))
+            logger.info("Skipping LinkedIn engagement search (no reliable search API)")
 
             if all_linkedin_posts:
                 logger.info(
