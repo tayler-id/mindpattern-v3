@@ -1,0 +1,41 @@
+{
+  "id": "2026-03-31-001",
+  "title": "Fix rate limit check \u2014 validate_rate_limits returns allowed=True at limit",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P1",
+  "status": "failed",
+  "description": "policies/engine.py validate_rate_limits() returns allowed=True when the post count equals the limit (3/3). The test test_blocked_when_at_limit expects allowed=False when current == limit. This is a live bug \u2014 the system can exceed rate limits.",
+  "requirements": [
+    "validate_rate_limits must return allowed=False when current count >= limit",
+    "Must not break validate_rate_limits for counts below the limit"
+  ],
+  "done_criteria": [
+    "test_blocked_when_at_limit passes",
+    "All other rate limit tests still pass"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_policies.py",
+    "tests_to_write": [
+      "test_blocked_when_at_limit"
+    ]
+  },
+  "files_to_modify": [
+    "policies/engine.py"
+  ],
+  "context": "The test inserts 3 posts for bluesky (max_posts_per_day=3) and expects allowed=False. Currently returns True. Likely an off-by-one: using > instead of >= in the comparison.",
+  "created_at": "2026-04-01T01:18:49Z",
+  "expires_at": "2026-04-08T01:18:49Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Code already correct in clean worktree \u2014 test fails due to test environment issue, not code bug",
+      "timestamp": "2026-04-01T01:41:36.255110+00:00"
+    },
+    {
+      "type": "failure",
+      "reason": "Not a bug on main",
+      "timestamp": "2026-04-01T13:55:55.185759+00:00"
+    }
+  ]
+}
