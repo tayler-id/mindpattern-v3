@@ -248,14 +248,14 @@ class TestCheckpoint:
         assert data is None
 
     def test_find_resumable_run_finds_incomplete(self, ckpt):
-        ckpt.save("research-2026-03-14-abc123", Phase.INIT)
-        ckpt.save("research-2026-03-14-abc123", Phase.TREND_SCAN)
+        ckpt.save("research-2026-03-14-abc123", Phase.INIT, user_id="ramsay")
+        ckpt.save("research-2026-03-14-abc123", Phase.TREND_SCAN, user_id="ramsay")
         result = ckpt.find_resumable_run("ramsay", "2026-03-14")
         assert result == "research-2026-03-14-abc123"
 
     def test_find_resumable_run_skips_completed(self, ckpt):
-        ckpt.save("research-2026-03-14-abc123", Phase.INIT)
-        ckpt.save("research-2026-03-14-abc123", Phase.COMPLETED)
+        ckpt.save("research-2026-03-14-abc123", Phase.INIT, user_id="ramsay")
+        ckpt.save("research-2026-03-14-abc123", Phase.COMPLETED, user_id="ramsay")
         result = ckpt.find_resumable_run("ramsay", "2026-03-14")
         assert result is None
 
