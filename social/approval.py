@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 SLACK_CHANNEL = "C0ALSRHAATH"  # #mindpattern-approvals
 SLACK_KEYCHAIN_KEY = "slack-bot-token"
 
+# Safety cap: approval polls must terminate even if no explicit timeout
+# is configured.  Prevents indefinite pipeline blocks (see 2026-04-01-006).
+DEFAULT_MAX_TIMEOUT = 4 * 3600  # 4 hours in seconds
+
 
 class ApprovalGateway:
     """Unified approval interface — Slack only."""
@@ -164,8 +168,19 @@ class ApprovalGateway:
         )
 
         poll_num = 0
+        effective_timeout = self.gate_timeout if self.gate_timeout is not None else DEFAULT_MAX_TIMEOUT
+        start_time = time.monotonic()
+
         while True:
             time.sleep(poll_interval)
+
+            # Safety cap — prevent indefinite blocking
+            if (time.monotonic() - start_time) >= effective_timeout:
+                logger.warning(
+                    f"Web approval timed out after {effective_timeout}s "
+                    f"for {gate_type} gate — returning None to unblock pipeline"
+                )
+                return None
 
             try:
                 poll_resp = requests.get(poll_url, timeout=10)
@@ -381,8 +396,17 @@ class ApprovalGateway:
                 hours = elapsed // 3600
                 logger.info(f"Still waiting for Slack reply ({hours}h elapsed)")
 
+            # Explicit timeout
             if timeout_seconds is not None and (time.monotonic() - start_time) >= timeout_seconds:
                 logger.warning(f"Slack approval timed out after {timeout_seconds}s")
+                return None
+
+            # Safety cap — prevents indefinite blocking when no timeout configured
+            if timeout_seconds is None and (time.monotonic() - start_time) >= DEFAULT_MAX_TIMEOUT:
+                logger.warning(
+                    f"Slack approval hit default max timeout "
+                    f"({DEFAULT_MAX_TIMEOUT}s) — returning None to unblock pipeline"
+                )
                 return None
 
     def _slack_approval(self, message: str, timeout_seconds: int | None = None) -> str | None:
