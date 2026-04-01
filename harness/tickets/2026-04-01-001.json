@@ -1,0 +1,31 @@
+{
+  "id": "2026-04-01-001",
+  "title": "Checkpoint.find_resumable_run ignores user_id parameter",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P2",
+  "status": "in_progress",
+  "description": "Checkpoint.find_resumable_run(user_id, run_date) accepts user_id but never uses it in the SQL query. The LIKE pattern '%-{run_date}-%' matches any run on that date regardless of user. If traces.db is ever shared across users, this could return runs belonging to a different user. The dead parameter is also misleading \u2014 callers expect user-scoped filtering.",
+  "requirements": [
+    "find_resumable_run filters results to only pipeline_run_ids that belong to the given user_id",
+    "The pipeline_run_id format already encodes user or the query must use another column to scope by user"
+  ],
+  "done_criteria": [
+    "test_find_resumable_run_scopes_by_user passes: inserting runs for two users returns only the matching user's run",
+    "Existing runner.py usage of find_resumable_run is unaffected"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_checkpoint.py",
+    "tests_to_write": [
+      "test_find_resumable_run_scopes_by_user",
+      "test_find_resumable_run_returns_none_when_no_match"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/checkpoint.py"
+  ],
+  "context": "pipeline_run_id format is '{pipeline_type}-{run_date}-{uuid6}' (orchestrator/pipeline.py:72). The LIKE pattern uses run_date but user_id is never embedded in run_id. Consider adding user_id column to checkpoints table or embedding it in run_id.",
+  "created_at": "2026-04-01T00:00:00Z",
+  "expires_at": "2026-04-08T00:00:00Z",
+  "feedback_history": []
+}

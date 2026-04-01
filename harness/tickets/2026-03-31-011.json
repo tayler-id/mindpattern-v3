@@ -1,0 +1,36 @@
+{
+  "id": "2026-03-31-011",
+  "title": "Add test coverage for memory/graph.py (knowledge graph operations)",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "memory/graph.py (275 lines) manages the knowledge graph used to link topics, people, and findings across pipeline runs. It has no test coverage. Graph operations like node insertion, edge creation, and traversal have no regression safety net. Bugs here silently corrupt the memory graph that feeds topic research.",
+  "requirements": [
+    "tests/test_graph.py exists with at least 5 tests",
+    "Test node creation and retrieval",
+    "Test edge creation between nodes",
+    "Test graph traversal / neighbor lookup",
+    "Test behavior on duplicate node insertion",
+    "Use an in-memory SQLite DB — no real disk files"
+  ],
+  "done_criteria": [
+    "python3 -m pytest tests/test_graph.py -v exits 0",
+    "Node and edge CRUD operations are exercised"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_graph.py",
+    "tests_to_write": [
+      "test_add_node_and_retrieve",
+      "test_add_edge_between_nodes",
+      "test_get_neighbors_returns_connected_nodes",
+      "test_duplicate_node_is_idempotent",
+      "test_empty_graph_returns_no_neighbors"
+    ]
+  },
+  "files_to_modify": ["tests/test_graph.py"],
+  "context": "memory/graph.py uses SQLite with nodes and edges tables. Called during RESEARCH and LEARN phases to link discovered entities. Graph data is used for deduplication and cross-run context.",
+  "created_at": "2026-03-31T00:00:00Z",
+  "expires_at": "2026-04-07T00:00:00Z",
+  "feedback_history": []
+}
