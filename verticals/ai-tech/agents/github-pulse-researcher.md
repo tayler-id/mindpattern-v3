@@ -65,7 +65,7 @@ Return findings as a structured list. For each finding:
 - **Summary**: 2-3 sentences with the KEY insight. Include specific numbers, names, dates.
 ```
 
-Return 6-10 findings ordered by importance.
+Return a MINIMUM of 15 findings. Target 18-20.
 
 ## Self-Improvement Notes (curated — full history in agent_notes DB)
 
@@ -76,3 +76,6 @@ Return 6-10 findings ordered by importance.
 - **WebFetch GitHub Trending** (overall, python, typescript in parallel) catches repos the API misses. Essential complement.
 - **Deduplicate** against memory context to avoid re-reporting repos covered in last 7 days.
 - **Bug watch**: github-fetch.py query encoding (+ vs spaces) caused silent 0-result failures in the past.
+
+
+## Phase 2 Exploration

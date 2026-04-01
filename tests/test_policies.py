@@ -49,17 +49,27 @@ def valid_finding():
 
 @pytest.fixture
 def in_memory_db():
-    """In-memory SQLite database with an engagements table."""
+    """In-memory SQLite database with engagements and social_posts tables."""
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute("""
         CREATE TABLE engagements (
             id INTEGER PRIMARY KEY,
             platform TEXT,
-            action_type TEXT,
+            engagement_type TEXT,
             created_at TEXT,
             user_id TEXT,
             status TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE social_posts (
+            id INTEGER PRIMARY KEY,
+            date TEXT,
+            platform TEXT,
+            content TEXT,
+            posted INTEGER DEFAULT 0,
+            created_at TEXT
         )
     """)
     conn.commit()
@@ -184,14 +194,13 @@ class TestSocialValidation:
         char_errors = [e for e in errors if "character limit" in e.lower() or "char" in e.lower()]
         assert char_errors == []
 
-    def test_x_281_chars_fails(self, social_engine):
-        """X post at 281 chars fails."""
+    def test_bluesky_301_graphemes_fails(self, social_engine):
+        """Bluesky post at 301 graphemes fails."""
         url = " https://mindpattern.ai"
-        body = "A" * (281 - len(url))
+        body = "A" * (301 - len(url))
         content = body + url
-        assert len(content) == 281
-        errors = social_engine.validate_social_post("x", content)
-        assert any("character limit" in e.lower() or "281" in e for e in errors)
+        errors = social_engine.validate_social_post("bluesky", content)
+        assert any("grapheme" in e.lower() for e in errors)
 
     def test_bluesky_300_graphemes(self, social_engine):
         """Bluesky post at 300 graphemes passes, 301 fails."""
@@ -222,13 +231,13 @@ class TestSocialValidation:
     def test_catches_game_changer_case_insensitive(self, social_engine):
         """'game-changer' is caught regardless of case."""
         content = "This is a GAME-CHANGER for the industry https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert any("game-changer" in e.lower() for e in errors)
 
     def test_catches_revolutionize(self, social_engine):
         """'revolutionize' is caught."""
         content = "This will revolutionize the field https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert any("revolutionize" in e.lower() for e in errors)
 
     # ── Banned patterns ─────────────────────────────────────────────
@@ -236,7 +245,7 @@ class TestSocialValidation:
     def test_catches_em_dash(self, social_engine):
         """Em dash character '\u2014' in content is caught."""
         content = "This is great \u2014 really great https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert any("\u2014" in e for e in errors)
 
     # ── Valid post ──────────────────────────────────────────────────
@@ -244,7 +253,7 @@ class TestSocialValidation:
     def test_passes_valid_short_post_with_url(self, social_engine):
         """A clean, short post with URL passes all checks."""
         content = "New approach to LLM evals looks promising. https://mindpattern.ai"
-        errors = social_engine.validate_social_post("x", content)
+        errors = social_engine.validate_social_post("bluesky", content)
         assert errors == []
 
 
@@ -258,22 +267,22 @@ class TestRateLimits:
 
     def test_allowed_when_under_limit(self, social_engine, in_memory_db):
         """Returns allowed=True when no posts today."""
-        result = social_engine.validate_rate_limits(in_memory_db, "x", "post")
+        result = social_engine.validate_rate_limits(in_memory_db, "bluesky", "post")
         assert result["allowed"] is True
         assert result["current"] == 0
 
     def test_blocked_when_at_limit(self, social_engine, in_memory_db):
         """Returns allowed=False when post count equals limit."""
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        # X allows max_posts_per_day=3 per social.json
+        # Bluesky allows max_posts_per_day=3 per social.json
         for _ in range(3):
             in_memory_db.execute(
-                "INSERT INTO engagements (platform, action_type, created_at) VALUES (?, ?, ?)",
-                ("x", "post", f"{today}T12:00:00"),
+                "INSERT INTO engagements (platform, engagement_type, created_at) VALUES (?, ?, ?)",
+                ("bluesky", "post", f"{today}T12:00:00"),
             )
         in_memory_db.commit()
 
-        result = social_engine.validate_rate_limits(in_memory_db, "x", "post")
+        result = social_engine.validate_rate_limits(in_memory_db, "bluesky", "post")
         assert result["allowed"] is False
         assert result["current"] == 3
         assert result["limit"] == 3
@@ -281,53 +290,33 @@ class TestRateLimits:
 
 
 class TestPostRateLimit:
-    """PolicyEngine.validate_post_rate_limit checks social_posts history."""
+    """PolicyEngine.validate_post_rate_limit checks both social_posts and engagements."""
 
-    def test_rejects_4th_post_when_x_limit_is_3(self, social_engine):
-        """Mock memory DB returns 3 posted today; 4th post must be rejected."""
+    def test_rejects_4th_post_when_bluesky_limit_is_3(self, social_engine):
+        """count_posts_today returns 3; 4th post must be rejected."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # Simulate 3 already-posted entries for today on X
-        mock_posts = [
-            {"id": i, "date": today, "platform": "x", "content": f"post {i}",
-             "anchor_text": f"anchor {i}", "gate2_action": "approved", "posted": 1}
-            for i in range(1, 4)
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
-            error = social_engine.validate_post_rate_limit("x", db)
+        with patch("policies.engine.count_posts_today", return_value=3):
+            error = social_engine.validate_post_rate_limit("bluesky", db)
 
         assert error is not None
-        assert "x" in error.lower()
+        assert "bluesky" in error.lower()
         assert "3" in error  # mentions the limit or count
 
     def test_allows_post_when_under_limit(self, social_engine):
         """When only 1 post exists today, a new post should be allowed."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        mock_posts = [
-            {"id": 1, "date": today, "platform": "x", "content": "post 1",
-             "anchor_text": "anchor 1", "gate2_action": "approved", "posted": 1}
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
-            error = social_engine.validate_post_rate_limit("x", db)
+        with patch("policies.engine.count_posts_today", return_value=1):
+            error = social_engine.validate_post_rate_limit("bluesky", db)
 
         assert error is None
 
     def test_linkedin_rejects_2nd_post(self, social_engine):
         """LinkedIn has max_posts_per_day=1; a 2nd post must be rejected."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        mock_posts = [
-            {"id": 1, "date": today, "platform": "linkedin", "content": "post 1",
-             "anchor_text": "anchor", "gate2_action": "approved", "posted": 1}
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
+        with patch("policies.engine.count_posts_today", return_value=1):
             error = social_engine.validate_post_rate_limit("linkedin", db)
 
         assert error is not None
@@ -336,28 +325,21 @@ class TestPostRateLimit:
     def test_unknown_platform_returns_error(self, social_engine):
         """Unknown platform returns an error string."""
         db = MagicMock()
-        with patch("policies.engine.recent_posts", return_value=[]):
+        with patch("policies.engine.count_posts_today", return_value=0):
             error = social_engine.validate_post_rate_limit("tiktok", db)
         assert error is not None
         assert "tiktok" in error.lower()
 
-    def test_only_counts_posted_entries(self, social_engine):
-        """Only posts with posted=1 should count against the limit."""
+    def test_count_posts_today_is_used(self, social_engine):
+        """validate_post_rate_limit uses count_posts_today which checks both tables."""
         db = MagicMock()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # 3 posts returned but only 2 have posted=1
-        mock_posts = [
-            {"id": 1, "date": today, "platform": "x", "content": "p1",
-             "anchor_text": "a1", "gate2_action": "approved", "posted": 1},
-            {"id": 2, "date": today, "platform": "x", "content": "p2",
-             "anchor_text": "a2", "gate2_action": "approved", "posted": 1},
-            {"id": 3, "date": today, "platform": "x", "content": "p3",
-             "anchor_text": "a3", "gate2_action": "skip", "posted": 0},
-        ]
-
-        with patch("policies.engine.recent_posts", return_value=mock_posts):
-            error = social_engine.validate_post_rate_limit("x", db)
-
-        # 2 posted < 3 limit, so should be allowed
+        # 2 posted < 3 bluesky limit, so should be allowed
+        with patch("policies.engine.count_posts_today", return_value=2):
+            error = social_engine.validate_post_rate_limit("bluesky", db)
         assert error is None
+
+        # 3 posted = 3 bluesky limit, should be blocked
+        with patch("policies.engine.count_posts_today", return_value=3):
+            error = social_engine.validate_post_rate_limit("bluesky", db)
+        assert error is not None

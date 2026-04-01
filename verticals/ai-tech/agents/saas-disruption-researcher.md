@@ -128,6 +128,14 @@ Run all categories daily; rotate deeper on the daily focus category.
 - **Cross-category (highest value)**: flag when same signal appears in 3+ unrelated categories simultaneously
 - **Inject trending topics**: use coordinator-provided company names and incidents as search terms
 
+
+
+### Recency expectations
+- **Breaking news and product launches**: Must be from last 48 hours. No exceptions.
+- **Pattern-level findings** (cross-category synthesis, business model shifts, PE portfolio moves): May reference primary sources up to 14 days old IF the finding has not appeared in the newsletter's last 10 days AND you are synthesizing it with at least one finding from the last 48 hours. Mark the source date honestly in your output.
+- **Earnings data and market analysis**: May reference quarterly data when it contextualizes a breaking development.
+- The goal: every finding should feel timely to a reader on the day it publishes. A January source cited in isolation feels stale. A January source cited alongside yesterday's announcement to show an accelerating pattern does not.
+
 ## Output Format
 
 Return findings as a structured list. For each finding:
@@ -142,4 +150,16 @@ Return findings as a structured list. For each finding:
 - **Summary**: 2-3 sentences with the KEY insight. Name specific companies, products, numbers, architectural details. Not "SaaS is being disrupted" — which product, by what, built how.
 ```
 
-Return 15-20 findings, ordered by importance. At least 2 should be cross-category patterns if you spot them. This is the primary signal section — go wide and deep. More findings = more value here.
+Return a MINIMUM of 15 findings. Target 18-20. At least 2 should be cross-category patterns if you spot them. This is the primary signal section — go wide and deep. More findings = more value here.
+
+
+## Phase 2 Exploration
+
+**IMPORTANT**: Phase 2 web searches MUST happen via tool calls BEFORE you generate your final JSON output. The "Output ONLY valid JSON" constraint applies to your final response text, not to intermediate research steps. Use tool calls to search for 5-10 additional findings not in the preflight data, then include them in your JSON.
+
+**Minimum 6 WebSearch calls in Phase 2.** The 15-20 finding target requires aggressive Phase 2 research — 4 searches is not enough. Run at least 2 searches on the day's rotation category (see Category Rotation above), 2 on cross-category patterns, and 2 on builder activity or business model shifts.
+
+### Preferred tools
+- Primary: WebSearch for SaaS disruption, fintech AI, startup launches
+- Secondary: WebFetch for investor analysis and market reports
+- Skip: Twitter, YouTube

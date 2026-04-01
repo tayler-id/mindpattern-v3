@@ -24,20 +24,178 @@ import json
 import logging
 import random
 import re
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import memory
 from orchestrator.agents import run_claude_prompt
 from policies.engine import PolicyEngine
 from social.approval import ApprovalGateway
-from social.posting import XClient, BlueskyClient, LinkedInClient
+from social.posting import BlueskyClient, LinkedInClient
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+
+# ── LinkedIn search via Jina Reader ───────────────────────────────────────
+
+
+def search_via_jina(
+    query: str, max_results: int = 10
+) -> list[dict]:
+    """Search LinkedIn posts via Jina Reader's search endpoint.
+
+    Uses Jina's ``s.jina.ai`` search endpoint with a ``site:linkedin.com``
+    filter to discover LinkedIn posts matching the query. Parses the
+    markdown response to extract URLs and content, then normalizes results
+    into the same dict format that BlueskyClient.search() returns.
+
+    Args:
+        query: Search query string (e.g. "AI agents developer tools").
+        max_results: Maximum number of results to return.
+
+    Returns:
+        List of normalized post dicts with keys: url, text, author_handle,
+        author_name, followers_count, like_count, reply_count, platform.
+        Returns empty list on any failure.
+    """
+    search_query = f"{query} site:linkedin.com"
+
+    try:
+        result = subprocess.run(
+            ["curl", "-s", f"https://s.jina.ai/{quote(search_query)}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("Jina search timed out for query: %s", query)
+        return []
+    except Exception as e:
+        logger.warning("Jina search failed for query '%s': %s", query, e)
+        return []
+
+    if result.returncode != 0 or not result.stdout.strip():
+        logger.warning(
+            "Jina search returned error (rc=%d) for query: %s",
+            result.returncode,
+            query,
+        )
+        return []
+
+    return _parse_jina_results(result.stdout, max_results)
+
+
+def _parse_jina_results(markdown: str, max_results: int) -> list[dict]:
+    """Parse Jina Reader markdown output into normalized post dicts.
+
+    Jina returns search results as markdown with sections like:
+        ## [1] Title
+        **URL:** https://linkedin.com/posts/...
+        Author Name - Role
+
+        Post content...
+
+    Args:
+        markdown: Raw markdown from Jina Reader.
+        max_results: Cap on results to return.
+
+    Returns:
+        List of normalized post dicts.
+    """
+    results = []
+
+    # Split on section headers (## [N] ...)
+    sections = re.split(r"^## \[\d+\]\s*", markdown, flags=re.MULTILINE)
+
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+
+        # Extract URL — look for **URL:** or bare LinkedIn URLs
+        url_match = re.search(
+            r"\*\*URL:\*\*\s*(https?://[^\s]+linkedin\.com/[^\s]+)",
+            section,
+        )
+        if not url_match:
+            # Try bare LinkedIn URL
+            url_match = re.search(
+                r"(https?://(?:www\.)?linkedin\.com/posts/[^\s\)]+)",
+                section,
+            )
+        if not url_match:
+            continue
+
+        url = url_match.group(1).rstrip(".,;:!?")
+
+        # Extract author handle from URL: /posts/username_slug
+        handle_match = re.search(
+            r"linkedin\.com/posts/([a-zA-Z0-9_-]+)", url
+        )
+        author_handle = handle_match.group(1) if handle_match else ""
+
+        # Extract title (first line of section)
+        lines = section.split("\n")
+        title = lines[0].strip() if lines else ""
+
+        # Extract author name from lines after URL
+        # Pattern: "Author Name - Role at Company"
+        author_name = ""
+        for line in lines[1:5]:
+            line = line.strip()
+            if line.startswith("**URL:**") or not line:
+                continue
+            # Skip markdown formatting lines
+            if line.startswith("---"):
+                break
+            # First non-URL, non-empty line after title is likely author
+            if not author_name and line and not line.startswith("*"):
+                author_name = line.split(" - ")[0].strip()
+                break
+
+        # Extract content: everything after the metadata lines
+        content_lines = []
+        past_metadata = False
+        for line in lines:
+            if past_metadata:
+                if line.strip() == "---":
+                    break
+                content_lines.append(line)
+            elif line.strip() == "" and len(content_lines) == 0:
+                # Empty line after metadata signals start of content
+                past_metadata = True
+
+        text = "\n".join(content_lines).strip()
+        if not text:
+            # Fallback: use title as text
+            text = title
+
+        if not text:
+            continue
+
+        results.append(
+            {
+                "url": url,
+                "text": text,
+                "author_handle": author_handle,
+                "author_name": author_name or author_handle,
+                "followers_count": 0,  # Unknown from search
+                "like_count": 0,  # Unknown from search
+                "reply_count": 0,  # Unknown from search
+                "platform": "linkedin",
+            }
+        )
+
+        if len(results) >= max_results:
+            break
+
+    return results
 
 
 class EngagementPipeline:
@@ -62,26 +220,28 @@ class EngagementPipeline:
         self.approval = ApprovalGateway(config)
         self.engagement_config = config.get("engagement", {})
         self._platform_clients = self._init_platform_clients()
+        self._linkedin_drafts_dir = PROJECT_ROOT / "data" / "social-drafts"
 
     def _init_platform_clients(self) -> dict:
         """Initialize API clients for engagement-enabled platforms only.
 
         Uses engagement.platforms list from config if present,
         otherwise falls back to all enabled platforms.
+
+        Note: LinkedIn is excluded from platform clients for engagement
+        because LinkedInClient has no search() or reply() methods.
+        LinkedIn engagement uses search_via_jina() for discovery and
+        draft-only mode for replies.
         """
         clients = {}
         platforms = self.config.get("platforms", {})
         engagement_platforms = self.engagement_config.get("platforms")
 
-        if platforms.get("x", {}).get("enabled"):
-            if engagement_platforms is None or "x" in engagement_platforms:
-                clients["x"] = XClient(platforms["x"])
         if platforms.get("bluesky", {}).get("enabled"):
             if engagement_platforms is None or "bluesky" in engagement_platforms:
                 clients["bluesky"] = BlueskyClient(platforms["bluesky"])
-        if platforms.get("linkedin", {}).get("enabled"):
-            if engagement_platforms is None or "linkedin" in engagement_platforms:
-                clients["linkedin"] = LinkedInClient(platforms["linkedin"])
+        # LinkedIn is intentionally excluded from platform clients for
+        # engagement. It uses Jina Reader search and draft-only posting.
 
         return clients
 
@@ -420,41 +580,44 @@ Output ONLY valid JSON:
         Returns:
             Filtered list of post dicts.
         """
-        min_likes = self.engagement_config.get("min_likes", 3)
+        min_likes = self.engagement_config.get("min_likes", 0)
         max_likes = self.engagement_config.get("max_likes", 5000)
-        min_followers = self.engagement_config.get("min_follower_count", 50)
+        min_followers = self.engagement_config.get("min_follower_count", 10)
 
         # Get our own handle to skip self-posts
         our_handle = ""
         platform_config = self.config.get("platforms", {}).get(platform, {})
         if platform == "bluesky":
             our_handle = platform_config.get("handle", "")
-        elif platform == "x":
-            our_handle = platform_config.get("handle", "").lstrip("@")
 
         filtered = []
         for p in posts:
-            # Skip our own posts
             author_handle = p.get("author_handle", p.get("author", ""))
+
+            # Skip our own posts
             if our_handle and author_handle == our_handle:
+                logger.debug(f"Filtered out (own post): @{author_handle}")
                 continue
 
-            # Follower count check
+            # Follower count check — skip filter if API returned 0 (unknown)
             followers = p.get("followers_count", p.get("followers", 0))
-            if followers < min_followers:
+            if followers > 0 and followers < min_followers:
+                logger.debug(f"Filtered out (followers={followers}): @{author_handle}")
                 continue
 
             # Like count check
             likes = p.get("like_count", p.get("likes", 0))
             if likes < min_likes or likes > max_likes:
+                logger.debug(f"Filtered out (likes={likes}): @{author_handle}")
                 continue
 
             # Skip posts with no text content (link-only, images-only)
             text = p.get("text", "")
             if len(text.strip()) < 20:
+                logger.debug(f"Filtered out (text too short: {len(text)} chars): @{author_handle}")
                 continue
 
-            # Age check: skip posts older than 48 hours
+            # Age check: skip posts older than 72 hours
             created_at = p.get("created_at", "")
             if created_at:
                 try:
@@ -464,7 +627,8 @@ Output ONLY valid JSON:
                     age_hours = (
                         datetime.now(timezone.utc) - post_time
                     ).total_seconds() / 3600
-                    if age_hours > 48:
+                    if age_hours > 72:
+                        logger.debug(f"Filtered out (age={age_hours:.0f}h): @{author_handle}")
                         continue
                 except (ValueError, TypeError):
                     pass  # Can't parse date, keep the post
@@ -707,35 +871,19 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 "relevance": 0,
                 "our_reply": "",
             }
-        elif platform == "x":
-            return {
-                "platform": "x",
-                "post_id": post.get("id", ""),
-                "post_cid": "",
-                "author": post.get("author_username", post.get("author", "")),
-                "author_id": post.get("author_id", ""),
-                "content": post.get("text", ""),
-                "target_post_url": f"https://x.com/i/status/{post.get('id', '')}",
-                "target_author": post.get("author_name", ""),
-                "target_author_id": post.get("author_id", ""),
-                "target_content": post.get("text", ""),
-                "followers": post.get("followers_count", 0),
-                "likes": post.get("like_count", 0),
-                "replies": post.get("reply_count", 0),
-                "relevance": 0,
-                "our_reply": "",
-            }
         else:
-            # Generic fallback
+            # Generic fallback -- handles both "author" and "author_handle"
+            # field names (Jina search returns "author_handle")
+            author = post.get("author_handle", post.get("author", ""))
             return {
                 "platform": platform,
                 "post_id": post.get("id", post.get("uri", "")),
                 "post_cid": post.get("cid", ""),
-                "author": post.get("author", ""),
+                "author": author,
                 "author_id": post.get("author_id", post.get("author_did", "")),
                 "content": post.get("text", ""),
                 "target_post_url": post.get("url", ""),
-                "target_author": post.get("author_name", post.get("author", "")),
+                "target_author": post.get("author_name", author),
                 "target_author_id": post.get("author_id", post.get("author_did", "")),
                 "target_content": post.get("text", ""),
                 "followers": post.get("followers_count", 0),
@@ -744,6 +892,80 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 "relevance": 0,
                 "our_reply": "",
             }
+
+    # ── Validation: reject hallucinated/placeholder candidates ────────
+
+    @staticmethod
+    def _is_placeholder(value: str) -> bool:
+        """Check if a string looks like LLM-hallucinated placeholder data.
+
+        Catches common patterns: johndoe, janedoe, example.com, placeholder
+        activity IDs (123456), and obviously fake handles.
+        """
+        if not value:
+            return False
+        lower = value.lower()
+        # Common LLM placeholder names
+        placeholder_names = [
+            "johndoe", "janedoe", "john_doe", "jane_doe",
+            "jdoe", "testuser", "sampleuser", "exampleuser",
+            "user123", "placeholder",
+        ]
+        for name in placeholder_names:
+            if name in lower:
+                return True
+        # Placeholder activity IDs (sequential digits like 123456)
+        if re.search(r"activity-\d{6}$", lower):
+            # Check if it's a suspiciously round number
+            match = re.search(r"activity-(\d+)$", lower)
+            if match:
+                num = match.group(1)
+                # Sequential digits or all same digit = placeholder
+                if num == "123456" or len(set(num)) == 1:
+                    return True
+        # example.com or example domains
+        if "example.com" in lower or "example.org" in lower:
+            return True
+        return False
+
+    def _validate_candidate(self, candidate: dict) -> bool:
+        """Validate that a candidate has real data, not hallucinated placeholders.
+
+        Returns True if the candidate looks legitimate, False if it should
+        be rejected.
+        """
+        url = candidate.get("target_post_url", "")
+        author = candidate.get("author", "")
+        content = candidate.get("content", "")
+
+        # Must have a URL and author
+        if not url or not author:
+            logger.debug(f"Rejected candidate: missing url or author")
+            return False
+
+        # Reject placeholder data
+        if self._is_placeholder(url) or self._is_placeholder(author):
+            logger.warning(
+                f"Rejected placeholder candidate: @{author} url={url}"
+            )
+            return False
+
+        # Must have some content
+        if len(content.strip()) < 10:
+            logger.debug(f"Rejected candidate: content too short ({len(content)} chars)")
+            return False
+
+        # URL must look like a real platform URL
+        if candidate.get("platform") == "bluesky":
+            if not ("bsky.app" in url or "bsky.social" in url or url.startswith("at://")):
+                logger.warning(f"Rejected candidate: invalid Bluesky URL: {url}")
+                return False
+        elif candidate.get("platform") == "linkedin":
+            if "linkedin.com" not in url:
+                logger.warning(f"Rejected candidate: invalid LinkedIn URL: {url}")
+                return False
+
+        return True
 
     # ── _find_candidates: the main search orchestrator ────────────────
 
@@ -790,6 +1012,8 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
 
         # Step 2: Execute searches on each platform
         all_candidates = []
+        engagement_platforms = self.engagement_config.get("platforms", [])
+
         for platform, client in self._platform_clients.items():
             logger.info(f"Searching {platform} with {len(queries)} queries...")
 
@@ -820,6 +1044,21 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
             logger.info(
                 f"{platform}: {len(raw_posts)} raw -> {len(filtered)} filtered -> "
                 f"{len(not_connected)} not connected -> {len(candidates)} ranked"
+            )
+
+        # LinkedIn: post-only, no engagement search.
+        # LinkedIn blocks external search (Jina, Exa both unreliable).
+        # Engagement is Bluesky-only until LinkedIn Community Management API is available.
+        if "linkedin" in engagement_platforms and "linkedin" not in self._platform_clients:
+            logger.info("Skipping LinkedIn engagement search (no reliable search API)")
+
+        # Final validation: reject any candidates with placeholder/hallucinated data
+        pre_validation = len(all_candidates)
+        all_candidates = [c for c in all_candidates if self._validate_candidate(c)]
+        rejected = pre_validation - len(all_candidates)
+        if rejected:
+            logger.warning(
+                f"Rejected {rejected} candidates with placeholder/invalid data"
             )
 
         logger.info(f"Total candidates across all platforms: {len(all_candidates)}")
@@ -972,12 +1211,17 @@ engagement (quality content in our space)."""
         Posts the reply via the platform client, optionally follows the author,
         and logs everything to memory.
 
+        LinkedIn is draft-only: saves the reply to a JSON file and sends a
+        Slack notification for manual posting, since we don't have LinkedIn
+        Comments API access.
+
         Args:
             candidate: Dict with platform, post_id, author_id, our_reply,
                        should_follow, etc.
 
         Returns:
-            {reply_posted: bool, follow_success: bool, error: str | None}
+            {reply_posted: bool, follow_success: bool, draft_saved: bool,
+             error: str | None}
         """
         platform = candidate.get("platform", "")
         post_id = candidate.get("post_id", "")
@@ -986,17 +1230,23 @@ engagement (quality content in our space)."""
         our_reply = candidate.get("our_reply", "")
         should_follow = candidate.get("should_follow", False)
 
+        # ── LinkedIn: draft-only mode ─────────────────────────────────
+        if platform == "linkedin":
+            return self._draft_linkedin_engagement(candidate)
+
         client = self._platform_clients.get(platform)
         if not client:
             return {
                 "reply_posted": False,
                 "follow_success": False,
+                "draft_saved": False,
                 "error": f"No client for {platform}",
             }
 
         result = {
             "reply_posted": False,
             "follow_success": False,
+            "draft_saved": False,
             "error": None,
         }
 
@@ -1007,11 +1257,6 @@ engagement (quality content in our space)."""
                     content=our_reply,
                     parent_uri=post_id,
                     parent_cid=post_cid,
-                )
-            elif platform == "x":
-                reply_result = client.reply(
-                    content=our_reply,
-                    reply_to_id=post_id,
                 )
             else:
                 logger.warning(f"Reply not supported for platform: {platform}")
@@ -1091,5 +1336,101 @@ engagement (quality content in our space)."""
                     f"Follow rate limit hit for {platform}: "
                     f"{follow_check['reason']}"
                 )
+
+        return result
+
+    def _draft_linkedin_engagement(self, candidate: dict) -> dict:
+        """Save a LinkedIn engagement reply as a draft for manual posting.
+
+        LinkedIn Comments API is not available, so we save the drafted reply
+        to a JSON file and send a Slack notification so the user can
+        copy-paste the reply manually.
+
+        Args:
+            candidate: Engagement candidate dict with our_reply, target info.
+
+        Returns:
+            {reply_posted: False, follow_success: False, draft_saved: bool,
+             error: str | None}
+        """
+        result = {
+            "reply_posted": False,
+            "follow_success": False,
+            "draft_saved": False,
+            "error": None,
+        }
+
+        our_reply = candidate.get("our_reply", "")
+        author_id = candidate.get("author_id", "")
+
+        if not our_reply:
+            result["error"] = "No reply text to draft"
+            return result
+
+        # Save draft to JSON file
+        try:
+            self._linkedin_drafts_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            draft_file = self._linkedin_drafts_dir / f"engagement-linkedin-{timestamp}.json"
+
+            draft_data = {
+                "platform": "linkedin",
+                "target_post_url": candidate.get("target_post_url", ""),
+                "target_author": candidate.get("author", ""),
+                "target_author_id": author_id,
+                "target_content": candidate.get("content", ""),
+                "our_reply": our_reply,
+                "relevance": candidate.get("relevance", 0),
+                "topic_connection": candidate.get("topic_connection", ""),
+                "drafted_at": datetime.now(timezone.utc).isoformat(),
+                "status": "pending_manual_post",
+            }
+
+            with open(draft_file, "w") as f:
+                json.dump(draft_data, f, indent=2)
+
+            result["draft_saved"] = True
+            logger.info(
+                f"LinkedIn engagement draft saved: {draft_file.name} "
+                f"(reply to @{candidate.get('author', '?')})"
+            )
+
+        except Exception as e:
+            result["error"] = f"Failed to save LinkedIn draft: {e}"
+            logger.error(f"LinkedIn draft save failed: {e}")
+            return result
+
+        # Send Slack notification for manual posting
+        try:
+            target_url = candidate.get("target_post_url", "")
+            author = candidate.get("author", "unknown")
+            message = (
+                f"LinkedIn Engagement Draft\n\n"
+                f"Reply to @{author}:\n"
+                f"{target_url}\n\n"
+                f"Draft reply:\n{our_reply}\n\n"
+                f"(Copy and paste this reply on LinkedIn manually)"
+            )
+            token = self.approval._get_slack_token()
+            if token:
+                self.approval._slack_post(token, message)
+            else:
+                logger.warning("No Slack token — cannot notify about LinkedIn draft")
+        except Exception as e:
+            logger.warning(f"Slack notification failed for LinkedIn draft: {e}")
+
+        # Log as drafted in memory
+        memory.store_engagement(
+            self.db,
+            user_id=self.user_id,
+            platform="linkedin",
+            engagement_type="reply",
+            target_post_url=candidate.get("target_post_url"),
+            target_author=candidate.get("author"),
+            target_author_id=author_id,
+            target_content=candidate.get("content"),
+            our_reply=our_reply,
+            status="drafted",
+        )
 
         return result

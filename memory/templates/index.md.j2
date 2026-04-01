@@ -1,0 +1,19 @@
+---
+type: index
+date: {{ date }}
+tags: {{ tags | join(', ') }}
+---
+
+# {{ title }}
+
+{% if description %}
+{{ description }}
+{% endif %}
+
+{% if files %}
+{% for file in files %}
+- [[{{ folder }}/{{ file.slug }}|{{ file.name }}]]
+{% endfor %}
+{% else %}
+No entries yet.
+{% endif %}

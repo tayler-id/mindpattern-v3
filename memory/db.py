@@ -170,6 +170,7 @@ def _init_schema(conn: sqlite3.Connection):
             gate2_action TEXT,
             iterations INTEGER DEFAULT 1,
             posted INTEGER DEFAULT 0,
+            platform_post_id TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -205,6 +206,20 @@ def _init_schema(conn: sqlite3.Connection):
             finding_id INTEGER,
             created_at TEXT DEFAULT (datetime('now')),
             posted_at TEXT
+        );
+
+        -- ── Pending posts (deferred posting window) ────────────────────
+
+        CREATE TABLE IF NOT EXISTS pending_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL,
+            content TEXT NOT NULL,
+            image_path TEXT,
+            approved_at TEXT NOT NULL,
+            post_after TEXT NOT NULL,
+            posted INTEGER DEFAULT 0,
+            posted_at TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
         );
 
         -- ── Agent self-improvement ────────────────────────────────────

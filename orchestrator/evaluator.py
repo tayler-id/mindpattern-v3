@@ -55,6 +55,9 @@ class NewsletterEvaluator:
             + topic_balance * 0.15
         )
 
+        # Defense in depth: clamp overall to [0.0, 1.0]
+        overall = min(max(overall, 0.0), 1.0)
+
         return {
             "coverage": round(coverage, 3),
             "dedup": round(dedup, 3),
@@ -250,19 +253,42 @@ class NewsletterEvaluator:
 
         Checks whether topics the user cares about (by weight) appear in the
         newsletter proportionally. Higher-weighted topics should have more coverage.
+
+        Negative-weight preferences mean "avoid this topic" and are excluded
+        from the balance calculation (they don't contribute to coverage goals).
+        Duplicate preference names are deduped, keeping the highest absolute weight.
         """
         if not preferences:
             return 1.0  # No preferences to match
 
+        # Dedup preferences by topic name, keeping the highest absolute weight
+        seen: dict[str, dict] = {}
+        for pref in preferences:
+            topic = pref.get("topic", "").lower().strip()
+            if not topic:
+                continue
+            weight = pref.get("weight", 1.0)
+            if topic not in seen or abs(weight) > abs(seen[topic].get("weight", 1.0)):
+                seen[topic] = pref
+
+        deduped = list(seen.values())
+
+        # Filter out negative-weight preferences — they mean "avoid this topic"
+        # and should not factor into balance scoring
+        positive_prefs = [p for p in deduped if p.get("weight", 1.0) > 0]
+
+        if not positive_prefs:
+            return 1.0  # No positive preferences to match
+
         newsletter_lower = newsletter.lower()
 
-        # Calculate expected vs actual coverage
-        total_weight = sum(p.get("weight", 1.0) for p in preferences)
+        # Calculate expected vs actual coverage using only positive-weight prefs
+        total_weight = sum(p.get("weight", 1.0) for p in positive_prefs)
         if total_weight == 0:
             return 1.0
 
         covered_weight = 0.0
-        for pref in preferences:
+        for pref in positive_prefs:
             topic = pref.get("topic", "").lower()
             weight = pref.get("weight", 1.0)
 
@@ -279,7 +305,8 @@ class NewsletterEvaluator:
             if matches >= max(1, len(topic_words) * 0.4):
                 covered_weight += weight
 
-        return covered_weight / total_weight
+        # Defense in depth: clamp to [0.0, 1.0]
+        return min(covered_weight / total_weight, 1.0)
 
 
 # ── Private helpers ──────────────────────────────────────────────────────
@@ -437,6 +464,36 @@ Source: https://arxiv.org/example
     sections = _split_into_sections(sample)
     assert len(sections) >= 3, f"Expected 3+ sections, got {len(sections)}"
     print(f"AC #9: Section splitting found {len(sections)} sections")
+
+    # Negative-weight and duplicate preferences should not break scoring
+    adversarial_prefs = [
+        {"topic": "artificial intelligence", "weight": 2.0},
+        {"topic": "developer tools", "weight": 1.5},
+        {"topic": "market news", "weight": -3.0},
+        {"topic": "market news", "weight": -3.0},  # duplicate
+        {"topic": "valuations and funding", "weight": -3.0},
+        {"topic": "agent security", "weight": 1.0},
+        {"topic": "agent security", "weight": 1.0},  # duplicate
+    ]
+    adversarial_result = evaluator.evaluate(sample, agent_reports, adversarial_prefs)
+    assert 0.0 <= adversarial_result["topic_balance"] <= 1.0, (
+        f"topic_balance out of bounds: {adversarial_result['topic_balance']}"
+    )
+    assert 0.0 <= adversarial_result["overall"] <= 1.0, (
+        f"overall out of bounds: {adversarial_result['overall']}"
+    )
+    print(f"AC #10: Negative-weight prefs handled — topic_balance={adversarial_result['topic_balance']}, overall={adversarial_result['overall']}")
+
+    # All-negative preferences should return 1.0 (nothing to match)
+    all_negative = [
+        {"topic": "market news", "weight": -3.0},
+        {"topic": "valuations and funding", "weight": -3.0},
+    ]
+    neg_result = evaluator.evaluate(sample, agent_reports, all_negative)
+    assert neg_result["topic_balance"] == 1.0, (
+        f"All-negative prefs should yield 1.0, got {neg_result['topic_balance']}"
+    )
+    print(f"AC #11: All-negative prefs → topic_balance=1.0")
 
     db.close()
     print("\nAll evaluator.py checks passed.")

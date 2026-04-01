@@ -1,0 +1,26 @@
+{
+  "verdict": "APPROVED",
+  "feedback": "Strong post. Personal moment lands (Claude Code daily + 'I didn't. I picked it because it ships the best code.'). The two-events-as-one-signal framing is doing real analytical work, not just stacking news. Ends without a neat bow. The slight character overage (~1550-1580) is worth watching but clears the 2000-char fail threshold easily.",
+  "scores": {
+    "voice_authenticity": 8,
+    "platform_fit": 7,
+    "engagement_potential": 9
+  },
+  "rubric_scores": {
+    "voice_match": 8,
+    "framing_authenticity": 8,
+    "platform_genre_fit": 7,
+    "epistemic_calibration": 8,
+    "structural_variation": 8,
+    "rhetorical_framework": 8
+  },
+  "kill_switches": "pass",
+  "dimension_notes": {
+    "voice": "pass — multiple first-person refs, fragments present ('Sole-source mandate.', 'Same week. Stock down 25%.'), good burstiness, no banned words or em dashes",
+    "framing": "pass — two events explicitly bridged as one signal, not stacked as separate findings; genuine personal moment with Claude Code",
+    "platform": "pass — slightly over 1500-char sweet spot (~1560 est.) but well under 2000 fail threshold; hook works in first 210 chars; question is specific",
+    "epistemic": "pass — facts stated as facts, personal uncertainty stated as personal ('I don't have a clean answer'), no generic hedges",
+    "structure": "pass — asymmetric paragraphs, burstiness throughout, no neat-bow closing",
+    "framework": "pass — clear nut-graf structure: hook → facts → synthesis claim → personal stake → audience framing → uncertainty → question"
+  }
+}

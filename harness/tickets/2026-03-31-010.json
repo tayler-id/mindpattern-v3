@@ -1,0 +1,35 @@
+{
+  "id": "2026-03-31-010",
+  "title": "Add test coverage for memory/patterns.py (pattern detection engine)",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "memory/patterns.py (448 lines) implements the pattern detection engine that surfaces behavioral patterns from memory data. It has no test file. Silent regressions in pattern detection degrade the LEARN phase and the identity evolution loop. Core functions for extracting, scoring, and storing patterns should be unit tested.",
+  "requirements": [
+    "tests/test_patterns.py exists with at least 5 tests",
+    "Test pattern extraction from sample memory records",
+    "Test pattern deduplication logic",
+    "Test scoring/ranking of patterns",
+    "Use an in-memory SQLite DB — no real disk files"
+  ],
+  "done_criteria": [
+    "python3 -m pytest tests/test_patterns.py -v exits 0",
+    "Pattern extraction and dedup paths are covered"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_patterns.py",
+    "tests_to_write": [
+      "test_extract_patterns_from_findings",
+      "test_duplicate_patterns_are_merged",
+      "test_pattern_score_increases_on_recurrence",
+      "test_empty_input_returns_empty_patterns",
+      "test_patterns_saved_to_db"
+    ]
+  },
+  "files_to_modify": ["tests/test_patterns.py"],
+  "context": "memory/patterns.py reads from memory.db (findings, claims tables). Uses SQLite. Called during LEARN phase. Pattern data feeds into identity evolution and newsletter personalization.",
+  "created_at": "2026-03-31T00:00:00Z",
+  "expires_at": "2026-04-07T00:00:00Z",
+  "feedback_history": []
+}

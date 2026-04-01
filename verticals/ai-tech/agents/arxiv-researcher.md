@@ -63,7 +63,7 @@ Return findings as a structured list. For each finding:
 - **Summary**: 2-3 sentences with the KEY insight. Include specific numbers, names, dates.
 ```
 
-Return 6-10 findings ordered by importance.
+Return a MINIMUM of 15 findings. Target 18-20.
 
 ## Self-Improvement Notes (curated — full history in agent_notes DB)
 
@@ -73,3 +73,6 @@ Return 6-10 findings ordered by importance.
 - **Web search for trending keywords** is highest-signal supplement. Cross-reference OWASP releases with arXiv for newly-contextualized security papers.
 - **HuggingFace Daily Papers**: unreliable date parameter. Use for upvote-based trending signal only, not date-specific source.
 - **Dedup against memory context** is critical — papers persist in API results for days. Check recent findings before reporting.
+
+
+## Phase 2 Exploration

@@ -5,7 +5,7 @@ No argparse, no print, no CLI.
 """
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .embeddings import deserialize_f32, dot_similarity, embed_text, serialize_f32
 
@@ -24,6 +24,7 @@ def store_post(
     gate2_action: str | None = None,
     iterations: int = 1,
     posted: bool = False,
+    platform_post_id: str | None = None,
 ) -> int:
     """Store a social media post with its vector embedding. Returns post_id."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -31,10 +32,10 @@ def store_post(
     cur = db.execute(
         """INSERT INTO social_posts
            (date, platform, content, post_type, anchor_text, brief_json,
-            gate2_action, iterations, posted, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            gate2_action, iterations, posted, platform_post_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (date, platform, content, post_type, anchor_text, brief_json,
-         gate2_action, iterations, 1 if posted else 0, now),
+         gate2_action, iterations, 1 if posted else 0, platform_post_id, now),
     )
     post_id = cur.lastrowid
 
@@ -325,3 +326,123 @@ def list_engagements(
     ).fetchall()
 
     return [dict(r) for r in rows]
+
+
+# ── Pending posts (deferred posting window) ──────────────────────────────
+
+
+def store_pending_post(
+    db: sqlite3.Connection,
+    platform: str,
+    content: str,
+    post_after: str,
+    image_path: str | None = None,
+) -> int:
+    """Store a post for deferred publishing. Returns pending post id.
+
+    Args:
+        db: Database connection.
+        platform: Target platform (e.g., "linkedin", "bluesky").
+        content: The approved post content.
+        post_after: ISO datetime string -- earliest time to publish.
+        image_path: Optional path to image file.
+    """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cur = db.execute(
+        """INSERT INTO pending_posts
+           (platform, content, image_path, approved_at, post_after, posted)
+           VALUES (?, ?, ?, ?, ?, 0)""",
+        (platform, content, image_path, now, post_after),
+    )
+    db.commit()
+    return cur.lastrowid
+
+
+def get_pending_posts(
+    db: sqlite3.Connection,
+    platform: str | None = None,
+) -> list[dict]:
+    """Get all unposted pending posts that are ready to publish (post_after <= now).
+
+    Args:
+        db: Database connection.
+        platform: Optional platform filter.
+
+    Returns:
+        List of pending post dicts with id, platform, content, image_path,
+        approved_at, post_after.
+    """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conditions = ["posted = 0", "post_after <= ?"]
+    params: list = [now]
+
+    if platform:
+        conditions.append("platform = ?")
+        params.append(platform)
+
+    where = " AND ".join(conditions)
+
+    try:
+        rows = db.execute(
+            f"""SELECT id, platform, content, image_path, approved_at, post_after
+                FROM pending_posts WHERE {where}
+                ORDER BY post_after ASC""",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.OperationalError:
+        # Table might not exist yet
+        return []
+
+
+def mark_pending_posted(
+    db: sqlite3.Connection,
+    pending_id: int,
+) -> None:
+    """Mark a pending post as posted."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.execute(
+        "UPDATE pending_posts SET posted = 1, posted_at = ? WHERE id = ?",
+        (now, pending_id),
+    )
+    db.commit()
+
+
+def count_posts_today(
+    db: sqlite3.Connection,
+    platform: str,
+) -> int:
+    """Count how many posts were actually published today on a platform.
+
+    Checks BOTH the social_posts table (posted=1) and the engagements table
+    (engagement_type='post') to be thorough. Returns the higher count to
+    prevent any table being out of sync from bypassing the limit.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Check social_posts table
+    try:
+        row = db.execute(
+            """SELECT COUNT(*) FROM social_posts
+               WHERE platform = ? AND posted = 1 AND date = ?""",
+            (platform, today),
+        ).fetchone()
+        posts_count = row[0] if row else 0
+    except sqlite3.OperationalError:
+        posts_count = 0
+
+    # Check engagements table
+    try:
+        row = db.execute(
+            """SELECT COUNT(*) FROM engagements
+               WHERE platform = ? AND engagement_type = 'post'
+               AND date(created_at) = ?""",
+            (platform, today),
+        ).fetchone()
+        engagements_count = row[0] if row else 0
+    except sqlite3.OperationalError:
+        engagements_count = 0
+
+    return max(posts_count, engagements_count)
