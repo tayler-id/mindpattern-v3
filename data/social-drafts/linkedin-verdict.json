@@ -1,26 +1,26 @@
 {
   "verdict": "APPROVED",
-  "feedback": "Strong post. Personal moment lands (Claude Code daily + 'I didn't. I picked it because it ships the best code.'). The two-events-as-one-signal framing is doing real analytical work, not just stacking news. Ends without a neat bow. The slight character overage (~1550-1580) is worth watching but clears the 2000-char fail threshold easily.",
+  "feedback": "Strong execution. The hook subverts expectation immediately ('didn't get hacked... Bun just served it'). Personal terminal moment in paragraph 3 is the post's anchor — specific, vulnerable, stakes are real. The closing question is genuine and specific, not engagement-bait. Evidence grammar holds: facts first, then analysis ('None required a sophisticated exploit'), then personal uncertainty ('The part I can't shake'). Character count lands in the 1200-1500 sweet spot.",
   "scores": {
-    "voice_authenticity": 8,
-    "platform_fit": 7,
-    "engagement_potential": 9
+    "voice_authenticity": 9,
+    "platform_fit": 8,
+    "engagement_potential": 8
   },
   "rubric_scores": {
-    "voice_match": 8,
-    "framing_authenticity": 8,
-    "platform_genre_fit": 7,
+    "voice_match": 9,
+    "framing_authenticity": 7,
+    "platform_genre_fit": 8,
     "epistemic_calibration": 8,
     "structural_variation": 8,
-    "rhetorical_framework": 8
+    "rhetorical_framework": 9
   },
   "kill_switches": "pass",
   "dimension_notes": {
-    "voice": "pass — multiple first-person refs, fragments present ('Sole-source mandate.', 'Same week. Stock down 25%.'), good burstiness, no banned words or em dashes",
-    "framing": "pass — two events explicitly bridged as one signal, not stacked as separate findings; genuine personal moment with Claude Code",
-    "platform": "pass — slightly over 1500-char sweet spot (~1560 est.) but well under 2000 fail threshold; hook works in first 210 chars; question is specific",
-    "epistemic": "pass — facts stated as facts, personal uncertainty stated as personal ('I don't have a clean answer'), no generic hedges",
-    "structure": "pass — asymmetric paragraphs, burstiness throughout, no neat-bow closing",
-    "framework": "pass — clear nut-graf structure: hook → facts → synthesis claim → personal stake → audience framing → uncertainty → question"
+    "voice": "pass — 6+ first-person references, multiple fragments ('Not because someone was clever.'), no banned words or phrases, natural sentence-length variation throughout",
+    "framing": "pass — personal terminal moment grounds it, though the Axios/LiteLLM paragraph edges toward research-summary tone; the Bun thread stays the primary hook",
+    "platform": "pass — ~1380 chars, first 210 chars work as standalone hook, genuine specific closing question, URL present",
+    "epistemic": "pass — 'estimated 36%' qualifier used appropriately, uncertainty expressed personally ('The part I can't shake'), no overclaiming",
+    "structure": "pass — asymmetric paragraphs, burstiness present, no neat-bow closing, no rhythmic triads",
+    "framework": "pass — clear Nut-graf structure, facts > analysis > opinion order maintained, opinions flagged as personal throughout"
   }
 }

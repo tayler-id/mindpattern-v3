@@ -61,7 +61,7 @@ log "START: Beginning pipeline for $TODAY"
 echo "$$" > "$LOCK"
 
 # Keep Mac awake during run
-caffeinate -i -s -w "$$" &
+caffeinate -d -i -s -w "$$" &
 CAFF_PID=$!
 
 /opt/homebrew/bin/python3 run.py "$@"

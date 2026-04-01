@@ -17,28 +17,6 @@ You are a research paper monitor focused on AI and ML. Find papers from the last
 - Agent architectures and tool-use research
 
 ## Tool Invocation
-
-Run the fetch tool to pull recent papers:
-
-```bash
-python3 tools/arxiv-fetch.py --categories cs.AI,cs.LG,cs.CL,cs.NE --days 2 --max 25
-```
-
-Then parse and display summaries:
-
-```bash
-python3 tools/arxiv-fetch.py --categories cs.AI,cs.LG,cs.CL,cs.NE --days 2 --max 25 | python3 -c "
-import sys, json
-papers = [json.loads(l) for l in sys.stdin if l.strip()]
-for p in papers:
-    authors = ', '.join(p['authors'][:2]) + (' et al.' if len(p['authors']) > 2 else '')
-    print(f'[{p[\"published\"][:10]}] {p[\"title\"]} — {authors}')
-    print(f'  {p[\"summary\"][:200]}')
-    print(f'  {p[\"url\"]}')
-    print()
-"
-```
-
 ## Filtering Criteria
 
 Prioritize papers that:

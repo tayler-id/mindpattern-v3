@@ -1,21 +1,17 @@
 PLATFORM: linkedin
 TYPE: single
 ---
-How many vendor evaluation frameworks include "government security clearance status"? Mine didn't. It does now.
+Claude Code's source code didn't get hacked. Bun just served it by default.
 
-The Pentagon designated Palantir as the core AI platform for all US military operations this week. Sole-source mandate. Then the DOJ charged Super Micro's co-founder in a $2.5B conspiracy to smuggle AI chips. Same week. Stock down 25%.
+The bug had been sitting open for 20 days. Bun includes source maps in production builds unless you explicitly disable them. Someone checked the Claude Code npm package and pulled 512,000 lines of Anthropic's source. It became one of the highest-voted HN threads of 2026. Not because someone was clever. Because the build tool shipped what it was configured to ship.
 
-That's not two separate news items. That's one policy move with a carrot and a stick.
+I checked my own build output within an hour. I build with Bun. I publish packages. For a minute I just stared at the terminal, making sure I hadn't been shipping source I didn't mean to. The same default I'd been running.
 
-I use Claude Code daily to ship production software. Anthropic is in an active DOJ lawsuit over their safety policies, which means the tool I rely on every day has a clearance status, whether I thought about that column before or not. I didn't. I picked it because it ships the best code.
+Same 48 hours: Axios got compromised via stolen maintainer credentials, 83M weekly downloads, cross-platform RAT dropped in the update. LiteLLM had a poisoned PyPI publish that CI/CD pipelines auto-consumed and exfiltrated SSH keys and cloud credentials from an estimated 36% of cloud environments. Three different attack surfaces, one weekend. None required a sophisticated exploit. Just defaults nobody audited, credentials nobody rotated, and package managers that trust whatever gets published.
 
-The evaluation matrix for AI tooling used to be capability, cost, and integration complexity. That's still the matrix on every analyst deck I've seen. But the Pentagon mandate and the Super Micro indictment landed in the same week because they're the same signal: who gets AI infrastructure is now a matter of law, not market dynamics. Criminal prosecution, not just sanctions.
+The part I can't shake: how many packages built with Bun are currently shipping source maps without the authors knowing? Claude Code got noticed because it's Anthropic. Most won't.
 
-For CTOs and procurement leads making vendor decisions right now, there's a question your current framework probably doesn't have a column for: where does this vendor sit on the cleared/uncleared line, and does that exposure matter to your business?
-
-I don't have a clean answer. Still figuring out what it means for my own tool choices.
+When did you last check what your build toolchain actually ships?
 
 https://mindpattern.ai
-
-What criteria are you actually using when you evaluate AI vendors right now, and is government alignment risk anywhere in that list?
 ---

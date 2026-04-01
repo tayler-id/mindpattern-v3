@@ -1,59 +1,71 @@
 {
-  "editorial_angle": "The free market for AI infrastructure is over. This week the US government didn't just draw a line between cleared and uncleared AI vendors — it enforced that line with a sole-source mandate on one side and felony charges on the other. The deeper shift isn't about Palantir winning or Super Micro losing. It's that the criteria for picking AI tools has permanently acquired a column that no analyst report warned about: government alignment status. Solo builders and enterprise buyers alike are now choosing teams in a geopolitical contest they never agreed to enter. The scarce resource was always human judgment. Now it has a security clearance attached.",
-  "key_message": "The criteria for choosing AI tools just changed from 'what ships best' to 'which side of the line are you on' — and that line is now enforced with criminal prosecution.",
+  "editorial_angle": "The Claude Code leak wasn't a breach — it was a serve. Bun handed out 512,000 lines of source code because that's what it does by default, and the bug had been sitting open for 20 days while millions of developers ran the same configuration. Same 48-hour window: Axios via stolen credentials npm trusted without question, LiteLLM via a poisoned PyPI publish that CI/CD pipelines auto-consumed. Three different exploits, zero sophistication required. The deeper story isn't KAIROS or dream mode — it's that the entire AI development supply chain runs on defaults nobody audits. The most advanced AI coding tool on earth leaked not because someone was clever, but because no one checked a checkbox.",
+  "key_message": "The biggest source leak of 2026 didn't require an exploit — just the default settings everyone's been running.",
   "emotional_register": "worried",
-  "tone": "conversational-authoritative",
+  "tone": "provocative",
   "source_attribution": {
     "primary": {
-      "name": "Reuters",
-      "url": "https://www.reuters.com/technology/pentagon-adopt-palantir-ai-as-core-us-military-system-memo-says-2026-03-20/"
+      "name": "Alex Kim's Blog / Hacker News",
+      "url": "https://alex000kim.com/posts/2026-03-31-claude-code-source-leak/"
     },
     "supporting": [
       {
-        "name": "Forbes",
-        "url": "https://www.forbes.com/sites/tylerroush/2026/03/20/super-micro-shares-plunge-25-after-co-founder-charged-in-25-billion-ai-chip-smuggling-plot/"
+        "name": "paddo.dev — npm Had a Very Bad Day",
+        "url": "https://paddo.dev/blog/npm-very-bad-day/"
+      },
+      {
+        "name": "Bun Issue #28001",
+        "url": "https://github.com/oven-sh/bun/issues/28001"
+      },
+      {
+        "name": "TechCrunch — Mercor / LiteLLM attack",
+        "url": "https://techcrunch.com/2026/03/31/mercor-says-it-was-hit-by-cyberattack-tied-to-compromise-of-open-source-litellm-project/"
       }
     ]
   },
   "visual_metaphor_direction": {
-    "core_tension": "A border crossing checkpoint where AI tools and hardware are being sorted into two fates: cleared vendors sail through with a stamped military passport, while smuggled GPU hardware is seized at the gate by federal agents. Two simultaneous transactions — one a gold-sealed contract, one a confiscation — happening at the same border crossing at the same moment.",
+    "core_tension": "A vault built to protect the most sophisticated AI secrets on earth — left open not by a heist, but by a default setting nobody turned off. The security is real and elaborate; the failure is embarrassingly mundane.",
     "suggested_approach": "symbolic",
-    "mood": "stark",
+    "mood": "absurd",
     "key_elements": [
-      "Palantir logo/branding on one side of the checkpoint — prominently stamped CLEARED or receiving a golden Pentagon seal",
-      "Crates or server racks labeled Super Micro being seized, red SEIZED stickers, federal agents present",
-      "A hard border dividing line — customs checkpoint, gate, or wall — visually splitting the two fates",
-      "GPU chips or AI hardware as the physical object being sorted, not software or models",
-      "Pentagon eagle or military insignia on the cleared side — authority, not threat"
+      "Anthropic or Claude branding on the vault/building",
+      "A wide-open door or window with source code visibly streaming out",
+      "A small, overlooked sign or switch labeled 'DEFAULT: ON' or 'Source Maps: Enabled'",
+      "Contrast between elaborate security (cameras, locks, reinforced walls) and the mundane open door",
+      "Optional: npm logo or Bun logo as a secondary element showing the systemic nature"
     ],
     "avoid": [
-      "Generic robots or AI avatars — this is about hardware and procurement, not sci-fi AI",
-      "China or Chinese imagery — the story is about the enforcement mechanism, not geopolitics as a headline",
-      "Individual faces or caricatures of Charles Liang or any named person — this is systemic, not personal",
-      "Dollar signs or money as the primary symbol — the line is about clearance, not cost",
-      "Friendly or optimistic lighting — this should feel tense and high-stakes, not triumphant"
+      "Hackers in hoodies — this wasn't a hack",
+      "Dramatic red warning screens or explosion imagery — the irony is in the mundanity",
+      "Literal depictions of code on screens — too generic",
+      "Spy or espionage framing — wrong emotional register",
+      "Any imagery that implies user error by a developer — the failure is systemic/default, not human mistake"
     ]
   },
   "platform_hooks": {
     "x": {
-      "hook": "AI tool selection just got a clearance requirement.",
-      "angle": "The government didn't warn the market — it mandated and prosecuted in the same week. Every AI vendor you evaluate now has a geopolitical status whether the vendor advertises it or not. That's the hot take that drives quote-tweets: the free market for AI infrastructure quietly ended Thursday."
+      "hook": "Anthropic's source wasn't hacked. It was served.",
+      "angle": "The bug was open 20 days. Nobody checked their defaults. This is the provocation that gets quote-tweets from developers who immediately went and checked their own .npmignore."
     },
     "linkedin": {
-      "hook": "How many vendor evaluation frameworks include 'government security clearance status'? Mine didn't. It does now.",
-      "angle": "For CTOs, VPs of Engineering, and procurement leads: the Pentagon mandate and the Super Micro indictment landed in the same week because they're the same policy move — one carrot, one stick. The question for enterprise AI buyers is which column in your evaluation matrix accounts for 'government alignment risk.' Drive comments by asking what criteria readers actually use."
+      "hook": "Three npm supply chain incidents in 48 hours. Zero required sophisticated exploits.",
+      "angle": "Framed for engineering managers and CTOs: the audit question. When did you last check what your build tool ships by default? Drives comments from people sharing their own close calls or audit processes."
     },
     "bluesky": {
-      "hook": "I pick tools based on what ships the best code. That just got a lot more complicated.",
-      "angle": "Talking to fellow builders — the personal angle. I use Claude Code daily, Anthropic is in a DOJ lawsuit, Palantir just got the military mandate. I didn't sign up to carry geopolitical baggage in my toolbox, but here we are. Invite peers to share what criteria they actually use, or whether this even registers for solo devs yet."
+      "hook": "I build with Bun. I checked my .npmignore within an hour of reading the HN thread.",
+      "angle": "Personal, peer-to-peer. Opens a genuine conversation about what other builders found when they looked. Webdevdad energy — not broadcasting, just talking to the community."
     }
   },
   "do_not_include": [
-    "White House AI legislative framework — policy story but lower engagement than the Pentagon/Super Micro thread",
-    "NVIDIA Agent Toolkit at GTC — enterprise infrastructure, not the same narrative",
-    "Alibaba Wukong launch — adjacent geopolitics but different story",
-    "Anthropic DOJ lawsuit specifics — mention the clearance dimension only, don't make it the Anthropic story",
-    "Speculation on whether Palantir's mandate survives administration changes — open question, not a stated position"
+    "Claude Code v2.1.89 release notes (incremental update)",
+    "PrismML Bonsai 1-bit LLMs (niche model release)",
+    "LongCat-Next multimodal paper (academic)",
+    "Huawei Ascend 950PR chip (different story)",
+    "Quantum threat timeline (different domain)",
+    "KAT-Coder-V2 benchmark results (academic)",
+    "Scrapling web scraping framework (niche)",
+    "KAIROS or dream mode as the primary story — they're interesting but a distraction from the defaults angle",
+    "Any framing that makes this about Anthropic being careless specifically — the point is systemic npm defaults, not one company's mistake"
   ],
   "mindpattern_link": "https://mindpattern.ai"
 }

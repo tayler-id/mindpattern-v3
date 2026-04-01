@@ -129,3 +129,82 @@ Running record of editorial decisions made during pipeline runs. Each entry capt
 - **Pattern**: Expeditor PASS/no-posts is a new and distinct failure mode from Expeditor FAIL — requires its own investigation path. Newsletter quality regression (Dedup + Sources) is the most significant quality drop since recovery began and coincides with lowest overall score. Topic score 0 anomaly now 5+ runs with no resolution. Geopolitics/government AI power plays are clean approvals — no custom injection needed when the thesis triangulates on its own.
 - **Action required**: Diagnose Expeditor PASS/no-posts failure mode (check social platform API layer vs orchestration layer). Investigate newsletter Dedup (0.833) and Sources (0.75) regression — check for content overlap or weak source diversity. Root-cause topic score 0 anomaly (5+ runs). Distribution remains the primary active blocker.
 - **Tags**: pipeline, run-17, distribution-gap, expeditor-pass-no-posts, zero-topic-score, newsletter-regression, geopolitics, operational
+
+## 2026-03-27
+
+## 2026-03-27 — Run 19 Pipeline
+- **Context**: 19th run; 1st run on 2026-03-27.
+- **Findings**: 236 — healthy, stable range. Consistent with recovery period (Run 17: 219, Run 16: 246, Run 15: 252).
+- **Topic**: Two AI stories drawing the sharpest ROI contrast yet. OpenAI confirmed Sora shutdown — app, API, and Disney's $1B partnership all killed. $15M/day inference costs, 66% download decline made economics impossible. Reco.ai case study: one engineer rewrote JSONata evaluator in Go using AI in 7 hours, $400 in API tokens, achieved 1,000x speedup, saved $500K/year across a pipeline processing billions of events. Thesis: the gap between AI that generates ROI and AI that generates losses isn't closing — it's accelerating. Score: 0 (persistent anomaly — 6th+ consecutive run with zero topic score despite full approval chain).
+- **Gate 1**: approved — straight approve, no custom injection. ROI contrast structure with precise economics and named actors on both sides triangulates the thesis internally; no augmentation needed.
+- **Gate 2**: approved
+- **Expeditor**: PASS
+- **Posted to**: bluesky, linkedin — distribution confirmed. Second consecutive confirmed distribution run (Run 18 also confirmed). Distribution gap considered resolved.
+- **Newsletter**: Overall 0.925, Coverage 0.969, Dedup 1.0, Sources 0.75. Coverage near-perfect — content breadth excellent. Dedup perfect. Sources 0.75 — third confirmed occurrence (Runs 15, 18, 19). Confirmed structural ceiling in newsletter citation diversity, not correlated with topic quality.
+- **Pattern**: ROI contrast (catastrophic loss vs high-ROI win) with precise builder economics on both sides is a clean-approve pattern. Distribution stable two consecutive runs — resolution holds. Sources weakness now a confirmed recurring pattern requiring newsletter writer fix, not editorial fix. Topic score 0 anomaly unresolved at 6+ runs.
+- **Action required**: Fix newsletter Sources weakness (structural citation diversity — 0.75 across three non-consecutive runs). Root-cause topic score 0 anomaly (6+ runs, does not affect distribution or quality). Confirm distribution resolution on third consecutive run.
+- **Tags**: pipeline, run-19, distribution-confirmed, roi-contrast, zero-topic-score, sources-weakness, newsletter, operational
+
+## 2026-03-28
+
+## 2026-03-28 — Run 20 Pipeline
+- **Context**: 20th run; 1st run on 2026-03-28.
+- **Findings**: 245 — stable. Consistent with recent recovery range (Run 19: 236, Run 17: 219, Run 16: 246).
+- **Topic**: Three independent data sources converging within 72 hours on the same counter-narrative: Duke/Federal Reserve NBER survey of 750 CFOs shows claimed 1.8% AI productivity gains with actual revenue data showing 'much smaller' impact. Same survey projects 502,000 AI job cuts in 2026 — 9x increase from 2025's 55,000 — with Block cutting 40%, Atlassian 10%, Meta reportedly planning 20%. Institutional 'buy' orders for industrials and materials at highest since 2021 as pension funds rotate out of AI tech. Microsoft down 20% YTD. Framing: Solow's 1987 computer productivity paradox in real time — companies cutting half a million jobs based on productivity claims the data doesn't support, while institutional money is already leaving. Score: 0 (persistent anomaly — 7th+ consecutive run with zero topic score despite full approval chain).
+- **Gate 1**: approved — straight approve, no custom injection. Three independent data sources converging on the same thesis within 72 hours triangulates internally; no augmentation needed. Consistent with three-source convergence clean-approve pattern.
+- **Gate 2**: approved
+- **Expeditor**: PASS
+- **Posted to**: bluesky, linkedin — distribution confirmed. Third consecutive confirmed distribution run (Runs 18, 19, 20). Distribution resolution now a stable pattern.
+- **Newsletter**: Overall 0.836, Coverage 0.926, Dedup 0.833, Sources 0.75. Lowest overall score in recent runs (vs 0.925 Run 19). Coverage strong. Dedup regressed from perfect 1.0 (Run 19) to 0.833. Sources at structural ceiling 0.75 — 4th confirmed occurrence (Runs 15, 18, 19, 20). Dedup + Sources co-regression in same run (also Run 17) may indicate structural relationship in newsletter writer.
+- **Pattern**: Data-dense counter-narrative (economic survey + named companies + institutional money signal + historical framing hook) is a clean-approve topic pattern. Distribution stable three consecutive runs — confirmed resolved. Newsletter Dedup + Sources co-regression is a recurring pattern requiring newsletter writer root-cause. Topic score 0 anomaly unresolved at 7+ runs.
+- **Action required**: Fix newsletter Sources weakness (structural — 0.75 ceiling across four non-consecutive runs). Investigate Dedup + Sources co-regression. Root-cause topic score 0 anomaly (7+ runs, does not affect distribution or quality). Distribution confirmed stable — no action needed.
+- **Tags**: pipeline, run-20, distribution-confirmed, counter-narrative, economic-data, institutional-rotation, solow-paradox, zero-topic-score, sources-weakness, newsletter-regression, operational
+
+---
+
+## 2026-03-29
+
+## 2026-03-29 — Run 21 Pipeline
+- **Context**: 21st run; 1st run on 2026-03-29.
+- **Findings**: 225 — healthy, slight dip from recent range (Run 20: 245, Run 19: 236). Within normal variance.
+- **Topic**: All 11 xAI co-founders have now departed Elon Musk's AI company — the last left Friday. Musk acknowledged it 'wasn't built right the first time' and folded xAI into SpaceX. Same week: Anthropic's accidental CMS leak of unreleased Mythos model crashed cybersecurity stocks 4-9% in a single session — CrowdStrike down 7%, Tenable down 9%, iShares Cybersecurity ETF down 4.5%. Fortune confirmed Mythos is real, called it 'a step change' and 'far ahead of any other AI model in cyber capabilities.' Thesis: competitive landscape of AI in one week — one company lost every person who built it, another's leak was so powerful it repriced an entire industry. Score: 0 (persistent anomaly — 8th+ consecutive run with zero topic score despite full approval chain).
+- **Gate 1**: approved — straight approve, no custom injection. Fourth consecutive straight approve (Runs 18–21). Competitive landscape contrast with named actors, specific stock tickers, ETF percentages, and direct quotes triangulates internally.
+- **Gate 2**: approved
+- **Expeditor**: PASS
+- **Posted to**: bluesky, linkedin — distribution confirmed. Fourth consecutive confirmed distribution run (Runs 18, 19, 20, 21). Distribution resolution now a durable, stable pattern.
+- **Newsletter**: Overall 0.811, Coverage 0.862, Dedup 0.9, Sources 0.6. Sources hit new all-time low — breaks through previously confirmed 0.75 structural ceiling. Five consecutive occurrences (Runs 15, 18, 19, 20, 21) with downward trajectory. Coverage 0.862 — drifting below prior range. Dedup 0.9 — slight improvement vs Run 20 (0.833).
+- **Pattern**: Competitive landscape contrast (organizational failure + capability shock) is a confirmed clean-approve pattern — thesis self-generates from contrast without augmentation. Distribution confirmed durable at four consecutive runs. Sources weakness now critical: 0.6 breaks the 0.75 floor. Coverage also drifting — newsletter writer may be narrowing source diversity and content breadth simultaneously.
+- **Action required**: Fix newsletter Sources urgently (0.6 — new low, structural and worsening). Investigate Coverage drift (0.862, declining). Root-cause topic score 0 anomaly (8+ runs, does not affect distribution or quality). Distribution confirmed durable — no action needed.
+- **Tags**: pipeline, run-21, distribution-confirmed, competitive-landscape-contrast, zero-topic-score, sources-critical, newsletter-regression, xai, anthropic-mythos, operational
+
+## 2026-03-31
+
+## 2026-03-30 — Run 22 Pipeline
+- **Context**: 22nd run; 1st run on 2026-03-30.
+- **Findings**: 247 — healthy, consistent with recent range (Run 20: 245, Run 21: 225, Run 19: 236). Run 21 dip was within normal variance.
+- **Topic**: Two research signals converging on the same mechanism. Wharton study: across 9,593 trials with 1,372 participants, 80% of people accepted wrong AI answers without checking — and wrong AI answers increased user confidence more than correct ones did. Same month, vibe coding failure corpus hits tipping point: Amazon lost 6.3M orders in a 6-hour outage from AI-generated code, DataTalks.Club lost 1.94M database rows when Claude Code executed terraform destroy, Moltbook exposed 1.5M auth tokens, CVEs attributed to AI-generated code accelerated 6→15→35 (Jan–Mar), Escape.tech found 2,000+ vulnerabilities across 5,600 vibe-coded apps. The Wharton researchers recommend 'a second AI auditing the first' — but that doesn't fix the 80% who never checked in the first place. Thesis: cognitive surrender is the root cause underneath every vibe coding disaster. Score: 0 (persistent anomaly — 9th+ consecutive run with zero topic score despite full approval chain).
+- **Gate 1**: approved — straight approve, no custom injection. Fifth consecutive straight approve (Runs 18–22). Behavioral research quantifying failure mode + named incident corpus with specific metrics triangulates the thesis internally.
+- **Gate 2**: approved
+- **Expeditor**: PASS
+- **Posted to**: bluesky, linkedin — distribution confirmed. Fifth consecutive confirmed distribution run (Runs 18–22). Distribution fully stable.
+- **Newsletter**: Overall 0.863, Coverage 0.9, Dedup 1.0, Sources 0.75. Recovery from Run 21 regression: Overall +0.052, Coverage +0.038. Dedup perfect. Sources 0.75 — recovered from Run 21 all-time low of 0.6, back to structural ceiling. Sixth confirmed Sources occurrence (Runs 15, 18, 19, 20, 21, 22).
+- **Pattern**: Research-backed behavioral data (peer-reviewed, trial/participant counts) paired with real-world failure corpus (named incidents, specific metrics, CVE acceleration) is a confirmed clean-approve pattern — behavioral finding provides the mechanism; failure corpus provides the evidence. Newsletter recovered from Run 21 regression. Sources ceiling persists at 0.75 despite one-run dip and recovery — structural fix still required.
+- **Action required**: Fix newsletter Sources (structural — 0.75 ceiling across six non-consecutive runs). Root-cause topic score 0 anomaly (9+ runs, does not affect distribution or quality). Distribution confirmed durable — no action needed.
+- **Tags**: pipeline, run-22, distribution-confirmed, behavioral-research, vibe-coding, cognitive-surrender, zero-topic-score, sources-weakness, newsletter-recovery, operational
+
+## 2026-03-31
+
+## 2026-03-31 — Run 23 Pipeline
+- **Context**: 23rd run; 2nd run on 2026-03-31.
+- **Findings**: 228 — healthy, consistent with recent range (Run 22: 247, Run 21: 225, Run 20: 245).
+- **Topic**: Oracle cut up to 30,000 employees (18% of 162K workforce) via 6 AM emails, freeing $8-10B cash flow to build AI data centers. Same day, Sequoia published Dorsey/Botha essay arguing AI should replace organizational hierarchy itself — not just workers. Block eliminating middle management entirely, replacing with three roles: Individual Contributors, Directly Responsible Individuals, Player-Coaches. Thesis: Two Fortune 500 answers to the same question arriving at opposite conclusions — one deletes 30,000 jobs, the other deletes the org chart. Score: 0 (persistent anomaly — 10th+ consecutive run with zero topic score despite full approval chain).
+- **Gate 1**: approved — straight approve, no custom injection. Sixth consecutive straight approve (Runs 18–23). Named actors (Oracle, Block, Dorsey, Botha), specific metrics (30K employees, 18%, $8-10B), contrasting corporate philosophies triangulate internally.
+- **Gate 2**: unknown — Expeditor FAIL prevented distribution before Gate 2 outcome was recorded.
+- **Expeditor**: FAIL — five-run consecutive distribution streak (Runs 18–22) ended.
+- **Posted to**: none — Expeditor FAIL.
+- **Newsletter**: Overall 0.939, Coverage 0.935, Dedup 1.0, Sources 1.0. Sources hit 1.0 for the first time — breaks persistent 0.75 structural ceiling confirmed across six runs (Runs 15, 18–22). Structural fix confirmed working. All four scores strong. Strongest newsletter run on record.
+- **Pattern**: Labor displacement + org hierarchy elimination is a confirmed clean-approve compound-narrative variant. "Same question, opposite answers" structure self-generates thesis contrast without augmentation. Newsletter Sources ceiling definitively resolved at 1.0. Expeditor FAIL is a new tracked failure mode — broke distribution streak.
+- **Action required**: Investigate and fix Expeditor FAIL (highest priority — distribution broken). Topic score 0 anomaly persists at 10+ runs (no editorial impact). Newsletter Sources confirmed fixed — monitor for regression.
+- **Tags**: pipeline, run-23, expeditor-fail, distribution-broken, labor-displacement, org-redesign, oracle, block, sources-fixed, newsletter-best, zero-topic-score, operational
+
+---

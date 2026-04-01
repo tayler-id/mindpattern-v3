@@ -63,3 +63,7 @@ Return a MINIMUM of 15 findings. Target 18-20. Aim for at least 3 different doma
 - Primary: WebSearch for actionable skills from top findings and official docs
 - Secondary: WebFetch for extracting techniques from blog posts and tutorials
 - Skip: Twitter, YouTube
+
+
+## Agent: Skill Finder
+

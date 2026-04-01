@@ -4,7 +4,7 @@
   "type": "bug",
   "source": "scout",
   "priority": "P1",
-  "status": "in_progress",
+  "status": "done",
   "description": "test_approval.py::TestSlackApproval::test_successful_slack_approval asserts `mock_post.assert_called_once_with('xoxb-fake-token', 'Test message')` but the real call is `_slack_post(token, message, thread_ts=self.thread_ts)` which passes `thread_ts=None`. The keyword argument mismatch causes the assertion to fail. The test was written before thread_ts was added to the _slack_approval path.",
   "requirements": [
     "test_successful_slack_approval must pass without modifying production code",
@@ -27,6 +27,6 @@
   "created_at": "2026-03-31T00:00:00Z",
   "expires_at": "2026-04-07T00:00:00Z",
   "feedback_history": [],
-  "pr_url": "worktree fix applied",
-  "completed_at": "2026-04-01T01:42:26.701323+00:00"
+  "pr_url": "pushed to feat/slack-bot \u2014 test_approval.py:460 thread_ts=None added",
+  "completed_at": "2026-04-01T13:18:10.572355+00:00"
 }

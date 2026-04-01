@@ -1,9 +1,26 @@
 {
   "verdict": "APPROVED",
-  "feedback": "Clean, specific, and earned. 'clearance column in my vendor eval' is the kind of detail that makes this post — it converts a news observation into a builder's lived experience. 'didn't ask for it.' lands perfectly as a fragment that just stops. No notes.",
+  "feedback": "Clean, specific, earned. The 'I build with Bun. I publish packages.' opener establishes personal stake without credential-dumping. 'Default behavior, not an exploit.' is a genuine take that will prompt response. 'Wondering how many others, too.' is natural community-invite without farming. Stops exactly when the thought is done.",
   "scores": {
     "voice_authenticity": 9,
     "platform_fit": 9,
     "engagement_potential": 8
+  },
+  "rubric_scores": {
+    "voice_match": 9,
+    "framing_authenticity": 9,
+    "platform_genre_fit": 9,
+    "epistemic_calibration": 8,
+    "structural_variation": 8,
+    "rhetorical_framework": 8
+  },
+  "kill_switches": "pass",
+  "dimension_notes": {
+    "voice": "pass — 3 first-person refs, 1 fragment ('Default behavior, not an exploit.'), good burstiness short-to-medium-to-short, zero banned words or phrases",
+    "framing": "pass — single event reaction (Claude Code leak), personal stake clear, no do_not_include bleed, reads like a community member not a brand account",
+    "platform": "pass — 287 chars (under 300), single post, technical specificity (.npmignore, Bun, package publishing), source link present, mindpattern.ai present",
+    "epistemic": "pass — 'Wondering how many others, too' is honest uncertainty without generic hedging",
+    "structure": "pass — short/short/medium/short/short/fragment rhythm, no neat bow, stops cold",
+    "framework": "pass — fact ('Bug was open 20 days') precedes take ('Default behavior, not an exploit'), source link present, no uncited claims"
   }
 }
