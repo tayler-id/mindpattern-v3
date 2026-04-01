@@ -127,11 +127,15 @@ class MindPatternBot:
         # Acknowledge immediately
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
 
+        logger.debug(f"Socket Mode event: type={req.type}")
+
         if req.type != "events_api":
             return
 
         event = req.payload.get("event", {})
         event_type = event.get("type")
+        channel = event.get("channel", "")
+        logger.info(f"Event received: type={event_type}, channel={channel}, user={event.get('user', '?')}, subtype={event.get('subtype', 'none')}")
 
         # Only handle message events (not message_changed, etc.)
         if event_type != "message" or event.get("subtype"):
@@ -153,15 +157,7 @@ class MindPatternBot:
         if not handler:
             return  # Message is in a channel we don't handle
 
-        # Check mutex — don't run agents while pipeline is active
-        if not _acquire_mutex():
-            handler.reply(
-                "The daily pipeline is running right now. I'll queue this and process it after.",
-                thread_ts=event.get("ts"),
-            )
-            return
-
-        # Dispatch to handler
+        # Dispatch to handler (runs alongside pipeline — claude -p calls don't collide)
         try:
             handler.handle(event)
         except Exception as e:
