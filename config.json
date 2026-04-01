@@ -11,5 +11,7 @@
     "reply_to": "feedback@tayler.id",
     "subject_prefix": "Ramsay Research Agent"
   },
-  "analytics_id": "G-8LJHFECK25"
+  "analytics_id": "G-8LJHFECK25",
+  "prompt_compression_enabled": false,
+  "prompt_compression_ratio": 0.5
 }

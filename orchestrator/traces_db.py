@@ -4,12 +4,12 @@ Ported from daily-research-agent-v2 with additional tables and helpers for
 per-phase observability, agent metrics, cost tracking, alerts, and quality
 history trends.
 
-Tables (14 total):
+Tables (15 total):
   v2 originals (9): pipeline_runs, agent_runs, prompt_versions, proof_packages,
                      events, daily_metrics, trace_spans, quality_scores,
                      evolution_actions
-  v3 additions (5): pipeline_phases, agent_metrics, cost_log, alerts,
-                     quality_history
+  v3 additions (6): pipeline_phases, agent_metrics, cost_log, alerts,
+                     quality_history, prompt_compression_cache
 """
 
 from __future__ import annotations
@@ -208,6 +208,18 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
             dimension TEXT NOT NULL,
             score REAL NOT NULL,
             delta_from_avg REAL
+        );
+
+        -- Prompt compression cache (ticket 2026-03-31-R005)
+        CREATE TABLE IF NOT EXISTS prompt_compression_cache (
+            content_hash TEXT PRIMARY KEY,
+            original_tokens INTEGER,
+            compressed_tokens INTEGER,
+            compressed_text TEXT NOT NULL,
+            target_ratio REAL NOT NULL,
+            hit_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            last_used_at TEXT NOT NULL
         );
     """)
 
@@ -931,11 +943,11 @@ if __name__ == "__main__":
         expected = sorted([
             "agent_metrics", "agent_runs", "alerts", "cost_log", "daily_metrics",
             "events", "evolution_actions", "pipeline_phases", "pipeline_runs",
-            "prompt_versions", "proof_packages", "quality_history", "quality_scores",
-            "trace_spans",
+            "prompt_compression_cache", "prompt_versions", "proof_packages",
+            "quality_history", "quality_scores", "trace_spans",
         ])
         assert tables == expected, f"Expected {expected}, got {tables}"
-        print(f"All 14 tables created: {tables}")
+        print(f"All 15 tables created: {tables}")
 
         # Round-trip test for pipeline_runs
         run_id = create_pipeline_run(conn, "research", "manual_test", '{"test": true}')
@@ -1065,7 +1077,7 @@ if __name__ == "__main__":
             tables_check = ctx_conn.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             ).fetchone()[0]
-            assert tables_check == 14
+            assert tables_check == 15
         print("open_traces_db context manager verified")
 
     print("\nAll checks passed.")
