@@ -1052,29 +1052,6 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
         if "linkedin" in engagement_platforms and "linkedin" not in self._platform_clients:
             logger.info("Skipping LinkedIn engagement search (no reliable search API)")
 
-            if all_linkedin_posts:
-                logger.info(
-                    f"LinkedIn via Jina: {len(all_linkedin_posts)} unique posts"
-                )
-
-                # Filter by hard criteria
-                filtered = self._filter_posts(all_linkedin_posts, "linkedin")
-                if filtered:
-                    # Rank and select candidates
-                    candidates = self._rank_candidates(
-                        filtered, topics, "linkedin"
-                    )
-                    all_candidates.extend(candidates)
-
-                    logger.info(
-                        f"linkedin: {len(all_linkedin_posts)} raw -> "
-                        f"{len(filtered)} filtered -> {len(candidates)} ranked"
-                    )
-                else:
-                    logger.info("All LinkedIn posts filtered out")
-            else:
-                logger.info("No LinkedIn posts found via Jina search")
-
         # Final validation: reject any candidates with placeholder/hallucinated data
         pre_validation = len(all_candidates)
         all_candidates = [c for c in all_candidates if self._validate_candidate(c)]
