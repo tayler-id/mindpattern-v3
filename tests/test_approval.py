@@ -580,3 +580,119 @@ class TestRequestEngagementApproval:
 
         assert result["approved_indices"] == []
         assert "Timed out" in result["reason"]
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Timeout Safety — [harness/2026-04-01-006]
+# Bug: _slack_poll_replies() and _web_approval() spin forever when
+# gate_timeout_seconds is None, blocking the pipeline indefinitely.
+# ════════════════════════════════════════════════════════════════════════
+
+
+class TestDefaultMaxTimeout:
+    """Verify that approval polling always has a finite upper bound,
+    even when gate_timeout_seconds is not configured."""
+
+    def test_slack_poll_replies_default_max_timeout(self, gateway):
+        """_slack_poll_replies returns None after DEFAULT_MAX_TIMEOUT
+        when no explicit timeout is given (timeout_seconds=None).
+
+        Simulates elapsed time exceeding 4 hours via monkeypatch of
+        time.monotonic so the test completes instantly.
+        """
+        from social.approval import DEFAULT_MAX_TIMEOUT
+
+        gw = ApprovalGateway({})  # no gate_timeout_seconds
+        assert gw.gate_timeout is None
+
+        call_count = 0
+        fake_start = 1000.0
+
+        def fake_monotonic():
+            nonlocal call_count
+            call_count += 1
+            # First call (start_time capture) returns the base.
+            # Subsequent calls jump past DEFAULT_MAX_TIMEOUT.
+            if call_count <= 1:
+                return fake_start
+            return fake_start + DEFAULT_MAX_TIMEOUT + 1
+
+        with patch("social.approval.time.monotonic", side_effect=fake_monotonic), \
+             patch("social.approval.time.sleep"):
+            # Provide a fake token / after_ts; the HTTP calls will fail
+            # but the timeout guard must fire before retrying forever.
+            result = gw._slack_poll_replies("xoxb-fake", "9999.0000", timeout_seconds=None)
+
+        assert result is None
+
+    def test_slack_poll_replies_respects_configured_timeout(self):
+        """When gate_timeout_seconds IS set, _slack_poll_replies still
+        honours it (i.e. configured timeout is shorter than default max
+        and wins).
+        """
+        gw = ApprovalGateway({"gate_timeout_seconds": 60})
+
+        call_count = 0
+        fake_start = 1000.0
+
+        def fake_monotonic():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 1:
+                return fake_start
+            return fake_start + 61  # just past 60 s
+
+        with patch("social.approval.time.monotonic", side_effect=fake_monotonic), \
+             patch("social.approval.time.sleep"):
+            result = gw._slack_poll_replies("xoxb-fake", "9999.0000", timeout_seconds=60)
+
+        assert result is None
+
+    def test_web_approval_times_out_with_default_max(self):
+        """_web_approval returns None after DEFAULT_MAX_TIMEOUT when
+        the dashboard keeps returning 'pending'.
+        """
+        from social.approval import DEFAULT_MAX_TIMEOUT
+
+        gw = ApprovalGateway({
+            "approval_api_base": "http://localhost:9999",
+        })
+
+        call_count = 0
+        fake_start = 1000.0
+
+        def fake_monotonic():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 1:
+                return fake_start
+            return fake_start + DEFAULT_MAX_TIMEOUT + 1
+
+        # Fake requests module returned by the lazy import
+        fake_requests = MagicMock()
+        # POST succeeds (submit)
+        post_resp = MagicMock()
+        post_resp.status_code = 201
+        fake_requests.post.return_value = post_resp
+        # GET always returns pending
+        get_resp = MagicMock()
+        get_resp.status_code = 200
+        get_resp.json.return_value = {"status": "pending"}
+        fake_requests.get.return_value = get_resp
+
+        with patch("social.approval.time.monotonic", side_effect=fake_monotonic), \
+             patch("social.approval.time.sleep"), \
+             patch.dict("sys.modules", {"requests": fake_requests}):
+            result = gw._web_approval([{"content": "test"}], "topic")
+
+        assert result is None
+
+    def test_approval_timeout_returns_skip_action(self, gateway, sample_topics):
+        """End-to-end: when Slack polling times out (returns None),
+        request_topic_approval produces action='skip', NOT a hang.
+        """
+        with patch.object(ApprovalGateway, "_slack_approval", return_value=None):
+            result = gateway.request_topic_approval(sample_topics)
+
+        assert result["action"] == "skip"
+        assert "Timed out" in result["guidance"]
