@@ -457,7 +457,7 @@ class TestSlackApproval:
 
         assert result == "go"
         mock_token.assert_called_once()
-        mock_post.assert_called_once_with("xoxb-fake-token", "Test message")
+        mock_post.assert_called_once_with("xoxb-fake-token", "Test message", thread_ts=None)
         mock_poll.assert_called_once()
 
     @patch.object(ApprovalGateway, "_get_slack_token", return_value=None)
