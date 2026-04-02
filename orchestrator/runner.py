@@ -362,6 +362,16 @@ class ResearchPipeline:
             preflight_data=preflight_data,
         )
 
+        # Cross-agent dedup: remove near-duplicate findings across agents
+        try:
+            self.agent_results, dedup_summary = agent_dispatch.dedup_cross_agent_findings(
+                self.agent_results
+            )
+            log_event(self.traces_conn, self.traces_run_id,
+                      "cross_agent_dedup", json.dumps(dedup_summary))
+        except Exception as e:
+            logger.warning(f"Cross-agent dedup failed (non-critical): {e}")
+
         total_stored = 0
         for result in self.agent_results:
             if result.error and not result.findings:

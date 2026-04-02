@@ -139,3 +139,156 @@ class TestParseFindingsLargeOutputPerformance:
 
         assert len(result) == 20
         assert elapsed < 1.0, f"Parsing took {elapsed:.2f}s, must be < 1s"
+
+
+# --- Cross-agent dedup tests (ticket 2026-04-01-R015) ---
+
+from unittest.mock import patch
+import numpy as np
+from orchestrator.agents import AgentResult, dedup_cross_agent_findings
+
+
+def _make_finding(title, summary, importance="medium", source_url=None, agent=None):
+    """Helper to build a finding dict."""
+    f = {
+        "title": title,
+        "summary": summary,
+        "importance": importance,
+        "category": "AI",
+        "source_name": "Test",
+        "date_found": "2026-04-01",
+    }
+    if source_url:
+        f["source_url"] = source_url
+    return f
+
+
+def _mock_embed_texts(texts):
+    """Return deterministic embeddings where similar titles produce similar vectors.
+
+    Findings with the same first word get nearly identical vectors (sim > 0.95).
+    Different first words get orthogonal vectors (sim ~ 0).
+    """
+    dim = 384
+    vectors = []
+    seed_map = {}
+    for text in texts:
+        key = text.split()[0].lower() if text else "empty"
+        if key not in seed_map:
+            rng = np.random.RandomState(hash(key) % 2**31)
+            vec = rng.randn(dim).astype(np.float32)
+            vec /= np.linalg.norm(vec)
+            seed_map[key] = vec
+        base = seed_map[key]
+        # Add tiny noise so pairs aren't exactly 1.0
+        rng = np.random.RandomState(hash(text) % 2**31)
+        noise = rng.randn(dim).astype(np.float32) * 0.01
+        vec = base + noise
+        vec /= np.linalg.norm(vec)
+        vectors.append(vec.tolist())
+    return vectors
+
+
+class TestCrossAgentDedupRemovesDuplicates:
+    """Near-duplicate findings across agents should be consolidated."""
+
+    @patch("orchestrator.agents.embed_texts", side_effect=_mock_embed_texts)
+    def test_cross_agent_dedup_removes_duplicates(self, mock_embed):
+        results = [
+            AgentResult(
+                agent_name="agent-a",
+                findings=[
+                    _make_finding("DuplicateStory breaks new ground", "Short summary."),
+                    _make_finding("UniqueA is interesting", "Only agent A found this."),
+                ],
+            ),
+            AgentResult(
+                agent_name="agent-b",
+                findings=[
+                    _make_finding(
+                        "DuplicateStory covered from different angle",
+                        "A much longer and more detailed summary with specifics.",
+                        importance="high",
+                        source_url="https://example.com/dup",
+                    ),
+                    _make_finding("UniqueB is noteworthy", "Only agent B found this."),
+                ],
+            ),
+        ]
+
+        deduped, summary = dedup_cross_agent_findings(results)
+        all_findings = [f for r in deduped for f in r.findings]
+        titles = [f["title"] for f in all_findings]
+
+        # One of the DuplicateStory findings should be removed
+        dup_count = sum(1 for t in titles if t.startswith("DuplicateStory"))
+        assert dup_count == 1, f"Expected 1 DuplicateStory finding, got {dup_count}: {titles}"
+        assert summary["removed"] >= 1
+
+
+class TestCrossAgentDedupKeepsHigherQuality:
+    """When deduplicating, the higher-quality finding is kept."""
+
+    @patch("orchestrator.agents.embed_texts", side_effect=_mock_embed_texts)
+    def test_cross_agent_dedup_keeps_higher_quality(self, mock_embed):
+        low_quality = _make_finding("SameStory from agent A", "Short.")
+        high_quality = _make_finding(
+            "SameStory from agent B with more detail",
+            "This is a much longer and more detailed summary that provides real value.",
+            importance="high",
+            source_url="https://example.com/story",
+        )
+
+        results = [
+            AgentResult(agent_name="agent-a", findings=[low_quality]),
+            AgentResult(agent_name="agent-b", findings=[high_quality]),
+        ]
+
+        deduped, summary = dedup_cross_agent_findings(results)
+        all_findings = [f for r in deduped for f in r.findings]
+
+        assert len(all_findings) == 1
+        # The kept finding should be the high-quality one (longer summary, has URL)
+        kept = all_findings[0]
+        assert kept["importance"] == "high"
+        assert "source_url" in kept
+        assert "much longer" in kept["summary"]
+
+
+class TestCrossAgentDedupPreservesUniqueFindings:
+    """Findings below the similarity threshold should not be removed."""
+
+    @patch("orchestrator.agents.embed_texts", side_effect=_mock_embed_texts)
+    def test_cross_agent_dedup_preserves_unique_findings(self, mock_embed):
+        results = [
+            AgentResult(
+                agent_name="agent-a",
+                findings=[
+                    _make_finding("AlphaProject launches v2", "Alpha released version 2."),
+                    _make_finding("BetaCompany raises funding", "Beta got series B."),
+                ],
+            ),
+            AgentResult(
+                agent_name="agent-b",
+                findings=[
+                    _make_finding("GammaFramework hits 1.0", "Gamma reached stable."),
+                    _make_finding("DeltaResearch publishes paper", "Delta published on arXiv."),
+                ],
+            ),
+        ]
+
+        deduped, summary = dedup_cross_agent_findings(results)
+        all_findings = [f for r in deduped for f in r.findings]
+
+        assert len(all_findings) == 4
+        assert summary["removed"] == 0
+
+
+class TestCrossAgentDedupEmptyInput:
+    """Empty input returns empty output with zero-count summary."""
+
+    def test_cross_agent_dedup_empty_input(self):
+        deduped, summary = dedup_cross_agent_findings([])
+        assert deduped == []
+        assert summary["removed"] == 0
+        assert summary["total"] == 0
