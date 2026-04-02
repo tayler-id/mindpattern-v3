@@ -7,15 +7,20 @@ Covers:
 - BlueskyClient.post() API error path (HTTPError handling)
 - LinkedInClient._upload_document() success path (initializeUpload + PUT)
 - LinkedInClient._upload_document() missing file path
+- compress_image does not use deprecated tempfile.mktemp
+- _upload_blob cleans up compressed temp files after upload
+- _upload_blob cleans up compressed temp files on failure
 """
 
+import inspect
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 import requests
 
-from social.posting import LinkedInClient, BlueskyClient
+from social.posting import LinkedInClient, BlueskyClient, compress_image
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -193,3 +198,57 @@ def test_upload_linkedin_document_missing_file(linkedin_client, tmp_path):
         result = linkedin_client._upload_document(missing_file)
 
     assert result is None
+
+
+# ── compress_image / _upload_blob cleanup tests ──────────────────────────
+
+
+def test_compress_image_does_not_use_mktemp():
+    """compress_image must not use the deprecated tempfile.mktemp()."""
+    source = inspect.getsource(compress_image)
+    assert "mktemp" not in source, (
+        "compress_image still uses deprecated tempfile.mktemp()"
+    )
+
+
+def test_upload_blob_cleans_up_compressed_file(bluesky_client, tmp_path):
+    """_upload_blob removes the temp compressed file after successful upload."""
+    # Create a fake image file
+    image_file = tmp_path / "big-image.png"
+    image_file.write_bytes(b"x" * 100)
+
+    # Track which file compress_image returns so we can check it was deleted
+    compressed = tmp_path / "compressed.jpg"
+    compressed.write_bytes(b"small-jpeg-data")
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"blob": {"ref": "blob-ref-123"}}
+
+    with (
+        patch("social.posting.compress_image", return_value=compressed) as mock_compress,
+        patch("social.posting._api_call_with_retry", return_value=mock_resp),
+    ):
+        result = bluesky_client._upload_blob(image_file)
+
+    assert result == {"ref": "blob-ref-123"}
+    # The compressed temp file must have been cleaned up
+    assert not compressed.exists(), "Compressed temp file was not cleaned up after upload"
+
+
+def test_upload_blob_cleans_up_on_failure(bluesky_client, tmp_path):
+    """_upload_blob removes the temp compressed file even if the upload fails."""
+    image_file = tmp_path / "big-image.png"
+    image_file.write_bytes(b"x" * 100)
+
+    compressed = tmp_path / "compressed.jpg"
+    compressed.write_bytes(b"small-jpeg-data")
+
+    with (
+        patch("social.posting.compress_image", return_value=compressed),
+        patch("social.posting._api_call_with_retry", side_effect=RuntimeError("upload boom")),
+    ):
+        result = bluesky_client._upload_blob(image_file)
+
+    assert result is None
+    # Even on failure, the compressed temp file must be cleaned up
+    assert not compressed.exists(), "Compressed temp file was not cleaned up after failed upload"
