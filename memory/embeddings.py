@@ -5,7 +5,6 @@ All vectors are normalized by the model, so cosine similarity = dot product.
 """
 
 import struct
-from typing import Optional
 
 import numpy as np
 
@@ -74,7 +73,7 @@ def deserialize_f32(blob: bytes) -> list[float]:
 def batch_similarities(
     query_vec: list[float],
     embeddings: list[bytes],
-    threshold: Optional[float] = None,
+    threshold: float | None = None,
 ) -> list[tuple[int, float]]:
     """Compute similarities between a query vector and a list of serialized embeddings.
 
