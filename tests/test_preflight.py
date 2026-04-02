@@ -230,3 +230,114 @@ def test_preflight_run_all_smoke():
     assert "source_counts" in result
     assert result["total_items"] >= 0
     assert isinstance(result["assignments"], dict)
+
+
+# ── Dedup decay tests ────────────────────────────────────────────
+
+def test_dedup_batch_decay_old_finding_passes():
+    """9-day-old finding at 0.75 similarity does NOT block — story has evolved."""
+    from unittest.mock import patch, MagicMock
+    import numpy as np
+    from datetime import datetime, timedelta
+    from preflight.run_all import _dedup_batch, DEDUP_SIMILARITY_THRESHOLD
+
+    # Vectors engineered for 0.75 dot-product similarity
+    item_vec = np.array([1.0, 0.0], dtype=np.float32)
+    stored_vec = np.array([0.75, np.sqrt(1 - 0.75**2)], dtype=np.float32)
+
+    nine_days_ago = (datetime.now() - timedelta(days=9)).strftime("%Y-%m-%d")
+
+    mock_row = {
+        "title": "Old Finding",
+        "agent": "test-agent",
+        "run_date": nine_days_ago,
+        "embedding": b"fake",
+    }
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchall.return_value = [mock_row]
+
+    items = [
+        {"title": "New Finding", "content_preview": "test content",
+         "already_covered": False, "match_info": None},
+    ]
+
+    with patch("memory.embeddings.embed_texts", return_value=[item_vec.tolist()]), \
+         patch("memory.embeddings.deserialize_f32", return_value=stored_vec.tolist()):
+        result = _dedup_batch(items, mock_db, DEDUP_SIMILARITY_THRESHOLD)
+
+    # 9-day-old finding at 0.75 similarity should NOT block
+    assert result[0]["already_covered"] is False
+
+
+def test_dedup_batch_decay_recent_finding_blocks():
+    """1-day-old finding at 0.75 similarity DOES block — true duplicate."""
+    from unittest.mock import patch, MagicMock
+    import numpy as np
+    from datetime import datetime, timedelta
+    from preflight.run_all import _dedup_batch, DEDUP_SIMILARITY_THRESHOLD
+
+    item_vec = np.array([1.0, 0.0], dtype=np.float32)
+    stored_vec = np.array([0.75, np.sqrt(1 - 0.75**2)], dtype=np.float32)
+
+    one_day_ago = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    mock_row = {
+        "title": "Recent Finding",
+        "agent": "test-agent",
+        "run_date": one_day_ago,
+        "embedding": b"fake",
+    }
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchall.return_value = [mock_row]
+
+    items = [
+        {"title": "New Finding", "content_preview": "test content",
+         "already_covered": False, "match_info": None},
+    ]
+
+    with patch("memory.embeddings.embed_texts", return_value=[item_vec.tolist()]), \
+         patch("memory.embeddings.deserialize_f32", return_value=stored_vec.tolist()):
+        result = _dedup_batch(items, mock_db, DEDUP_SIMILARITY_THRESHOLD)
+
+    # 1-day-old finding at 0.75 similarity SHOULD block
+    assert result[0]["already_covered"] is True
+    assert result[0]["match_info"]["matched_finding"] == "Recent Finding"
+
+
+def test_dedup_batch_decay_annotations_include_age():
+    """Blocked items include age_days and effective_threshold in match_info."""
+    from unittest.mock import patch, MagicMock
+    import numpy as np
+    from datetime import datetime, timedelta
+    from preflight.run_all import _dedup_batch, DEDUP_SIMILARITY_THRESHOLD
+
+    item_vec = np.array([1.0, 0.0], dtype=np.float32)
+    stored_vec = np.array([0.75, np.sqrt(1 - 0.75**2)], dtype=np.float32)
+
+    three_days_ago = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
+
+    mock_row = {
+        "title": "Mid-age Finding",
+        "agent": "test-agent",
+        "run_date": three_days_ago,
+        "embedding": b"fake",
+    }
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchall.return_value = [mock_row]
+
+    items = [
+        {"title": "New Finding", "content_preview": "test content",
+         "already_covered": False, "match_info": None},
+    ]
+
+    with patch("memory.embeddings.embed_texts", return_value=[item_vec.tolist()]), \
+         patch("memory.embeddings.deserialize_f32", return_value=stored_vec.tolist()):
+        result = _dedup_batch(items, mock_db, DEDUP_SIMILARITY_THRESHOLD)
+
+    # 3-day-old at 0.75 — check if blocked, then verify annotations
+    info = result[0]["match_info"]
+    assert info is not None, "Expected match_info for blocked item"
+    assert "age_days" in info
+    assert info["age_days"] == 3
+    assert "effective_threshold" in info
+    assert isinstance(info["effective_threshold"], float)
