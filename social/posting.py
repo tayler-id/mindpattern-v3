@@ -135,8 +135,10 @@ def compress_image(path: Path, max_bytes: int = 950_000) -> Path:
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=quality, optimize=True)
         if buf.tell() <= max_bytes:
-            compressed = Path(tempfile.mktemp(suffix=".jpg"))
-            compressed.write_bytes(buf.getvalue())
+            tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            compressed = Path(tmp.name)
+            tmp.write(buf.getvalue())
+            tmp.close()
             log.info(
                 "Compressed %s from %d to %d bytes (quality=%d)",
                 path.name, path.stat().st_size, buf.tell(), quality,
@@ -151,8 +153,10 @@ def compress_image(path: Path, max_bytes: int = 950_000) -> Path:
         buf = io.BytesIO()
         resized.save(buf, format="JPEG", quality=40, optimize=True)
         if buf.tell() <= max_bytes:
-            compressed = Path(tempfile.mktemp(suffix=".jpg"))
-            compressed.write_bytes(buf.getvalue())
+            tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            compressed = Path(tmp.name)
+            tmp.write(buf.getvalue())
+            tmp.close()
             log.info(
                 "Compressed+resized %s to %dx%d (%d bytes)",
                 path.name, new_size[0], new_size[1], buf.tell(),
@@ -485,6 +489,7 @@ class BlueskyClient:
         self._ensure_session()
 
         path = compress_image(image_path, max_bytes=950_000)
+        compressed = path if path != image_path else None
 
         mime = "image/jpeg"
         suffix = path.suffix.lower()
@@ -516,6 +521,9 @@ class BlueskyClient:
         except Exception as exc:
             log.error("Bluesky blob upload failed: %s", exc)
             return None
+        finally:
+            if compressed is not None:
+                compressed.unlink(missing_ok=True)
 
     def post(self, content: str, image_path: Path | None = None) -> dict:
         """Post to Bluesky with optional image and auto-detected facets.
