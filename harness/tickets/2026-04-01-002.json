@@ -4,8 +4,8 @@
   "type": "improvement",
   "source": "scout",
   "priority": "P2",
-  "status": "open",
-  "description": "orchestrator/checkpoint.py implements the pipeline resume-on-failure mechanism (save, load, resume_from, find_resumable_run, clear) with zero test coverage. This is a critical reliability feature — if a bug is introduced, pipeline restarts will fail silently or restart from the wrong phase. All logic uses in-memory SQLite, so tests require no network or API keys.",
+  "status": "failed",
+  "description": "orchestrator/checkpoint.py implements the pipeline resume-on-failure mechanism (save, load, resume_from, find_resumable_run, clear) with zero test coverage. This is a critical reliability feature \u2014 if a bug is introduced, pipeline restarts will fail silently or restart from the wrong phase. All logic uses in-memory SQLite, so tests require no network or API keys.",
   "requirements": [
     "tests/test_checkpoint.py covers save, load, resume_from, find_resumable_run, and clear",
     "Tests use an in-memory SQLite connection (sqlite3.connect(':memory:'))",
@@ -35,5 +35,11 @@
   "context": "Checkpoint stores state in the checkpoints table of traces.db. Use sqlite3.connect(':memory:') and pass it directly to Checkpoint(conn). Phase enum is in orchestrator.pipeline. PHASE_ORDER list defines valid phase sequence.",
   "created_at": "2026-04-01T00:00:00Z",
   "expires_at": "2026-04-08T00:00:00Z",
-  "feedback_history": []
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: Duplicate: tests/test_checkpoint.py already exists; archived version completed",
+      "timestamp": "2026-04-02T21:00:49.517217+00:00"
+    }
+  ]
 }

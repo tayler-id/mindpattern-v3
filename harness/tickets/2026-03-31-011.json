@@ -4,7 +4,7 @@
   "type": "improvement",
   "source": "scout",
   "priority": "P2",
-  "status": "open",
+  "status": "failed",
   "description": "memory/graph.py (275 lines) manages the knowledge graph used to link topics, people, and findings across pipeline runs. It has no test coverage. Graph operations like node insertion, edge creation, and traversal have no regression safety net. Bugs here silently corrupt the memory graph that feeds topic research.",
   "requirements": [
     "tests/test_graph.py exists with at least 5 tests",
@@ -12,7 +12,7 @@
     "Test edge creation between nodes",
     "Test graph traversal / neighbor lookup",
     "Test behavior on duplicate node insertion",
-    "Use an in-memory SQLite DB — no real disk files"
+    "Use an in-memory SQLite DB \u2014 no real disk files"
   ],
   "done_criteria": [
     "python3 -m pytest tests/test_graph.py -v exits 0",
@@ -28,9 +28,17 @@
       "test_empty_graph_returns_no_neighbors"
     ]
   },
-  "files_to_modify": ["tests/test_graph.py"],
+  "files_to_modify": [
+    "tests/test_graph.py"
+  ],
   "context": "memory/graph.py uses SQLite with nodes and edges tables. Called during RESEARCH and LEARN phases to link discovered entities. Graph data is used for deduplication and cross-run context.",
   "created_at": "2026-03-31T00:00:00Z",
   "expires_at": "2026-04-07T00:00:00Z",
-  "feedback_history": []
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: Duplicate: tests/test_graph.py already exists; archived version completed",
+      "timestamp": "2026-04-02T21:00:50.133096+00:00"
+    }
+  ]
 }

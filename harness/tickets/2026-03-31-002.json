@@ -4,8 +4,8 @@
   "type": "improvement",
   "source": "scout",
   "priority": "P2",
-  "status": "open",
-  "description": "orchestrator/agents.py has 3 critical dispatch functions (run_single_agent, run_claude_prompt, dispatch_research_agents) with zero dedicated tests. These are the most important functions in the pipeline — they spawn every Claude CLI call. A regression here breaks the entire system.",
+  "status": "failed",
+  "description": "orchestrator/agents.py has 3 critical dispatch functions (run_single_agent, run_claude_prompt, dispatch_research_agents) with zero dedicated tests. These are the most important functions in the pipeline \u2014 they spawn every Claude CLI call. A regression here breaks the entire system.",
   "requirements": [
     "Add tests for run_single_agent with mocked subprocess",
     "Add tests for run_claude_prompt with mocked subprocess",
@@ -30,9 +30,17 @@
       "test_dispatch_research_agents_partial_failure"
     ]
   },
-  "files_to_modify": ["tests/test_agents.py"],
+  "files_to_modify": [
+    "tests/test_agents.py"
+  ],
   "context": "agents.py is the #3 most-modified file (12 touches in 30 days). No test_agents.py exists. Critical coverage gap.",
   "created_at": "2026-04-01T01:18:49Z",
   "expires_at": "2026-04-08T01:18:49Z",
-  "feedback_history": []
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: Duplicate: tests/test_agents.py already exists; archived version completed",
+      "timestamp": "2026-04-02T21:00:49.738458+00:00"
+    }
+  ]
 }

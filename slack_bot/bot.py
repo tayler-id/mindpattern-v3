@@ -18,6 +18,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -157,18 +158,22 @@ class MindPatternBot:
         if not handler:
             return  # Message is in a channel we don't handle
 
-        # Dispatch to handler (runs alongside pipeline — claude -p calls don't collide)
-        try:
-            handler.handle(event)
-        except Exception as e:
-            logger.error(f"Handler error in {channel}: {e}", exc_info=True)
+        # Dispatch to handler in a thread so slow handlers don't block others
+        def _run_handler():
             try:
-                handler.reply(
-                    f"Something went wrong: {e}",
-                    thread_ts=event.get("thread_ts") or event.get("ts"),
-                )
-            except Exception:
-                pass
+                handler.handle(event)
+            except Exception as e:
+                logger.error(f"Handler error in {channel}: {e}", exc_info=True)
+                try:
+                    handler.reply(
+                        f"Something went wrong: {e}",
+                        thread_ts=event.get("thread_ts") or event.get("ts"),
+                    )
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_run_handler, daemon=True)
+        t.start()
 
     def run(self):
         """Start the Socket Mode connection and listen for events."""

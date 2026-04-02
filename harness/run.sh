@@ -70,6 +70,11 @@ read_config() {
 VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python3"
 [ ! -x "$VENV_PYTHON" ] && VENV_PYTHON="python3"
 
+# ── Daily health report ───────────────────────────────────────────
+
+log "Posting daily health report..."
+PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -m harness.health_report --slack >> "$LOGFILE" 2>&1 || log "WARN: Health report failed"
+
 slack_notify() {
     local MSG="$1"
     PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -c "
@@ -145,59 +150,86 @@ process_ticket() {
 
     log "[slot $SLOT] START: $TICKET_ID — $TICKET_TITLE"
 
-    # ── Fix Agent (worktree) ──────────────────────────────────────
-    local BEFORE_TS
-    BEFORE_TS=$(date +%s)
+    # ── Fix Agent (deterministic worktree) ──────────────────────────
+    local FIX_BRANCH="harness/${TICKET_ID}"
+    local FIX_WORKTREE="$PROJECT_ROOT/.harness-worktrees/${TICKET_ID}"
+    mkdir -p "$PROJECT_ROOT/.harness-worktrees"
+
+    git worktree remove "$FIX_WORKTREE" --force 2>/dev/null || true
+    git branch -D "$FIX_BRANCH" 2>/dev/null || true
+    git worktree add -b "$FIX_BRANCH" "$FIX_WORKTREE" main 2>/dev/null
+    if [ ! -d "$FIX_WORKTREE" ]; then
+        log "[slot $SLOT] FAIL: Could not create worktree for $TICKET_ID"
+        python3 -m harness.tickets mark-failed "$TICKET" "Worktree creation failed"
+        return 1
+    fi
+
+    # Knowledge summary goes into --append-system-prompt so the Anthropic API
+    # caches it across parallel fix agents (agents 2 and 3 get cache hits).
+    # Only the per-ticket user prompt changes between agents.
+    local KNOWLEDGE_SUMMARY
+    KNOWLEDGE_SUMMARY=$(python3 -m harness.knowledge_graph summary 2>/dev/null | head -300 || true)
 
     claude -p "You are a TDD fix agent for the MindPattern project.
+You are working in: $FIX_WORKTREE
 
 TICKET:
 $TICKET_CONTENT
 
 INSTRUCTIONS:
-1. Read the files in files_to_modify
-2. Write FAILING tests first in the tdd_spec.test_file
-3. Implement the fix to make tests pass
-4. Run: python3 -m pytest <test_file> -x -q
-5. If all pass, commit: git add -A && git commit -m \"fix: $TICKET_TITLE [harness/$TICKET_ID]\"
-6. If tests fail after 3 tries, just stop." \
+1. You are already in worktree $FIX_WORKTREE on branch $FIX_BRANCH
+2. FIRST: Read the SHARED ISSUE LOG in your system prompt. Print a one-line summary:
+   KNOWLEDGE CHECK: Read N issues, relevant: <list any that relate to this ticket>
+3. Read the files in files_to_modify
+4. Write FAILING tests first in the tdd_spec.test_file
+5. Implement the fix to make tests pass
+6. Run: python3 -m pytest <test_file> -x -q
+7. Update the knowledge graph:
+   - Update harness/knowledge/<module>.md for any module you changed (behavior, API, known issues)
+   - If you discovered a new failure pattern, add it to harness/knowledge/patterns-what-fails.md
+   - If your fix involved a migration or schema change, document the migration pattern
+8. If all tests pass, commit everything (including knowledge updates): git add -A && git commit -m \"fix: $TICKET_TITLE [harness/$TICKET_ID]\"
+9. If tests fail after 3 tries, just stop.
+
+IMPORTANT: All file paths are relative to $FIX_WORKTREE. Use cd $FIX_WORKTREE before any file operations." \
+        --append-system-prompt "CODEBASE KNOWLEDGE (read this first, skip reading files already covered):
+
+$KNOWLEDGE_SUMMARY" \
         --model "$(read_config fix model)" \
         --max-turns "$(read_config fix max_turns)" \
         --allowedTools "Bash Read Glob Grep Write Edit" \
         --disallowedTools "Skill Agent" \
-        -w \
         > "/tmp/harness-fix-${SLOT}.log" 2>&1 || true
 
-    # Find the worktree that was just created
-    local FIX_WORKTREE FIX_BRANCH
-    FIX_WORKTREE=$(find_newest_worktree "$BEFORE_TS")
-
-    if [ -z "$FIX_WORKTREE" ] || [ ! -d "$FIX_WORKTREE" ]; then
-        log "[slot $SLOT] FAIL: No worktree created for $TICKET_ID"
-        python3 -m harness.tickets mark-failed "$TICKET" "Fix agent produced no worktree"
-        return 1
+    # Verify the agent acknowledged reading the knowledge graph
+    local KG_CHECK
+    KG_CHECK=$(grep -m1 "KNOWLEDGE CHECK:" "/tmp/harness-fix-${SLOT}.log" 2>/dev/null || echo "")
+    if [ -n "$KG_CHECK" ]; then
+        log "[slot $SLOT] $KG_CHECK"
+    else
+        log "[slot $SLOT] WARN: Fix agent did not confirm reading knowledge graph"
     fi
 
-    FIX_BRANCH=$(cd "$FIX_WORKTREE" && git branch --show-current 2>/dev/null || true)
     log "[slot $SLOT] FIX DONE: worktree=$FIX_WORKTREE branch=$FIX_BRANCH"
 
-    # ── Test (in worktree, no LLM) ────────────────────────────────
+    # ── Test (in worktree, no LLM) — only ticket's test file ──────
+    local TEST_FILE
+    TEST_FILE=$(python3 -c "import json; t=json.load(open('$TICKET')); print(t.get('tdd_spec',{}).get('test_file','tests/'))" 2>/dev/null) || TEST_FILE="tests/"
+
     local TEST_OUTPUT TEST_EXIT=0
-    TEST_OUTPUT=$(cd "$FIX_WORKTREE" && python3 -m pytest tests/ -x -q --tb=short 2>&1) || TEST_EXIT=$?
+    TEST_OUTPUT=$(cd "$FIX_WORKTREE" && python3 -m pytest "$TEST_FILE" -x -q --tb=short 2>&1) || TEST_EXIT=$?
 
     if [ $TEST_EXIT -ne 0 ]; then
         log "[slot $SLOT] FAIL: Tests failed for $TICKET_ID"
         python3 -m harness.tickets mark-failed "$TICKET" "Tests failed: ${TEST_OUTPUT:0:500}"
+        python3 -m harness.issues log "harness/fix" "Ticket $TICKET_ID tests failed" "Ticket: $TICKET_TITLE. Test output: ${TEST_OUTPUT:0:300}" 2>/dev/null || true
+        git worktree remove "$FIX_WORKTREE" --force 2>/dev/null || true
         return 1
     fi
     log "[slot $SLOT] TESTS PASSED"
 
-    # ── Review Agent (separate worktree) ──────────────────────────
-    # Push the fix branch first so the reviewer can see it
+    # ── Review Agent (no worktree — read-only) ────────────────────
     (cd "$FIX_WORKTREE" && git push origin "$FIX_BRANCH" 2>/dev/null) || true
-
-    local REVIEW_BEFORE_TS
-    REVIEW_BEFORE_TS=$(date +%s)
 
     claude -p "You are a code review agent for MindPattern.
 
@@ -215,7 +247,6 @@ INSTRUCTIONS:
         --max-turns "$(read_config review max_turns)" \
         --allowedTools "Bash Read Glob Grep" \
         --disallowedTools "Write Edit Skill Agent" \
-        -w \
         > "/tmp/harness-review-${SLOT}.log" 2>&1 || true
 
     # Check if PR was created
@@ -232,16 +263,14 @@ INSTRUCTIONS:
             REASON=$(grep -A3 "REJECTED" "/tmp/harness-review-${SLOT}.log" | head -3)
             log "[slot $SLOT] REJECTED: $TICKET_ID — $REASON"
             python3 -m harness.tickets mark-failed "$TICKET" "Review rejected: $REASON"
+            python3 -m harness.issues log "harness/review" "Ticket $TICKET_ID rejected" "Ticket: $TICKET_TITLE. Reason: ${REASON:0:300}" 2>/dev/null || true
             slack_notify "❌ *Rejected* [\`$TICKET_ID\`] $TICKET_TITLE"
         else
             log "[slot $SLOT] NO PR: $TICKET_ID"
         fi
     fi
 
-    # Clean up review worktree (fix worktree stays for the branch)
-    local REVIEW_WT
-    REVIEW_WT=$(find_newest_worktree "$REVIEW_BEFORE_TS")
-    [ -n "$REVIEW_WT" ] && git worktree remove "$REVIEW_WT" --force 2>/dev/null || true
+    git worktree remove "$FIX_WORKTREE" --force 2>/dev/null || true
 }
 
 # ── Stage 1: Scout ─────────────────────────────────────────────────
@@ -256,8 +285,49 @@ claude -p "$(cat harness/prompts/scout.md)" \
     --disallowedTools "Skill Agent" \
     > /tmp/harness-scout.log 2>&1 || log "WARN: Scout exited with $?"
 
+# Check knowledge graph acknowledgment from scout
+KG_CHECK=$(grep -m1 "KNOWLEDGE CHECK:" /tmp/harness-scout.log 2>/dev/null || echo "")
+[ -n "$KG_CHECK" ] && log "  $KG_CHECK" || log "  WARN: Scout did not confirm reading knowledge graph"
+
 OPEN_COUNT=$(python3 -m harness.tickets list open 2>/dev/null | wc -l | tr -d ' ')
 log "Stage 1: Scout done. $OPEN_COUNT open tickets."
+
+# ── Stage 1.5: Codex Adversarial Ticket Review ───────────────────
+
+log "Stage 1.5: Codex adversarial review of new tickets..."
+claude -p "$(cat harness/prompts/codex-ticket-review.md)" \
+    --model "$(read_config scout model)" \
+    --max-turns 15 \
+    --allowedTools "Bash Read Glob Grep" \
+    --disallowedTools "Write Edit Skill Agent" \
+    > /tmp/harness-codex-review.log 2>&1 || log "WARN: Codex review exited with $?"
+
+# Log verdicts
+PASS_COUNT=$(grep -c "CODEX VERDICT:.*PASS" /tmp/harness-codex-review.log 2>/dev/null || echo 0)
+REJECT_COUNT=$(grep -c "CODEX VERDICT:.*REJECT" /tmp/harness-codex-review.log 2>/dev/null || echo 0)
+log "Stage 1.5: Codex review done. $PASS_COUNT passed, $REJECT_COUNT rejected."
+
+# Check knowledge graph acknowledgment
+KG_CHECK=$(grep -m1 "KNOWLEDGE CHECK:" /tmp/harness-codex-review.log 2>/dev/null || echo "")
+[ -n "$KG_CHECK" ] && log "  $KG_CHECK" || log "  WARN: Codex agent did not confirm reading knowledge graph"
+
+# Deterministically reject tickets that codex flagged
+grep "CODEX VERDICT:.*REJECT" /tmp/harness-codex-review.log 2>/dev/null | while read -r line; do
+    # Parse ticket ID from "CODEX VERDICT: 2026-04-01-005 — REJECT — reason"
+    REJECT_ID=$(echo "$line" | sed -n 's/.*CODEX VERDICT: *\([^ ]*\).*/\1/p')
+    REJECT_REASON=$(echo "$line" | sed -n 's/.*REJECT — *\(.*\)/\1/p')
+    if [ -n "$REJECT_ID" ]; then
+        REJECT_PATH=$(python3 -c "from harness.tickets import find_ticket_by_id; p=find_ticket_by_id('$REJECT_ID'); print(p if p else '')" 2>/dev/null)
+        if [ -n "$REJECT_PATH" ]; then
+            python3 -m harness.tickets mark-failed "$REJECT_PATH" "Codex adversarial: $REJECT_REASON"
+            log "  REJECTED: $REJECT_ID — $REJECT_REASON"
+        fi
+    fi
+    python3 -m harness.issues log "harness/codex" "Ticket $REJECT_ID rejected" "$REJECT_REASON" 2>/dev/null || true
+done
+
+OPEN_COUNT=$(python3 -m harness.tickets list open 2>/dev/null | wc -l | tr -d ' ')
+log "Tickets after codex review: $OPEN_COUNT open."
 
 # ── Stage 2: Research ──────────────────────────────────────────────
 
@@ -296,9 +366,10 @@ while [ "$TICKETS_DONE" -lt "$MAX_TICKETS" ]; do
     log "Round $ROUND: ${#BATCH[@]} parallel agents"
     slack_notify "🔧 *Round $ROUND* — dispatching ${#BATCH[@]} fix agents"
 
-    # Dispatch parallel
+    # Dispatch parallel (stagger 3s to avoid git lock race on worktree add)
     PIDS=()
     for i in "${!BATCH[@]}"; do
+        [ "$i" -gt 0 ] && sleep 3
         process_ticket "${BATCH[$i]}" "$((i + 1))" &
         PIDS+=($!)
     done

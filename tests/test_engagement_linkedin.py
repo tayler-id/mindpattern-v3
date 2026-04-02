@@ -415,58 +415,43 @@ class TestLinkedInDraftOnly:
 
 
 class TestLinkedInInFindCandidates:
-    """Tests that LinkedIn search is wired into _find_candidates()."""
+    """Tests that LinkedIn engagement search is correctly disabled.
+
+    LinkedIn blocks external search (Jina, Exa). Engagement is
+    Bluesky-only until LinkedIn Community Management API is available.
+    """
 
     @patch("social.engagement.search_via_jina")
     @patch("social.engagement.memory")
     @patch("social.posting.keychain_get", return_value="fake-secret")
-    def test_find_candidates_calls_jina_for_linkedin(
+    def test_find_candidates_skips_linkedin_search(
         self, mock_keychain, mock_memory, mock_search, mock_config, mock_db
     ):
-        """_find_candidates uses search_via_jina for LinkedIn platform."""
+        """_find_candidates does NOT search LinkedIn (blocked by platform)."""
         mock_memory.get_context.return_value = {}
         mock_memory.search_findings.return_value = [
             {"title": "AI agents in production"},
             {"title": "Developer tools evolution"},
         ]
 
-        mock_search.return_value = [
-            {
-                "url": "https://linkedin.com/posts/marcuschen_ai-agents-production-activity-7293847561",
-                "text": "AI agents are great for building tools" * 3,
-                "author_handle": "marcuschen",
-                "author_name": "Marcus Chen",
-                "followers_count": 500,
-                "like_count": 10,
-                "reply_count": 3,
-                "platform": "linkedin",
-            }
-        ]
-
         pipeline = EngagementPipeline("test-user", mock_config, mock_db)
 
-        # Mock bluesky client search to return empty (focus on LinkedIn)
+        # Mock bluesky client search to return empty
         mock_bsky = MagicMock()
         mock_bsky.search.return_value = []
         pipeline._platform_clients["bluesky"] = mock_bsky
 
-        # Mock _generate_search_queries and _rank_candidates to simplify
         pipeline._generate_search_queries = MagicMock(
             return_value=["AI agents", "developer tools"]
-        )
-        pipeline._rank_candidates = MagicMock(
-            side_effect=lambda posts, topics, platform: [
-                pipeline._post_to_candidate(p, platform) for p in posts
-            ]
         )
 
         candidates = pipeline._find_candidates("2026-03-15")
 
-        # search_via_jina should have been called for LinkedIn
-        mock_search.assert_called()
+        # search_via_jina should NOT be called — LinkedIn search is disabled
+        mock_search.assert_not_called()
 
-        # Should have LinkedIn candidates in results
+        # No LinkedIn candidates since search is disabled
         linkedin_candidates = [
             c for c in candidates if c["platform"] == "linkedin"
         ]
-        assert len(linkedin_candidates) >= 1
+        assert len(linkedin_candidates) == 0

@@ -10,6 +10,7 @@ Subclasses implement handle(event) which is called when a message
 arrives in their registered channel.
 """
 
+import json
 import logging
 import re
 import subprocess
@@ -118,19 +119,65 @@ class BaseHandler:
             return False
 
     @staticmethod
-    def read_url(url: str, timeout: int = 30) -> str | None:
-        """Read a URL's content using Jina Reader. Returns markdown or None."""
+    def _is_jina_error(text: str) -> bool:
+        """Detect Jina Reader error responses (JSON with error code)."""
+        stripped = text.strip()
+        if not stripped.startswith("{"):
+            return False
+        try:
+            data = json.loads(stripped)
+            return isinstance(data.get("code"), int) and data.get("code") >= 400
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+    @staticmethod
+    def _read_url_direct(url: str, timeout: int = 30) -> str | None:
+        """Fallback: scrape URL directly with a browser user-agent."""
+        try:
+            proc = subprocess.run(
+                [
+                    "curl", "-sL",
+                    "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                    "-H", "Accept: text/html",
+                    url,
+                ],
+                capture_output=True, text=True, timeout=timeout,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                # Strip HTML tags for a rough plaintext extraction
+                import re as _re
+                html = proc.stdout
+                # Remove script/style blocks
+                html = _re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=_re.DOTALL | _re.IGNORECASE)
+                # Remove tags
+                text = _re.sub(r"<[^>]+>", " ", html)
+                # Collapse whitespace
+                text = _re.sub(r"\s+", " ", text).strip()
+                if len(text) > 200:
+                    return text
+            return None
+        except Exception as e:
+            logger.warning(f"Direct URL fetch failed for {url}: {e}")
+            return None
+
+    @classmethod
+    def read_url(cls, url: str, timeout: int = 30) -> str | None:
+        """Read a URL's content using Jina Reader, with direct fallback."""
+        # Try Jina Reader first
         try:
             proc = subprocess.run(
                 ["curl", "-sL", f"https://r.jina.ai/{url}"],
                 capture_output=True, text=True, timeout=timeout,
             )
             if proc.returncode == 0 and proc.stdout.strip():
-                return proc.stdout.strip()
-            return None
+                if not cls._is_jina_error(proc.stdout):
+                    return proc.stdout.strip()
+                logger.warning(f"Jina Reader blocked for {url}, trying direct fetch")
         except subprocess.TimeoutExpired:
-            logger.warning(f"Jina Reader timed out for {url}")
-            return None
+            logger.warning(f"Jina Reader timed out for {url}, trying direct fetch")
         except Exception as e:
-            logger.error(f"Failed to read URL {url}: {e}")
-            return None
+            logger.warning(f"Jina Reader failed for {url}: {e}, trying direct fetch")
+
+        # Fallback: direct scrape
+        return cls._read_url_direct(url, timeout=timeout)

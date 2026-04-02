@@ -30,14 +30,23 @@ class SkillsHandler(BaseHandler):
         text = event.get("text", "").strip()
         ts = event.get("ts", "")
 
-        if not text or len(text) < 20:
-            if text.lower() in ("help", "?"):
-                self.reply(
-                    "Paste a skill tip here. I'll format it for Bluesky and LinkedIn, "
-                    "then post it after you approve.\n\n"
-                    "Just paste the tip as plain text. No special formatting needed.",
-                    thread_ts=ts,
-                )
+        if not text:
+            return
+
+        if text.lower() in ("help", "?"):
+            self.reply(
+                "Paste a skill tip here. I'll format it for Bluesky and LinkedIn, "
+                "then post it after you approve.\n\n"
+                "Just paste the tip as plain text. No special formatting needed.",
+                thread_ts=ts,
+            )
+            return
+
+        if len(text) < 20:
+            self.reply(
+                "That's too short for a skill tip. Give me at least a sentence to work with.",
+                thread_ts=ts,
+            )
             return
 
         self.react("brain", ts)

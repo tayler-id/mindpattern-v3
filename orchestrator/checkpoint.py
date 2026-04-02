@@ -28,14 +28,14 @@ def _ensure_table(conn: sqlite3.Connection):
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON checkpoints(pipeline_run_id)"
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_checkpoints_user ON checkpoints(user_id)"
-    )
     # Migrate: add user_id column if table already existed without it
     try:
         conn.execute("ALTER TABLE checkpoints ADD COLUMN user_id TEXT")
     except Exception:
         pass  # Column already exists
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_checkpoints_user ON checkpoints(user_id)"
+    )
     conn.commit()
 
 

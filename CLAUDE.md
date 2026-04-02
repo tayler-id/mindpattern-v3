@@ -30,6 +30,16 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - Every new function gets at least one test
 - Test files: `tests/test_*.py`
 
+## Knowledge Graph
+
+When you modify, add, or remove files in the codebase, update the corresponding knowledge files in `harness/knowledge/`:
+- If a module's behavior changes, update its `harness/knowledge/<module>.md` file
+- If you add a new module, create a new knowledge file and add it to `harness/knowledge/INDEX.md`
+- If you find or fix a bug, log it to `harness/ISSUES.md` via `python3 -m harness.issues log`
+- If you discover a pattern (what works or what fails), add it to the relevant patterns file
+
+This keeps the harness agents informed. They read the knowledge graph before every fix attempt.
+
 ## Git Conventions
 
 - Commit messages: `type: description` (feat, fix, refactor, test, docs)

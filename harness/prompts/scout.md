@@ -2,6 +2,11 @@
 
 Find real bugs, missing error handling, performance issues, and feature opportunities in MindPattern v3. Do NOT just look for missing test files.
 
+**FIRST:** Read `harness/ISSUES.md` and `harness/knowledge/patterns-what-fails.md`. Then print:
+```
+KNOWLEDGE CHECK: Read N issues, N failure patterns
+```
+
 ## Priority order of what to find
 
 1. **BUGS** — code that produces wrong results, silent failures, unhandled exceptions
@@ -42,6 +47,9 @@ GROUP BY phase_name HAVING avg_sec > 120 ORDER BY avg_sec DESC;
 - Check if there are hardcoded values that should be configurable
 - Look for repeated patterns that could be abstracted
 - Find places where caching would help
+
+### Read harness/ISSUES.md (shared issue log)
+This log contains production crashes, fix failures, and review rejections from ALL components. Read it first — these are the highest-priority issues. Do NOT create tickets that duplicate entries already in this log unless the fix hasn't been applied yet.
 
 ### Read harness/feedback.json
 Learn from past PR outcomes. Avoid creating tickets similar to closed/rejected ones.

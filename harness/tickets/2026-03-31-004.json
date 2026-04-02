@@ -4,7 +4,7 @@
   "type": "improvement",
   "source": "scout",
   "priority": "P2",
-  "status": "open",
+  "status": "in_progress",
   "description": "traces_db.py has 14 tables and critical helper functions (get_agent_history, get_agent_scorecard, log_agent_metrics, create_alert) with no dedicated tests. The harness scout depends on these queries returning correct data.",
   "requirements": [
     "Test get_agent_history returns correct structure",
@@ -29,7 +29,9 @@
       "test_create_alert"
     ]
   },
-  "files_to_modify": ["tests/test_traces_db.py"],
+  "files_to_modify": [
+    "tests/test_traces_db.py"
+  ],
   "context": "traces_db.py is the observability backbone. 14 tables, 0 dedicated tests.",
   "created_at": "2026-04-01T01:18:49Z",
   "expires_at": "2026-04-08T01:18:49Z",
