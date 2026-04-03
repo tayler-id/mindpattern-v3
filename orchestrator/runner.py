@@ -727,7 +727,7 @@ class ResearchPipeline:
 
     def _phase_deliver(self) -> dict:
         """Phase 5: Deliver (Python only). Convert to HTML, send via Resend."""
-        from .newsletter import send_newsletter, validate_report
+        from .newsletter import send_newsletter, validate_report, broadcast_to_subscribers
 
         report_path = PROJECT_ROOT / "reports" / self.user_id / f"{self.date_str}.md"
 
@@ -736,6 +736,9 @@ class ResearchPipeline:
             report_path, traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
         )
         logger.info(f"Report validation: {validation.get('final_bytes', 0)} bytes")
+
+        # Capture clean content BEFORE feedback footer for subscriber broadcast
+        clean_content = report_path.read_text() if report_path.exists() else ""
 
         # Append feedback footer before sending
         try:
@@ -759,6 +762,27 @@ class ResearchPipeline:
             logger.info(f"Newsletter sent: {result.get('resend_id')}")
         else:
             logger.warning(f"Newsletter send failed: {result.get('error')}")
+
+        # Broadcast to public subscribers (gated by user config)
+        audience_service = self.user_config.get("broadcast_audience")
+        if audience_service and clean_content:
+            try:
+                broadcast = broadcast_to_subscribers(
+                    clean_content,
+                    self.date_str,
+                    audience_keychain_service=audience_service,
+                    exclude_emails=[self.user_config.get("email", "")],
+                    newsletter_title=self.user_config.get("newsletter_title", "Daily Research"),
+                    reply_to=self.user_config.get("reply_to", ""),
+                    traces_conn=self.traces_conn,
+                    pipeline_run_id=self.traces_run_id,
+                )
+                logger.info(
+                    f"Subscriber broadcast: {broadcast['sent_count']} sent, "
+                    f"{broadcast['skipped_count']} skipped, {broadcast['failed_count']} failed"
+                )
+            except Exception as e:
+                logger.warning(f"Subscriber broadcast failed (non-critical): {e}")
 
         return result
 
