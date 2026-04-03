@@ -190,7 +190,7 @@ def _write_single_platform(
         "iterations": iteration,
         "critic_verdict": critic_verdict,
         "policy_errors": policy_errors,
-        "humanized": True,
+        "humanized": humanized,
         "error": None,
     }
 
