@@ -44,8 +44,31 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 | Social/synthesis agent skills | `agents/*.md` |
 | Identity files | `data/ramsay/mindpattern/` (soul.md, user.md, voice.md, decisions.md) |
 | Harness tickets | `harness/tickets/*.json` |
+| Knowledge graph files | `harness/knowledge/*.md` (31 files) |
+| Knowledge algorithms | `harness/knowledge_sections.py` |
+| Knowledge graph module | `harness/knowledge_graph.py` |
 | Tests | `tests/test_*.py` |
 | Social config | `social-config.json` (do not commit) |
+
+## Knowledge Graph
+
+The knowledge graph (`harness/knowledge/`) is a set of interconnected markdown files documenting every module. Wiki-link syntax `[[slug]]` creates edges between documents. Supports section-level references: `[[orchestrator/runner#Error Handling]]`.
+
+**CLI**: `python3 -m harness.knowledge_graph <command>`
+
+| Command | Description |
+|---------|-------------|
+| `check` | Validate links, sections, index completeness, code refs (4 passes) |
+| `search <query>` | 5-tier fuzzy search: exact → stem → tail → subsequence → Levenshtein |
+| `expand <slug>` | Expand file + linked content (supports `slug#Section`) |
+| `parse <slug>` | Show hierarchical section tree for a file |
+| `locate <query>` | Find sections via tiered matching |
+| `refs <slug>` | Show incoming/outgoing wiki-link references |
+| `list` | List all knowledge files |
+
+**Code references**: Add `# @know: [[slug#Section]]` comments in Python source to create bidirectional links. Files with `require-code-mention: true` frontmatter enforce that all leaf sections have code references.
+
+**Auto-evolution**: `evolve(stage, data)` updates knowledge after harness stages (scout_done, fix_done, review_done, run_complete).
 
 ## Autonomous Harness
 
