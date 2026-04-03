@@ -11,7 +11,8 @@
       "newsletter_title": "Ramsay Research Agent",
       "active": true,
       "created_at": "2026-02-12",
-      "reply_to": "feedback@tayler.id"
+      "reply_to": "feedback@tayler.id",
+      "broadcast_audience": "resend-audience-id"
     },
     {
       "id": "healthtest",

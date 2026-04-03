@@ -172,10 +172,12 @@ def _make_traces_conn() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             pipeline_run_id TEXT NOT NULL, phase TEXT NOT NULL,
             state_data TEXT,
+            user_id TEXT,
             created_at TEXT DEFAULT (datetime('now')),
             UNIQUE(pipeline_run_id, phase)
         );
         CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON checkpoints(pipeline_run_id);
+        CREATE INDEX IF NOT EXISTS idx_checkpoints_user ON checkpoints(user_id);
     """)
     conn.commit()
     return conn
@@ -711,6 +713,90 @@ class TestPhaseDeliver:
                 result = pipeline._phase_deliver()
 
         assert result["success"] is False
+
+    @patch("orchestrator.runner.memory.get_feedback_footer", return_value="---\nFeedback footer")
+    def test_broadcasts_to_subscribers(self, mock_footer, pipeline, tmp_path):
+        """When user has broadcast_audience, broadcast is called with clean content."""
+        pipeline.user_config["broadcast_audience"] = "resend-audience-id"
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            report_dir = tmp_path / "reports" / "testuser"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / f"{pipeline.date_str}.md"
+            report_path.write_text("# Newsletter\n\nContent here.")
+
+            mock_send = MagicMock(return_value={"success": True, "resend_id": "re_abc"})
+            mock_broadcast = MagicMock(return_value={
+                "sent_count": 2, "failed_count": 0, "skipped_count": 1, "errors": []
+            })
+
+            with (
+                patch("orchestrator.newsletter.send_newsletter", mock_send),
+                patch("orchestrator.newsletter.validate_report",
+                      MagicMock(return_value={"final_bytes": 100})),
+                patch("orchestrator.newsletter.broadcast_to_subscribers", mock_broadcast),
+            ):
+                result = pipeline._phase_deliver()
+
+        assert result["success"] is True
+        mock_broadcast.assert_called_once()
+        # Broadcast content should NOT contain feedback footer
+        broadcast_content = mock_broadcast.call_args.args[0]
+        assert "Feedback footer" not in broadcast_content
+        assert "# Newsletter" in broadcast_content
+
+    @patch("orchestrator.runner.memory.get_feedback_footer", return_value="")
+    def test_broadcasts_even_if_personal_fails(self, mock_footer, pipeline, tmp_path):
+        """Broadcast runs regardless of personal send result."""
+        pipeline.user_config["broadcast_audience"] = "resend-audience-id"
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            report_dir = tmp_path / "reports" / "testuser"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / f"{pipeline.date_str}.md"
+            report_path.write_text("# Newsletter\n\nContent.")
+
+            mock_send = MagicMock(return_value={"success": False, "error": "API error"})
+            mock_broadcast = MagicMock(return_value={
+                "sent_count": 1, "failed_count": 0, "skipped_count": 0, "errors": []
+            })
+
+            with (
+                patch("orchestrator.newsletter.send_newsletter", mock_send),
+                patch("orchestrator.newsletter.validate_report",
+                      MagicMock(return_value={"final_bytes": 50})),
+                patch("orchestrator.newsletter.broadcast_to_subscribers", mock_broadcast),
+            ):
+                result = pipeline._phase_deliver()
+
+        assert result["success"] is False
+        mock_broadcast.assert_called_once()
+
+    @patch("orchestrator.runner.memory.get_feedback_footer", return_value="")
+    def test_skips_broadcast_without_config(self, mock_footer, pipeline, tmp_path):
+        """Without broadcast_audience in user config, no broadcast happens."""
+        # Ensure no broadcast_audience key
+        pipeline.user_config.pop("broadcast_audience", None)
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            report_dir = tmp_path / "reports" / "testuser"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            report_path = report_dir / f"{pipeline.date_str}.md"
+            report_path.write_text("# Newsletter\n\nContent.")
+
+            mock_send = MagicMock(return_value={"success": True, "resend_id": "re_abc"})
+            mock_broadcast = MagicMock()
+
+            with (
+                patch("orchestrator.newsletter.send_newsletter", mock_send),
+                patch("orchestrator.newsletter.validate_report",
+                      MagicMock(return_value={"final_bytes": 50})),
+                patch("orchestrator.newsletter.broadcast_to_subscribers", mock_broadcast),
+            ):
+                result = pipeline._phase_deliver()
+
+        assert result["success"] is True
+        mock_broadcast.assert_not_called()
 
 
 class TestPhaseLearn:
