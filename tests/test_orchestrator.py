@@ -1144,17 +1144,34 @@ class TestRunAgentWithFiles:
     def _output_file(self, output_dir, ext=".json"):
         return str(output_dir / f"test-output{ext}")
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_returns_parsed_json_when_agent_writes_file(self, mock_run, output_dir):
+    def _mock_popen(self, returncode=0, stdout="", stderr="", side_effect=None):
+        """Create a mock Popen that behaves like the real one."""
+        mock_proc = MagicMock()
+        mock_proc.communicate.return_value = (stdout, stderr)
+        mock_proc.returncode = returncode
+        mock_proc.pid = 12345
+
+        mock_cls = MagicMock()
+        if side_effect:
+            def wrapped(*args, **kwargs):
+                side_effect(*args, **kwargs)
+                return mock_proc
+            mock_cls.side_effect = wrapped
+        else:
+            mock_cls.return_value = mock_proc
+        return mock_cls, mock_proc
+
+    @patch("orchestrator.agents.subprocess.Popen")
+    def test_returns_parsed_json_when_agent_writes_file(self, mock_popen_cls, output_dir):
         expected = {"stories": [{"title": "Test Story"}]}
         out_file = self._output_file(output_dir, ".json")
 
         def side_effect(*args, **kwargs):
             Path(out_file).parent.mkdir(parents=True, exist_ok=True)
             Path(out_file).write_text(json.dumps(expected))
-            return MagicMock(returncode=0, stdout="ok", stderr="")
 
-        mock_run.side_effect = side_effect
+        mock_cls, _ = self._mock_popen(returncode=0, stdout="ok", side_effect=side_effect)
+        mock_popen_cls.side_effect = mock_cls.side_effect
 
         result = run_agent_with_files(
             system_prompt_file="agents/eic.md",
@@ -1163,9 +1180,10 @@ class TestRunAgentWithFiles:
         )
         assert result == expected
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_returns_none_when_no_output_file(self, mock_run, output_dir):
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+    @patch("orchestrator.agents.subprocess.Popen")
+    def test_returns_none_when_no_output_file(self, mock_popen_cls, output_dir):
+        mock_cls, _ = self._mock_popen(returncode=1, stdout="", stderr="error")
+        mock_popen_cls.return_value = mock_cls.return_value
         out_file = self._output_file(output_dir)
 
         result = run_agent_with_files(
@@ -1175,14 +1193,15 @@ class TestRunAgentWithFiles:
         )
         assert result is None
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_deletes_stale_output_file(self, mock_run, output_dir):
+    @patch("orchestrator.agents.subprocess.Popen")
+    def test_deletes_stale_output_file(self, mock_popen_cls, output_dir):
         out_file = self._output_file(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         Path(out_file).write_text('{"stale": true}')
         assert Path(out_file).exists()
 
-        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+        mock_cls, _ = self._mock_popen(returncode=1, stdout="", stderr="error")
+        mock_popen_cls.return_value = mock_cls.return_value
 
         result = run_agent_with_files(
             system_prompt_file="agents/eic.md",
@@ -1191,17 +1210,17 @@ class TestRunAgentWithFiles:
         )
         assert result is None
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_md_output_returns_text_dict(self, mock_run, output_dir):
+    @patch("orchestrator.agents.subprocess.Popen")
+    def test_md_output_returns_text_dict(self, mock_popen_cls, output_dir):
         out_file = self._output_file(output_dir, ".md")
         md_content = "# Editorial Plan\n\nHere are the stories."
 
         def side_effect(*args, **kwargs):
             Path(out_file).parent.mkdir(parents=True, exist_ok=True)
             Path(out_file).write_text(md_content)
-            return MagicMock(returncode=0, stdout="ok", stderr="")
 
-        mock_run.side_effect = side_effect
+        mock_cls, _ = self._mock_popen(returncode=0, stdout="ok", side_effect=side_effect)
+        mock_popen_cls.side_effect = mock_cls.side_effect
 
         result = run_agent_with_files(
             system_prompt_file="agents/eic.md",
@@ -1210,11 +1229,12 @@ class TestRunAgentWithFiles:
         )
         assert result == {"text": md_content}
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_builds_correct_claude_command(self, mock_run, output_dir):
+    @patch("orchestrator.agents.subprocess.Popen")
+    def test_builds_correct_claude_command(self, mock_popen_cls, output_dir):
         out_file = self._output_file(output_dir)
 
-        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_cls, _ = self._mock_popen(returncode=0)
+        mock_popen_cls.return_value = mock_cls.return_value
 
         run_agent_with_files(
             system_prompt_file="agents/eic.md",
@@ -1222,7 +1242,7 @@ class TestRunAgentWithFiles:
             output_file=out_file,
         )
 
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_popen_cls.call_args[0][0]
         assert cmd[0] == "claude"
         assert "-p" in cmd
         assert "--append-system-prompt-file" in cmd
@@ -1233,16 +1253,15 @@ class TestRunAgentWithFiles:
         assert "--output-format" in cmd
 
     @patch("orchestrator.agents.SOCIAL_DRAFTS_DIR")
-    @patch("orchestrator.agents.subprocess.run")
-    def test_writes_debug_log(self, mock_run, mock_drafts_dir, tmp_path, output_dir):
+    @patch("orchestrator.agents.subprocess.Popen")
+    def test_writes_debug_log(self, mock_popen_cls, mock_drafts_dir, tmp_path, output_dir):
         # Point SOCIAL_DRAFTS_DIR to tmp_path
         mock_drafts_dir.__truediv__ = lambda self, name: tmp_path / name
         mock_drafts_dir.mkdir = MagicMock()
 
         out_file = self._output_file(output_dir)
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="agent stdout", stderr="agent stderr"
-        )
+        mock_cls, _ = self._mock_popen(returncode=0, stdout="agent stdout", stderr="agent stderr")
+        mock_popen_cls.return_value = mock_cls.return_value
 
         run_agent_with_files(
             system_prompt_file="agents/eic.md",
