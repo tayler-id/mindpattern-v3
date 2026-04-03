@@ -127,7 +127,22 @@ def validate_report(
     if first_hash_idx is not None and first_hash_idx > 0:
         junk_lines_stripped = first_hash_idx
         text = "".join(lines[first_hash_idx:])
+        lines = text.splitlines(keepends=True)
         report_path.write_text(text)
+
+    # Strip duplicate preamble heading: if the report starts with a `# ` title
+    # followed by short non-heading text and then another `# ` title, the first
+    # block is synthesis agent preamble. Keep only from the second `# ` onward.
+    h1_indices = [i for i, ln in enumerate(lines) if ln.startswith("# ")]
+    if len(h1_indices) >= 2:
+        first, second = h1_indices[0], h1_indices[1]
+        # Preamble block: between first and second h1, expect <= 5 short lines
+        between = lines[first + 1:second]
+        non_blank = [ln for ln in between if ln.strip()]
+        if len(non_blank) <= 3 and all(len(ln) < 200 for ln in non_blank):
+            junk_lines_stripped += second
+            text = "".join(lines[second:])
+            report_path.write_text(text)
 
     report_bytes = len(text.encode())
 
@@ -408,6 +423,171 @@ def send_newsletter(
     )
 
     return asdict(result)
+
+
+SUBSCRIBER_FOOTER = """\
+---
+
+*You're receiving this because you subscribed at [mindpattern.ai](https://mindpattern.ai). \
+Reply with questions or feedback — I read every response.*
+
+*[Unsubscribe](https://mindpattern.ai/unsubscribe)*"""
+
+MAX_BROADCAST_CONTACTS = 50
+BROADCAST_DELAY_SECONDS = 2
+
+
+def broadcast_to_subscribers(
+    report_content: str,
+    date_str: str,
+    *,
+    audience_keychain_service: str = "resend-audience-id",
+    exclude_emails: list[str] | None = None,
+    newsletter_title: str = "Ramsay Research Agent",
+    reply_to: str = "feedback@tayler.id",
+    traces_conn=None,
+    pipeline_run_id: str | None = None,
+) -> dict:
+    """Send newsletter to all Resend Audience subscribers.
+
+    Fetches contacts from the audience, skips excluded/unsubscribed emails,
+    appends a generic subscriber footer, and sends individually.
+
+    Returns dict with sent_count, failed_count, skipped_count, errors.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    result = {"sent_count": 0, "failed_count": 0, "skipped_count": 0, "errors": []}
+
+    api_key = keychain_lookup("resend-api-key")
+    if not api_key:
+        result["errors"].append("No resend-api-key in Keychain")
+        return result
+
+    audience_id = keychain_lookup(audience_keychain_service)
+    if not audience_id:
+        result["errors"].append(f"No {audience_keychain_service} in Keychain")
+        return result
+
+    # Normalize exclusion list
+    excluded = {e.strip().lower() for e in (exclude_emails or [])}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "mindpattern/3.0",
+    }
+
+    # Fetch contacts with pagination
+    contacts = []
+    cursor = None
+    for _ in range(10):  # safety cap on pages
+        url = f"https://api.resend.com/audiences/{audience_id}/contacts"
+        if cursor:
+            url += f"?starting_after={cursor}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            result["errors"].append(f"Failed to fetch contacts: {e}")
+            return result
+
+        for contact in data.get("data", []):
+            email = (contact.get("email") or "").strip().lower()
+            if not email:
+                continue
+            if contact.get("unsubscribed"):
+                result["skipped_count"] += 1
+                continue
+            if email in excluded:
+                result["skipped_count"] += 1
+                continue
+            contacts.append(email)
+
+        if not data.get("has_more"):
+            break
+        items = data.get("data", [])
+        if items:
+            cursor = items[-1].get("id")
+        else:
+            break
+
+    if not contacts:
+        logger.info("No subscriber contacts to broadcast to")
+        return result
+
+    # Cap contacts per run
+    if len(contacts) > MAX_BROADCAST_CONTACTS:
+        logger.warning(
+            f"Capping broadcast from {len(contacts)} to {MAX_BROADCAST_CONTACTS} contacts"
+        )
+        contacts = contacts[:MAX_BROADCAST_CONTACTS]
+
+    # Prepare content with subscriber footer
+    full_content = report_content + "\n\n" + SUBSCRIBER_FOOTER
+    html_content = render_html(full_content)
+    subject = f"{newsletter_title} — {datetime.strptime(date_str, '%Y-%m-%d').strftime('%B %-d, %Y')}"
+
+    for email in contacts:
+        payload = {
+            "from": f"{newsletter_title} <{reply_to}>",
+            "to": [email],
+            "subject": subject,
+            "html": html_content,
+            "text": full_content,
+            "reply_to": [reply_to],
+        }
+
+        sent = False
+        last_error = None
+        for attempt in range(3):
+            try:
+                resp = requests.post(
+                    "https://api.resend.com/emails",
+                    json=payload, headers=headers, timeout=30,
+                )
+                resp.raise_for_status()
+                resp_data = resp.json()
+                if resp_data.get("id"):
+                    sent = True
+                    break
+                else:
+                    last_error = f"No id in response: {resp_data}"
+                    break
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response else 0
+                last_error = f"HTTP {status_code}"
+                if 400 <= status_code < 500 and status_code != 429:
+                    break
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                last_error = str(e)
+            except Exception as e:
+                last_error = str(e)
+                break
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+
+        if sent:
+            result["sent_count"] += 1
+            _trace_event(traces_conn, pipeline_run_id,
+                         "broadcast_sent", json.dumps({"to": email}))
+        else:
+            result["failed_count"] += 1
+            result["errors"].append(f"{email}: {last_error}")
+            _trace_event(traces_conn, pipeline_run_id,
+                         "broadcast_failed", json.dumps({"to": email, "error": last_error}))
+
+        # Delay between sends to avoid rate limits
+        if email != contacts[-1]:
+            time.sleep(BROADCAST_DELAY_SECONDS)
+
+    logger.info(
+        f"Broadcast complete: {result['sent_count']} sent, "
+        f"{result['failed_count']} failed, {result['skipped_count']} skipped"
+    )
+    return result
 
 
 if __name__ == "__main__":
