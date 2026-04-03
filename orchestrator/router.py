@@ -35,6 +35,10 @@ MODEL_ROUTING: dict[str, str] = {
     "engagement_finder": "sonnet",  # search + match
     "engagement_writer": "sonnet",  # reply writing
 
+    # Animation pipeline
+    "animation_director": "sonnet",  # conceive animation concept
+    "animation_reviewer": "sonnet",  # review rendered GIF
+
     # Self-optimization
     "evolve": "opus_1m",            # needs 1M context for all traces + skills
     "identity": "sonnet",           # identity maintenance
@@ -57,6 +61,8 @@ MAX_TURNS: dict[str, int] = {
     "humanizer": 5,
     "engagement_finder": 10,
     "engagement_writer": 5,
+    "animation_director": 10,
+    "animation_reviewer": 5,
     "evolve": 10,
     "identity": 5,
 }
@@ -78,6 +84,8 @@ TIMEOUTS: dict[str, int] = {
     "humanizer": 120,
     "engagement_finder": 300,
     "engagement_writer": 120,
+    "animation_director": 300,
+    "animation_reviewer": 120,
     "evolve": 600,
     "identity": 300,
 }

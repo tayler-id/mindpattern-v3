@@ -20,6 +20,7 @@ import memory
 from orchestrator.agents import run_claude_prompt
 from policies.engine import PolicyEngine
 from social.approval import ApprovalGateway
+from social.animation import create_animation
 from social.art import create_art
 from social.eic import select_topic, create_brief
 from social.writers import write_drafts, _humanize
@@ -229,21 +230,48 @@ class SocialPipeline:
             result["errors"].append(f"Brief creation: {e}")
             return result
 
-        # ── Step 3: Art pipeline (Sonnet, optional) ───────────────────
+        # ── Step 3: Art/Animation pipeline (Sonnet, optional) ────────
         images = {}
         if not skip_art:
-            logger.info("Step 3: Art pipeline")
-            try:
-                images = create_art(
-                    db=self.db,
-                    brief=brief,
-                    date_str=self.date_str,
-                    skip_art=False,
-                )
-                logger.info(f"Art created for {len(images)} platforms")
-            except Exception as e:
-                logger.warning(f"Art pipeline failed (non-fatal): {e}")
-                result["errors"].append(f"Art (non-fatal): {e}")
+            animation_enabled = self.config.get("animation", {}).get("enabled", False)
+            if animation_enabled:
+                logger.info("Step 3: Animation pipeline")
+                try:
+                    images = create_animation(
+                        db=self.db,
+                        brief=brief,
+                        date_str=self.date_str,
+                    )
+                    if images.get("animation"):
+                        logger.info(f"Animation created (style: {images.get('style', '?')})")
+                    else:
+                        logger.info("Animation fell back to static images")
+                except Exception as e:
+                    logger.warning(f"Animation pipeline failed, trying static art: {e}")
+                    result["errors"].append(f"Animation (non-fatal): {e}")
+                    try:
+                        images = create_art(
+                            db=self.db,
+                            brief=brief,
+                            date_str=self.date_str,
+                            skip_art=False,
+                        )
+                    except Exception as e2:
+                        logger.warning(f"Static art also failed: {e2}")
+                        result["errors"].append(f"Art fallback (non-fatal): {e2}")
+            else:
+                logger.info("Step 3: Art pipeline")
+                try:
+                    images = create_art(
+                        db=self.db,
+                        brief=brief,
+                        date_str=self.date_str,
+                        skip_art=False,
+                    )
+                    logger.info(f"Art created for {len(images)} platforms")
+                except Exception as e:
+                    logger.warning(f"Art pipeline failed (non-fatal): {e}")
+                    result["errors"].append(f"Art (non-fatal): {e}")
         else:
             logger.info("Step 3: Art pipeline (skipped)")
 

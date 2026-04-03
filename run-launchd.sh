@@ -6,6 +6,9 @@
 
 cd /Users/taylerramsay/Projects/mindpattern-v3
 
+# Ensure Node.js is in PATH for Remotion animation rendering
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 TODAY=$(date +%Y-%m-%d)
 LOCK="/tmp/mindpattern-pipeline.lock"
 MARKER="/tmp/mindpattern-ran-${TODAY}"
