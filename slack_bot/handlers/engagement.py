@@ -125,9 +125,9 @@ class EngagementHandler(BaseHandler):
     def _handle_search(self, query: str, ts: str) -> None:
         """Search for real conversations matching a query and show candidates.
 
-        Uses BlueskyClient.search() (AT Protocol API) and search_via_jina()
-        (LinkedIn via Jina Reader) to find REAL posts. Never generates
-        placeholder or hallucinated candidates.
+        Uses BlueskyClient.search() (AT Protocol API) to find REAL posts.
+        Engagement is Bluesky-only. Never generates placeholder or
+        hallucinated candidates.
         """
         self.react("mag", ts)
         self.reply(f"Searching for conversations about: *{query}*...", thread_ts=ts)
@@ -149,17 +149,8 @@ class EngagementHandler(BaseHandler):
                 except Exception as e:
                     logger.warning(f"Bluesky search failed: {e}")
 
-            # Search LinkedIn via Jina Reader
-            engagement_platforms = config.get("engagement", {}).get("platforms", [])
-            if "linkedin" in engagement_platforms:
-                try:
-                    from social.engagement import search_via_jina
-                    li_results = search_via_jina(query, max_results=5)
-                    for post in li_results:
-                        post["_source"] = "jina_search"
-                    results.extend(li_results)
-                except Exception as e:
-                    logger.warning(f"LinkedIn search failed: {e}")
+            # LinkedIn engagement removed — no reliable search API.
+            # Engagement is Bluesky-only.
 
             # Validate: reject any results without real URLs or handles
             validated = []
