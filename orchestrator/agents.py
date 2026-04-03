@@ -796,16 +796,35 @@ def run_agent_with_files(
 
     proc = None
     try:
-        proc = subprocess.run(
+        # Use Popen with process group so we can kill the entire tree on timeout.
+        # subprocess.run(timeout=) doesn't kill grandchild processes on macOS,
+        # causing the bot to hang when claude spawns subagents.
+        popen = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             cwd=str(PROJECT_ROOT),
             env=env,
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        logger.warning(f"Agent {task_type} timed out after {timeout}s")
+        try:
+            stdout, stderr = popen.communicate(timeout=timeout)
+            proc = subprocess.CompletedProcess(
+                cmd, popen.returncode, stdout, stderr,
+            )
+        except subprocess.TimeoutExpired:
+            import os as _os
+            import signal as _signal
+            logger.warning(f"Agent {task_type} timed out after {timeout}s, killing process group")
+            try:
+                _os.killpg(popen.pid, _signal.SIGKILL)
+            except OSError:
+                popen.kill()
+            popen.wait()
+            proc = None
+    except Exception as e:
+        logger.error(f"Agent {task_type} failed to start: {e}")
         proc = None
 
     # Write debug log
