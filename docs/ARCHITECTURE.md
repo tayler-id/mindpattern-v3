@@ -449,6 +449,23 @@ mindpattern-v3/
 │       ├── decisions.md        # Editorial log (append-only)
 │       └── agents/             # Agent transcripts
 │
+├── harness/
+│   ├── knowledge_graph.py      # Knowledge graph I/O, validation, CLI
+│   ├── knowledge_sections.py   # Pure algorithms: parser, suffix index, fuzzy search
+│   ├── knowledge/              # 31 interconnected markdown files
+│   │   ├── INDEX.md            # Central index with [[slug]] links to all docs
+│   │   ├── orchestrator-*.md   # Pipeline module docs (11 files)
+│   │   ├── social-*.md         # Social module docs (4 files)
+│   │   ├── memory-*.md         # Memory module docs (2 files)
+│   │   ├── issues-open.md      # Known bugs, fragile patterns, debt
+│   │   ├── patterns-*.md       # What works / what fails
+│   │   └── runs-latest.md      # Last harness run outcomes
+│   ├── hooks/
+│   │   ├── knowledge_gate.py   # PostToolUse: validate knowledge + sync enforcement
+│   │   ├── pre_commit_gate.py  # PreToolUse: block bad commits
+│   │   └── post_tool_audit.py  # PostToolUse: audit trail
+│   └── ...
+│
 ├── .claude/
 │   ├── skills/
 │   │   └── mindpattern-eval/   # Pipeline evaluation skill
@@ -537,3 +554,5 @@ flowchart LR
 7. **Everything visible in Obsidian** — findings, transcripts, social drafts, newsletters, identity files all mirrored as markdown. Human can review and understand the system's reasoning.
 
 8. **Pipeline agents see zero global skills** — `--disallowedTools Skill` prevents 87 personal/plugin skills from polluting autonomous agent context. Agent prompts are loaded deterministically via `--append-system-prompt-file`.
+
+9. **Knowledge graph with section-level granularity** — 31 markdown files in `harness/knowledge/` document every module with `[[slug]]` wiki-links. Section tree parser enables `[[orchestrator/runner#Error Handling]]` references. 5-tier fuzzy search (exact → stem → tail → subsequence → Levenshtein) helps agents find relevant knowledge. 4-pass validation ensures link integrity, section quality, index completeness, and code↔docs bidirectional linking via `# @know:` comments. Auto-evolves after every harness run.
