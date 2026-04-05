@@ -981,8 +981,8 @@ class TestPolicyRateLimits:
 
     def test_blocked_via_social_posts_table(self, engine, db):
         """Rate limit is enforced even if only social_posts has records."""
-        from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         for _ in range(3):
             db.execute(
                 "INSERT INTO social_posts (date, platform, content, posted) VALUES (?, ?, ?, ?)",

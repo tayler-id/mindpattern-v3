@@ -420,7 +420,7 @@ def count_posts_today(
     (engagement_type='post') to be thorough. Returns the higher count to
     prevent any table being out of sync from bypassing the limit.
     """
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Check social_posts table
     try:
