@@ -43,7 +43,7 @@ Format deep dives as: **Bold title with key stat.** Then 2-4 sentences of contex
 10 actionable skills. Each skill is 2-3 sentences: what to do, how to do it, why it matters. These are specific and non-obvious. Not "learn Python" but "Use cross-encoder reranking in your RAG pipeline to get 18-42% precision boost."
 
 ### 4. Feedback Footer
-Include the feedback footer passed to you. Do not modify it.
+Do NOT include a feedback footer. The delivery system adds one automatically.
 
 ## Voice Rules (CRITICAL)
 
