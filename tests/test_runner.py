@@ -365,11 +365,13 @@ class TestPipelineInit:
         traces.close()
 
     def test_phase_handler_map_has_all_non_terminal_phases(self, pipeline):
-        """Every non-terminal, non-COMPLETED/FAILED phase has a handler."""
+        """Every non-terminal, non-COMPLETED/FAILED phase has a handler.
+        EVOLVE is intentionally disabled (see reports/audit/evolve.md)."""
         expected_phases = {
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            Phase.EVOLVE, Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
+            # Phase.EVOLVE disabled: zero measurable improvement, 5-8 min waste/run
+            Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
         }
         for phase in expected_phases:
             handler = pipeline._get_phase_handler(phase)

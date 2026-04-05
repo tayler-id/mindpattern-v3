@@ -145,6 +145,16 @@ process_ticket() {
 
     log "[slot $SLOT] START: $TICKET_ID — $TICKET_TITLE"
 
+    # ── Pre-fix gates (deterministic, no LLM) ────────────────────
+    local PRE_GATE_RESULT PRE_GATE_EXIT=0
+    PRE_GATE_RESULT=$(PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -m harness.gates pre-fix "$TICKET" 2>&1) || PRE_GATE_EXIT=$?
+    if [ $PRE_GATE_EXIT -ne 0 ]; then
+        log "[slot $SLOT] GATE FAIL (pre-fix): $TICKET_ID — $PRE_GATE_RESULT"
+        python3 -m harness.tickets mark-failed "$TICKET" "Pre-fix gate failed: ${PRE_GATE_RESULT:0:300}"
+        return 1
+    fi
+    log "[slot $SLOT] PRE-FIX GATES PASSED"
+
     # ── Fix Agent (worktree) ──────────────────────────────────────
     local BEFORE_TS
     BEFORE_TS=$(date +%s)
@@ -192,6 +202,17 @@ INSTRUCTIONS:
     fi
     log "[slot $SLOT] TESTS PASSED"
 
+    # ── Post-fix gates (deterministic, no LLM) ───────────────────
+    local CHANGED_FILES POST_GATE_RESULT POST_GATE_EXIT=0
+    CHANGED_FILES=$(cd "$FIX_WORKTREE" && git diff main --name-only 2>/dev/null | tr '\n' ' ')
+    POST_GATE_RESULT=$(PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -m harness.gates post-fix "$TICKET" "$FIX_BRANCH" $CHANGED_FILES 2>&1) || POST_GATE_EXIT=$?
+    if [ $POST_GATE_EXIT -ne 0 ]; then
+        log "[slot $SLOT] GATE FAIL (post-fix): $TICKET_ID — $POST_GATE_RESULT"
+        python3 -m harness.tickets mark-failed "$TICKET" "Post-fix gate failed: ${POST_GATE_RESULT:0:300}"
+        return 1
+    fi
+    log "[slot $SLOT] POST-FIX GATES PASSED"
+
     # ── Review Agent (separate worktree) ──────────────────────────
     # Push the fix branch first so the reviewer can see it
     (cd "$FIX_WORKTREE" && git push origin "$FIX_BRANCH" 2>/dev/null) || true
@@ -225,6 +246,18 @@ INSTRUCTIONS:
     if [ -n "$PR_URL" ]; then
         log "[slot $SLOT] PR: $PR_URL"
         python3 -m harness.tickets mark-done "$TICKET" "$PR_URL"
+        # Record outcome so scout can learn from successes
+        local PR_NUM
+        PR_NUM=$(echo "$PR_URL" | grep -o '[0-9]*$')
+        PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -c "
+from harness.tickets import record_pr_outcome
+record_pr_outcome('$TICKET_ID', ${PR_NUM:-0}, 'pr_created', '$PR_URL')
+" 2>/dev/null || true
+        # Update knowledge graph
+        PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -c "
+from harness.knowledge_graph import evolve
+evolve('review_done', {'ticket_id': '$TICKET_ID', 'status': 'pr_created', 'pr_url': '$PR_URL'})
+" 2>/dev/null || true
         slack_notify "✅ *PR Ready* [\`$TICKET_ID\`] $TICKET_TITLE\n$PR_URL"
     else
         if grep -q "REJECTED" "/tmp/harness-review-${SLOT}.log" 2>/dev/null; then
@@ -232,9 +265,20 @@ INSTRUCTIONS:
             REASON=$(grep -A3 "REJECTED" "/tmp/harness-review-${SLOT}.log" | head -3)
             log "[slot $SLOT] REJECTED: $TICKET_ID — $REASON"
             python3 -m harness.tickets mark-failed "$TICKET" "Review rejected: $REASON"
+            # Record rejection so scout can learn from failures
+            PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -c "
+from harness.tickets import record_pr_outcome
+record_pr_outcome('$TICKET_ID', 0, 'rejected', close_reason=\"\"\"${REASON:0:200}\"\"\")
+" 2>/dev/null || true
+            # Update knowledge graph with failure pattern
+            PYTHONPATH="$PROJECT_ROOT" "$VENV_PYTHON" -c "
+from harness.knowledge_graph import evolve
+evolve('review_done', {'ticket_id': '$TICKET_ID', 'status': 'rejected', 'reason': \"\"\"${REASON:0:200}\"\"\"})
+" 2>/dev/null || true
             slack_notify "❌ *Rejected* [\`$TICKET_ID\`] $TICKET_TITLE"
         else
-            log "[slot $SLOT] NO PR: $TICKET_ID"
+            log "[slot $SLOT] NO PR: $TICKET_ID — marking failed"
+            python3 -m harness.tickets mark-failed "$TICKET" "Review produced no PR and no rejection"
         fi
     fi
 
