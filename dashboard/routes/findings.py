@@ -28,8 +28,13 @@ def _valid_date(s: Optional[str]) -> Optional[str]:
     return s if s and _DATE_RE.match(s) else None
 
 
+_ALLOWED_COLUMNS = {"agent", "category", "importance", "source_name"}
+
+
 def _get_distinct_values(column: str) -> list:
     """Return distinct non-null values for a column in the findings table."""
+    if column not in _ALLOWED_COLUMNS:
+        raise ValueError(f"Invalid column: {column!r}")
     conn = get_memory_db()
     if conn is None:
         return []

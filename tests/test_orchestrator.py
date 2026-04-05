@@ -966,8 +966,8 @@ class TestPolicyRateLimits:
         assert result["allowed"] is True
 
     def test_blocked_when_at_limit(self, engine, db):
-        from datetime import datetime, timezone
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
         for _ in range(3):
             db.execute(
                 "INSERT INTO engagements (platform, engagement_type, created_at) VALUES (?, ?, ?)",
