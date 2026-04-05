@@ -296,7 +296,7 @@ class PolicyEngine:
             }
 
         platform_limits = rate_limits[platform]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
 
         if action_type == "post":
             limit = platform_limits.get("max_posts_per_day", 3)

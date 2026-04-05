@@ -9,7 +9,7 @@
 # MODE=single bash harness/run.sh           # one ticket only
 
 set -euo pipefail
-cd /Users/taylerramsay/Projects/mindpattern-v3
+cd "$(dirname "$(realpath "$0")")/.."
 PROJECT_ROOT="$(pwd)"
 
 DATE=$(date +%Y-%m-%d)

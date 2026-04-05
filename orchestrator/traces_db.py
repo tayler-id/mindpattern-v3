@@ -41,7 +41,7 @@ def get_db(db_path: Path | None = None) -> sqlite3.Connection:
     """Open a connection to traces.db with WAL mode and Row factory."""
     path = db_path or TRACES_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=10.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
