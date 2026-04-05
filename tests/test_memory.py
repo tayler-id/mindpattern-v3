@@ -651,8 +651,9 @@ class TestSocial:
         result = store_social_feedback(db, "2026-03-14", "twitter", "approved")
         assert result["edit_type"] == "none"
 
-    def test_store_engagement_uses_datetime_now(self, db):
-        """store_engagement() uses datetime.now() not utcnow()."""
+    def test_store_engagement_uses_utc_datetime(self, db):
+        """store_engagement() uses datetime.now(timezone.utc)."""
+        from datetime import timezone as tz
         from memory.social import store_engagement
 
         eid = store_engagement(
@@ -663,10 +664,13 @@ class TestSocial:
         assert isinstance(eid, int)
 
         row = db.execute("SELECT created_at FROM engagements WHERE id = ?", (eid,)).fetchone()
-        # Should be a valid datetime string close to now
+        # Should be a valid datetime string close to now (UTC)
         created = datetime.fromisoformat(row["created_at"])
-        delta = abs((datetime.now() - created).total_seconds())
-        assert delta < 5  # within 5 seconds of now
+        now = datetime.now(tz.utc)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=tz.utc)
+        delta = abs((now - created).total_seconds())
+        assert delta < 5
 
     def test_check_engagement_returns_cooldown_status(self, db):
         """check_engagement() returns correct cooldown status."""

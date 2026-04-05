@@ -1002,8 +1002,12 @@ class ResearchPipeline:
         from social.pipeline import SocialPipeline
 
         social_config_path = PROJECT_ROOT / "social-config.json"
-        with open(social_config_path) as f:
-            social_config = json.load(f)
+        try:
+            with open(social_config_path) as f:
+                social_config = json.load(f)
+        except FileNotFoundError:
+            logger.warning("social-config.json not found, skipping social phase")
+            return {"skipped": True, "reason": "social-config.json missing"}
 
         pipeline = SocialPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
@@ -1057,8 +1061,12 @@ class ResearchPipeline:
         from social.engagement import EngagementPipeline
 
         social_config_path = PROJECT_ROOT / "social-config.json"
-        with open(social_config_path) as f:
-            social_config = json.load(f)
+        try:
+            with open(social_config_path) as f:
+                social_config = json.load(f)
+        except FileNotFoundError:
+            logger.warning("social-config.json not found, skipping engagement phase")
+            return {"skipped": True, "reason": "social-config.json missing"}
 
         pipeline = EngagementPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
