@@ -3,7 +3,7 @@
     "scout":    {"model": "opus", "max_turns": 20, "timeout_s": 900},
     "research": {"model": "opus", "max_turns": 25, "timeout_s": 900},
     "plan":     {"model": "opus", "max_turns": 30, "timeout_s": 900},
-    "fix":      {"model": "opus", "max_turns": 40, "timeout_s": 1200},
+    "fix":      {"model": "opus", "max_turns": 15, "timeout_s": 600},
     "review":   {"model": "opus", "max_turns": 25, "timeout_s": 900}
   },
   "parallel_agents": 3,

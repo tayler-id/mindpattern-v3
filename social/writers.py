@@ -176,7 +176,7 @@ def _write_single_platform(
 
     thread_db = _mem.get_db()
     try:
-        humanized = _humanize(content, platform, thread_db) if content else ""
+        humanized = content  # Humanizer runs once in pipeline.py Step 7, not here
     finally:
         thread_db.close()
 

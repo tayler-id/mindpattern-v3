@@ -139,11 +139,12 @@ def test_verdict_parsing_valid_json(mem_db, social_config):
         "rank", "anchor", "anchor_source", "connection", "connection_source",
         "reaction", "open_questions", "do_not_include", "confidence",
         "emotional_register", "mindpattern_context", "mindpattern_link",
-        "editorial_scores", "source_urls",
+        "editorial_scores", "composite_score", "source_urls",
     }
     assert expected_keys == set(result.keys())
     assert result["anchor"] == "AI agents are reshaping software testing"
     assert result["editorial_scores"]["composite"] == 8.2
+    assert result["composite_score"] == 8.2
 
 
 def test_verdict_parsing_malformed_returns_fallback(mem_db, social_config):
