@@ -27,7 +27,7 @@ def store_post(
     platform_post_id: str | None = None,
 ) -> int:
     """Store a social media post with its vector embedding. Returns post_id."""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     cur = db.execute(
         """INSERT INTO social_posts
@@ -56,7 +56,7 @@ def recent_posts(
     limit: int = 20,
 ) -> list[dict]:
     """List recent posts for dedup context."""
-    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     conditions = ["date >= ?"]
     params: list = [cutoff]
@@ -85,7 +85,7 @@ def check_duplicate(
 
     Returns {duplicates, is_duplicate, threshold, posts_checked}.
     """
-    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     rows = db.execute(
         """SELECT p.id, p.date, p.platform, p.content, p.anchor_text, e.embedding
@@ -191,7 +191,7 @@ def store_social_feedback(
     elif action == "approved":
         edit_type = "none"
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     db.execute(
         """INSERT INTO social_feedback
@@ -215,7 +215,7 @@ def get_feedback_patterns(db: sqlite3.Connection, days: int = 30) -> dict:
 
     Returns {platform_stats, edit_distribution, recent_rewrite_feedback}.
     """
-    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     # Aggregate stats per platform
     stats = db.execute(
@@ -270,7 +270,7 @@ def store_engagement(
     finding_id: int | None = None,
 ) -> int:
     """Store an engagement record. Returns engagement id."""
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     cur = db.execute(
         """INSERT INTO engagements
@@ -347,7 +347,7 @@ def store_pending_post(
         post_after: ISO datetime string -- earliest time to publish.
         image_path: Optional path to image file.
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     cur = db.execute(
         """INSERT INTO pending_posts
@@ -373,7 +373,7 @@ def get_pending_posts(
         List of pending post dicts with id, platform, content, image_path,
         approved_at, post_after.
     """
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     conditions = ["posted = 0", "post_after <= ?"]
     params: list = [now]
@@ -402,7 +402,7 @@ def mark_pending_posted(
     pending_id: int,
 ) -> None:
     """Mark a pending post as posted."""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
         "UPDATE pending_posts SET posted = 1, posted_at = ? WHERE id = ?",
         (now, pending_id),
