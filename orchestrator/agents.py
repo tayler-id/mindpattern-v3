@@ -389,14 +389,37 @@ def run_single_agent(
     env = _agent_env(agent_name)
 
     try:
-        proc = subprocess.run(
+        # Use Popen with process group so we can kill the entire tree on timeout.
+        # subprocess.run(timeout=) only kills the direct child on macOS,
+        # leaving orphaned subagent processes that consume API tokens.
+        popen = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             cwd=str(PROJECT_ROOT),
             env=env,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = popen.communicate(timeout=timeout)
+            proc = subprocess.CompletedProcess(cmd, popen.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            import os as _os
+            import signal as _signal
+            logger.warning(
+                f"Agent {agent_name} timed out after {timeout}s, killing process group"
+            )
+            try:
+                _os.killpg(popen.pid, _signal.SIGKILL)
+            except OSError:
+                popen.kill()
+            popen.wait()
+            result.killed_by_timeout = True
+            result.error = f"Timed out after {timeout}s"
+            result.duration_ms = int((time.monotonic() - start) * 1000)
+            return result
+
         result.exit_code = proc.returncode
         result.raw_output = proc.stdout
         result.duration_ms = int((time.monotonic() - start) * 1000)
@@ -422,12 +445,6 @@ def run_single_agent(
 
         # Parse JSON findings from output
         result.findings = _parse_findings(proc.stdout, agent_name)
-
-    except subprocess.TimeoutExpired:
-        result.killed_by_timeout = True
-        result.error = f"Timed out after {timeout}s"
-        result.duration_ms = int((time.monotonic() - start) * 1000)
-        logger.warning(f"Agent {agent_name} timed out after {timeout}s")
 
     except Exception as e:
         result.error = str(e)

@@ -209,7 +209,10 @@ class ResearchPipeline:
             Phase.LEARN: self._phase_learn,
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
-            Phase.EVOLVE: self._phase_evolve,
+            # Phase.EVOLVE disabled: audit found zero measurable improvement,
+            # 5-8 min LLM waste/run. Revisit when per-agent metrics + clean
+            # reward signal are in place. See reports/audit/evolve.md
+            # Phase.EVOLVE: self._phase_evolve,
             Phase.IDENTITY: self._phase_identity,
             Phase.MIRROR: self._phase_mirror,
             Phase.SYNC: self._phase_sync,
@@ -720,6 +723,15 @@ class ResearchPipeline:
                       "newsletter_evaluation", json.dumps(eval_scores))
         except Exception as e:
             logger.warning(f"Newsletter evaluation failed (non-critical): {e}")
+
+        # Gate: warn if quality is below threshold (don't block, but log loudly)
+        overall = eval_scores.get("overall", 1.0)
+        if overall < 0.6:
+            logger.warning(
+                f"QUALITY GATE WARNING: Newsletter scored {overall:.3f} "
+                f"(below 0.6 threshold). Delivering anyway but flagging for review. "
+                f"Scores: {eval_scores}"
+            )
 
         self.newsletter_eval = eval_scores
         return {"word_count": word_count, "report_path": str(report_path),

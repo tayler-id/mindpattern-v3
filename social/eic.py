@@ -262,6 +262,7 @@ def select_topic(
             "mindpattern_context": topic.get("mindpattern_context", "none today"),
             "mindpattern_link": topic.get("mindpattern_link", config.get("mindpattern_link", "https://mindpattern.ai")),
             "editorial_scores": scores,
+            "composite_score": composite,
             "source_urls": _extract_source_urls(topic),
         }
 
