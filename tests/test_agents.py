@@ -1,18 +1,27 @@
-"""Tests for orchestrator/agents.py _parse_findings().
+"""Tests for orchestrator/agents.py.
 
-Ticket: 2026-04-01-007
-Root cause: greedy regex r'{[\\s\\S]*"findings"[\\s\\S]*}' matches from
-first { to last } in the entire output, producing invalid JSON when the
-agent output contains text before/after the JSON block or multiple JSON
-objects.
+Covers:
+- _parse_findings() (ticket 2026-04-01-007)
+- run_single_agent() dispatch and error handling
+- run_claude_prompt() dispatch and stdin mode
+- dispatch_research_agents() parallel execution
 """
 
 import json
+import subprocess
 import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from orchestrator.agents import _parse_findings
+from orchestrator.agents import (
+    _parse_findings,
+    run_single_agent,
+    run_claude_prompt,
+    dispatch_research_agents,
+    AgentResult,
+)
 
 
 class TestParseFindingsWithTextBeforeJson:
@@ -292,3 +301,304 @@ class TestCrossAgentDedupEmptyInput:
         assert deduped == []
         assert summary["removed"] == 0
         assert summary["total"] == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# run_single_agent tests
+# ═══════════════════════════════════════════════════════════════════════
+
+VALID_FINDINGS_JSON = json.dumps({
+    "findings": [
+        {
+            "title": "Test Finding",
+            "summary": "A summary",
+            "importance": "high",
+            "category": "AI",
+            "source_url": "https://example.com",
+            "source_name": "Example",
+            "date_found": "2026-03-31",
+        }
+    ]
+})
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.run")
+class TestRunSingleAgentSuccess:
+    """run_single_agent returns parsed findings on a successful subprocess call."""
+
+    def test_run_single_agent_success(self, mock_subprocess_run, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+
+        mock_subprocess_run.return_value = MagicMock(
+            returncode=0,
+            stdout=VALID_FINDINGS_JSON,
+            stderr="",
+        )
+
+        result = run_single_agent("test-agent", "test prompt")
+
+        assert isinstance(result, AgentResult)
+        assert result.agent_name == "test-agent"
+        assert result.exit_code == 0
+        assert result.error is None
+        assert result.killed_by_timeout is False
+        assert len(result.findings) == 1
+        assert result.findings[0]["title"] == "Test Finding"
+        assert result.duration_ms >= 0
+
+        # Verify subprocess was called with claude CLI
+        mock_subprocess_run.assert_called_once()
+        cmd = mock_subprocess_run.call_args[0][0]
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.run")
+class TestRunSingleAgentTimeout:
+    """run_single_agent handles subprocess.TimeoutExpired."""
+
+    def test_run_single_agent_timeout(self, mock_subprocess_run, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 60
+
+        mock_subprocess_run.side_effect = subprocess.TimeoutExpired(
+            cmd=["claude"], timeout=60
+        )
+
+        result = run_single_agent("slow-agent", "long prompt")
+
+        assert result.agent_name == "slow-agent"
+        assert result.killed_by_timeout is True
+        assert result.error is not None
+        assert "Timed out" in result.error
+        assert result.findings == []
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.run")
+class TestRunSingleAgentInvalidJson:
+    """run_single_agent handles unparseable output gracefully."""
+
+    def test_run_single_agent_invalid_json(self, mock_subprocess_run, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+
+        mock_subprocess_run.return_value = MagicMock(
+            returncode=0,
+            stdout="This is not JSON at all, just rambling text.",
+            stderr="",
+        )
+
+        result = run_single_agent("confused-agent", "test prompt")
+
+        assert result.agent_name == "confused-agent"
+        assert result.exit_code == 0
+        assert result.findings == []
+        assert result.error is None  # No error — just no findings parsed
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# run_claude_prompt tests
+# ═══════════════════════════════════════════════════════════════════════
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.run")
+class TestRunClaudePromptSuccess:
+    """run_claude_prompt returns stdout and exit code on success."""
+
+    def test_run_claude_prompt_success(self, mock_subprocess_run, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+
+        mock_subprocess_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Newsletter content here",
+            stderr="",
+        )
+
+        output, exit_code = run_claude_prompt("Write a newsletter", "synthesis_pass1")
+
+        assert output == "Newsletter content here"
+        assert exit_code == 0
+
+        # Verify subprocess was called
+        mock_subprocess_run.assert_called_once()
+        cmd = mock_subprocess_run.call_args[0][0]
+        assert "claude" in cmd
+        # Prompt passed as -p argument for small prompts
+        assert "Write a newsletter" in cmd
+        # input should be None for small prompts
+        assert mock_subprocess_run.call_args[1].get("input") is None
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.run")
+class TestRunClaudePromptLargePromptUsesStdin:
+    """run_claude_prompt pipes large prompts via stdin."""
+
+    def test_run_claude_prompt_large_prompt_uses_stdin(self, mock_subprocess_run, mock_router):
+        mock_router.get_model.return_value = "opus"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 600
+
+        mock_subprocess_run.return_value = MagicMock(
+            returncode=0,
+            stdout="Output from large prompt",
+            stderr="",
+        )
+
+        large_prompt = "x" * 150_000  # >100K chars
+        output, exit_code = run_claude_prompt(large_prompt, "synthesis_pass2")
+
+        assert output == "Output from large prompt"
+        assert exit_code == 0
+
+        # Verify stdin was used
+        call_kwargs = mock_subprocess_run.call_args[1]
+        assert call_kwargs["input"] == large_prompt
+
+        # Verify -p argument is "-" (stdin marker)
+        cmd = mock_subprocess_run.call_args[0][0]
+        p_idx = cmd.index("-p")
+        assert cmd[p_idx + 1] == "-"
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.run")
+class TestRunClaudePromptFailure:
+    """run_claude_prompt returns empty string and exit code 1 on failure."""
+
+    def test_run_claude_prompt_failure(self, mock_subprocess_run, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+
+        mock_subprocess_run.side_effect = subprocess.TimeoutExpired(
+            cmd=["claude"], timeout=300
+        )
+
+        output, exit_code = run_claude_prompt("test prompt", "synthesis_pass1")
+
+        assert output == ""
+        assert exit_code == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# dispatch_research_agents tests
+# ═══════════════════════════════════════════════════════════════════════
+
+@patch("orchestrator.agents.run_single_agent")
+@patch("orchestrator.agents.get_agent_skill_path")
+@patch("orchestrator.agents.get_agent_list")
+class TestDispatchResearchAgentsParallel:
+    """dispatch_research_agents runs agents concurrently and collects results."""
+
+    def test_dispatch_research_agents_parallel(
+        self, mock_get_agent_list, mock_get_skill_path, mock_run_single_agent,
+        tmp_path,
+    ):
+        # Setup: 3 agents with skill files that exist
+        agent_names = ["agent-a", "agent-b", "agent-c"]
+        mock_get_agent_list.return_value = (agent_names, tmp_path)
+
+        # Create fake skill files so exists() passes
+        for name in agent_names:
+            (tmp_path / f"{name}.md").write_text(f"Skill for {name}")
+
+        mock_get_skill_path.side_effect = lambda name, uid, vertical="ai-tech": tmp_path / f"{name}.md"
+
+        # Each agent returns a valid result
+        def fake_run(agent_name, prompt, **kwargs):
+            return AgentResult(
+                agent_name=agent_name,
+                findings=[{"title": f"Finding from {agent_name}"}],
+                duration_ms=100,
+            )
+
+        mock_run_single_agent.side_effect = fake_run
+
+        with patch("orchestrator.agents.PROJECT_ROOT", tmp_path):
+            # Create required paths
+            (tmp_path / "verticals" / "ai-tech").mkdir(parents=True)
+            (tmp_path / "verticals" / "ai-tech" / "SOUL.md").write_text("soul")
+            (tmp_path / "data" / "ramsay" / "mindpattern").mkdir(parents=True)
+
+            context_fn = lambda agent_name, date_str: f"Context for {agent_name}"
+
+            results = dispatch_research_agents(
+                user_id="ramsay",
+                date_str="2026-03-31",
+                context_fn=context_fn,
+                max_workers=3,
+            )
+
+        assert len(results) == 3
+        agent_result_names = {r.agent_name for r in results}
+        assert agent_result_names == {"agent-a", "agent-b", "agent-c"}
+        total_findings = sum(len(r.findings) for r in results)
+        assert total_findings == 3
+        assert mock_run_single_agent.call_count == 3
+
+
+@patch("orchestrator.agents.run_single_agent")
+@patch("orchestrator.agents.get_agent_skill_path")
+@patch("orchestrator.agents.get_agent_list")
+class TestDispatchResearchAgentsPartialFailure:
+    """dispatch_research_agents handles some agents failing while others succeed."""
+
+    def test_dispatch_research_agents_partial_failure(
+        self, mock_get_agent_list, mock_get_skill_path, mock_run_single_agent,
+        tmp_path,
+    ):
+        agent_names = ["good-agent", "bad-agent"]
+        mock_get_agent_list.return_value = (agent_names, tmp_path)
+
+        for name in agent_names:
+            (tmp_path / f"{name}.md").write_text(f"Skill for {name}")
+
+        mock_get_skill_path.side_effect = lambda name, uid, vertical="ai-tech": tmp_path / f"{name}.md"
+
+        def fake_run(agent_name, prompt, **kwargs):
+            if agent_name == "bad-agent":
+                raise RuntimeError("Agent crashed")
+            return AgentResult(
+                agent_name=agent_name,
+                findings=[{"title": "Good finding"}],
+                duration_ms=50,
+            )
+
+        mock_run_single_agent.side_effect = fake_run
+
+        with patch("orchestrator.agents.PROJECT_ROOT", tmp_path):
+            (tmp_path / "verticals" / "ai-tech").mkdir(parents=True)
+            (tmp_path / "verticals" / "ai-tech" / "SOUL.md").write_text("soul")
+            (tmp_path / "data" / "ramsay" / "mindpattern").mkdir(parents=True)
+
+            context_fn = lambda agent_name, date_str: f"Context for {agent_name}"
+
+            results = dispatch_research_agents(
+                user_id="ramsay",
+                date_str="2026-03-31",
+                context_fn=context_fn,
+                max_workers=2,
+            )
+
+        assert len(results) == 2
+
+        good = [r for r in results if r.agent_name == "good-agent"]
+        bad = [r for r in results if r.agent_name == "bad-agent"]
+
+        assert len(good) == 1
+        assert len(good[0].findings) == 1
+        assert good[0].error is None
+
+        assert len(bad) == 1
+        assert bad[0].error is not None
+        assert "crashed" in bad[0].error.lower()
