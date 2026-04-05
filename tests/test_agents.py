@@ -322,20 +322,27 @@ VALID_FINDINGS_JSON = json.dumps({
 })
 
 
+def _mock_popen(stdout="", stderr="", returncode=0):
+    """Create a mock Popen that returns the given stdout/stderr via communicate()."""
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = (stdout, stderr)
+    mock_proc.returncode = returncode
+    mock_proc.pid = 12345
+    return mock_proc
+
+
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.run")
+@patch("orchestrator.agents.subprocess.Popen")
 class TestRunSingleAgentSuccess:
     """run_single_agent returns parsed findings on a successful subprocess call."""
 
-    def test_run_single_agent_success(self, mock_subprocess_run, mock_router):
+    def test_run_single_agent_success(self, mock_popen, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        mock_subprocess_run.return_value = MagicMock(
-            returncode=0,
-            stdout=VALID_FINDINGS_JSON,
-            stderr="",
+        mock_popen.return_value = _mock_popen(
+            stdout=VALID_FINDINGS_JSON, returncode=0
         )
 
         result = run_single_agent("test-agent", "test prompt")
@@ -350,25 +357,28 @@ class TestRunSingleAgentSuccess:
         assert result.duration_ms >= 0
 
         # Verify subprocess was called with claude CLI
-        mock_subprocess_run.assert_called_once()
-        cmd = mock_subprocess_run.call_args[0][0]
+        mock_popen.assert_called_once()
+        cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "claude"
         assert "-p" in cmd
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.run")
+@patch("orchestrator.agents.subprocess.Popen")
 class TestRunSingleAgentTimeout:
     """run_single_agent handles subprocess.TimeoutExpired."""
 
-    def test_run_single_agent_timeout(self, mock_subprocess_run, mock_router):
+    def test_run_single_agent_timeout(self, mock_popen, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 60
 
-        mock_subprocess_run.side_effect = subprocess.TimeoutExpired(
+        mock_proc = MagicMock()
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(
             cmd=["claude"], timeout=60
         )
+        mock_proc.pid = 12345
+        mock_popen.return_value = mock_proc
 
         result = run_single_agent("slow-agent", "long prompt")
 
@@ -380,19 +390,17 @@ class TestRunSingleAgentTimeout:
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.run")
+@patch("orchestrator.agents.subprocess.Popen")
 class TestRunSingleAgentInvalidJson:
     """run_single_agent handles unparseable output gracefully."""
 
-    def test_run_single_agent_invalid_json(self, mock_subprocess_run, mock_router):
+    def test_run_single_agent_invalid_json(self, mock_popen, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        mock_subprocess_run.return_value = MagicMock(
-            returncode=0,
-            stdout="This is not JSON at all, just rambling text.",
-            stderr="",
+        mock_popen.return_value = _mock_popen(
+            stdout="This is not JSON at all, just rambling text.", returncode=0
         )
 
         result = run_single_agent("confused-agent", "test prompt")
