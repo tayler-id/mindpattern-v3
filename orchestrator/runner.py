@@ -236,6 +236,12 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Feedback fetch failed (non-critical): {e}")
 
+        # ── Process unprocessed feedback into preference updates ──────
+        try:
+            self._process_pending_feedback()
+        except Exception as e:
+            logger.warning(f"Feedback processing failed (non-critical): {e}")
+
         failures = memory.recent_failures(self.db, limit=10)
         if failures:
             logger.info(f"Loaded {len(failures)} recent failure lessons")
@@ -267,6 +273,89 @@ class ResearchPipeline:
             "failures_loaded": len(failures),
             "prompt_changes": len(changed_files),
         }
+
+    def _process_pending_feedback(self) -> None:
+        """Process unprocessed user feedback into preference weight changes.
+
+        Queries user_feedback for unprocessed rows, sends them to Claude
+        for preference extraction, then calls memory.set_preference() and
+        memory.mark_processed() accordingly.
+        """
+        unprocessed = self.db.execute(
+            "SELECT id, from_email, subject, body FROM user_feedback WHERE processed = 0"
+        ).fetchall()
+
+        if not unprocessed:
+            return
+
+        feedback_texts = []
+        feedback_ids = []
+        for row in unprocessed:
+            feedback_ids.append(row["id"])
+            entry = f"From: {row['from_email']}"
+            if row["subject"]:
+                entry += f"\nSubject: {row['subject']}"
+            entry += f"\nBody: {row['body']}"
+            feedback_texts.append(entry)
+
+        prompt = (
+            "Parse the following newsletter feedback emails and extract topic "
+            "preference changes. Return ONLY valid JSON.\n\n"
+            + "\n---\n".join(feedback_texts)
+        )
+
+        system_prompt_file = str(
+            Path(__file__).parent.parent / "agents" / "feedback-processor.md"
+        )
+
+        output, exit_code = agent_dispatch.run_claude_prompt(
+            prompt,
+            "feedback_processor",
+            system_prompt_file=system_prompt_file,
+            allowed_tools=[],
+        )
+
+        if exit_code != 0 or not output.strip():
+            logger.warning("Feedback processor returned no output (exit=%d)", exit_code)
+            return
+
+        # Parse JSON from output — strip any surrounding text/fences
+        text = output.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            logger.warning("Feedback processor returned invalid JSON: %s", text[:200])
+            return
+
+        preferences = result.get("preferences", [])
+        user_email = self.user_config.get("email", "")
+
+        for pref in preferences:
+            topic = pref.get("topic", "").strip().lower()
+            weight = pref.get("weight", 0.0)
+            if not topic or weight == 0.0:
+                continue
+
+            try:
+                weight = float(weight)
+                weight = max(-3.0, min(3.0, weight))
+            except (TypeError, ValueError):
+                continue
+
+            memory.set_preference(
+                self.db, user_email, topic, weight, source="feedback"
+            )
+            logger.info("Preference updated: %s = %+.1f", topic, weight)
+
+        memory.mark_processed(self.db, feedback_ids)
+        logger.info(
+            "Processed %d feedback item(s), %d preference update(s)",
+            len(feedback_ids),
+            len([p for p in preferences if p.get("topic", "").strip() and p.get("weight", 0.0) != 0.0]),
+        )
 
     def _phase_trend_scan(self) -> dict:
         """Phase 2: Trend Scan (Haiku).
