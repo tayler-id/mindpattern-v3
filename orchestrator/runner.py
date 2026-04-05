@@ -324,11 +324,21 @@ class ResearchPipeline:
         if text.startswith("```"):
             text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
+        # Fallback: find first JSON object in output
+        import re
         try:
             result = json.loads(text)
         except json.JSONDecodeError:
-            logger.warning("Feedback processor returned invalid JSON: %s", text[:200])
-            return
+            match = re.search(r'\{[\s\S]*\}', text)
+            if match:
+                try:
+                    result = json.loads(match.group())
+                except json.JSONDecodeError:
+                    logger.warning("Feedback processor returned invalid JSON: %s", text[:200])
+                    return
+            else:
+                logger.warning("Feedback processor returned no JSON: %s", text[:200])
+                return
 
         preferences = result.get("preferences", [])
         user_email = self.user_config.get("email", "")

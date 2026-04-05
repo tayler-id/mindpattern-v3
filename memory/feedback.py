@@ -458,18 +458,13 @@ def get_feedback_footer(db: sqlite3.Connection) -> str:
             )
 
         lines.append("")
-        lines.append("**Ways to steer this newsletter:**")
-        lines.append(
-            '- "More [topic]" / "Less [topic]" — adjust coverage priorities'
-        )
-        lines.append(
-            '- "Deep dive on [X]" — I\'ll dedicate extra research to it'
-        )
-        lines.append('- "[Section] was great" — reinforces that direction')
-        lines.append('- "Missed [event/topic]" — I\'ll add it to my radar')
-        lines.append(
-            '- Rate sections: "Vibe Coding section: 9/10" helps me calibrate'
-        )
+        lines.append("**Quick feedback template** (copy, paste, change the numbers):")
+        lines.append("")
+        lines.append("```")
+        lines.append("More: [topic] [topic]")
+        lines.append("Less: [topic] [topic]")
+        lines.append("Overall: X/10")
+        lines.append("```")
         lines.append("")
         lines.append(
             f"*Reply to this email — I've processed {processed}/{total} replies "
