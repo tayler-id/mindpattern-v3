@@ -1,0 +1,49 @@
+{
+  "id": "2026-04-01-R013",
+  "title": "Add freshness-weighted time-decay to semantic dedup scoring",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "done",
+  "description": "Current dedup in preflight/run_all.py uses a flat 0.80 similarity threshold with 10-day lookback, treating a 1-day-old finding identically to a 9-day-old finding at the same similarity score. This causes evolving stories to be incorrectly marked as ALREADY_COVERED when they have genuinely new developments.\n\nAdd time-decay weighting so that older findings need LOWER similarity to block new items. A finding from yesterday at 0.82 similarity is a true duplicate; a finding from 8 days ago at 0.82 similarity likely has meaningful new developments worth covering.\n\nFormula: effective_threshold = base_threshold * (1 - decay_rate * (age_days / lookback_days))\nWith decay_rate=0.25 and base_threshold=0.80:\n- 1-day-old match needs 0.78 similarity to block\n- 5-day-old match needs 0.70 similarity to block\n- 9-day-old match needs 0.62 similarity to block\n\nThis means stories that are evolving over multiple days will get fresh coverage instead of being perpetually blocked by the first finding.\n\nIdea from SemDeDup research (ICLR 2024) and NVIDIA NeMo Curator's freshness-aware dedup pipeline, which show that temporal context significantly improves dedup precision for streaming/incremental data.",
+  "requirements": [
+    "Modify _dedup_batch() in preflight/run_all.py to compute age-weighted similarity thresholds",
+    "Add DEDUP_DECAY_RATE constant (default 0.25) alongside existing DEDUP_SIMILARITY_THRESHOLD",
+    "Calculate finding age from stored_dates in the batch comparison and apply decay formula",
+    "Keep the per-item fallback path (_dedup_annotate with existing_fn) unchanged for backward compatibility",
+    "Add match_info.age_days and match_info.effective_threshold to dedup annotations for observability",
+    "Log summary stats: how many items were 'rescued' from ALREADY_COVERED by the decay adjustment"
+  ],
+  "done_criteria": [
+    "Findings older than 5 days require progressively lower similarity to block new items",
+    "New test verifies that an item at 0.75 similarity against a 9-day-old finding passes dedup (not blocked)",
+    "New test verifies that an item at 0.75 similarity against a 1-day-old finding is still blocked",
+    "Dedup annotations include age_days and effective_threshold fields",
+    "Existing tests in tests/test_preflight.py still pass unchanged"
+  ],
+  "design_spec": {
+    "architecture_impact": "Minimal \u2014 changes only the similarity comparison logic within _dedup_batch(). No new tables, no new dependencies. The decay formula is applied per-item during the existing batch matrix comparison.",
+    "files_affected": [
+      "preflight/run_all.py"
+    ],
+    "effort": "S",
+    "research_source": "https://openreview.net/forum?id=IRSesTQUtb&noteId=usQjFYYAZJ"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_preflight.py",
+    "tests_to_write": [
+      "test_dedup_batch_decay_old_finding_passes",
+      "test_dedup_batch_decay_recent_finding_blocks",
+      "test_dedup_batch_decay_annotations_include_age"
+    ]
+  },
+  "files_to_modify": [
+    "preflight/run_all.py"
+  ],
+  "context": "SemDeDup (ICLR 2024) shows semantic dedup with temporal context improves precision for incremental data pipelines. NVIDIA NeMo Curator implements freshness-aware dedup at scale. MindPattern's current flat threshold causes evolving stories to be incorrectly suppressed after initial coverage.",
+  "created_at": "2026-04-01T08:00:00Z",
+  "expires_at": "2026-04-15T08:00:00Z",
+  "feedback_history": [],
+  "pr_url": "https://github.com/tayler-id/mindpattern-v3/pull/12",
+  "completed_at": "2026-04-01T23:19:18.974623+00:00"
+}

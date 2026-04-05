@@ -1,0 +1,69 @@
+{
+  "id": "2026-04-01-R018",
+  "title": "Add post-publish engagement seeding with self-reply threads and first-hour metric tracking",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "open",
+  "description": "Add a post-publish engagement seeding phase that generates and posts 1-2 self-reply comments immediately after publishing to LinkedIn and Bluesky, and tracks first-hour engagement metrics to feed back into EIC topic scoring. LinkedIn's 360Brew algorithm (2026) weights first-hour engagement 2.3x for reach distribution, and only 5% of posts that fail in the first hour ever recover. Thoughtful comments (3+ sentences) are weighted 15x heavier than likes. Currently, MindPattern publishes and walks away — the critical first-hour window is unmanaged. This feature adds: (1) after successful post, generate 1-2 self-reply comments using voice.md that add genuine value (follow-up data points, related links from today's research, questions to spark discussion), (2) post self-replies with 5-15 minute jitter to appear organic, (3) send iMessage notification with post URL when published so user can engage in the first hour, (4) at T+60min and T+24h, fetch engagement metrics (likes, comments, reposts) via platform APIs and store in social_posts table, (5) feed first-hour metrics back to EIC as historical topic performance data. Distinct from R012 (posting time optimization) — this is about what happens AFTER publishing.",
+  "requirements": [
+    "Add generate_self_replies() function to social/writers.py that takes the published post text + today's findings and generates 1-2 value-adding self-reply comments using voice.md",
+    "Add post_self_replies() to social/posting.py that replies to own post with 5-15 minute random jitter between replies",
+    "Modify social/pipeline.py post-publish flow to call generate_self_replies() and post_self_replies() after successful publication",
+    "Add iMessage notification via ApprovalGateway after post goes live with post URL and platform",
+    "Add engagement_metrics columns to social_posts table in memory.db (likes_1h INTEGER, comments_1h INTEGER, reposts_1h INTEGER, likes_24h INTEGER, comments_24h INTEGER, reposts_24h INTEGER, metrics_fetched_at TEXT)",
+    "Add fetch_post_metrics() to social/posting.py that retrieves current engagement counts via Bluesky AT Protocol getPostThread and LinkedIn v202504 socialActions endpoint",
+    "Add a lightweight metrics-fetch launchd job or hook that runs at T+60min and T+24h after posting to update engagement_metrics",
+    "Modify EIC prompt context to include last 7 days of topic → first-hour-engagement data so topic selection is informed by actual performance"
+  ],
+  "done_criteria": [
+    "After publishing, 1-2 self-reply comments appear on the post within 5-15 minutes",
+    "Self-replies add genuine value (follow-up data, questions) and pass the humanizer/policy checks",
+    "iMessage notification sent to user within 30 seconds of post going live",
+    "social_posts table shows first-hour metric columns populated for posts older than 1 hour",
+    "EIC prompt includes topic performance history from engagement metrics",
+    "All existing tests pass (python3 -m pytest tests/ -x -q)",
+    "New tests verify self-reply generation produces valid content",
+    "New test verifies jitter timing is within 5-15 minute range",
+    "New test verifies engagement metrics are stored correctly"
+  ],
+  "design_spec": {
+    "architecture_impact": "Extends the post-publish flow in social/pipeline.py. Adds self-reply generation to writers.py and reply-to-own-post to posting.py (Bluesky/LinkedIn clients). Adds columns to social_posts table. Requires either a delayed launchd job or an at-style scheduler for T+60min metric fetch. Modifies EIC prompt to include engagement history.",
+    "files_affected": [
+      "social/pipeline.py",
+      "social/writers.py",
+      "social/posting.py",
+      "social/eic.py",
+      "memory/db.py",
+      "memory/social.py",
+      "agents/eic.md"
+    ],
+    "effort": "L",
+    "research_source": "https://upgrowth.in/linkedin-algorithm-2026-360brew-update/"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_engagement_seeding.py",
+    "tests_to_write": [
+      "test_generate_self_replies_produces_1_to_2_replies",
+      "test_self_replies_pass_policy_engine",
+      "test_post_self_reply_bluesky_uses_reply_ref",
+      "test_jitter_within_5_to_15_minutes",
+      "test_imessage_notification_sent_after_publish",
+      "test_fetch_post_metrics_stores_in_social_posts",
+      "test_eic_prompt_includes_engagement_history"
+    ]
+  },
+  "files_to_modify": [
+    "social/pipeline.py",
+    "social/writers.py",
+    "social/posting.py",
+    "social/eic.py",
+    "memory/db.py",
+    "memory/social.py",
+    "agents/eic.md"
+  ],
+  "context": "LinkedIn's 360Brew algorithm update (https://upgrowth.in/linkedin-algorithm-2026-360brew-update/) makes first-hour engagement the primary reach multiplier — 2.3x boost for posts with early engagement, and only 5% of posts that fail the first hour ever recover. Thoughtful comments (3+ sentences) are weighted 15x heavier than likes (https://predis.ai/resources/linkedin-algorithm/). Bluesky's chronological feed means early engagement determines initial visibility window. MindPattern publishes ~5 posts/week but does zero post-publish engagement management. Self-reply threads are a proven technique on both platforms for keeping posts in the feed and sparking discussion. Distinct from R012 (posting time optimization) which handles WHEN to post — this handles what happens AFTER.",
+  "created_at": "2026-04-01T18:00:00Z",
+  "expires_at": "2026-04-15T18:00:00Z",
+  "feedback_history": []
+}

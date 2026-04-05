@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 harness/hooks/pre_commit_gate.py",
+            "command": "bash -c 'cd \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\" && python3 harness/hooks/pre_commit_gate.py'",
             "timeout": 10000
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 harness/hooks/post_tool_audit.py",
+            "command": "bash -c 'cd \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\" && python3 harness/hooks/post_tool_audit.py'",
             "timeout": 10000
           }
         ]

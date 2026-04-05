@@ -1,0 +1,59 @@
+{
+  "id": "2026-04-02-R019",
+  "title": "Add canary A/B validation for ANALYZE phase skill edits before applying",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "open",
+  "description": "Currently, the ANALYZE phase applies skill file changes immediately after the Opus analyzer proposes them. If a change degrades agent quality, this is only detected on the NEXT run (24-hour feedback delay) via prompt_tracker regression data. Meta's HyperAgents research demonstrates a 'sandboxed testing' pattern where candidate changes are validated before deployment using canary evaluation. Apply this pattern to MindPattern: when ANALYZE proposes a skill file edit, run the affected agent twice on a sample of today's preflight data — once with the current skill file, once with the proposed edit — then compare finding quality scores. Only apply the edit if the new skill produces equal or better quality. This closes the 24-hour feedback gap and prevents bad edits from persisting for an entire run cycle.",
+  "requirements": [
+    "Add canary_eval_skill_change(agent_name, old_skill_content, new_skill_content, sample_preflight) function in analyzer.py",
+    "Sample 5-8 preflight items from today's data for the affected agent as canary input",
+    "Run run_single_agent() twice with identical prompt except for skill file content (old vs new)",
+    "Compare outputs using grade_finding() from R018 (or simpler: count of valid findings + average summary length as fallback)",
+    "Only apply the ANALYZE edit if new_score >= old_score * 0.95 (allow 5% tolerance for variance)",
+    "Log canary results (old_score, new_score, decision) to traces.db",
+    "Skip canary for append-only changes (low risk) — only canary for replace actions",
+    "Add --skip-canary flag to allow bypassing for manual runs"
+  ],
+  "done_criteria": [
+    "ANALYZE edits with action=replace go through canary validation before applying",
+    "Canary results logged in traces.db with old_score, new_score, and apply/reject decision",
+    "Bad edits (new_score < 0.95 * old_score) are rejected with logged reason",
+    "Append-only edits skip canary and apply directly",
+    "Pipeline run time increases by <5 minutes (canary runs use Haiku, not Sonnet)",
+    "All existing tests pass"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds a validation step between ANALYZE output parsing and apply_analyzer_changes(). The canary uses a lightweight agent run (Haiku model, max 5 turns, 60s timeout) to keep cost low. This is architecturally similar to HyperAgents' sandboxed testing — the improvement engine stays fixed while the changes are validated.",
+    "files_affected": [
+      "orchestrator/analyzer.py",
+      "orchestrator/agents.py",
+      "orchestrator/runner.py",
+      "orchestrator/traces_db.py"
+    ],
+    "effort": "L",
+    "research_source": "https://pooya.blog/blog/hyperagents-self-improving-ai-meta-research-2026/"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_canary_eval.py",
+    "tests_to_write": [
+      "test_canary_eval_approves_when_new_score_higher",
+      "test_canary_eval_rejects_when_new_score_much_lower",
+      "test_canary_eval_approves_within_tolerance",
+      "test_canary_eval_skips_append_actions",
+      "test_canary_eval_logs_results_to_traces",
+      "test_canary_eval_handles_agent_timeout_gracefully"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/analyzer.py",
+    "orchestrator/agents.py",
+    "orchestrator/runner.py",
+    "orchestrator/traces_db.py"
+  ],
+  "context": "Meta's HyperAgents research shows self-improving AI systems need 'sandboxed testing' and 'canary deployments' before applying self-modifications. MindPattern's ANALYZE phase currently has a 24-hour feedback delay for regression detection. This ticket adds same-run validation. Source: https://pooya.blog/blog/hyperagents-self-improving-ai-meta-research-2026/ and ICLR 2026 Workshop on Recursive Self-Improvement: https://recursive-workshop.github.io/",
+  "created_at": "2026-04-02T12:00:00Z",
+  "expires_at": "2026-04-16T12:00:00Z",
+  "feedback_history": []
+}

@@ -1,0 +1,54 @@
+{
+  "id": "2026-04-01-R015",
+  "title": "Add cross-agent finding dedup after parallel dispatch completes",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "done",
+  "description": "After dispatch_research_agents() completes, 13 agents return ~150-250 total findings. Because agents run in parallel with overlapping preflight items (e.g., reddit-researcher and vibe-coding-researcher both receive vibe-coding items), they can produce near-duplicate findings about the same story from different angles.\n\nCurrently there is no post-dispatch dedup \u2014 all findings go directly to memory.db. This means the SYNTHESIS phase receives redundant findings that waste Opus context window tokens and can cause the newsletter to cover the same story twice.\n\nAdd a post-dispatch dedup step that:\n1. Embeds all findings from all agents in a single batch\n2. Computes pairwise similarity within the batch\n3. For pairs above 0.85 similarity, keeps the higher-quality finding (longer summary + higher importance + has source_url)\n4. Tags deduplicated findings with cross_agent_dedup=True and dedup_kept_from=agent_name\n5. Logs: 'Cross-agent dedup: removed N duplicates from M total findings'\n\nThis reduces synthesis input size by ~10-15%, saving Opus tokens and improving newsletter quality by preventing repetitive coverage.\n\nInspired by Google ADK's ParallelAgent pattern where a post-processing merger agent synthesizes collected results from parallel branches, and by Brinqa's AI deduplication agent that consolidates duplicate findings across multiple scanners into single enriched records.",
+  "requirements": [
+    "Add dedup_cross_agent_findings() function to orchestrator/agents.py (or a new orchestrator/dedup.py)",
+    "Use memory/embeddings.py embed_texts() for batch embedding of all finding summaries",
+    "Compute pairwise cosine similarity via matrix multiplication (same pattern as preflight _dedup_batch)",
+    "For each duplicate pair, keep the finding with the higher quality score (summary_length * importance_weight)",
+    "Return both the deduped findings list and a summary of what was removed",
+    "Call this function in runner.py between RESEARCH and SYNTHESIS phases"
+  ],
+  "done_criteria": [
+    "Near-duplicate findings (>0.85 similarity) across different agents are consolidated",
+    "The higher-quality finding is always kept (longer summary, higher importance, has URL)",
+    "Dedup metadata is attached to kept findings for traceability",
+    "Summary log line shows count of duplicates removed",
+    "New test with synthetic duplicate findings across 2 agents verifies correct dedup",
+    "New test verifies that findings below threshold are not removed",
+    "Synthesis phase receives fewer, non-redundant findings"
+  ],
+  "design_spec": {
+    "architecture_impact": "Low \u2014 adds a new function called between existing phases. No schema changes. Uses existing embedding infrastructure. The function is pure (takes findings list, returns filtered list) so it's easy to test and toggle.",
+    "files_affected": [
+      "orchestrator/agents.py",
+      "orchestrator/runner.py"
+    ],
+    "effort": "S",
+    "research_source": "https://adk.dev/agents/workflow-agents/parallel-agents/"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_agents.py",
+    "tests_to_write": [
+      "test_cross_agent_dedup_removes_duplicates",
+      "test_cross_agent_dedup_keeps_higher_quality",
+      "test_cross_agent_dedup_preserves_unique_findings",
+      "test_cross_agent_dedup_empty_input"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/agents.py",
+    "orchestrator/runner.py"
+  ],
+  "context": "Google ADK ParallelAgent pattern recommends post-processing merger after parallel agent execution. Brinqa's AI dedup agent (2026) consolidates duplicate findings across multiple scanners into enriched records. MindPattern's 13 parallel agents share overlapping preflight items and produce 10-15% redundant findings that waste synthesis tokens.",
+  "created_at": "2026-04-01T08:00:00Z",
+  "expires_at": "2026-04-15T08:00:00Z",
+  "feedback_history": [],
+  "pr_url": "https://github.com/tayler-id/mindpattern-v3/pull/11",
+  "completed_at": "2026-04-01T23:10:43.265326+00:00"
+}

@@ -1,0 +1,47 @@
+{
+  "id": "2026-04-02-R020",
+  "title": "Restructure agent prompt layout for cache-optimized shared prefix across 13 agents",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "open",
+  "description": "MindPattern dispatches 13 research agents in parallel via claude -p. Each agent's prompt is built by build_agent_prompt() with this layout: JSON schema → soul.md → user.md → agent skill → dynamic context → novelty requirement → research methodology → phases → schema repeated. The problem: agent-specific content (skill file) is sandwiched between shared static content (soul.md/user.md above, novelty/methodology below). This prevents Claude's automatic prompt caching from working because the shared prefix diverges at position 4 (skill file). Restructure to maximize the shared prefix: JSON schema → soul.md → user.md → novelty requirement → research methodology → schema bottom → THEN agent-specific content (skill file, dynamic context, trends, claims, preflight items). The first ~70% of every prompt becomes identical across all 13 agents, enabling prompt caching. Research from Mavik Labs shows prompt caching achieves 45-80% cost reduction and 13-31% faster time-to-first-token. With 13 parallel agents sharing a common prefix, the savings compound significantly.",
+  "requirements": [
+    "Restructure build_agent_prompt() to place all shared static content as a contiguous prefix",
+    "Shared prefix order: JSON output schema top → soul.md → user.md → novelty requirement → research methodology → self-critique gate → JSON output schema bottom",
+    "Agent-specific suffix order: agent skill file → dynamic context (date, trends, claims) → Phase 1 preflight items → Phase 2 explore instructions",
+    "Verify no semantic change to agent behavior — the same information is present, just reordered",
+    "Add a comment in build_agent_prompt() documenting the cache-optimized layout rationale",
+    "Measure prompt prefix length vs total prompt length and log the cache-eligible ratio"
+  ],
+  "done_criteria": [
+    "All 13 agents receive prompts with identical first N characters (where N > 50% of total prompt length)",
+    "Agent output quality does not regress (compare finding counts and quality from one run before vs after)",
+    "build_agent_prompt() logs cache_eligible_ratio metric",
+    "All existing tests pass",
+    "No changes to agent dispatch, parsing, or downstream pipeline phases"
+  ],
+  "design_spec": {
+    "architecture_impact": "Pure prompt restructuring inside build_agent_prompt(). No changes to run_single_agent(), dispatch_research_agents(), or any other function. The Claude CLI handles prompt caching automatically when it detects shared prefixes across concurrent requests within a time window.",
+    "files_affected": [
+      "orchestrator/agents.py"
+    ],
+    "effort": "S",
+    "research_source": "https://www.maviklabs.com/blog/llm-cost-optimization-2026"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_orchestrator.py",
+    "tests_to_write": [
+      "test_build_agent_prompt_shared_prefix_identical_across_agents",
+      "test_build_agent_prompt_cache_eligible_ratio_above_50_percent",
+      "test_build_agent_prompt_contains_all_required_sections"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/agents.py"
+  ],
+  "context": "LLM cost optimization research shows prompt caching achieves 45-80% cost reduction when concurrent requests share a common prefix. MindPattern runs 13 agents in parallel with ~70% shared content (schema, soul.md, user.md, methodology) but currently interleaves agent-specific content in the middle, breaking cache eligibility. Source: https://www.maviklabs.com/blog/llm-cost-optimization-2026",
+  "created_at": "2026-04-02T12:00:00Z",
+  "expires_at": "2026-04-16T12:00:00Z",
+  "feedback_history": []
+}

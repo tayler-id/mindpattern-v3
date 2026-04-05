@@ -1,0 +1,64 @@
+{
+  "id": "2026-04-01-R011",
+  "title": "Add Haiku LLM-as-a-judge scoring for per-agent finding quality in LEARN phase",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "failed",
+  "description": "Add automated LLM-as-a-judge evaluation of each research agent's findings during the LEARN phase. Currently, quality metrics in run_quality are purely deterministic (counts, ratios, dedup rates). The quality_scores table in traces.db exists but is not populated with per-finding evaluations. A Haiku-based judge prompt would score each agent's batch output on 4 dimensions: factual density (specific names/numbers/dates vs vague claims), source diversity (primary vs secondary sources), novelty (genuinely new vs rehashed), and relevance (matches user.md interests). Scores stored in quality_scores feed directly into the ANALYZE phase's agent scorecards, giving the self-improvement loop a richer signal than counts alone. Haiku keeps cost under $0.02 per agent evaluation (~13 calls/day).",
+  "requirements": [
+    "Create judge prompt template that scores a batch of findings on 4 dimensions (factual_density, source_diversity, novelty, relevance) each 0.0-1.0",
+    "Add judge_agent_findings() function to orchestrator/evaluator.py that calls Haiku via run_claude_prompt()",
+    "Store dimension scores in traces.db quality_scores table (one row per dimension per agent run)",
+    "Compute composite quality_score on agent_runs from dimension scores (weighted average)",
+    "Call judge_agent_findings() for each agent result during LEARN phase in runner.py",
+    "Add 'finding_judge' task_type to orchestrator/router.py with model=haiku, max_turns=5, timeout=60s",
+    "Log per-agent scores at INFO level with dimension breakdown"
+  ],
+  "done_criteria": [
+    "After a pipeline run, quality_scores table has 4 rows per agent (one per dimension)",
+    "agent_runs.quality_score is populated from composite judge score",
+    "ANALYZE phase agent scorecards show quality_trend from judge scores",
+    "Total judge cost per run is under $0.05 (13 agents x Haiku)",
+    "All existing tests pass",
+    "New tests verify judge prompt returns valid JSON with expected dimensions",
+    "New test verifies scores are written to quality_scores table"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds one LLM call per agent in LEARN phase (13 Haiku calls). Populates existing quality_scores table that is currently empty. No new tables. The ANALYZE phase already reads quality_trend from agent_runs \u2014 this feature populates it with meaningful data.",
+    "files_affected": [
+      "orchestrator/evaluator.py",
+      "orchestrator/runner.py",
+      "orchestrator/router.py",
+      "orchestrator/traces_db.py"
+    ],
+    "effort": "M",
+    "research_source": "https://www.evidentlyai.com/llm-guide/llm-as-a-judge"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_finding_judge.py",
+    "tests_to_write": [
+      "test_judge_prompt_returns_valid_dimensions",
+      "test_judge_scores_stored_in_quality_scores_table",
+      "test_composite_score_written_to_agent_runs",
+      "test_judge_handles_empty_findings_gracefully",
+      "test_judge_cost_under_budget"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/evaluator.py",
+    "orchestrator/runner.py",
+    "orchestrator/router.py",
+    "orchestrator/traces_db.py"
+  ],
+  "context": "LLM-as-a-judge is the dominant pattern for automated agent quality scoring in 2025-2026. Sources: https://www.evidentlyai.com/llm-guide/llm-as-a-judge and https://langfuse.com/guides/cookbook/example_pydantic_ai_mcp_agent_evaluation (multi-level agent evaluation). MindPattern's ANALYZE phase already consumes quality_trend from agent_runs but the data is sparse. This feature fills the gap with cheap, structured evaluation that makes the self-improvement loop more effective.",
+  "created_at": "2026-04-01T12:00:00Z",
+  "expires_at": "2026-04-15T12:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: 4 files, M effort, requires creating LLM judge prompts + new Haiku calls + storing scores; too ambitious for fix agent",
+      "timestamp": "2026-04-02T21:00:50.536216+00:00"
+    }
+  ]
+}

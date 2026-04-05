@@ -1,0 +1,44 @@
+{
+  "id": "2026-04-01-008",
+  "title": "compress_image uses deprecated tempfile.mktemp and callers never clean up temp files",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P2",
+  "status": "done",
+  "description": "compress_image() in social/posting.py uses tempfile.mktemp() (lines 138, 154) which is deprecated because it creates a race condition between name generation and file creation. More critically, the caller _upload_blob() calls compress_image() but never cleans up the returned temp file, causing a disk leak. The docstring on compress_image explicitly warns 'the caller is responsible for cleanup' but neither BlueskyClient._upload_blob() nor any other caller performs cleanup. Each image post that requires compression leaks a temp JPEG file. Over days/weeks of automated posting this accumulates.",
+  "requirements": [
+    "Replace tempfile.mktemp() with tempfile.NamedTemporaryFile(delete=False) or use a context manager pattern",
+    "Add cleanup in _upload_blob() after the upload completes (success or failure)",
+    "Use try/finally to ensure cleanup even on upload exceptions",
+    "Consider returning a context manager from compress_image that auto-cleans on exit"
+  ],
+  "done_criteria": [
+    "No calls to deprecated tempfile.mktemp() remain in the codebase",
+    "Compressed temp files are cleaned up after upload in _upload_blob()",
+    "Cleanup occurs even if the upload raises an exception",
+    "No temp file leak after running the social posting pipeline"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_posting.py",
+    "tests_to_write": [
+      "test_compress_image_does_not_use_mktemp",
+      "test_upload_blob_cleans_up_compressed_file",
+      "test_upload_blob_cleans_up_on_failure"
+    ]
+  },
+  "files_to_modify": [
+    "social/posting.py"
+  ],
+  "context": "tempfile.mktemp is deprecated per Python docs: 'Use mkstemp() instead.' The race condition means another process could create a file with the same name between mktemp() returning and write_bytes() creating it. The disk leak is confirmed: _upload_blob() at line 487 calls compress_image() but has no cleanup code.",
+  "created_at": "2026-04-01T00:00:00Z",
+  "expires_at": "2026-04-08T00:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Tests failed: ........................................................................ [ 10%]\n........................................................................ [ 20%]\n.F\n=================================== FAILURES ===================================\n__ TestLinkedInInFindCandidates.test_find_candidates_calls_jina_for_linkedin ___\ntests/test_engagement_linkedin.py:466: in test_find_candidates_calls_jina_for_linkedin\n    mock_search.assert_called()\n/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Pyt",
+      "timestamp": "2026-04-01T22:01:55.796824+00:00"
+    }
+  ],
+  "pr_url": "https://github.com/tayler-id/mindpattern-v3/pull/17",
+  "completed_at": "2026-04-02T21:18:37.989305+00:00"
+}

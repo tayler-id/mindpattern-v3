@@ -4,14 +4,14 @@
   "type": "improvement",
   "source": "scout",
   "priority": "P2",
-  "status": "open",
-  "description": "social/eic.py (412 lines) is the editorial decision layer that decides which topics become posts and what angle to take. It has no test coverage. Regressions here silently degrade content quality — wrong topic selection or skipped verdicts won't surface until the newsletter ships. Key logic around topic ranking, verdict parsing, and EIC gating should be tested.",
+  "status": "failed",
+  "description": "social/eic.py (412 lines) is the editorial decision layer that decides which topics become posts and what angle to take. It has no test coverage. Regressions here silently degrade content quality \u2014 wrong topic selection or skipped verdicts won't surface until the newsletter ships. Key logic around topic ranking, verdict parsing, and EIC gating should be tested.",
   "requirements": [
     "tests/test_eic.py exists with at least 5 tests",
     "Test topic selection/ranking logic",
     "Test verdict parsing from Claude response",
     "Test behavior when Claude returns malformed verdict JSON",
-    "No real Claude API calls — mock run_claude_prompt or equivalent"
+    "No real Claude API calls \u2014 mock run_claude_prompt or equivalent"
   ],
   "done_criteria": [
     "python3 -m pytest tests/test_eic.py -v exits 0",
@@ -27,9 +27,17 @@
       "test_eic_gates_on_approval_when_configured"
     ]
   },
-  "files_to_modify": ["tests/test_eic.py"],
+  "files_to_modify": [
+    "tests/test_eic.py"
+  ],
   "context": "social/eic.py is called during the SOCIAL phase. It reads candidate topics, calls Claude for editorial verdict, and decides the final post angle. Verdicts are JSON blobs saved to data/social-drafts/.",
   "created_at": "2026-03-31T00:00:00Z",
   "expires_at": "2026-04-07T00:00:00Z",
-  "feedback_history": []
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Review rejected: **REVIEW: REJECTED**\n\nThe branch `harness/2026-03-31-009` is identical to `main` \u2014 it has zero commits beyond main. No `tests/test_eic.py` file was created, no test coverage was added. The ticket requires at least 5 tests covering topic ranking, verdict parsing, malformed JSON handling, threshold skipping, and approval gating, but none of that work was done. The branch appears to have been created but never had any implementation pushed to it.",
+      "timestamp": "2026-04-02T21:20:09.939486+00:00"
+    }
+  ]
 }

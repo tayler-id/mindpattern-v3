@@ -1,0 +1,68 @@
+{
+  "id": "2026-04-01-R012",
+  "title": "Add day-of-week aware social posting with platform-specific optimal time windows",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "failed",
+  "description": "Add platform-specific posting schedule awareness to the social pipeline. Research shows strong day-of-week and time-of-day effects on engagement: Bluesky threads get 3x engagement Tue/Wed/Thu 9-11 AM vs other times; LinkedIn posts decided in the first 90 minutes perform best Tue-Thu 8-10 AM. Currently the pipeline runs at 7 AM daily and posts immediately after approval regardless of day or time. This feature adds a schedule-aware posting layer: (1) EIC considers day-of-week when scoring topics (lower bar on strong days, skip on weak days like Saturday), (2) approved posts can be deferred to the optimal window for each platform, (3) day-of-week skip logic prevents posting on low-engagement days unless the topic scores exceptionally high. The pipeline already has posting window awareness (pipeline.py line 486) but ignores it.",
+  "requirements": [
+    "Add posting_schedule to social-config.json with per-platform optimal windows (day_of_week, start_hour, end_hour in user timezone)",
+    "Add should_post_today() function to social/pipeline.py that checks day-of-week against schedule",
+    "Add optimal_post_time() function that returns the next optimal window for a given platform",
+    "Modify EIC topic scoring to weight day-of-week engagement potential (pass schedule context to EIC prompt)",
+    "When pipeline runs before optimal window, defer posting via a scheduled file that a lightweight poster script picks up",
+    "Add deferred_posts table to memory.db for posts awaiting their optimal window",
+    "Add poster daemon or launchd job that checks deferred_posts and publishes at scheduled times",
+    "Log scheduling decisions at INFO level (posted immediately vs deferred to HH:MM)"
+  ],
+  "done_criteria": [
+    "Posts on Tuesday-Thursday go out at platform-optimal times (Bluesky 9-10 AM, LinkedIn 8-10 AM)",
+    "Posts on Friday/Saturday are deferred or skipped unless topic score exceeds high threshold",
+    "EIC prompt includes day-of-week context and adjusts topic selection accordingly",
+    "Deferred posts table tracks pending posts with scheduled_at timestamps",
+    "All existing tests pass",
+    "New tests verify should_post_today() returns correct values for each day",
+    "New test verifies optimal_post_time() calculates correct defer window"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds scheduling layer between approval and posting. Requires either a lightweight poster daemon (launchd job) or integration with existing pipeline scheduling. Adds one table to memory.db. Modifies EIC prompt to include day context.",
+    "files_affected": [
+      "social/pipeline.py",
+      "social/eic.py",
+      "memory/db.py",
+      "agents/eic.md",
+      "social-config.json"
+    ],
+    "effort": "M",
+    "research_source": "https://blog.bskygrowth.com/bluesky-algorithm-2026-how-to-get-more-reach/"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_social_scheduling.py",
+    "tests_to_write": [
+      "test_should_post_today_weekday_returns_true",
+      "test_should_post_today_saturday_returns_false_unless_high_score",
+      "test_optimal_post_time_bluesky_tuesday",
+      "test_optimal_post_time_linkedin_thursday",
+      "test_deferred_post_stored_and_retrieved",
+      "test_eic_prompt_includes_day_context"
+    ]
+  },
+  "files_to_modify": [
+    "social/pipeline.py",
+    "social/eic.py",
+    "memory/db.py",
+    "agents/eic.md",
+    "social-config.json"
+  ],
+  "context": "Research from https://blog.bskygrowth.com/bluesky-algorithm-2026-how-to-get-more-reach/ and https://postiv.ai/blog/linkedin-content-strategy-2025 shows clear engagement patterns by day and time. Bluesky has no hidden algorithm so reach is proportional to network engagement \u2014 threads on Tue/Wed/Thu 9-11 AM get 3x engagement. LinkedIn's 360Brew algorithm decides post fate in the first 90 minutes \u2014 Tue-Thu 8-10 AM is optimal. MindPattern currently posts immediately after 7 AM pipeline approval, missing the peak engagement windows by 1-3 hours.",
+  "created_at": "2026-04-01T12:00:00Z",
+  "expires_at": "2026-04-15T12:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: 5 files + new launchd daemon + modifies social-config.json (do not commit); too many moving parts for 25 turns",
+      "timestamp": "2026-04-02T21:00:50.432924+00:00"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "2026-04-01-012",
+  "title": "Research phase dedup is O(N*M) — per-finding search_findings loads all embeddings and re-embeds each query",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "In runner.py _phase_research() (lines ~377-386), each finding from each agent is dedup-checked individually:\n\n    for finding in result.findings:\n        existing = memory.search_findings(self.db, f'{title}. {summary}', limit=1, days=10)\n\nEach call to search_findings (findings.py:532-599):\n1. Calls embed_text(query) — one model inference per finding\n2. Loads ALL rows from findings + findings_embeddings tables for the last 10 days\n3. Deserializes ALL embeddings and computes cosine similarity against each\n\nWith 13 agents × ~20 findings = ~260 findings, and a 10-day DB of ~2600 existing findings, this is:\n- 260 separate embedding model inferences (vs 1 batch call with embed_texts)\n- 260 × full table scan of ~2600 rows = loading ~676K rows total\n- 260 × 2600 = 676K similarity computations\n\nThe embed_texts() batch function exists in memory/embeddings.py but is unused here.\n\nAdditionally, store_finding() (findings.py:501-529) calls db.commit() after each individual insert, forcing ~260 separate fsyncs.\n\nFix: batch-embed all new findings, load existing embeddings once, vectorize dedup with numpy, and wrap all inserts in a single transaction.",
+  "requirements": [
+    "Add a batch_dedup_findings(db, findings_list, days=10, threshold=0.90) function to memory/findings.py that batch-embeds all candidates, loads existing embeddings once, and returns the deduplicated list",
+    "Use embed_texts() for batch embedding instead of per-finding embed_text()",
+    "Use numpy matrix multiplication for vectorized similarity instead of per-row dot product",
+    "Wrap the entire finding storage loop in _phase_research in a single db transaction (one commit at the end)",
+    "Update store_finding() to accept an optional pre_computed_embedding parameter to avoid re-embedding during storage"
+  ],
+  "done_criteria": [
+    "Research phase dedup+storage time reduced by at least 50% on a typical run (260 findings, 2600 existing)",
+    "embed_text is called once per batch (not per finding) during dedup",
+    "DB rows are loaded once per dedup batch, not once per finding",
+    "Only one db.commit() call for the entire finding storage loop",
+    "All existing tests pass (python3 -m pytest tests/ -x -q)",
+    "New test: test_batch_dedup_findings_removes_duplicates",
+    "New test: test_batch_dedup_findings_keeps_novel_findings"
+  ],
+  "expected_impact": "Reduces research phase dedup+storage from ~260 embedding calls + 260 full table scans + 260 commits to 1 batch embed + 1 table scan + 1 commit. Estimated 3-5x speedup on the finding storage portion of the research phase.",
+  "tdd_spec": {
+    "test_file": "tests/test_findings.py",
+    "tests_to_write": [
+      "test_batch_dedup_findings_removes_duplicates",
+      "test_batch_dedup_findings_keeps_novel_findings",
+      "test_batch_dedup_findings_empty_db",
+      "test_store_finding_with_precomputed_embedding"
+    ]
+  },
+  "files_to_modify": [
+    "memory/findings.py",
+    "orchestrator/runner.py"
+  ],
+  "context": "Distinct from 2026-04-01-R010 (embedding cache across runs). This ticket addresses the O(N*M) algorithmic issue within a single run — even with a perfect cache, calling search_findings 260 times still loads all DB rows 260 times. The cache ticket (R010) and this ticket are complementary: the cache reduces per-embedding cost, this ticket reduces the number of operations.",
+  "created_at": "2026-04-01T18:00:00Z",
+  "expires_at": "2026-04-08T18:00:00Z",
+  "feedback_history": []
+}

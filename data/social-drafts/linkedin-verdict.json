@@ -1,26 +1,26 @@
 {
   "verdict": "APPROVED",
-  "feedback": "Strong post. Personal moment lands (Claude Code daily + 'I didn't. I picked it because it ships the best code.'). The two-events-as-one-signal framing is doing real analytical work, not just stacking news. Ends without a neat bow. The slight character overage (~1550-1580) is worth watching but clears the 2000-char fail threshold easily.",
+  "feedback": "Strong post. Personal anchor (FinTech/Synchrony) lands the pattern recognition before the news. The structural fragments ('Configs that nobody owns. Crashes that get blamed instead of investigated.') read exactly right. Closing question is genuinely specific and earns its place.",
   "scores": {
-    "voice_authenticity": 8,
-    "platform_fit": 7,
+    "voice_authenticity": 9,
+    "platform_fit": 8,
     "engagement_potential": 9
   },
   "rubric_scores": {
-    "voice_match": 8,
-    "framing_authenticity": 8,
-    "platform_genre_fit": 7,
+    "voice_match": 9,
+    "framing_authenticity": 9,
+    "platform_genre_fit": 8,
     "epistemic_calibration": 8,
-    "structural_variation": 8,
+    "structural_variation": 9,
     "rhetorical_framework": 8
   },
   "kill_switches": "pass",
   "dimension_notes": {
-    "voice": "pass — multiple first-person refs, fragments present ('Sole-source mandate.', 'Same week. Stock down 25%.'), good burstiness, no banned words or em dashes",
-    "framing": "pass — two events explicitly bridged as one signal, not stacked as separate findings; genuine personal moment with Claude Code",
-    "platform": "pass — slightly over 1500-char sweet spot (~1560 est.) but well under 2000 fail threshold; hook works in first 210 chars; question is specific",
-    "epistemic": "pass — facts stated as facts, personal uncertainty stated as personal ('I don't have a clean answer'), no generic hedges",
-    "structure": "pass — asymmetric paragraphs, burstiness throughout, no neat-bow closing",
-    "framework": "pass — clear nut-graf structure: hook → facts → synthesis claim → personal stake → audience framing → uncertainty → question"
+    "voice": "pass — multiple fragments, 7+ first-person references, zero banned words, strong sentence variation, no em dashes",
+    "framing": "pass — reaction to one specific event cluster, genuine personal moment from FinTech career",
+    "platform": "pass — ~1523 chars (slightly over 1500 sweet spot, well under 2000 ceiling), hook works in first 210, specific closing question",
+    "epistemic": "pass — no hedges, assertive takes backed by specific sourced claims (HN score, IPO valuation, departure count)",
+    "structure": "pass — asymmetric paragraphs, fragments break monotony, no neat-bow closing",
+    "framework": "pass — Nut-graf structure: personal pattern recognition → news facts → analysis → personal stakes → question. Facts precede opinion throughout."
   }
 }

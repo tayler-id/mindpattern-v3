@@ -1,0 +1,71 @@
+{
+  "id": "2026-03-31-R005",
+  "title": "Prompt compression via LLMLingua-2 for research agent dispatch: reduce token cost 30-40% on 13 concurrent agent calls",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "failed",
+  "description": "MindPattern dispatches 13 research agents concurrently, each receiving a prompt assembled from: JSON schema (top+bottom), soul.md, user.md, agent skill .md, dynamic context (trends, claims, memory), novelty requirements, Phase 1 items, and Phase 2 instructions. These prompts are substantial -- the schema alone is repeated twice and the identity files add significant static tokens that are identical across all 13 agents. Microsoft's LLMLingua-2 (EMNLP'23, ACL'24) achieves up to 20x prompt compression with minimal performance loss by using a small fast model to identify and remove low-information tokens while preserving semantic meaning. A practical 2-4x compression on the static portions (identity files, schema boilerplate, novelty requirements) of each agent prompt would reduce token consumption by 30-40% across all 13 agents. At medium model pricing, this saves significant cost per daily run. The PremAI cost optimization guide documents a fintech achieving 30% savings from prompt compression alone. Since MindPattern uses Claude CLI (Pro subscription, not per-token API), the primary benefit is latency reduction: smaller prompts = faster time-to-first-token across 13 parallel agents.",
+  "requirements": [
+    "Add llmlingua2 dependency to requirements.txt (pip install llmlingua)",
+    "Create orchestrator/prompt_compress.py module with compress_prompt(text, target_ratio=0.5) function that uses LLMLingua-2's PromptCompressor",
+    "Identify static prompt sections that are compressible: identity files (soul.md, user.md), JSON schema boilerplate, novelty requirement block, Phase 2 tool instructions -- these are identical across runs and agents",
+    "Add a compression cache: hash the uncompressed static section, store compressed version in traces.db prompt_compression_cache table, reuse on subsequent runs (identity files change only in EVOLVE, not between agents)",
+    "In orchestrator/agents.py build_agent_prompt(): compress static sections using cached compressed versions, leave dynamic sections (preflight items, trends, claims) uncompressed",
+    "Add a config flag in config.json 'prompt_compression_enabled' (default false) and 'prompt_compression_ratio' (default 0.5)",
+    "Log compression stats: original tokens, compressed tokens, compression ratio, cache hit/miss per agent",
+    "Add a quality gate: if any agent's finding count drops >20% after enabling compression, auto-disable and log warning"
+  ],
+  "done_criteria": [
+    "Static prompt sections compressed by 40-60% (measured by token count before/after)",
+    "Compression cache achieves >90% hit rate after first run of the day",
+    "No degradation in agent finding count or quality scores (within 10% of baseline)",
+    "Total prompt assembly time increases by < 2 seconds (compression is fast with LLMLingua-2)",
+    "Compression can be toggled on/off via config.json without code changes"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds a prompt compression step in the prompt assembly path (build_agent_prompt). Static sections are compressed once and cached; dynamic sections pass through unmodified. This is a transparent optimization layer -- the agent receives a shorter but semantically equivalent prompt. A quality gate monitors for regressions and auto-disables if finding quality drops. No changes to pipeline phase order or agent execution.",
+    "files_affected": [
+      "orchestrator/agents.py",
+      "orchestrator/prompt_compress.py",
+      "orchestrator/traces_db.py",
+      "config.json",
+      "requirements.txt"
+    ],
+    "effort": "M",
+    "research_source": "https://github.com/microsoft/LLMLingua"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_prompt_compress.py",
+    "tests_to_write": [
+      "test_compress_prompt_reduces_tokens",
+      "test_compression_cache_hit",
+      "test_compression_cache_miss_on_new_content",
+      "test_dynamic_sections_not_compressed",
+      "test_quality_gate_disables_on_regression",
+      "test_compression_disabled_by_config",
+      "test_compressed_prompt_still_valid_json_schema"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/agents.py",
+    "orchestrator/traces_db.py",
+    "config.json",
+    "requirements.txt"
+  ],
+  "context": "Source: Microsoft LLMLingua (github.com/microsoft/LLMLingua), EMNLP'23 + ACL'24. Additional source: PremAI '8 Strategies That Cut API Spend by 80%' (blog.premai.io/llm-cost-optimization-8-strategies-that-cut-api-spend-by-80-2026-guide/) documenting 20-40% savings from prompt compression. Key insight: MindPattern's agent prompts contain large static sections (identity files, schema, instructions) that are repeated across all 13 agents and across daily runs. These are ideal candidates for compression since they change infrequently. LLMLingua-2 is 3-6x faster than v1 and integrates with LangChain. Since MindPattern uses Claude Pro (not per-token billing), the primary win is latency, but the technique transfers directly if the system ever moves to API billing.",
+  "created_at": "2026-03-31T22:00:00Z",
+  "expires_at": "2026-04-14T22:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Tests failed: ........................................................................ [ 10%]\n........................................................................ [ 20%]\n.F\n=================================== FAILURES ===================================\n__ TestLinkedInInFindCandidates.test_find_candidates_calls_jina_for_linkedin ___\ntests/test_engagement_linkedin.py:466: in test_find_candidates_calls_jina_for_linkedin\n    mock_search.assert_called()\n/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Pyt",
+      "timestamp": "2026-04-01T21:59:58.149944+00:00"
+    },
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: Requires pip install llmlingua (new dependency); known anti-pattern \u2014 fix agents can't install packages in worktrees",
+      "timestamp": "2026-04-02T21:00:50.330856+00:00"
+    }
+  ]
+}

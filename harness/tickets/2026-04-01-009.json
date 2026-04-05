@@ -1,0 +1,39 @@
+{
+  "id": "2026-04-01-009",
+  "title": "Newsletter actionability score consistently below 0.5 \u2014 synthesis prompt lacks actionable-insight instructions",
+  "type": "improvement",
+  "source": "scout",
+  "priority": "P2",
+  "status": "failed",
+  "description": "The quality_history table shows actionability scores at or below 0.5 on 9 of the last 14 days (0.3 on 03/25, 0.2 on 03/15, 0.5 on most other days). The overall_score is often dragged down primarily by this dimension while coverage, dedup, and length_score are consistently 0.8-1.0. This indicates the synthesis/newsletter writer is reporting news but not adding 'so what' / 'what to do about it' framing. The research findings include summaries but the synthesis prompt does not explicitly require actionable takeaways or builder-oriented advice for each section.",
+  "requirements": [
+    "Add explicit actionability instructions to the synthesis prompt (e.g. 'For each major story, include one concrete action readers can take')",
+    "Add section-level actionability check in the evaluator scoring logic",
+    "Set a quality floor: if actionability < 0.5, flag for revision before delivery"
+  ],
+  "done_criteria": [
+    "Actionability score averages >= 0.65 over a 7-day window",
+    "Synthesis prompt includes explicit instructions for actionable takeaways",
+    "Evaluator logs a warning when actionability drops below 0.5"
+  ],
+  "expected_impact": "Raises actionability score from ~0.5 average to ~0.7+ by adding explicit synthesis prompt instructions and evaluation feedback loop",
+  "files_to_modify": [
+    "agents/synthesis-writer.md",
+    "orchestrator/evaluator.py"
+  ],
+  "context": "quality_history data: actionability scores of 0.7, 0.7, 0.5, 0.5, 0.5, 0.8, 1.0, 0.3, 0.7, 0.7, 0.5, 0.5, 0.5, 0.8 over last 14 days. This is the weakest quality dimension by far. Other dimensions (coverage, dedup, length, topic_balance) are consistently 0.85-1.0.",
+  "created_at": "2026-04-01T00:00:00Z",
+  "expires_at": "2026-04-08T00:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Tests failed: ........................................................................ [ 10%]\n........................................................................ [ 20%]\n.F\n=================================== FAILURES ===================================\n__ TestLinkedInInFindCandidates.test_find_candidates_calls_jina_for_linkedin ___\ntests/test_engagement_linkedin.py:466: in test_find_candidates_calls_jina_for_linkedin\n    mock_search.assert_called()\n/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Pyt",
+      "timestamp": "2026-04-01T22:05:29.727301+00:00"
+    },
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: No tdd_spec field; primary done criterion (\"actionability >= 0.65 over 7-day window\") is untestable by fix agent",
+      "timestamp": "2026-04-02T21:00:50.921079+00:00"
+    }
+  ]
+}

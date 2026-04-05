@@ -1,0 +1,62 @@
+{
+  "id": "2026-04-01-R014",
+  "title": "Add quality-driven cascade model routing for research agents",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "open",
+  "description": "The model router (orchestrator/router.py) uses static assignment \u2014 all 13 research agents run on opus_1m regardless of task complexity. Research shows cascade routing with quality-driven promotion/demotion can reduce costs by 40-87% while maintaining output quality.\n\nImplement a data-driven routing layer that uses historical agent_metrics from traces.db to assign models per agent. Agents that consistently produce high-quality findings (high count, good source diversity, high importance ratio) on Sonnet stay on Sonnet. Agents that underperform get promoted to Opus. New agents or agents with insufficient history default to Opus.\n\nThe cascade logic:\n1. Query agent_metrics for the last 7 runs of each agent\n2. Compute a composite quality score (findings_count, avg importance, duration efficiency)\n3. If quality_score >= threshold for 3+ consecutive Sonnet runs \u2192 keep on Sonnet\n4. If quality_score < threshold on Sonnet \u2192 promote to Opus for next run\n5. If quality_score >= threshold for 5+ consecutive Opus runs \u2192 trial demotion to Sonnet\n6. Record routing decisions in traces.db for regression tracking\n\nWith 13 agents, even routing 6-8 to Sonnet ($3/M input) instead of Opus ($15/M input) saves ~60% on the research phase, which is the most expensive phase of the pipeline.\n\nIdea from Zylos Research's 2026 token economics paper and cascade routing research (Dekoninck et al.) showing unified cascade-routing approaches near-optimal cost-quality tradeoffs.",
+  "requirements": [
+    "Add get_adaptive_model() function to orchestrator/router.py that queries agent_metrics history",
+    "Define quality_score computation: weighted combination of findings_count, duration_ms (efficiency), and error rate",
+    "Add model_routing_log table to traces.db (agent_name, run_date, assigned_model, quality_score, reason)",
+    "Modify dispatch_research_agents() in agents.py to call get_adaptive_model() instead of static get_model()",
+    "Add ADAPTIVE_ROUTING_ENABLED flag in config.json (default false) for safe rollout",
+    "Preserve static routing as fallback when insufficient history exists (<3 runs)"
+  ],
+  "done_criteria": [
+    "Agents with 3+ consecutive high-quality Sonnet runs stay on Sonnet",
+    "Agents with poor Sonnet performance are promoted to Opus on next run",
+    "Routing decisions are logged to model_routing_log table with reasoning",
+    "ADAPTIVE_ROUTING_ENABLED=false preserves current static behavior exactly",
+    "New test verifies routing logic with mock agent_metrics data",
+    "New test verifies fallback to static routing with insufficient history"
+  ],
+  "design_spec": {
+    "architecture_impact": "Moderate \u2014 adds a new function to router.py and a new table to traces.db. Modifies the dispatch path in agents.py to use adaptive routing when enabled. Does not change agent prompts or output parsing.",
+    "files_affected": [
+      "orchestrator/router.py",
+      "orchestrator/agents.py",
+      "orchestrator/traces_db.py",
+      "config.json"
+    ],
+    "effort": "M",
+    "research_source": "https://zylos.ai/research/2026-02-19-ai-agent-cost-optimization-token-economics"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_router.py",
+    "tests_to_write": [
+      "test_adaptive_routing_promotes_to_opus_on_low_quality",
+      "test_adaptive_routing_keeps_sonnet_on_high_quality",
+      "test_adaptive_routing_fallback_with_no_history",
+      "test_adaptive_routing_disabled_uses_static",
+      "test_routing_log_recorded"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/router.py",
+    "orchestrator/agents.py",
+    "orchestrator/traces_db.py",
+    "config.json"
+  ],
+  "context": "Zylos Research (2026) shows cascade routing reduces agent costs by 40-87% by matching task complexity to model capability. Dekoninck et al. demonstrate theoretically optimal cost-quality tradeoffs with unified cascade-routing. MindPattern's static opus_1m assignment for all 13 agents is the most expensive configuration possible.",
+  "created_at": "2026-04-01T08:00:00Z",
+  "expires_at": "2026-04-15T08:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Review rejected: **REVIEW: REJECTED**\n\n**Reason:** The `traces_db.py` self-test (`if __name__ == \"__main__\"`) fails because it still expects exactly 14 tables, but the new `model_routing_log` table brings the count to 15. The self-test's `expected` list and the module docstring (\"Tables (14 total)\") were not updated. This is a regression in the self-test script.",
+      "timestamp": "2026-04-01T23:11:35.833422+00:00"
+    }
+  ]
+}

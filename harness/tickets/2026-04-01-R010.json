@@ -1,0 +1,56 @@
+{
+  "id": "2026-04-01-R010",
+  "title": "Add SQLite embedding cache with content hashing to skip redundant computation",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "open",
+  "description": "Add a hash-based embedding cache to memory.db so that bge-small-en-v1.5 embeddings are computed once per unique text and reused on subsequent runs. Currently, every pipeline run recomputes embeddings for all preflight items during dedup (preflight/run_all.py _dedup_batch) and for findings storage. With ~400 items per run and 10-day lookback, many texts are re-embedded across days. A SHA256 content hash keyed cache in SQLite would eliminate redundant computation, reducing embedding time by ~60% on warm runs. The 384-dim float32 vectors are only ~1.5KB each, so even 100K cached entries would be under 150MB. WAL mode already enabled on memory.db ensures concurrent reads during parallel agent dispatch.",
+  "requirements": [
+    "Add embedding_cache table to memory.db schema (content_hash TEXT PRIMARY KEY, embedding BLOB, model_name TEXT, created_at TIMESTAMP)",
+    "Add cached_embed_text() and cached_embed_texts() functions to memory/embeddings.py that check cache before computing",
+    "Hash input text with SHA256 before cache lookup",
+    "Update preflight/run_all.py _dedup_batch() to use cached embedding functions",
+    "Update memory/findings.py store_finding() to use cached embeddings when storing new findings",
+    "Add cache hit/miss metrics logged at INFO level per batch",
+    "Include model_name in cache key so model upgrades invalidate old entries"
+  ],
+  "done_criteria": [
+    "Second consecutive pipeline run completes embedding phase at least 50% faster than first run",
+    "Cache hit rate logged per preflight dedup batch",
+    "All existing tests pass (python3 -m pytest tests/ -x -q)",
+    "New tests verify cache hit returns identical vector to fresh computation",
+    "New test verifies model_name mismatch triggers recomputation"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds one table to memory.db. No schema changes to existing tables. Embedding functions gain an optional db parameter for cache access.",
+    "files_affected": [
+      "memory/db.py",
+      "memory/embeddings.py",
+      "preflight/run_all.py",
+      "memory/findings.py"
+    ],
+    "effort": "S",
+    "research_source": "https://logarithmicspirals.com/blog/sqlite-openai-embeddings-astro-builds/"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_embedding_cache.py",
+    "tests_to_write": [
+      "test_cached_embed_text_returns_same_vector_as_uncached",
+      "test_cache_hit_skips_model_call",
+      "test_model_name_mismatch_recomputes",
+      "test_cached_embed_texts_batch_partial_hits",
+      "test_cache_table_created_in_schema"
+    ]
+  },
+  "files_to_modify": [
+    "memory/db.py",
+    "memory/embeddings.py",
+    "preflight/run_all.py",
+    "memory/findings.py"
+  ],
+  "context": "Pattern from https://logarithmicspirals.com/blog/sqlite-openai-embeddings-astro-builds/ and https://medium.com/@tfmv/sqlite-for-embeddings-3fe30ee5efbf — SQLite hash-based embedding caches cut recomputation by 60%+ in production. MindPattern already uses fastembed with ONNX runtime (memory/embeddings.py) and SQLite WAL mode (memory/db.py), so adding a cache table is a natural extension.",
+  "created_at": "2026-04-01T12:00:00Z",
+  "expires_at": "2026-04-15T12:00:00Z",
+  "feedback_history": []
+}

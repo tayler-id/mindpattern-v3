@@ -1,21 +1,15 @@
-PLATFORM: linkedin
-TYPE: single
----
-How many vendor evaluation frameworks include "government security clearance status"? Mine didn't. It does now.
+I've seen this pattern before. Not at OpenAI. At a FinTech company I worked at before Synchrony acquired them.
 
-The Pentagon designated Palantir as the core AI platform for all US military operations this week. Sole-source mandate. Then the DOJ charged Super Micro's co-founder in a $2.5B conspiracy to smuggle AI chips. Same week. Stock down 25%.
+When the infrastructure team starts getting bypassed by the business team, you feel it in the deploy cadence before you see it in the org chart. Configs that nobody owns. Crashes that get blamed instead of investigated. The senior engineers who know where the bodies are start quietly updating their resumes.
 
-That's not two separate news items. That's one policy move with a carrot and a stick.
+OpenAI lost its COO, its CEO of AGI, and its CMO on the same day. Three departures. One day. While preparing for an IPO at $852 billion.
 
-I use Claude Code daily to ship production software. Anthropic is in an active DOJ lawsuit over their safety policies, which means the tool I rely on every day has a clearance status, whether I thought about that column before or not. I didn't. I picked it because it ships the best code.
+The same week, a former Azure Core engineer published a post-mortem that hit 1,200 points on Hacker News. Millions of unattended crashes in the node management stack. Weak testing. Blame-shifting between teams. The kind of gap in technical leadership that nearly lost Microsoft its largest customer: OpenAI. I read the whole thing. Recognized every pattern.
 
-The evaluation matrix for AI tooling used to be capability, cost, and integration complexity. That's still the matrix on every analyst deck I've seen. But the Pentagon mandate and the Super Micro indictment landed in the same week because they're the same signal: who gets AI infrastructure is now a matter of law, not market dynamics. Criminal prosecution, not just sanctions.
+The executive departures make more sense after you've read that post. Three departures on one day isn't bad luck. It's the org chart catching up to what the deploy logs already knew.
 
-For CTOs and procurement leads making vendor decisions right now, there's a question your current framework probably doesn't have a column for: where does this vendor sit on the cleared/uncleared line, and does that exposure matter to your business?
+I use Claude Code, not OpenAI's tools, so I don't have skin in the platform question. But I'm thinking about what infrastructure I can afford to depend on. If you're building on OpenAI APIs, the question isn't whether the models are good. It's whether the operational layer holds when the pressure is on.
 
-I don't have a clean answer. Still figuring out what it means for my own tool choices.
+What are you treating as critical infrastructure that you haven't actually stress-tested?
 
 https://mindpattern.ai
-
-What criteria are you actually using when you evaluate AI vendors right now, and is government alignment risk anywhere in that list?
----

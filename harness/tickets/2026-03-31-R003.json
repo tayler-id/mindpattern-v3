@@ -1,0 +1,74 @@
+{
+  "id": "2026-03-31-R003",
+  "title": "Trajectory-informed tips: extract strategy/recovery/optimization tips from agent traces and inject into future prompts",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "failed",
+  "description": "The ANALYZE phase currently compares traces vs skill files and edits the skill .md files when deviations are found. This is coarse-grained: it rewrites instructions rather than accumulating structured operational knowledge. The Trajectory-Informed Memory Generation paper (arXiv 2603.10600) introduces a pattern where raw agent trajectories are decomposed into three tip categories: (1) strategy tips from clean successful runs, (2) recovery tips from failure-then-success sequences, (3) optimization tips from successful-but-slow runs. Tips are stored with embeddings and retrieved at runtime via cosine similarity against the current task description. MindPattern already has agent_notes and agent_notes_embeddings tables, plus the full trace infrastructure. This feature adds a structured tip extraction step after ANALYZE that produces typed tips, stores them in a new agent_tips table, and injects the top-k most relevant tips into each agent's prompt at dispatch time. The paper shows +14.3% scenario goal completion on complex tasks. For MindPattern, this means agents accumulate operational wisdom across runs rather than just having their instructions rewritten.",
+  "requirements": [
+    "Add agent_tips table to memory/db.py with columns: id, agent, tip_type (strategy|recovery|optimization), content, trigger_condition, priority, source_trace_date, embedding BLOB, created_at",
+    "Add tip extraction function in orchestrator/analyzer.py that runs after the skill-edit diff: classify each trace as clean-success, failure-recovery, or success-but-slow using deterministic heuristics (exit code, duration vs median, retry patterns)",
+    "For each classified trace, use a focused Sonnet prompt to extract 1-3 typed tips with trigger conditions and implementation steps",
+    "Store tips with embeddings in agent_tips table; deduplicate against existing tips using 0.85 cosine threshold",
+    "Add tip retrieval in orchestrator/agents.py build_agent_prompt(): embed current task context, retrieve top-5 tips by cosine similarity, inject as 'Operational Tips' section between skill content and research context",
+    "Add tip consolidation: when tip count per agent exceeds 20, merge near-duplicates and promote high-confidence tips",
+    "Log tip injection at INFO level: which tips were injected for which agent"
+  ],
+  "done_criteria": [
+    "agent_tips table created with proper schema and indexes",
+    "After 3+ pipeline runs, agents accumulate tips that persist across runs",
+    "Tips are retrieved and injected into agent prompts with measurable relevance (similarity > 0.5)",
+    "No regression in agent finding count or quality scores after tip injection",
+    "Tip extraction adds < 60 seconds to the ANALYZE phase"
+  ],
+  "design_spec": {
+    "architecture_impact": "Extends the ANALYZE phase with a post-diff tip extraction step. Extends build_agent_prompt() with a tip retrieval + injection step. Adds one new DB table. Does not change the pipeline phase order or any critical paths.",
+    "files_affected": [
+      "memory/db.py",
+      "orchestrator/analyzer.py",
+      "orchestrator/agents.py",
+      "orchestrator/runner.py"
+    ],
+    "effort": "M",
+    "research_source": "https://arxiv.org/html/2603.10600"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_agent_tips.py",
+    "tests_to_write": [
+      "test_tip_table_creation",
+      "test_tip_extraction_from_success_trace",
+      "test_tip_extraction_from_failure_recovery_trace",
+      "test_tip_dedup_by_cosine_similarity",
+      "test_tip_retrieval_top_k",
+      "test_tip_injection_into_agent_prompt",
+      "test_tip_consolidation_over_20"
+    ]
+  },
+  "files_to_modify": [
+    "memory/db.py",
+    "orchestrator/analyzer.py",
+    "orchestrator/agents.py",
+    "orchestrator/runner.py"
+  ],
+  "context": "Source: 'Trajectory-Informed Memory Generation for Self-Improving Agent Systems' (arXiv 2603.10600). The paper's Trajectory Intelligence Extractor, Decision Attribution Analyzer, and Contextual Learning Generator map directly to MindPattern's existing trace logs + ANALYZE phase. The key insight is that structured tips with trigger conditions are more reusable than wholesale skill file rewrites. MindPattern's agent_notes table provides a foundation but lacks the typed tip schema (strategy/recovery/optimization) and the runtime retrieval-injection loop.",
+  "created_at": "2026-03-31T22:00:00Z",
+  "expires_at": "2026-04-14T22:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Tests failed: ........................................................................ [ 10%]\n........................................................................ [ 20%]\n.F\n=================================== FAILURES ===================================\n__ TestLinkedInInFindCandidates.test_find_candidates_calls_jina_for_linkedin ___\ntests/test_engagement_linkedin.py:466: in test_find_candidates_calls_jina_for_linkedin\n    mock_search.assert_called()\n/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Pyt",
+      "timestamp": "2026-04-01T20:03:46.010446+00:00"
+    },
+    {
+      "type": "failure",
+      "reason": "Tests failed: ..F\n=================================== FAILURES ===================================\n___________ TestTipExtraction.test_tip_extraction_from_success_trace ___________\ntests/test_agent_tips.py:80: in test_tip_extraction_from_success_trace\n    from orchestrator.analyzer import classify_trace\nE   ImportError: cannot import name 'classify_trace' from 'orchestrator.analyzer' (/Users/taylerramsay/Projects/mindpattern-v3/.claude/worktrees/effervescent-launching-leaf/orchestrator/analyzer.py)\n===========",
+      "timestamp": "2026-04-01T21:56:26.210203+00:00"
+    },
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: 4 files, M effort, failed twice already (linkedin test + missing classify_trace import); requires LLM calls for tip extraction",
+      "timestamp": "2026-04-02T21:00:50.824280+00:00"
+    }
+  ]
+}

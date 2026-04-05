@@ -1,0 +1,38 @@
+{
+  "id": "2026-04-01-011",
+  "title": "Greedy regex in _phase_trend_scan silently drops trends when LLM output contains brackets",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P2",
+  "status": "open",
+  "description": "In runner.py _phase_trend_scan() (line ~293), the fallback JSON extraction uses:\n\n    match = re.search(r'[\\[\\s\\S]*\\]', output)\n\nThe greedy [\\s\\S]* matches from the first '[' to the LAST ']' in the entire output. If the LLM wraps the JSON array in commentary containing bracket characters (e.g., 'Here are the trends [as requested]:\\n[...actual JSON...]'), the regex captures everything from the first '[' to the final ']', including non-JSON text. json.loads() then fails, and self.trends silently falls back to [].\n\nThis is the same class of bug as 2026-04-01-007, which fixed greedy regex in _parse_findings by replacing it with balanced-brace extraction. The _phase_trend_scan code was not updated.\n\nImpact: when the trend_scan LLM produces valid JSON wrapped in commentary, trends are silently set to [] — research agents run without trend context, reducing finding relevance. This is intermittent and hard to diagnose because the phase doesn't fail (it logs 'Trend scan: 0 topics identified' which looks normal).",
+  "requirements": [
+    "Replace the greedy regex r'[\\[\\s\\S]*\\]' in _phase_trend_scan with balanced-bracket extraction that handles nested arrays correctly",
+    "Reuse or adapt the _extract_balanced_json_blocks pattern from orchestrator/agents.py for bracket extraction",
+    "Add a helper function _extract_balanced_json_arrays(text) to agents.py alongside existing _extract_balanced_json_blocks",
+    "Log a WARNING when the fallback extraction is needed (direct json.loads failed) so trend parsing issues are visible"
+  ],
+  "done_criteria": [
+    "Trend scan output with brackets in surrounding commentary still parses the JSON array correctly",
+    "Trend scan output with nested arrays parses correctly",
+    "All existing tests pass (python3 -m pytest tests/ -x -q)",
+    "New test: test_trend_scan_parses_json_with_bracket_commentary",
+    "New test: test_trend_scan_parses_bare_json_array"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_runner.py",
+    "tests_to_write": [
+      "test_trend_scan_parses_json_with_bracket_commentary",
+      "test_trend_scan_parses_bare_json_array",
+      "test_trend_scan_greedy_regex_does_not_overcapture"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/runner.py",
+    "orchestrator/agents.py"
+  ],
+  "context": "Same bug class as 2026-04-01-007 (greedy regex in _parse_findings, now fixed with balanced-brace extraction). The trend_scan path uses the same greedy pattern but for arrays instead of objects. The fix should be consistent with the _parse_findings approach.",
+  "created_at": "2026-04-01T18:00:00Z",
+  "expires_at": "2026-04-08T18:00:00Z",
+  "feedback_history": []
+}

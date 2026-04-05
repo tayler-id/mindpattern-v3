@@ -1,0 +1,41 @@
+{
+  "id": "2026-04-01-006",
+  "title": "Social phase blocks pipeline indefinitely when Slack approval has no timeout",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P1",
+  "status": "done",
+  "description": "The social phase regularly blocks the entire pipeline for hours (up to 37 hours on 03/23, 23 hours on 03/30) because gate_timeout_seconds is null in social-config.json and ApprovalGateway._slack_poll_replies() polls forever when timeout_seconds is None. The current 04/01 pipeline run has social phase stuck in 'running' status right now. Additionally, _web_approval() has an infinite while-True loop with no timeout guard. Evidence from traces.db phase_tracking: social phase durations of 135993s, 84334s, 63516s, 34746s, 31510s, 26256s, 24543s, 22165s, 16560s in the last 14 days.",
+  "requirements": [
+    "Add a default maximum timeout (e.g. 4 hours) to _slack_poll_replies() even when gate_timeout_seconds is None",
+    "Add a timeout guard to _web_approval() infinite polling loop",
+    "When timeout is reached, auto-skip (return skip action) rather than hanging forever",
+    "Log a warning when timeout is reached so it shows in traces",
+    "Ensure the phase_tracking record gets completed_at set even on timeout"
+  ],
+  "done_criteria": [
+    "Social phase never runs longer than the configured max timeout",
+    "_slack_poll_replies returns None after max timeout regardless of gate_timeout_seconds config",
+    "_web_approval returns None after max timeout",
+    "Pipeline continues to next phase after approval timeout"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_approval.py",
+    "tests_to_write": [
+      "test_slack_poll_replies_default_max_timeout",
+      "test_slack_poll_replies_respects_configured_timeout",
+      "test_web_approval_times_out_with_default_max",
+      "test_approval_timeout_returns_skip_action"
+    ]
+  },
+  "files_to_modify": [
+    "social/approval.py",
+    "social-config.json"
+  ],
+  "context": "Traces data shows 04/01 run social phase stuck in running, 03/23 ran 135993s (37.7 hours), 03/30 ran 84334s (23.4 hours). Root cause: social-config.json has gate_timeout_seconds: null, and _slack_poll_replies has 'while True' with no upper bound when timeout_seconds is None.",
+  "created_at": "2026-04-01T00:00:00Z",
+  "expires_at": "2026-04-08T00:00:00Z",
+  "feedback_history": [],
+  "pr_url": "https://github.com/tayler-id/mindpattern-v3/pull/9",
+  "completed_at": "2026-04-01T16:18:10.227095+00:00"
+}

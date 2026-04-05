@@ -1,0 +1,39 @@
+{
+  "id": "2026-04-01-007",
+  "title": "Greedy regex in _parse_findings causes wrong JSON extraction and potential backtracking",
+  "type": "bug",
+  "source": "scout",
+  "priority": "P1",
+  "status": "done",
+  "description": "In orchestrator/agents.py _parse_findings(), the regex r'{[\\s\\S]*\"findings\"[\\s\\S]*}' uses greedy quantifiers that match from the FIRST '{' to the LAST '}' in the entire output. When agent output contains multiple JSON blocks or text before/after the JSON (common when agents prefix explanatory text), this greedily captures everything, producing invalid JSON that fails to parse. The fallback r'[\\s\\S]*' array match has the same issue. With large agent outputs (100K+ chars), the greedy \\s\\S patterns also risk slow matching. The function silently returns [] on parse failure, causing findings to be lost with only a warning log.",
+  "requirements": [
+    "Replace greedy regex with a proper JSON extraction strategy (e.g. find balanced braces, or try json.loads on progressively larger substrings)",
+    "Use a non-greedy approach or bracket-counting parser to find the correct JSON block",
+    "Add a metric/counter for parse failures so they can be tracked in traces.db",
+    "Log the first 200 chars of unparseable output at WARNING level for debugging"
+  ],
+  "done_criteria": [
+    "_parse_findings correctly extracts JSON when output has text before and after the JSON block",
+    "_parse_findings handles outputs with multiple JSON-like blocks by finding the one with 'findings'",
+    "Parse failure rate is tracked in agent_metrics or events table",
+    "No catastrophic backtracking on 100K+ char outputs"
+  ],
+  "tdd_spec": {
+    "test_file": "tests/test_agents.py",
+    "tests_to_write": [
+      "test_parse_findings_with_text_before_json",
+      "test_parse_findings_with_multiple_json_blocks",
+      "test_parse_findings_with_nested_braces_in_values",
+      "test_parse_findings_large_output_performance"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/agents.py"
+  ],
+  "context": "The function processes output from claude -p subprocess calls which frequently include explanatory text. Agent outputs can be 100K+ chars. Regex r'{[\\s\\S]*\"findings\"[\\s\\S]*}' on line 456 will match from the first { in any prefixed text to the last } in the output, almost certainly producing invalid JSON for any non-trivial output.",
+  "created_at": "2026-04-01T00:00:00Z",
+  "expires_at": "2026-04-08T00:00:00Z",
+  "feedback_history": [],
+  "pr_url": "https://github.com/tayler-id/mindpattern-v3/pull/10",
+  "completed_at": "2026-04-01T16:18:10.227761+00:00"
+}

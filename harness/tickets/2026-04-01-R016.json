@@ -1,0 +1,65 @@
+{
+  "id": "2026-04-01-R016",
+  "title": "Add stable issue fingerprinting and longitudinal resolution tracking to ANALYZE phase",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "failed",
+  "description": "Add content-hashed fingerprinting to analyzer-detected issues so recurring problems are tracked across runs, not rediscovered fresh each time. Currently analyzer.py passes 'common_issues' as flat strings per agent in agent history \u2014 the same issue appearing in 14 consecutive runs looks identical to a brand-new issue. Inspired by OpenClaw-trace's fingerprint clustering system, which mines JSONL session traces, extracts evidence-grounded signals, and clusters them using stable fingerprints for longitudinal tracking. This feature adds: (1) SHA256 fingerprints for each detected issue (normalized text \u2192 hash), (2) an issue_fingerprints table in traces.db tracking first_seen, last_seen, occurrence_count, resolution_status, (3) semantic clustering of similar-but-not-identical issues using the existing bge-small-en-v1.5 embeddings with 0.90 threshold, (4) issue priority scoring based on recurrence frequency and age. The analyzer prompt then receives 'this issue has appeared in 12 of 14 runs, first seen 2026-03-18' context, enabling it to prioritize chronic problems over noise.",
+  "requirements": [
+    "Add issue_fingerprints table to traces.db (fingerprint_hash TEXT PK, canonical_text TEXT, cluster_id TEXT, first_seen TEXT, last_seen TEXT, occurrence_count INTEGER, resolution_status TEXT DEFAULT 'open', resolved_at TEXT, resolved_by_commit TEXT)",
+    "Add fingerprint_issue() function to orchestrator/analyzer.py that normalizes issue text and returns SHA256 hash",
+    "Add upsert_issue_fingerprint() to orchestrator/traces_db.py that increments occurrence_count and updates last_seen on match",
+    "Add cluster_similar_issues() that groups fingerprints with >0.90 embedding similarity under a shared cluster_id",
+    "Modify build_analyzer_prompt() to include issue recurrence data: occurrence count, first_seen date, days since first seen, cluster size",
+    "Add mark_issue_resolved() that records resolution commit hash when analyzer confirms a fix landed",
+    "Add get_chronic_issues(min_occurrences=5) query that returns the most persistent unresolved issues sorted by occurrence count",
+    "Log fingerprint hits/misses and chronic issue count at INFO level"
+  ],
+  "done_criteria": [
+    "After 3+ pipeline runs, issue_fingerprints table shows correct occurrence_count for recurring issues",
+    "Analyzer prompt includes recurrence context (occurrence count, first_seen) for known issues",
+    "Similar issues (e.g. 'agent X skipped Phase 2' and 'agent X did not execute Phase 2') are clustered under same cluster_id",
+    "Resolved issues are marked with commit hash and excluded from chronic issue list",
+    "All existing tests pass (python3 -m pytest tests/ -x -q)",
+    "New tests verify fingerprint stability (same issue text \u2192 same hash across calls)",
+    "New test verifies clustering groups similar issues"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds one table to traces.db. Extends analyzer.py with fingerprinting functions. Modifies build_analyzer_prompt() to include recurrence context. Uses existing embedding infrastructure from memory/embeddings.py for clustering.",
+    "files_affected": [
+      "orchestrator/traces_db.py",
+      "orchestrator/analyzer.py",
+      "memory/embeddings.py"
+    ],
+    "effort": "M",
+    "research_source": "https://kenhuangus.substack.com/p/openclaw-and-recursive-self-improvement"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_issue_fingerprints.py",
+    "tests_to_write": [
+      "test_fingerprint_deterministic_for_same_text",
+      "test_fingerprint_differs_for_different_issues",
+      "test_upsert_increments_occurrence_count",
+      "test_cluster_groups_similar_issues",
+      "test_mark_resolved_sets_commit_hash",
+      "test_get_chronic_issues_filters_by_min_occurrences",
+      "test_analyzer_prompt_includes_recurrence_data"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/traces_db.py",
+    "orchestrator/analyzer.py",
+    "memory/embeddings.py"
+  ],
+  "context": "OpenClaw-trace (https://kenhuangus.substack.com/p/openclaw-and-recursive-self-improvement) mines 20M tokens of trace data, extracts issues with stable fingerprints, and clusters them for longitudinal tracking. ICLR 2026 Workshop on Recursive Self-Improvement (https://recursive-workshop.github.io/) also highlights the importance of longitudinal signal extraction in self-improving systems. MindPattern's ANALYZE phase already reads traces and detects issues, but treats every run as if starting from scratch. Adding fingerprint persistence would turn the kaizen loop from memoryless to cumulative.",
+  "created_at": "2026-04-01T18:00:00Z",
+  "expires_at": "2026-04-15T18:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: 3 files, M effort, 7 tests, requires embedding-based clustering of issues; too complex for 25 turns",
+      "timestamp": "2026-04-02T21:00:50.632942+00:00"
+    }
+  ]
+}

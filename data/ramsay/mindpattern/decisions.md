@@ -129,3 +129,31 @@ Running record of editorial decisions made during pipeline runs. Each entry capt
 - **Pattern**: Expeditor PASS/no-posts is a new and distinct failure mode from Expeditor FAIL — requires its own investigation path. Newsletter quality regression (Dedup + Sources) is the most significant quality drop since recovery began and coincides with lowest overall score. Topic score 0 anomaly now 5+ runs with no resolution. Geopolitics/government AI power plays are clean approvals — no custom injection needed when the thesis triangulates on its own.
 - **Action required**: Diagnose Expeditor PASS/no-posts failure mode (check social platform API layer vs orchestration layer). Investigate newsletter Dedup (0.833) and Sources (0.75) regression — check for content overlap or weak source diversity. Root-cause topic score 0 anomaly (5+ runs). Distribution remains the primary active blocker.
 - **Tags**: pipeline, run-17, distribution-gap, expeditor-pass-no-posts, zero-topic-score, newsletter-regression, geopolitics, operational
+
+## 2026-04-03
+
+## 2026-04-03 — Run 19 Pipeline
+- **Context**: 19th run; 1st run on 2026-04-03.
+- **Findings**: 183 — first dip below 230 after five consecutive above-threshold runs (Runs 14–18 averaged ~236). Single-run variance; does not break recovery trend but warrants monitoring.
+- **Topic**: Anthropic and OpenAI both made their first-ever acquisitions in the same week — neither bought what you'd expect. Anthropic paid ~$400M for Coefficient Bio, a 10-person stealth biotech startup; investors earned a 38,513% IRR. OpenAI paid 'low hundreds of millions' for TBPN, a daily 3-hour tech talk show doing $30M+ in revenue, reporting to OpenAI's chief political operative Chris Lehane. Thesis: two companies racing to build AGI chose divergent first moves — one bought the healthcare pipeline, the other bought the media platform where industry narratives get shaped. Score: 0 (persistent anomaly — 7th+ consecutive run).
+- **Gate 1**: approved — straight approve, no custom injection. Third consecutive clean approve. Dual-narrative contrast-framing (two competing companies making parallel first-ever moves with divergent implications) passes without augmentation.
+- **Gate 2**: approved
+- **Expeditor**: PASS — Posted to: linkedin, bluesky. Second consecutive confirmed distribution run. Distribution appears stabilized.
+- **Newsletter**: Overall 0.948, Coverage 0.972, Dedup 1.0, Sources 1.0. Third consecutive run above 0.94.
+- **Pattern**: Dual-narrative contrast-framing is a confirmed clean-approve structure alongside three-actor convergence. Distribution now verified two consecutive runs — fix appears stable. Topic score 0 persists across 7+ runs with no investigation progress. Findings dip to 183 is first sub-230 result since Run 14.
+- **Action required**: Root-cause topic score 0 (7+ runs). Monitor findings count next run. If Run 20 also distributes cleanly, consider distribution fix confirmed.
+- **Tags**: pipeline, run-19, distribution-confirmed, dual-narrative, acquisition, topic-score-zero, newsletter-high
+
+## 2026-04-04
+
+## 2026-04-04 — Run 20 Pipeline
+- **Context**: 20th run; 1st run on 2026-04-04.
+- **Findings**: 182 — second consecutive sub-230 result (Run 19: 183). Source fatigue trend now confirmed, not single-run variance. Requires investigation.
+- **Topic**: OpenAI triple executive departure in a single day during IPO preparation at $852B valuation: Brad Lightcap (COO) moves to 'special projects,' Fidji Simo (CEO of AGI) takes medical leave with Greg Brockman absorbing product, Kate Rouch (CMO) steps down. Same day: former Azure Core engineer published 1,200-point HN post detailing millions of unattended crashes and blame-shifting that nearly lost Microsoft's largest customer. Microsoft response: renegotiate OpenAI contract, pivot Mustafa Suleyman to build superintelligence independently. Thesis: organizational crisis corroborated by independent insider post-mortem — three departures + one public accounting + one strategic divorce. Score: 0 (persistent anomaly — 8th+ consecutive run).
+- **Gate 1**: approved — straight approve, no custom injection. Fourth consecutive clean approve. Internal organizational crisis with named actors, specific details, and independent corroboration passes without augmentation.
+- **Gate 2**: approved
+- **Expeditor**: PASS — Posted to: linkedin, bluesky. Third consecutive confirmed distribution run. Distribution fix confirmed stable.
+- **Newsletter**: Overall 0.885, Coverage 0.868, Dedup 1.0, Sources 0.75. Regression from Run 19 (0.948/0.972/1.0/1.0). Sources 0.75 is recurring (Run 15: 0.833, Run 17: 0.75) — possible systemic thin-sourcing pattern.
+- **Pattern**: 'Internal organizational crisis + independent insider corroboration' confirmed clean-approve structure. Distribution three consecutive runs — consider fix closed. Findings sub-230 second consecutive run — source fatigue investigation required. Sources 0.75 recurring — investigate newsletter writer's source depth.
+- **Action required**: (1) Investigate source fatigue — two consecutive sub-230 findings runs. (2) Root-cause Sources 0.75 recurring pattern. (3) Root-cause topic score 0 (8+ runs). Distribution can be considered closed.
+- **Tags**: pipeline, run-20, distribution-confirmed, organizational-crisis, executive-departure, topic-score-zero, source-fatigue, newsletter-regression

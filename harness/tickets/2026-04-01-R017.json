@@ -1,0 +1,67 @@
+{
+  "id": "2026-04-01-R017",
+  "title": "Add semantic response cache for research agent LLM calls to skip redundant Sonnet invocations",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "failed",
+  "description": "Add a semantic response cache layer to research agent dispatch so that when a Sonnet agent receives substantially similar input (same preflight items + trending topics) as a previous run, the cached response is returned instead of making a new LLM call. This is distinct from R010 (embedding cache for bge-small vectors) \u2014 this caches full LLM prompt/response pairs keyed by semantic similarity of the prompt content. Research shows semantic caching at 0.85 similarity threshold can achieve 60-70% cache hit rates and cut API costs by 40-73%. For MindPattern, on days with low novelty (e.g. weekends where preflight items overlap heavily with Friday), several research agents would receive nearly identical inputs \u2014 the Sonnet call is pure waste. Implementation: (1) before calling claude CLI, embed a digest of the prompt's variable content (preflight items + trends, NOT the static identity/skill preamble), (2) search the cache for a response with >0.92 similarity and <48h age, (3) on hit, return cached findings JSON directly; on miss, call Sonnet and store the response. Conservative 0.92 threshold ensures only truly redundant calls are cached \u2014 research quality is never traded for speed.",
+  "requirements": [
+    "Add agent_response_cache table to memory.db (id INTEGER PK, prompt_digest_embedding BLOB, agent_name TEXT, response_json TEXT, input_tokens INTEGER, output_tokens INTEGER, created_at TEXT, expires_at TEXT)",
+    "Add _extract_variable_content() to orchestrator/agents.py that strips static preamble (identity, skill, schema) from a prompt and returns only the variable parts (preflight items, trends, claims)",
+    "Add check_response_cache(agent_name, variable_content, threshold=0.92, max_age_hours=48) that embeds the variable content and searches for cached responses above the similarity threshold",
+    "Add store_response_cache(agent_name, variable_content, response_json, input_tokens, output_tokens) that stores the response with embedded variable content",
+    "Modify run_single_agent() to check cache before invoking claude CLI subprocess",
+    "On cache hit, log at INFO with agent name, similarity score, and age of cached response",
+    "On cache miss, store the response after successful agent completion",
+    "Add cache_ttl_hours and cache_similarity_threshold to config.json under a new 'agent_cache' key, defaulting to 48h and 0.92",
+    "Add purge_expired_cache() function called at pipeline INIT to clean entries older than max_age"
+  ],
+  "done_criteria": [
+    "Running the pipeline twice with identical preflight data results in cache hits for all 13 research agents on the second run",
+    "Cache hit rate and cost savings are logged at end of RESEARCH phase",
+    "Changing even one preflight item for an agent produces a cache miss (0.92 threshold is strict enough)",
+    "Cached responses older than 48h are automatically purged",
+    "All existing tests pass (python3 -m pytest tests/ -x -q)",
+    "New tests verify cache hit returns identical response JSON",
+    "New test verifies cache miss on sufficiently different input",
+    "New test verifies expiry purge removes old entries"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds one table to memory.db. Adds cache check/store calls wrapping run_single_agent() in agents.py. Uses existing embedding infrastructure. No changes to agent prompts or skill files. Cache is purely an optimization layer \u2014 removing it changes nothing about pipeline behavior.",
+    "files_affected": [
+      "orchestrator/agents.py",
+      "memory/db.py",
+      "config.json"
+    ],
+    "effort": "M",
+    "research_source": "https://venturebeat.com/orchestration/why-your-llm-bill-is-exploding-and-how-semantic-caching-can-cut-it-by-73"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_response_cache.py",
+    "tests_to_write": [
+      "test_extract_variable_content_strips_preamble",
+      "test_cache_hit_returns_stored_response",
+      "test_cache_miss_on_different_input",
+      "test_cache_miss_on_expired_entry",
+      "test_cache_respects_agent_name_scope",
+      "test_purge_removes_expired_entries",
+      "test_similarity_threshold_from_config"
+    ]
+  },
+  "files_to_modify": [
+    "orchestrator/agents.py",
+    "memory/db.py",
+    "config.json"
+  ],
+  "context": "VentureBeat reports semantic caching cuts LLM costs by 73% (https://venturebeat.com/orchestration/why-your-llm-bill-is-exploding-and-how-semantic-caching-can-cut-it-by-73). Redis blog documents 62% cache hit rate on 10K queries with 0.8 threshold (https://redis.io/blog/what-is-semantic-caching/). MindPattern runs 13 Sonnet agents daily \u2014 on low-novelty days (weekends, slow news cycles), many agents receive near-identical preflight items as the previous run. A conservative 0.92 threshold with 48h TTL would safely cache responses without risking stale research. Distinct from R010 (embedding cache) which caches vector computation, not LLM responses.",
+  "created_at": "2026-04-01T18:00:00Z",
+  "expires_at": "2026-04-15T18:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Codex adversarial: 3 files, M effort, 7 tests, requires semantic similarity search for full LLM responses; too complex for 25 turns",
+      "timestamp": "2026-04-02T21:00:50.729604+00:00"
+    }
+  ]
+}

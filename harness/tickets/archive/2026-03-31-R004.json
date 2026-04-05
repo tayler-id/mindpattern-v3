@@ -1,0 +1,69 @@
+{
+  "id": "2026-03-31-R004",
+  "title": "Post-publication comment reply engine: auto-reply to own post comments within golden hour for 30% engagement boost",
+  "type": "feature",
+  "source": "research",
+  "priority": "P2",
+  "status": "open",
+  "description": "Buffer's 2026 State of Social Media Engagement study (52M+ posts analyzed) found that creators who reply to comments on their own posts earn 30% more engagement on LinkedIn and 42% more on Threads. LinkedIn's algorithm specifically measures 'dwell time' and treats substantive comment replies as high-value signals that expand distribution from the initial 2-5% test audience to broader reach. The first 60-90 minutes after posting (the 'golden hour') are critical: only 5% of underperforming posts recover after this window. MindPattern currently posts and walks away. The engagement.py module handles outbound replies to OTHER people's posts, but never monitors or replies to comments on MindPattern's OWN posts. Adding a post-publication monitoring loop that checks for comments in the 90 minutes after posting and drafts substantive replies would directly boost algorithmic distribution on both LinkedIn and Bluesky.",
+  "requirements": [
+    "Add monitor_own_posts() method to social/engagement.py that polls for new comments/replies on posts made in the current pipeline run",
+    "For Bluesky: use AT Protocol getPostThread to fetch reply tree for the post URI stored in social_posts table",
+    "For LinkedIn: use ugcPosts API socialActions endpoint to fetch comments on the post URN stored in social_posts table",
+    "Run monitoring in a background loop: check at 15min, 30min, 60min, 90min after posting",
+    "For each new comment, use existing engagement writer prompt (with voice.md) to draft a substantive reply -- not generic 'thanks!' but value-adding responses",
+    "Run replies through the policy engine (policies/engine.py) before posting -- same brand safety checks as outbound engagement",
+    "Store own-post replies in social_posts table with engagement_type='self_reply' for tracking",
+    "Add reply_to_own_comments step in social/pipeline.py after the POST step, gated by config flag social-config.json 'self_reply_enabled'",
+    "Log engagement metrics: comments received, replies sent, time-to-reply"
+  ],
+  "done_criteria": [
+    "Within 90 minutes of a social post, the system checks for comments at least 3 times",
+    "Substantive replies are drafted and posted for each comment (not generic filler)",
+    "Reply rate: >= 80% of comments received within the monitoring window get a reply",
+    "All replies pass policy engine validation",
+    "Self-reply activity is tracked in social_posts table and visible in dashboard"
+  ],
+  "design_spec": {
+    "architecture_impact": "Adds a post-publication monitoring loop to the social pipeline. This runs after POST and before the pipeline moves to ENGAGEMENT. It reuses the existing engagement writer prompt and policy engine. The monitoring loop is time-bounded (90 min max) and non-critical (failures are logged, not fatal). Requires adding Bluesky getPostThread and LinkedIn socialActions API methods to posting.py.",
+    "files_affected": [
+      "social/engagement.py",
+      "social/pipeline.py",
+      "social/posting.py",
+      "social-config.json"
+    ],
+    "effort": "M",
+    "research_source": "https://buffer.com/resources/state-of-social-media-engagement-2026/"
+  },
+  "tdd_spec": {
+    "test_file": "tests/test_self_reply.py",
+    "tests_to_write": [
+      "test_monitor_own_posts_fetches_comments",
+      "test_self_reply_draft_not_generic",
+      "test_self_reply_passes_policy_engine",
+      "test_self_reply_stored_in_social_posts",
+      "test_monitoring_loop_respects_90min_window",
+      "test_self_reply_disabled_by_config"
+    ]
+  },
+  "files_to_modify": [
+    "social/engagement.py",
+    "social/pipeline.py",
+    "social/posting.py"
+  ],
+  "context": "Source: Buffer 'State of Social Media Engagement 2026' (52M+ posts analyzed). Key data: LinkedIn +30% engagement when creators reply to comments, golden hour (first 60-90 min) determines algorithmic distribution. Additional source: Socialsky LinkedIn algorithm analysis showing 'dwell time' and substantive comments as primary ranking signals. MindPattern already has the engagement writer prompt, policy engine, and platform API clients -- this feature wires them together for self-reply rather than only outbound engagement.",
+  "created_at": "2026-03-31T22:00:00Z",
+  "expires_at": "2026-04-14T22:00:00Z",
+  "feedback_history": [
+    {
+      "type": "failure",
+      "reason": "Not feasible \u2014 no API integration exists to read comments back from LinkedIn or Bluesky. Would need new OAuth scopes + comment polling infrastructure first.",
+      "timestamp": "2026-04-01T17:54:15.231293+00:00"
+    },
+    {
+      "type": "failure",
+      "reason": "Tests failed: \n==================================== ERRORS ====================================\n__________________ ERROR collecting tests/test_self_reply.py ___________________\nImportError while importing test module '/Users/taylerramsay/Projects/mindpattern-v3/.claude/worktrees/warm-fluttering-seahorse/tests/test_self_reply.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/impo",
+      "timestamp": "2026-04-01T21:56:57.006619+00:00"
+    }
+  ]
+}
