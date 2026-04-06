@@ -271,6 +271,23 @@ def _init_schema(conn: sqlite3.Connection):
             created_at TEXT DEFAULT (datetime('now'))
         );
 
+        -- ── Trend history (learning loop) ───────────────────────────────
+
+        CREATE TABLE IF NOT EXISTS trend_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_date TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            score REAL DEFAULT 0.0,
+            source_count INTEGER DEFAULT 0,
+            item_count INTEGER DEFAULT 0,
+            sources_json TEXT,
+            evidence TEXT,
+            findings_produced INTEGER DEFAULT 0,
+            newsletter_included INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(run_date, topic)
+        );
+
         -- ── Run tracking ──────────────────────────────────────────────
 
         CREATE TABLE IF NOT EXISTS run_quality (

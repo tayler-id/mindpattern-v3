@@ -410,6 +410,13 @@ class ResearchPipeline:
         items = self.preflight_data["items"] if self.preflight_data else []
         self.trends = detect_trends(items)
 
+        # Store trends in trend_history for the learning loop
+        try:
+            from memory.trends import store_trends
+            store_trends(self.db, self.date_str, self.trends)
+        except Exception as e:
+            logger.warning(f"Failed to store trend history (non-critical): {e}")
+
         trend_topics = [t["topic"][:80] for t in self.trends[:5]]
         logger.info(
             f"Trend scan: {len(self.trends)} trends detected from "
@@ -961,6 +968,16 @@ class ResearchPipeline:
                 logger.info(f"Entity graph: {entity_relationships_stored} relationships stored")
         except Exception as e:
             logger.warning(f"Entity graph extraction failed (non-critical): {e}")
+
+        # ── Trend learning: backfill which trends produced findings ──────
+        trend_backfill_count = 0
+        try:
+            from memory.trends import backfill_trend_results
+            trend_backfill_count = backfill_trend_results(self.db, self.date_str)
+            if trend_backfill_count:
+                logger.info(f"Trend learning: backfilled {trend_backfill_count} trends")
+        except Exception as e:
+            logger.warning(f"Trend backfill failed (non-critical): {e}")
 
         consolidate_result = memory.consolidate(self.db)
         promote_result = memory.promote(self.db)
