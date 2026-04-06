@@ -47,6 +47,7 @@ class ResearchPipeline:
         self.newsletter_eval: dict = {}
         self.social_result: dict = {}
         self.evolve_result: dict = {}
+        self.preflight_data: dict | None = None
 
         # Traces DB for observability
         self.traces_conn = get_traces_db()
@@ -368,76 +369,72 @@ class ResearchPipeline:
         )
 
     def _phase_trend_scan(self) -> dict:
-        """Phase 2: Trend Scan (Haiku).
+        """Phase 2: Trend Scan (deterministic, from preflight data).
+
+        Runs preflight to gather data from 8 sources, then detects trends
+        by clustering items by topic similarity and scoring by engagement
+        and source diversity. No LLM call required.
 
         Skippable — if it fails, research agents run without trends.
         """
-        prompt = f"Today is {self.date_str}. Search for trending topics."
+        from preflight.trends import detect_trends
+        from preflight.run_all import run_all as run_preflight
 
-        output, exit_code = agent_dispatch.run_claude_prompt(
-            prompt, "trend_scan",
-            system_prompt_file="agents/trend-scanner.md",
-            allowed_tools=["WebSearch", "WebFetch"],
-        )
-
-        if exit_code != 0 or not output.strip():
-            logger.warning("Trend scan returned no output")
-            return {"trends": []}
-
-        # Try to parse JSON from output (may have text around it)
-        import re
+        # Run preflight here so trends are computed from real data
         try:
-            self.trends = json.loads(output.strip())
-            if isinstance(self.trends, dict):
-                self.trends = self.trends.get("topics", self.trends.get("trends", []))
-        except json.JSONDecodeError:
-            # Try to find JSON array in output
-            match = re.search(r'\[[\s\S]*\]', output)
-            if match:
-                try:
-                    self.trends = json.loads(match.group())
-                except json.JSONDecodeError:
-                    self.trends = []
-            else:
-                self.trends = []
-
-        if not isinstance(self.trends, list):
-            self.trends = []
-
-        logger.info(f"Trend scan: {len(self.trends)} topics identified")
-        return {"trends": self.trends}
-
-    def _phase_research(self) -> dict:
-        """Phase 3: Research (13x Sonnet, parallel)."""
-        memory.clear_claims(self.db, self.date_str)
-
-        # Run preflight to gather structured data from all sources
-        preflight_data = None
-        try:
-            from preflight.run_all import run_all as run_preflight
-            preflight_data = run_preflight(
+            self.preflight_data = run_preflight(
                 date_str=self.date_str,
                 db=self.db,
                 feeds_file=PROJECT_ROOT / "verticals" / "ai-tech" / "rss-feeds.json",
             )
             logger.info(
-                f"Preflight: {preflight_data['total_items']} items, "
-                f"{preflight_data['new_count']} new, "
-                f"{preflight_data['covered_count']} already covered, "
-                f"{preflight_data['duration_ms']}ms"
+                f"Preflight: {self.preflight_data['total_items']} items, "
+                f"{self.preflight_data['new_count']} new, "
+                f"{self.preflight_data['covered_count']} already covered, "
+                f"{self.preflight_data['duration_ms']}ms"
             )
-
             log_event(self.traces_conn, self.traces_run_id,
                       "preflight_complete",
                       json.dumps({
-                          "total_items": preflight_data["total_items"],
-                          "new_count": preflight_data["new_count"],
-                          "covered_count": preflight_data["covered_count"],
-                          "source_counts": preflight_data["source_counts"],
-                          "duration_ms": preflight_data["duration_ms"],
+                          "total_items": self.preflight_data["total_items"],
+                          "new_count": self.preflight_data["new_count"],
+                          "covered_count": self.preflight_data["covered_count"],
+                          "source_counts": self.preflight_data["source_counts"],
+                          "duration_ms": self.preflight_data["duration_ms"],
                       }))
         except Exception as e:
-            logger.warning(f"Preflight failed (non-critical, agents will use WebSearch): {e}")
+            logger.warning(f"Preflight failed (non-critical): {e}")
+            self.preflight_data = None
+
+        # Detect trends from preflight data (deterministic, no LLM)
+        items = self.preflight_data["items"] if self.preflight_data else []
+        self.trends = detect_trends(items)
+
+        trend_topics = [t["topic"][:80] for t in self.trends[:5]]
+        logger.info(
+            f"Trend scan: {len(self.trends)} trends detected from "
+            f"{len(items)} preflight items. Top: {trend_topics}"
+        )
+
+        return {
+            "trends": self.trends,
+            "preflight_items": len(items),
+            "method": "deterministic",
+        }
+
+    def _phase_research(self) -> dict:
+        """Phase 3: Research (13x Sonnet, parallel)."""
+        memory.clear_claims(self.db, self.date_str)
+
+        # Use preflight data from TREND_SCAN phase (already ran)
+        preflight_data = self.preflight_data
+        if preflight_data:
+            logger.info(
+                f"Using preflight data from trend scan: "
+                f"{preflight_data['total_items']} items, {preflight_data['new_count']} new"
+            )
+        else:
+            logger.warning("No preflight data available (trend scan may have failed), agents will use WebSearch")
 
         # Get cross-pipeline signal context to enrich agent dispatch
         signal_context = ""
