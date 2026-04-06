@@ -151,8 +151,8 @@ def build_agent_prompt(
 
     trends_section = ""
     if trends:
-        topics = ", ".join(t.get("topic", "") for t in trends[:8])
-        trends_section = f"\n## Today's Trending Topics\n{topics}\n"
+        from preflight.trends import format_trends_for_agents
+        trends_section = "\n" + format_trends_for_agents(trends) + "\n"
 
     claims_section = ""
     if claims:
