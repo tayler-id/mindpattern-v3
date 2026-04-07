@@ -273,7 +273,7 @@ class TestRateLimits:
 
     def test_blocked_when_at_limit(self, social_engine, in_memory_db):
         """Returns allowed=False when post count equals limit."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d")
         # Bluesky allows max_posts_per_day=3 per social.json
         for _ in range(3):
             in_memory_db.execute(

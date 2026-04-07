@@ -28,7 +28,7 @@ def get_db(db_path: str | Path | None = None, user_id: str = "ramsay") -> sqlite
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=10.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -269,6 +269,23 @@ def _init_schema(conn: sqlite3.Connection):
             evidence TEXT,
             run_date TEXT NOT NULL,
             created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ── Trend history (learning loop) ───────────────────────────────
+
+        CREATE TABLE IF NOT EXISTS trend_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_date TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            score REAL DEFAULT 0.0,
+            source_count INTEGER DEFAULT 0,
+            item_count INTEGER DEFAULT 0,
+            sources_json TEXT,
+            evidence TEXT,
+            findings_produced INTEGER DEFAULT 0,
+            newsletter_included INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(run_date, topic)
         );
 
         -- ── Run tracking ──────────────────────────────────────────────
