@@ -40,6 +40,8 @@
 
 ## Last Updated
 
+2026-04-04 22:14 — scout added 1 findings.
+
 2026-04-01 19:03 — scout added 5 findings.
 
 2026-04-01 18:08 — updated with deep analysis findings.
@@ -51,3 +53,7 @@
 - **[P2] 2026-04-01-R013** — Add freshness-weighted time-decay to semantic dedup scoring. Files: preflight/run_all.py
 - **[P2] 2026-04-01-011** — Greedy regex in _phase_trend_scan silently drops trends when LLM output contains brackets. Files: orchestrator/runner.py, orchestrator/agents.py
 - **[P2] 2026-04-01-R012** — Add day-of-week aware social posting with platform-specific optimal time windows. Files: social/pipeline.py, social/eic.py, memory/db.py, agents/eic.md, social-config.json
+
+## Scout Findings (2026-04-04 22:14)
+
+- **[P1] test-001** — Test ticket. Files: test.py

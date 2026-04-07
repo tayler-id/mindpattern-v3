@@ -90,23 +90,21 @@ class _SectionBuilder:
         body = "\n".join(self.lines)
         first_para = _extract_first_paragraph(body)
         children = tuple(
-            cb.build(cb._compute_end_line(end_line))
+            cb.build(cb._end_line)
             for cb in self.child_builders
         )
+        # Parent section encompasses all children
+        actual_end = children[-1].end_line if children else end_line
         return Section(
             id="#".join(self.id_parts),
             depth=self.depth,
             heading=self.heading,
             start_line=self.start_line,
-            end_line=end_line,
+            end_line=actual_end,
             first_paragraph=first_para,
             body=body,
             children=children,
         )
-
-    def _compute_end_line(self, parent_end: int) -> int:
-        """Compute end line from the next sibling or parent end."""
-        return parent_end
 
 
 def _extract_first_paragraph(body: str) -> str:

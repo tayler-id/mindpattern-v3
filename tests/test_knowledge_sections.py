@@ -197,6 +197,40 @@ class TestParseSections:
         assert grandchild.heading == "L4"
         assert grandchild.id == "test/file#L2#L3#L4"
 
+    def test_nested_end_line_not_less_than_start(self):
+        """Nested sections must have end_line >= start_line."""
+        text = (
+            "## Parent\n"       # line 1
+            "\n"                 # line 2
+            "Parent intro.\n"   # line 3
+            "\n"                 # line 4
+            "### Child A\n"     # line 5
+            "\n"                 # line 6
+            "Child A body.\n"   # line 7
+            "\n"                 # line 8
+            "### Child B\n"     # line 9
+            "\n"                 # line 10
+            "Child B body.\n"   # line 11 (trailing \n adds line 12)
+        )
+        total_lines = len(text.split("\n"))  # 12 due to trailing newline
+        sections = parse_sections(text, "test/file")
+        parent = sections[0]
+        assert parent.start_line == 1
+        assert parent.end_line == total_lines  # encompasses all children
+        # Children must have correct, non-inverted line ranges
+        child_a = parent.children[0]
+        child_b = parent.children[1]
+        assert child_a.start_line == 5
+        assert child_a.end_line >= child_a.start_line, (
+            f"Child A end_line ({child_a.end_line}) < start_line ({child_a.start_line})"
+        )
+        assert child_a.end_line == 8  # ends before Child B starts
+        assert child_b.start_line == 9
+        assert child_b.end_line >= child_b.start_line, (
+            f"Child B end_line ({child_b.end_line}) < start_line ({child_b.start_line})"
+        )
+        assert child_b.end_line == total_lines
+
     def test_real_knowledge_file(self, knowledge_dir):
         text = (knowledge_dir / "orchestrator-runner.md").read_text()
         sections = parse_sections(text, "orchestrator/runner")

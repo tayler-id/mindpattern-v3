@@ -38,13 +38,17 @@ class BaseHandler:
 
     # ── Slack helpers ──────────────────────────────────────────────
 
-    def reply(self, text: str, thread_ts: str | None = None) -> dict:
+    def reply(self, text: str, thread_ts: str | None = None) -> dict | None:
         """Post a message to this handler's channel, optionally in a thread."""
-        return self.client.chat_postMessage(
-            channel=self.channel_id,
-            text=text,
-            thread_ts=thread_ts,
-        )
+        try:
+            return self.client.chat_postMessage(
+                channel=self.channel_id,
+                text=text,
+                thread_ts=thread_ts,
+            )
+        except Exception as e:
+            logger.error(f"Failed to post message to {self.channel_id}: {e}")
+            return None
 
     def react(self, emoji: str, ts: str) -> None:
         """Add an emoji reaction to a message."""
@@ -57,9 +61,13 @@ class BaseHandler:
 
     def get_thread_replies(self, thread_ts: str) -> list[dict]:
         """Fetch all replies in a thread, excluding bot messages."""
-        resp = self.client.conversations_replies(
-            channel=self.channel_id, ts=thread_ts,
-        )
+        try:
+            resp = self.client.conversations_replies(
+                channel=self.channel_id, ts=thread_ts,
+            )
+        except Exception as e:
+            logger.error(f"Failed to fetch thread replies for {thread_ts}: {e}")
+            return []
         messages = resp.get("messages", [])
         # Filter out bot messages and the original post
         return [
@@ -68,13 +76,13 @@ class BaseHandler:
         ]
 
     def wait_for_reply(
-        self, thread_ts: str, timeout: int | None = None, poll_interval: int = 5
+        self, thread_ts: str, timeout: int = 300, poll_interval: int = 5
     ) -> str | None:
         """Poll for a human reply in a thread. Returns reply text or None on timeout.
 
         Args:
             thread_ts: Thread timestamp to poll.
-            timeout: Max wait in seconds. None means wait forever.
+            timeout: Max wait in seconds. Defaults to 300 (5 min).
             poll_interval: Seconds between polls.
         """
         start = time.monotonic()
