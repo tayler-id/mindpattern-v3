@@ -26,10 +26,12 @@ DB_DIR = Path(__file__).parent / "data"
 
 
 def _get_db(user: str = "ramsay") -> sqlite3.Connection:
-    """Open the memory database with Row factory."""
+    """Open the memory database with WAL mode and foreign keys."""
     db_path = DB_DIR / user / "memory.db"
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=10.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 

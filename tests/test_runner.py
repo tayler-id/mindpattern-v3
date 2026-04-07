@@ -267,6 +267,8 @@ def pipeline(memory_db, traces_conn):
         p.newsletter_text = ""
         p.newsletter_eval = {}
         p.social_result = {}
+        p.evolve_result = {}
+        p.preflight_data = None
         p.traces_conn = traces_conn
         # Insert a pipeline_runs row so FK references work
         traces_conn.execute(
@@ -471,54 +473,64 @@ class TestPhaseInit:
 
 
 class TestPhaseTrendScan:
-    """_phase_trend_scan: calls Claude CLI, parses trend JSON."""
+    """_phase_trend_scan: deterministic trends from preflight data."""
 
-    def test_happy_path_json_array(self, pipeline):
-        trends = [{"topic": "GPT-5"}, {"topic": "Quantum"}]
-        with patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                    return_value=(json.dumps(trends), 0)):
+    def test_detects_trends_from_preflight(self, pipeline):
+        """Trends are detected from preflight items, not LLM calls."""
+        fake_preflight = {
+            "items": [
+                {"source": "hn", "source_name": "HN", "title": "AI agents trending",
+                 "url": "https://a.com", "published": "", "content_preview": "agents are hot",
+                 "metrics": {"points": 400}, "already_covered": False, "match_info": None},
+                {"source": "reddit", "source_name": "r/ML", "title": "AI agents discussion",
+                 "url": "https://b.com", "published": "", "content_preview": "agents discussion",
+                 "metrics": {"score": 500}, "already_covered": False, "match_info": None},
+            ],
+            "assignments": {}, "already_covered": [], "total_items": 2,
+            "new_count": 2, "covered_count": 0, "source_counts": {"hn": 1, "reddit": 1},
+            "duration_ms": 100,
+        }
+        with patch("preflight.run_all.run_all", return_value=fake_preflight):
             result = pipeline._phase_trend_scan()
 
-        assert result["trends"] == trends
-        assert pipeline.trends == trends
+        assert result["method"] == "deterministic"
+        assert len(result["trends"]) >= 1
+        assert pipeline.preflight_data is not None
 
-    def test_json_object_with_topics_key(self, pipeline):
-        data = {"topics": [{"topic": "AI Act"}, {"topic": "LLMs"}]}
-        with patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                    return_value=(json.dumps(data), 0)):
-            result = pipeline._phase_trend_scan()
-
-        assert len(result["trends"]) == 2
-
-    def test_json_embedded_in_text(self, pipeline):
-        output = 'Here are the trends:\n[{"topic": "Rust"}]\nEnd.'
-        with patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                    return_value=(output, 0)):
-            result = pipeline._phase_trend_scan()
-
-        assert len(result["trends"]) == 1
-        assert result["trends"][0]["topic"] == "Rust"
-
-    def test_no_output_returns_empty(self, pipeline):
-        with patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                    return_value=("", 0)):
-            result = pipeline._phase_trend_scan()
-
-        assert result["trends"] == []
-
-    def test_nonzero_exit_code_returns_empty(self, pipeline):
-        with patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                    return_value=("some text", 1)):
+    def test_empty_preflight_returns_empty_trends(self, pipeline):
+        """If preflight returns no items, trends should be empty."""
+        fake_preflight = {
+            "items": [], "assignments": {}, "already_covered": [],
+            "total_items": 0, "new_count": 0, "covered_count": 0,
+            "source_counts": {}, "duration_ms": 50,
+        }
+        with patch("preflight.run_all.run_all", return_value=fake_preflight):
             result = pipeline._phase_trend_scan()
 
         assert result["trends"] == []
 
-    def test_invalid_json_returns_empty(self, pipeline):
-        with patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                    return_value=("not json at all", 0)):
+    def test_preflight_failure_returns_empty_trends(self, pipeline):
+        """If preflight crashes, trend scan still completes with empty trends."""
+        with patch("preflight.run_all.run_all", side_effect=Exception("network error")):
             result = pipeline._phase_trend_scan()
 
         assert result["trends"] == []
+        assert pipeline.preflight_data is None
+
+    def test_no_llm_call_made(self, pipeline):
+        """Trend scan must NOT call run_claude_prompt (no LLM)."""
+        fake_preflight = {
+            "items": [], "assignments": {}, "already_covered": [],
+            "total_items": 0, "new_count": 0, "covered_count": 0,
+            "source_counts": {}, "duration_ms": 50,
+        }
+        with (
+            patch("preflight.run_all.run_all", return_value=fake_preflight),
+            patch("orchestrator.runner.agent_dispatch.run_claude_prompt") as mock_llm,
+        ):
+            pipeline._phase_trend_scan()
+
+        mock_llm.assert_not_called()
 
 
 class TestPhaseResearch:

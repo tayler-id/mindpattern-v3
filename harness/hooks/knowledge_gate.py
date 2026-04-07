@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path("/Users/taylerramsay/Projects/mindpattern-v3")
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 KNOWLEDGE_DIR = PROJECT_ROOT / "harness" / "knowledge"
 
 

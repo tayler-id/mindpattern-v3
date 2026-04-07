@@ -13,7 +13,6 @@ Environment / Keychain:
     slack-channel-config — JSON mapping channel names to IDs
 """
 
-import fcntl
 import logging
 import os
 import signal
@@ -101,7 +100,10 @@ class MindPatternBot:
 
         self.web_client = WebClient(token=bot_token)
         self.socket_client = SocketModeClient(
-            app_token=app_token, web_client=self.web_client,
+            app_token=app_token,
+            web_client=self.web_client,
+            auto_reconnect_enabled=True,
+            ping_interval=30,
         )
 
         # Get bot's own user ID (to ignore its own messages)
