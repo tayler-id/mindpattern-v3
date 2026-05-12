@@ -116,6 +116,7 @@ def _write_single_platform(
         PROJECT_ROOT / "data" / "social-drafts" / f"{platform}-draft.md"
     )
 
+    policy_errors: list[str] = []
     for iteration in range(1, max_iterations + 1):
         # ── Writer (agent with file I/O) ──────────────────────────
         writer_prompt = _build_writer_agent_prompt(
@@ -146,7 +147,7 @@ def _write_single_platform(
                 "error": f"Writer returned no output on iteration {iteration}",
             }
 
-        content = result.get("text", "").strip()
+        content = _strip_envelope(result.get("text", ""))
 
         # ── Critic (blind) ────────────────────────────────────────
         review = review_draft(platform, content)
@@ -158,17 +159,44 @@ def _write_single_platform(
             f"(scores: {review.get('scores', {})})"
         )
 
-        if critic_verdict == "APPROVED":
+        # ── Deterministic policy validation (in-loop) ─────────────
+        # Run policy here so hard limits (grapheme counts, banned patterns)
+        # can drive another rewrite instead of silently leaking past the critic.
+        policy_errors = deterministic_validate(platform, content)
+        if policy_errors:
+            logger.warning(
+                f"[{platform}] iteration {iteration}: PolicyEngine found "
+                f"{len(policy_errors)} error(s): {policy_errors}"
+            )
+            policy_feedback = (
+                "Hard-policy errors (must fix, these are measured, not judged):\n- "
+                + "\n- ".join(policy_errors)
+            )
+            critic_feedback = (
+                f"{critic_feedback}\n\n{policy_feedback}".strip()
+                if critic_feedback
+                else policy_feedback
+            )
+            critic_verdict = "REVISE"
+
+        if critic_verdict == "APPROVED" and not policy_errors:
             break
 
-    # ── Deterministic policy validation ──────────────────────────────
-    policy_errors = deterministic_validate(platform, content)
-
-    if policy_errors:
-        logger.warning(
-            f"[{platform}] PolicyEngine found {len(policy_errors)} error(s): "
-            f"{policy_errors}"
-        )
+    # ── Shrink pass: last-resort fix when the loop leaves a length violation
+    length_errors = [
+        e for e in policy_errors
+        if "grapheme limit" in e or "char limit" in e
+    ]
+    if length_errors and content:
+        from policies.engine import PolicyEngine
+        engine = PolicyEngine.load_social(PROJECT_ROOT / "policies")
+        platform_rules = engine.rules.get("platforms", {}).get(platform, {})
+        max_graphemes = platform_rules.get("max_graphemes") or platform_rules.get("max_chars")
+        if max_graphemes:
+            shrunk = _shrink_pass(content, platform, max_graphemes)
+            if shrunk and shrunk != content:
+                content = shrunk
+                policy_errors = deterministic_validate(platform, content)
 
     # ── Humanizer pass ───────────────────────────────────────────────
     # Open a fresh DB connection for this thread (SQLite thread safety)
@@ -295,6 +323,85 @@ explanation) to this file:
 {output_file}
 """
     return prompt
+
+
+def _strip_envelope(text: str) -> str:
+    """Strip the `PLATFORM:/TYPE:/---` wrapper writer agents are told to emit.
+
+    The agent prompt instructs `Format: PLATFORM: x\\nTYPE: y\\n---\\n<post>\\n---`.
+    Nothing downstream parses this, so the wrapper leaks into the approval
+    message and the live post. This pulls the body out.
+    """
+    if not text:
+        return ""
+    lines = text.splitlines()
+    while lines and (
+        lines[0].lstrip().lower().startswith(("platform:", "type:"))
+        or lines[0].strip() == "---"
+        or not lines[0].strip()
+    ):
+        lines.pop(0)
+    while lines and (lines[-1].strip() == "---" or not lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def _shrink_pass(content: str, platform: str, max_graphemes: int) -> str:
+    """Last-resort shrink-only LLM pass to bring a draft under the grapheme limit.
+
+    Used when the writer/critic loop exits with a length policy error. Preserves
+    voice and URLs; returns original content if the call fails or the result is
+    still over-limit.
+    """
+    from policies.engine import count_graphemes
+
+    current = count_graphemes(content)
+    if current <= max_graphemes:
+        return content
+
+    target = max(max_graphemes - 10, 1)
+    voice_guide = _load_voice_guide()
+
+    prompt = f"""## Voice Guide
+
+{voice_guide}
+
+## Task
+
+Shorten this {platform} post to fit under {max_graphemes} graphemes (aim for {target}).
+Preserve the meaning, voice, and any URLs verbatim. Cut filler, tighten phrasing,
+drop redundant clauses. Do NOT add new ideas, hedges, or emojis.
+
+Current length: {current} graphemes. Need to cut at least {current - target}.
+
+## Draft
+
+{content}
+
+Output ONLY the shortened post — no preamble, no quotes, no explanation."""
+
+    output, exit_code = run_claude_prompt(prompt, task_type="humanizer")
+
+    if exit_code != 0:
+        logger.warning(
+            f"[{platform}] Shrink pass failed (exit={exit_code}); keeping original"
+        )
+        return content
+
+    shrunk = output.strip()
+    if not shrunk:
+        return content
+
+    new_len = count_graphemes(shrunk)
+    if new_len > max_graphemes:
+        logger.warning(
+            f"[{platform}] Shrink pass returned {new_len} graphemes "
+            f"(still over {max_graphemes}); keeping original"
+        )
+        return content
+
+    logger.info(f"[{platform}] Shrink pass: {current} → {new_len} graphemes")
+    return shrunk
 
 
 def _humanize(content: str, platform: str, db=None) -> str:

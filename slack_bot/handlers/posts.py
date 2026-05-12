@@ -114,7 +114,7 @@ class PostsHandler(BaseHandler):
     def _run_and_approve(self, topic: dict, ts: str) -> None:
         """Run the full social pipeline and handle approval flow."""
         try:
-            drafts = self._run_social_pipeline(topic)
+            drafts, policy_errors = self._run_social_pipeline(topic)
         except Exception as e:
             logger.error(f"[mp-posts] Pipeline failed: {e}", exc_info=True)
             self.reply(f"Pipeline failed: {e}", thread_ts=ts)
@@ -135,7 +135,7 @@ class PostsHandler(BaseHandler):
             )
 
         # Post drafts for approval
-        draft_msg = self._format_drafts(drafts)
+        draft_msg = self._format_drafts(drafts, policy_errors)
         self.reply(draft_msg, thread_ts=ts)
 
         # Wait for approval
@@ -163,13 +163,13 @@ class PostsHandler(BaseHandler):
 
         self.reply("\n".join(result_lines), thread_ts=ts)
 
-    def _run_social_pipeline(self, topic: dict) -> dict:
+    def _run_social_pipeline(self, topic: dict) -> tuple[dict, dict]:
         """Run the full social pipeline using the same agents as the daily pipeline.
 
         Steps: Creative Director → writers → critics → humanizer → expeditor
         All use the real agent .md files and voice/soul/user identity.
 
-        Returns: {platform: draft_text} dict
+        Returns: ({platform: draft_text}, {platform: [policy_error, ...]})
         """
         from social.eic import create_brief
         from social.writers import write_drafts
@@ -208,21 +208,24 @@ class PostsHandler(BaseHandler):
 
         # Extract final draft text from results
         drafts = {}
+        errors: dict[str, list[str]] = {}
         for platform, result in results.items():
             content = result.get("humanized") or result.get("content", "")
             if content and content.strip():
                 drafts[platform] = content.strip()
+                errors[platform] = list(result.get("policy_errors") or [])
                 logger.info(
                     f"[mp-posts] {platform}: {len(content)} chars, "
                     f"iterations={result.get('iterations', 0)}, "
-                    f"critic={result.get('critic_verdict', '?')}"
+                    f"critic={result.get('critic_verdict', '?')}, "
+                    f"policy_errors={len(errors[platform])}"
                 )
             else:
                 error = result.get("error", "empty output")
                 logger.warning(f"[mp-posts] {platform} writer failed: {error}")
 
         if not drafts:
-            return drafts
+            return drafts, errors
 
         # Step 6: Expeditor (final quality gate)
         logger.info("[mp-posts] Running expeditor")
@@ -235,7 +238,7 @@ class PostsHandler(BaseHandler):
             logger.warning(f"[mp-posts] Expeditor error (non-fatal): {e}")
 
         logger.info(f"[mp-posts] Pipeline complete: drafts for {list(drafts.keys())}")
-        return drafts
+        return drafts, errors
 
     def _load_social_config(self) -> dict:
         """Load social-config.json from project root."""
@@ -243,12 +246,37 @@ class PostsHandler(BaseHandler):
         with open(config_path) as f:
             return json.load(f)
 
-    def _format_drafts(self, drafts: dict) -> str:
-        """Format drafts for Slack display."""
+    def _format_drafts(self, drafts: dict, policy_errors: dict | None = None) -> str:
+        """Format drafts for Slack display.
+
+        Flags over-limit drafts (and any other policy errors) so the user can
+        edit before approving — the platform-side guard would reject the post
+        anyway, and surfacing it here saves a round trip.
+        """
+        from policies.engine import PolicyEngine, count_graphemes
+
+        engine = PolicyEngine.load_social(PROJECT_ROOT / "policies")
+        platforms_cfg = engine.rules.get("platforms", {})
+        policy_errors = policy_errors or {}
+
         lines = ["Here are your drafts:\n"]
         for platform, draft in drafts.items():
             char_count = len(draft)
-            lines.append(f"*{platform.title()}* ({char_count} chars):")
+            grapheme_count = count_graphemes(draft)
+            rules = platforms_cfg.get(platform, {})
+            limit = rules.get("max_graphemes") or rules.get("max_chars")
+
+            header = f"*{platform.title()}* ({char_count} chars"
+            if grapheme_count != char_count:
+                header += f", {grapheme_count} graphemes"
+            header += ")"
+            if limit and grapheme_count > limit:
+                header += f"  :warning: OVER LIMIT ({grapheme_count}/{limit})"
+            lines.append(header + ":")
+
+            for err in policy_errors.get(platform, []):
+                lines.append(f":warning: {err}")
+
             lines.append(f"```{draft}```")
             lines.append("")
 
@@ -285,17 +313,44 @@ class PostsHandler(BaseHandler):
                 results[platform] = {"success": False, "error": "No draft for this platform"}
                 continue
 
+            # Enforce platform hard limits before calling the API — the writer/policy
+            # engine should catch this, but we refuse to send a doomed request.
+            platform_cfg = config.get("platforms", {}).get(platform, {})
+            if platform == "bluesky":
+                limit = platform_cfg.get("max_chars", 300)
+            elif platform == "linkedin":
+                limit = platform_cfg.get("max_chars", 3000)
+            else:
+                limit = None
+            if limit is not None and len(draft) > limit:
+                msg = f"Draft exceeds {platform} limit ({len(draft)}/{limit} chars). Edit and retry."
+                logger.warning(f"[mp-posts] {msg}")
+                results[platform] = {"success": False, "error": msg}
+                continue
+
             try:
                 if platform == "bluesky":
                     client = BlueskyClient(config["platforms"]["bluesky"])
                     post_result = client.post(draft)
-                    results[platform] = {"success": True, "url": post_result.get("url", ""), "uri": post_result.get("uri", "")}
                 elif platform == "linkedin":
                     client = LinkedInClient(config["platforms"]["linkedin"])
                     post_result = client.post(draft)
-                    results[platform] = {"success": True, "url": post_result.get("url", "")}
                 else:
                     results[platform] = {"success": False, "error": f"Unknown platform: {platform}"}
+                    continue
+
+                # Pass the client's success flag straight through — do not claim success on failure.
+                if post_result.get("success"):
+                    results[platform] = {
+                        "success": True,
+                        "url": post_result.get("url", ""),
+                        "uri": post_result.get("uri", ""),
+                    }
+                else:
+                    results[platform] = {
+                        "success": False,
+                        "error": post_result.get("error", "unknown error"),
+                    }
             except Exception as e:
                 logger.error(f"[mp-posts] Failed to post to {platform}: {e}")
                 results[platform] = {"success": False, "error": str(e)}
