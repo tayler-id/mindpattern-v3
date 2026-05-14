@@ -21,6 +21,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+SKILL_HEADER = "Skill of the Day!"
+
 
 class SkillsHandler(BaseHandler):
     """Handle messages in #mp-skills — skill tip to social post."""
@@ -164,6 +166,12 @@ class SkillsHandler(BaseHandler):
             revised, _ = run_claude_prompt(human_prompt, task_type="humanizer")
             if revised:
                 drafts[platform] = revised.strip()
+
+        # The humanizer strips "Skill of the Day!" as a branded label — force it
+        # back deterministically so the post always ships with the header.
+        for platform, draft in list(drafts.items()):
+            if not draft.lstrip().lower().startswith(SKILL_HEADER.lower()):
+                drafts[platform] = f"{SKILL_HEADER}\n\n{draft.lstrip()}"
 
         return drafts
 
