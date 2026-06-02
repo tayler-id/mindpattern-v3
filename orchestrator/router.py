@@ -9,7 +9,7 @@ MODELS = {
     "haiku": "haiku",
     "sonnet": "sonnet",
     "opus": "opus",
-    "opus_1m": "claude-opus-4-6[1m]",
+    "opus_1m": "claude-opus-4-8[1m]",
 }
 
 # Map each task type to its optimal model
@@ -87,7 +87,7 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "haiku": {"input": 0.25, "output": 1.25},
     "sonnet": {"input": 3.0, "output": 15.0},
     "opus": {"input": 15.0, "output": 75.0},
-    "claude-opus-4-6[1m]": {"input": 15.0, "output": 75.0},
+    "claude-opus-4-8[1m]": {"input": 15.0, "output": 75.0},
 }
 
 

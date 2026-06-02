@@ -286,14 +286,14 @@ class TestRouter:
         assert get_model("trend_scan") == "haiku"
 
     def test_get_model_research_agent(self):
-        assert get_model("research_agent") == "claude-opus-4-6[1m]"
+        assert get_model("research_agent") == "claude-opus-4-8[1m]"
 
     def test_get_model_synthesis(self):
-        assert get_model("synthesis_pass1") == "claude-opus-4-6[1m]"
-        assert get_model("synthesis_pass2") == "claude-opus-4-6[1m]"
+        assert get_model("synthesis_pass1") == "claude-opus-4-8[1m]"
+        assert get_model("synthesis_pass2") == "claude-opus-4-8[1m]"
 
     def test_get_model_social_tasks(self):
-        assert get_model("eic") == "claude-opus-4-6[1m]"
+        assert get_model("eic") == "claude-opus-4-8[1m]"
         assert get_model("writer") == "sonnet"
         assert get_model("critic") == "sonnet"
 
@@ -966,8 +966,8 @@ class TestPolicyRateLimits:
         assert result["allowed"] is True
 
     def test_blocked_when_at_limit(self, engine, db):
-        from datetime import datetime
-        today = datetime.now().strftime("%Y-%m-%d")
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         for _ in range(3):
             db.execute(
                 "INSERT INTO engagements (platform, engagement_type, created_at) VALUES (?, ?, ?)",
