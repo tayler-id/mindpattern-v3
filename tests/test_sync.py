@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from orchestrator.sync import (
+    FLYCTL,
     _fly_sftp_put,
     _fly_ssh,
     _wal_checkpoint,
@@ -257,7 +258,7 @@ class TestUploadBundle:
         assert result == {"success": True, "error": None}
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["flyctl", "ssh", "sftp", "shell", "-a", "myapp"]
+        assert cmd == [FLYCTL, "ssh", "sftp", "shell", "-a", "myapp"]
         assert f'put "{bundle}" /data/test/sync-bundle.tar.gz' in mock_run.call_args[1]["input"]
 
     @patch("orchestrator.sync.subprocess.run")
@@ -345,11 +346,11 @@ class TestRestartApp:
 
         # Verify list command
         list_cmd = mock_run.call_args_list[0][0][0]
-        assert list_cmd == ["flyctl", "machines", "list", "-a", "myapp", "--json"]
+        assert list_cmd == [FLYCTL, "machines", "list", "-a", "myapp", "--json"]
 
         # Verify restart command
         restart_cmd = mock_run.call_args_list[1][0][0]
-        assert restart_cmd == ["flyctl", "machine", "restart", "machine-abc123", "-a", "myapp"]
+        assert restart_cmd == [FLYCTL, "machine", "restart", "machine-abc123", "-a", "myapp"]
 
     @patch("orchestrator.sync.subprocess.run")
     def test_list_machines_failure(self, mock_run):

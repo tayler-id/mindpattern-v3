@@ -6,6 +6,8 @@ and restarts the app. ONE upload per user instead of 30 separate connections.
 
 import json
 import logging
+import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -14,6 +16,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+def _flyctl_bin() -> str:
+    """Resolve the flyctl binary.
+
+    The pipeline runs under launchd, whose PATH does not include the default
+    flyctl install dir (~/.fly/bin), so a bare "flyctl" lookup fails with
+    FileNotFoundError. Prefer PATH, then fall back to the standard install
+    location before giving up with the bare name (preserves prior behaviour).
+    """
+    found = shutil.which("flyctl")
+    if found:
+        return found
+    fallback = os.path.expanduser("~/.fly/bin/flyctl")
+    if os.path.exists(fallback):
+        return fallback
+    return "flyctl"
+
+
+FLYCTL = _flyctl_bin()
 
 
 def sync_to_fly(
@@ -211,7 +233,7 @@ def upload_bundle(bundle_path: Path, remote_path: str, app_name: str) -> dict:
     """
     try:
         result = subprocess.run(
-            ["flyctl", "ssh", "sftp", "shell", "-a", app_name],
+            [FLYCTL, "ssh", "sftp", "shell", "-a", app_name],
             input=f'put "{bundle_path}" {remote_path}\n',
             capture_output=True,
             text=True,
@@ -247,7 +269,7 @@ def restart_app(app_name: str) -> dict:
     try:
         # Get machine ID
         list_result = subprocess.run(
-            ["flyctl", "machines", "list", "-a", app_name, "--json"],
+            [FLYCTL, "machines", "list", "-a", app_name, "--json"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -269,7 +291,7 @@ def restart_app(app_name: str) -> dict:
 
         # Restart the machine
         restart_result = subprocess.run(
-            ["flyctl", "machine", "restart", machine_id, "-a", app_name],
+            [FLYCTL, "machine", "restart", machine_id, "-a", app_name],
             capture_output=True,
             text=True,
             timeout=60,
@@ -328,7 +350,7 @@ def _fly_ssh(app_name: str, command: str) -> dict:
         # Single quotes inside the command are escaped for the sh -c wrapper.
         wrapped = f"sh -c '{command.replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'"
         result = subprocess.run(
-            ["flyctl", "ssh", "console", "-a", app_name, "-C", wrapped],
+            [FLYCTL, "ssh", "console", "-a", app_name, "-C", wrapped],
             capture_output=True,
             text=True,
             timeout=60,
@@ -355,7 +377,7 @@ def _fly_sftp_put(app_name: str, local_path: str, remote_path: str) -> bool:
     """Upload a single file via flyctl sftp."""
     try:
         result = subprocess.run(
-            ["flyctl", "ssh", "sftp", "shell", "-a", app_name],
+            [FLYCTL, "ssh", "sftp", "shell", "-a", app_name],
             input=f'put "{local_path}" {remote_path}\n',
             capture_output=True, text=True, timeout=60,
         )
