@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
+def _enabled_platforms(social_config: dict) -> list[str]:
+    """Return the names of social platforms with enabled=true.
+
+    Handles the real schema (platforms is a dict of {name: {enabled: bool}})
+    and the legacy list form (platforms is a list of names = all enabled).
+    """
+    plats = social_config.get("platforms", {})
+    if isinstance(plats, dict):
+        return [n for n, c in plats.items() if isinstance(c, dict) and c.get("enabled")]
+    return list(plats)
+
+
 class ResearchPipeline:
     """Orchestrates the full research pipeline for a single user."""
 
@@ -1023,6 +1035,13 @@ class ResearchPipeline:
             logger.warning("social-config.json not found, skipping social phase")
             return {"skipped": True, "reason": "social-config.json missing"}
 
+        # Skip entirely when no platform is enabled — otherwise topic selection
+        # and the blocking approval gates still run with nothing to post to,
+        # hanging the pipeline for hours on a Slack reply that never comes.
+        if not _enabled_platforms(social_config):
+            logger.info("Social: no platforms enabled, skipping social phase")
+            return {"skipped": True, "reason": "no platforms enabled"}
+
         pipeline = SocialPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
         self.social_result = result
@@ -1081,6 +1100,11 @@ class ResearchPipeline:
         except FileNotFoundError:
             logger.warning("social-config.json not found, skipping engagement phase")
             return {"skipped": True, "reason": "social-config.json missing"}
+
+        # Skip when no platform is enabled (same gate-hang reason as social).
+        if not _enabled_platforms(social_config):
+            logger.info("Engagement: no platforms enabled, skipping engagement phase")
+            return {"skipped": True, "reason": "no platforms enabled"}
 
         pipeline = EngagementPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
@@ -1320,7 +1344,17 @@ class ResearchPipeline:
         if result.get("success"):
             logger.info(f"Sync: {result.get('bytes_uploaded', 0)} bytes uploaded")
         else:
-            logger.warning(f"Sync failed: {result.get('error')}")
+            err = result.get("error") or "unknown error"
+            logger.warning(f"Sync failed: {err}")
+            reports_dir = data_dir.parent / "reports" / self.user_id
+            unsynced = sorted(reports_dir.glob("????-??-??.md")) if reports_dir.exists() else []
+            latest = unsynced[-1].stem if unsynced else "n/a"
+            self._send_alert(
+                f":rotating_light: Fly sync failed for `{self.user_id}` — {err}\n"
+                f"Local newsletters present: {len(unsynced)} (latest `{latest}`). "
+                f"Dashboard at mindpattern.ai is stale until this is fixed. "
+                f"Run `flyctl auth login` if it's an auth error."
+            )
 
         return result
 

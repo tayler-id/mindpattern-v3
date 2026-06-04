@@ -934,13 +934,32 @@ class TestPhaseSocial:
                     __exit__=MagicMock(return_value=False)
                 )
             )),
-            patch("json.load", return_value={}),
+            patch("json.load", return_value={"platforms": ["bluesky"]}),
             patch("orchestrator.runner.memory.store_signal") as mock_signal,
         ):
             result = pipeline._phase_social()
 
         assert result["kill_day"] is True
         mock_signal.assert_called_once()
+
+    def test_skips_when_no_platforms_enabled(self, pipeline):
+        mock_social = MagicMock()
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", Path(tempfile.mkdtemp())),
+            patch("social.pipeline.SocialPipeline", return_value=mock_social),
+            patch("builtins.open", MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False)
+                )
+            )),
+            patch("json.load", return_value={"platforms": {"bluesky": {"enabled": False}}}),
+        ):
+            result = pipeline._phase_social()
+
+        assert result["skipped"] is True
+        assert result["reason"] == "no platforms enabled"
+        mock_social.run.assert_not_called()
 
 
 class TestPhaseEngagement:
@@ -962,12 +981,30 @@ class TestPhaseEngagement:
                     __exit__=MagicMock(return_value=False)
                 )
             )),
-            patch("json.load", return_value={}),
+            patch("json.load", return_value={"platforms": ["bluesky"]}),
         ):
             result = pipeline._phase_engagement()
 
         assert result["replies_posted"] == 3
         assert result["follows"] == 2
+
+    def test_skips_when_no_platforms_enabled(self, pipeline):
+        mock_eng = MagicMock()
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", Path(tempfile.mkdtemp())),
+            patch("social.engagement.EngagementPipeline", return_value=mock_eng),
+            patch("builtins.open", MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False)
+                )
+            )),
+            patch("json.load", return_value={"platforms": {"bluesky": {"enabled": False}}}),
+        ):
+            result = pipeline._phase_engagement()
+
+        assert result["skipped"] is True
+        mock_eng.run.assert_not_called()
 
 
 class TestPhaseEvolve:
@@ -1088,21 +1125,34 @@ class TestPhaseSync:
             patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
             patch("orchestrator.sync.sync_to_fly",
                   return_value={"success": True, "bytes_uploaded": 1024}),
+            patch.object(pipeline, "_send_alert") as mock_alert,
         ):
             result = pipeline._phase_sync()
 
         assert result["success"] is True
         assert result["bytes_uploaded"] == 1024
+        mock_alert.assert_not_called()
 
     def test_sync_failure_returns_error(self, pipeline, tmp_path):
+        reports_dir = tmp_path / "reports" / pipeline.user_id
+        reports_dir.mkdir(parents=True)
+        (reports_dir / "2026-04-30.md").write_text("# r\n")
+        (reports_dir / "2026-05-01.md").write_text("# r\n")
+
         with (
             patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
             patch("orchestrator.sync.sync_to_fly",
                   return_value={"success": False, "error": "Connection refused"}),
+            patch.object(pipeline, "_send_alert") as mock_alert,
         ):
             result = pipeline._phase_sync()
 
         assert result["success"] is False
+        mock_alert.assert_called_once()
+        message = mock_alert.call_args[0][0]
+        assert "Connection refused" in message
+        assert "2026-05-01" in message
+        assert "2" in message  # newsletter count
 
 
 # ═══════════════════════════════════════════════════════════════════════
