@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mindpattern.slackbot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3</string>
+        <string>-m</string>
+        <string>slack_bot</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/taylerramsay/Projects/mindpattern-v3</string>
+
+    <!-- The bot shells out to claude (post generation), so claude/node/flyctl
+         must be on PATH; launchd otherwise provides a minimal PATH. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/taylerramsay/.local/bin:/Users/taylerramsay/.fly/bin:/Users/taylerramsay/.local/node/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Long-running Socket Mode daemon: start at login and keep it alive
+         (restart if it crashes or the Mac wakes from sleep). -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/taylerramsay/Projects/mindpattern-v3/reports/slack-bot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/taylerramsay/Projects/mindpattern-v3/reports/slack-bot.log</string>
+</dict>
+</plist>

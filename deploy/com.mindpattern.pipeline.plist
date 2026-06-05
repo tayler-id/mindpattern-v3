@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mindpattern.pipeline</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/taylerramsay/Projects/mindpattern-v3/run-launchd.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/taylerramsay/Projects/mindpattern-v3</string>
+
+    <!-- launchd gives a minimal PATH; the pipeline shells out to claude,
+         flyctl, and node, so they must be discoverable here. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/taylerramsay/.local/bin:/Users/taylerramsay/.fly/bin:/Users/taylerramsay/.local/node/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Fire hourly across the 07-11 window. The wrapper enforces the window
+         and a once-per-day marker, so extra triggers are cheap no-ops and
+         provide catch-up if the Mac was asleep at 07:00. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/taylerramsay/Projects/mindpattern-v3/reports/launchd-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/taylerramsay/Projects/mindpattern-v3/reports/launchd-stderr.log</string>
+</dict>
+</plist>
