@@ -10,6 +10,8 @@ The expeditor is the final quality gate across all platforms.
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 from orchestrator.agents import run_agent_with_files
@@ -252,9 +254,14 @@ def expedite(
         f'"{p}": "PASS" or "FAIL"' for p in platform_list
     )
 
-    output_file = str(
-        PROJECT_ROOT / "data" / "social-drafts" / "expedite-verdict.json"
+    # Per-run verdict file — two concurrent pipelines must not read each
+    # other's verdicts through a shared path.
+    verdict_dir = PROJECT_ROOT / "data" / "social-drafts"
+    verdict_dir.mkdir(parents=True, exist_ok=True)
+    fd, output_file = tempfile.mkstemp(
+        prefix="expedite-verdict-", suffix=".json", dir=str(verdict_dir)
     )
+    os.close(fd)
 
     prompt = f"""You are the Expeditor, the last quality gate before content reaches a human.
 
@@ -313,13 +320,16 @@ The JSON must have this exact structure:
 Write ONLY the JSON file. No other files, no other output.
 """
 
-    result = run_agent_with_files(
-        system_prompt_file="agents/expeditor.md",
-        prompt=prompt,
-        output_file=output_file,
-        allowed_tools=["Read", "Write", "Glob", "Grep"],
-        task_type="expeditor",
-    )
+    try:
+        result = run_agent_with_files(
+            system_prompt_file="agents/expeditor.md",
+            prompt=prompt,
+            output_file=output_file,
+            allowed_tools=["Read", "Write", "Glob", "Grep"],
+            task_type="expeditor",
+        )
+    finally:
+        Path(output_file).unlink(missing_ok=True)
 
     # Agent may return None (no output), a raw string (malformed JSON file),
     # or a non-dict JSON value. Normalise to dict or treat as failure.

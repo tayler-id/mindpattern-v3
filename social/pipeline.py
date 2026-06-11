@@ -17,6 +17,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import memory
+from core import receipts
 from orchestrator.agents import run_claude_prompt
 from policies.engine import PolicyEngine
 from social.approval import ApprovalGateway
@@ -656,9 +657,26 @@ class SocialPipeline:
                     if not image.exists():
                         image = None
 
+                if not receipts.outbound_allowed():
+                    logger.warning("Pending posts blocked: outbound disabled")
+                    return results
+
+                receipt_key = (
+                    f"post:{platform}:{self.date_str}:"
+                    f"{receipts.content_key(content)}"
+                )
+                if not receipts.claim(self.db, receipt_key):
+                    # This exact content already went out today on this
+                    # platform — mark done so it doesn't retry forever.
+                    memory.mark_pending_posted(self.db, post["id"])
+                    continue
+
                 try:
                     post_result = client.post(content, image_path=image)
+                except Exception as e:
+                    post_result = {"success": False, "error": str(e)}
 
+                if post_result.get("success"):
                     # Record the post in both tables
                     memory.store_post(
                         self.db,
@@ -690,17 +708,34 @@ class SocialPipeline:
                         f"(pending_id={post['id']}): "
                         f"{post_result.get('url', 'no url')}"
                     )
-
-                except Exception as e:
+                else:
+                    error = post_result.get("error") or "post failed"
                     logger.error(
                         f"Failed to post pending {platform} draft "
-                        f"(pending_id={post['id']}): {e}"
+                        f"(pending_id={post['id']}): {error}"
+                    )
+                    # Definite failure: free the receipt so a retry can
+                    # claim it; record the failure truthfully.
+                    receipts.release(self.db, receipt_key)
+                    memory.store_post(
+                        self.db,
+                        date=self.date_str,
+                        platform=platform,
+                        content=content,
+                        posted=False,
+                    )
+                    memory.store_engagement(
+                        self.db,
+                        user_id=self.user_id,
+                        platform=platform,
+                        engagement_type="post",
+                        status="failed",
                     )
                     results.append({
                         "platform": platform,
                         "url": None,
                         "id": None,
-                        "error": str(e),
+                        "error": error,
                         "source": "pending",
                     })
 
@@ -777,8 +812,35 @@ class SocialPipeline:
                 })
                 continue
 
+            if not receipts.outbound_allowed():
+                results.append({
+                    "platform": platform,
+                    "url": None,
+                    "id": None,
+                    "error": "outbound disabled (MP_DISABLE_OUTBOUND=1)",
+                })
+                continue
+
+            # Claim the receipt BEFORE posting — a crash-and-resume or a
+            # concurrent pipeline cannot post the same content twice.
+            receipt_key = (
+                f"post:{platform}:{self.date_str}:{receipts.content_key(content)}"
+            )
+            if not receipts.claim(self.db, receipt_key):
+                results.append({
+                    "platform": platform,
+                    "url": None,
+                    "id": None,
+                    "error": "skipped: already posted (receipt claimed)",
+                })
+                continue
+
             try:
                 post_result = client.post(content, image_path=image)
+            except Exception as e:
+                post_result = {"success": False, "error": str(e)}
+
+            if post_result.get("success"):
                 results.append({
                     "platform": platform,
                     "url": post_result.get("url"),
@@ -808,14 +870,31 @@ class SocialPipeline:
                 logger.info(
                     f"Posted to {platform}: {post_result.get('url', 'no url')}"
                 )
-
-            except Exception as e:
-                logger.error(f"Failed to post to {platform}: {e}")
+            else:
+                error = post_result.get("error") or "post failed"
+                logger.error(f"Failed to post to {platform}: {error}")
+                # Definite failure: free the receipt so a retry can claim
+                # it; record the failure as a failure (audit C5).
+                receipts.release(self.db, receipt_key)
+                memory.store_post(
+                    self.db,
+                    date=self.date_str,
+                    platform=platform,
+                    content=content,
+                    posted=False,
+                )
+                memory.store_engagement(
+                    self.db,
+                    user_id=self.user_id,
+                    platform=platform,
+                    engagement_type="post",
+                    status="failed",
+                )
                 results.append({
                     "platform": platform,
                     "url": None,
                     "id": None,
-                    "error": str(e),
+                    "error": error,
                 })
 
             # Jitter between posts (skip after last one)
