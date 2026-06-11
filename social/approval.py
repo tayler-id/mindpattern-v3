@@ -10,6 +10,8 @@ without parsing free-text responses.
 
 import json
 import logging
+import os
+import re
 import secrets
 import subprocess
 import time
@@ -22,6 +24,14 @@ logger = logging.getLogger(__name__)
 # Slack config
 SLACK_CHANNEL = "C0ALSRHAATH"  # #mindpattern-approvals
 SLACK_KEYCHAIN_KEY = "slack-bot-token"
+SLACK_OWNER_KEYCHAIN_KEY = "slack-owner-user-id"
+
+# Approval = explicit affirmative token from the owner; anything else = no
+# (audit C4 — the old parser treated "wait", "why?", "hold on" as approval).
+AFFIRMATIVE_TOKENS = frozenset({
+    "go", "all", "yes", "y", "ok", "approve", "approved", "send", "post",
+    "ship", "ship it", "post it",
+})
 
 # Safety cap: approval polls must terminate even if no explicit timeout
 # is configured.  Prevents indefinite pipeline blocks (see 2026-04-01-006).
@@ -72,7 +82,9 @@ class ApprovalGateway:
         reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_topic_reply(reply, len(topics))
 
-    def request_draft_approval(self, drafts: dict, images: dict) -> dict:
+    def request_draft_approval(
+        self, drafts: dict, images: dict, expeditor: dict | None = None
+    ) -> dict:
         """Gate 2: Draft approval.
 
         Presents final drafts (with images) for approval before posting via Slack.
@@ -80,6 +92,8 @@ class ApprovalGateway:
         Args:
             drafts: {platform: content_str} dict.
             images: {platform: image_path_or_url} dict.
+            expeditor: Optional expeditor result {verdict, feedback} —
+                displayed loudly in the approval message.
 
         Returns:
             {
@@ -88,7 +102,7 @@ class ApprovalGateway:
                 edits: dict             # {platform: edited_content} for inline edits
             }
         """
-        message = self._format_draft_message(drafts, images)
+        message = self._format_draft_message(drafts, images, expeditor)
         reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_draft_reply(reply, list(drafts.keys()))
 
@@ -284,6 +298,24 @@ class ApprovalGateway:
             logger.warning(f"Keychain Slack token lookup failed: {e}")
         return None
 
+    def _get_owner_user_id(self) -> str:
+        """Owner's Slack user ID — the only user whose replies count.
+
+        Keychain first, env fallback. Empty string means unconfigured;
+        polling then fails closed (no reply is ever accepted).
+        """
+        try:
+            result = subprocess.run(
+                ["security", "find-generic-password",
+                 "-s", SLACK_OWNER_KEYCHAIN_KEY, "-w"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception as e:
+            logger.warning(f"Keychain owner-id lookup failed: {e}")
+        return os.environ.get("MP_SLACK_OWNER_USER_ID", "")
+
     def _slack_post(self, token: str, text: str, thread_ts: str | None = None) -> dict | None:
         """Post a message to the Slack approvals channel.
 
@@ -336,11 +368,23 @@ class ApprovalGateway:
         # but only accept replies with ts > after_ts
         thread_parent = self.thread_ts or after_ts
 
+        # Approver allowlist: only the owner's replies count (audit C4).
+        # Unconfigured owner = fail closed — no reply is ever accepted.
+        owner_id = self._get_owner_user_id()
+        if not owner_id:
+            logger.error(
+                "No owner user ID configured (keychain '%s' or "
+                "MP_SLACK_OWNER_USER_ID) — approval polling fails closed; "
+                "nothing will be approved.",
+                SLACK_OWNER_KEYCHAIN_KEY,
+            )
+
         while True:
             time.sleep(poll_interval)
 
             try:
-                # Check for threaded replies first
+                # Thread-scoped ONLY: a reply must be in this approval's
+                # thread. Channel chatter is never an approval (audit C4).
                 params = urllib.parse.urlencode({
                     "channel": SLACK_CHANNEL,
                     "ts": thread_parent,
@@ -355,38 +399,17 @@ class ApprovalGateway:
 
                 if result.get("ok"):
                     messages = result.get("messages", [])
-                    # Only consider replies posted AFTER our specific message
+                    # Only replies posted AFTER our specific message, by the owner
                     replies = [
                         m for m in messages[1:]
                         if m.get("text") and not m.get("bot_id")
                         and m.get("ts", "0") > after_ts
+                        and owner_id and m.get("user") == owner_id
                     ]
                     if replies:
                         reply_text = replies[0]["text"]
                         logger.info(f"Slack threaded reply: {reply_text[:50]}")
                         return reply_text
-
-                # Also check for new channel messages after our post
-                params = urllib.parse.urlencode({
-                    "channel": SLACK_CHANNEL,
-                    "oldest": after_ts,
-                    "limit": 10,
-                })
-                req = urllib.request.Request(
-                    f"https://slack.com/api/conversations.history?{params}",
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    result = json.loads(resp.read().decode())
-
-                if result.get("ok"):
-                    messages = result.get("messages", [])
-                    # Find human messages posted AFTER our bot message
-                    for m in messages:
-                        if m.get("ts", "0") > after_ts and not m.get("bot_id") and m.get("text"):
-                            reply_text = m["text"]
-                            logger.info(f"Slack channel reply: {reply_text[:50]}")
-                            return reply_text
 
             except Exception as e:
                 logger.debug(f"Slack poll error (will retry): {e}")
@@ -470,9 +493,27 @@ class ApprovalGateway:
 
         return "\n".join(lines)
 
-    def _format_draft_message(self, drafts: dict, images: dict) -> str:
-        """Format draft previews for Slack approval message."""
+    def _format_draft_message(
+        self, drafts: dict, images: dict, expeditor: dict | None = None
+    ) -> str:
+        """Format draft previews for Slack approval message.
+
+        Shows the FULL draft text — the approver must see exactly what will
+        be posted, never a truncation. The expeditor verdict is displayed
+        loudly so a degraded gate is visible at approval time.
+        """
         lines = ["MindPattern Social - Draft Approval", ""]
+
+        if expeditor:
+            verdict = expeditor.get("verdict", "unknown")
+            feedback = expeditor.get("feedback", "")
+            if verdict == "PASS":
+                lines.append(f":white_check_mark: Expeditor: PASS")
+            else:
+                lines.append(f":rotating_light: Expeditor: {verdict}")
+            if feedback:
+                lines.append(f"> {feedback}")
+            lines.append("")
 
         for platform, content in drafts.items():
             if isinstance(content, dict):
@@ -480,11 +521,8 @@ class ApprovalGateway:
             else:
                 text = content
             has_image = "yes" if images.get(platform) else "no"
-            lines.append(f"--- {platform.upper()} (image: {has_image}) ---")
-            truncated = text[:500]
-            lines.append(truncated)
-            if len(text) > 500:
-                lines.append(f"... ({len(text)} chars total)")
+            lines.append(f"--- {platform.upper()} (image: {has_image}, {len(text)} chars) ---")
+            lines.append(text)
             lines.append("")
 
         lines.append("Reply ALL to post all, SKIP to reject, or name platforms (e.g. 'bluesky linkedin')")
@@ -549,36 +587,41 @@ class ApprovalGateway:
         return {"action": "custom", "topic_index": 0, "guidance": original}
 
     def _parse_draft_reply(self, reply: str | None, platforms: list[str]) -> dict:
-        """Parse reply for draft approval."""
+        """Parse reply for draft approval.
+
+        Approval requires an explicit affirmative token, or a reply that
+        consists ONLY of platform names. Everything else — "wait", "hold on",
+        "why?", "skip linkedin", pasted text — is a no-decision and does NOT
+        post (audit C4: the old parser treated ambiguity as approval).
+        """
         if not reply:
             return {"action": "skip", "platforms": [], "edits": {}}
 
-        reply = reply.strip().lower()
+        normalized = reply.strip().lower()
 
-        if reply in ("skip", "kill", "no", "pass", "cancel"):
-            return {"action": "skip", "platforms": [], "edits": {}}
-
-        if reply in ("go", "all", "yes", "approve", "send", "post"):
+        if normalized in AFFIRMATIVE_TOKENS:
             return {"action": "all", "platforms": platforms, "edits": {}}
 
-        # Check for selective platform approval
-        approved = []
-        for platform in platforms:
-            if platform.lower() in reply:
-                approved.append(platform)
-
-        if approved:
+        # Selective approval: the reply must be NOTHING BUT platform names
+        # (separators allowed). "skip linkedin" therefore never approves.
+        tokens = [
+            t for t in re.split(r"[\s,/+&]+", normalized)
+            if t and t != "and"
+        ]
+        platform_map = {p.lower(): p for p in platforms}
+        if tokens and all(t in platform_map for t in tokens):
+            approved = list(dict.fromkeys(platform_map[t] for t in tokens))
             return {
                 "action": "approve_selected",
                 "platforms": approved,
                 "edits": {},
             }
 
-        # If nothing matched, treat ambiguous replies as approval
-        # (bias toward action — user can always say skip/no explicitly)
-        if len(reply) > 0 and reply[0] not in ("n", "s", "k", "c"):
-            return {"action": "all", "platforms": platforms, "edits": {}}
-
+        if normalized not in ("skip", "kill", "no", "pass", "cancel"):
+            logger.info(
+                f"Draft reply not an explicit approval — treating as skip: "
+                f"{reply[:80]!r}"
+            )
         return {"action": "skip", "platforms": [], "edits": {}}
 
     def _parse_engagement_reply(

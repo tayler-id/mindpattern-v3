@@ -229,12 +229,12 @@ class TestParseDraftReply:
         assert result["action"] == "skip"
         assert result["platforms"] == []
 
-    def test_ambiguous_reply_biases_toward_action(self, gateway):
-        """Ambiguous reply (not starting with n/s/k/c) defaults to all."""
+    def test_ambiguous_reply_is_not_approval(self, gateway):
+        """Ambiguous reply is a no-decision — it must NOT post (audit C4)."""
         platforms = ["bluesky", "linkedin"]
         result = gateway._parse_draft_reply("looks good", platforms)
-        assert result["action"] == "all"
-        assert result["platforms"] == platforms
+        assert result["action"] == "skip"
+        assert result["platforms"] == []
 
     def test_reply_starting_with_n_skips(self, gateway):
         """Reply starting with 'n' is treated as skip."""
@@ -377,19 +377,19 @@ class TestFormatDraftMessage:
         """Image indicator shows 'yes' or 'no'."""
         images = {"bluesky": "https://example.com/image.png"}
         msg = gateway._format_draft_message(sample_drafts, images)
-        assert "(image: yes)" in msg
-        assert "(image: no)" in msg
+        assert "(image: yes" in msg
+        assert "(image: no" in msg
 
     def test_draft_content_included(self, gateway, sample_drafts):
         """Draft text appears in the message."""
         msg = gateway._format_draft_message(sample_drafts, {})
         assert "GPT-5" in msg
 
-    def test_long_draft_truncated(self, gateway):
-        """Drafts longer than 500 chars are truncated with char count."""
+    def test_long_draft_shown_in_full(self, gateway):
+        """The approver sees the FULL text — never a truncation (M0 task 11)."""
         long_drafts = {"bluesky": "A" * 600}
         msg = gateway._format_draft_message(long_drafts, {})
-        assert "600 chars total" in msg
+        assert "A" * 600 in msg
 
     def test_reply_instructions(self, gateway, sample_drafts):
         """Reply instructions appear at the end."""

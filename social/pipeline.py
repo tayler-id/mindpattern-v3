@@ -446,7 +446,9 @@ class SocialPipeline:
         logger.info("Step 9: Approval")
         step9_start = time.monotonic()
         try:
-            approval_response = self.approval.request_draft_approval(drafts, images)
+            approval_response = self.approval.request_draft_approval(
+                drafts, images, expeditor=exp_result
+            )
             logger.info(f"Step 9 complete: action={approval_response.get('action', '?')}, duration={time.monotonic() - step9_start:.1f}s")
         except Exception as e:
             logger.error(f"Approval gateway failed: {e}")

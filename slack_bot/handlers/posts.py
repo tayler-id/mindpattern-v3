@@ -15,6 +15,7 @@ Uses the same agent files and pipeline modules as the daily social pipeline.
 
 import json
 import logging
+import re
 import sqlite3
 import sys
 from datetime import datetime
@@ -285,21 +286,28 @@ class PostsHandler(BaseHandler):
         return "\n".join(lines)
 
     def _parse_approval(self, reply: str, platforms: list[str]) -> list[str]:
-        """Parse an approval reply into a list of platforms to post to."""
+        """Parse an approval reply into a list of platforms to post to.
+
+        Approval requires an explicit affirmative token, or a reply that is
+        NOTHING BUT platform names — "skip linkedin" must skip, never post
+        linkedin (audit: the old substring match approved it).
+        """
         reply_lower = reply.lower().strip()
 
-        if reply_lower in ("skip", "no", "cancel", "n"):
-            return []
-
-        if reply_lower in ("all", "yes", "y", "go", "post"):
+        if reply_lower in ("all", "yes", "y", "go", "post", "approve", "approved", "ok", "ship", "ship it", "post it"):
             return platforms
 
-        # Check for specific platform names
-        approved = []
-        for p in platforms:
-            if p.lower() in reply_lower:
-                approved.append(p)
-        return approved if approved else []
+        tokens = [
+            t for t in re.split(r"[\s,/+&]+", reply_lower)
+            if t and t != "and"
+        ]
+        platform_map = {p.lower(): p for p in platforms}
+        if tokens and all(t in platform_map for t in tokens):
+            return list(dict.fromkeys(platform_map[t] for t in tokens))
+
+        # Anything else — "skip", "wait", "skip linkedin", pasted text — is
+        # a no-decision: nothing posts.
+        return []
 
     def _post_to_platforms(self, drafts: dict, platforms: list[str]) -> dict:
         """Post drafts to approved platforms. Returns {platform: result}."""
