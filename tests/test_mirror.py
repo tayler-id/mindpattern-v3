@@ -362,24 +362,29 @@ class TestArchival:
 
         decisions_path = vault / "decisions.md"
 
-        # Write an entry dated 100 days ago (should be archived)
-        old_entry = "## 2025-12-01\n\nOld decision that should be archived.\n"
-        recent_entry = "## 2026-03-10\n\nRecent decision that should stay.\n"
+        # Archival cutoff is relative to the real current date, so build
+        # entries dynamically: one well past the cutoff, one well inside it.
+        from datetime import date as _date, timedelta
+
+        old_date = (_date.today() - timedelta(days=120)).isoformat()
+        recent_date = (_date.today() - timedelta(days=5)).isoformat()
+        old_entry = f"## {old_date}\n\nOld decision that should be archived.\n"
+        recent_entry = f"## {recent_date}\n\nRecent decision that should stay.\n"
         from memory.vault import atomic_write
         atomic_write(decisions_path, old_entry + "\n" + recent_entry)
 
-        generate_mirrors(seeded_db, vault, "2026-03-15")
+        generate_mirrors(seeded_db, vault, _date.today().isoformat())
 
         # After archival, decisions.md should only have the recent entry
         remaining = read_source_file(decisions_path)
-        assert "2026-03-10" in remaining
-        assert "2025-12-01" not in remaining
+        assert recent_date in remaining
+        assert old_date not in remaining
 
         # Archive file should have the old entry
         archive_path = vault / "decisions-archive.md"
         assert archive_path.exists()
         archive_content = read_source_file(archive_path)
-        assert "2025-12-01" in archive_content
+        assert old_date in archive_content
 
 
 # ══════════════════════════════════════════════════════════════════════════════

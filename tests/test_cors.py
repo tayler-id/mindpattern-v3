@@ -40,7 +40,7 @@ class TestCORSAllowedOrigin:
 
     def test_simple_get_returns_cors_origin(self, client):
         """A normal GET from the allowed origin includes the CORS origin header."""
-        resp = client.get("/", headers={"Origin": ALLOWED_ORIGIN})
+        resp = client.get("/healthz", headers={"Origin": ALLOWED_ORIGIN})
         assert resp.headers.get("access-control-allow-origin") == ALLOWED_ORIGIN
 
     def test_allowed_headers_include_authorization_and_content_type(self, client):
@@ -76,7 +76,7 @@ class TestCORSDisallowedOrigin:
 
     def test_simple_get_from_disallowed_origin_no_allow(self, client):
         """GET from a disallowed origin must not include allow-origin for it."""
-        resp = client.get("/", headers={"Origin": DISALLOWED_ORIGIN})
+        resp = client.get("/healthz", headers={"Origin": DISALLOWED_ORIGIN})
         acao = resp.headers.get("access-control-allow-origin")
         assert acao != DISALLOWED_ORIGIN
         assert acao != "*"

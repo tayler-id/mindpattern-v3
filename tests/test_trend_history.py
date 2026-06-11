@@ -106,8 +106,12 @@ class TestGetTrendPerformance:
     def test_returns_topic_stats(self, db):
         from memory.trends import store_trends, backfill_trend_results, get_trend_performance
 
-        # Store trends for multiple days
-        for date in ["2026-04-01", "2026-04-02", "2026-04-03"]:
+        # Store trends for the last 3 days (dates must fall inside the
+        # days=7 window, which is relative to the real current date)
+        from datetime import date as _date, timedelta
+
+        recent_dates = [(_date.today() - timedelta(days=n)).isoformat() for n in (1, 2, 3)]
+        for date in recent_dates:
             store_trends(db, date, [
                 {"topic": "AI agents", "score": 1.5, "source_count": 2,
                  "item_count": 3, "sources": ["hn", "rss"], "evidence": "HN"},

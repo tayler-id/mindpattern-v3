@@ -507,11 +507,18 @@ class TestSyncToFly:
         )
         mock_upload.return_value = {"success": True, "error": None}
 
-        # First SSH call (mkdir) succeeds, second (extract) fails
-        mock_ssh.side_effect = [
-            {"success": True, "output": "", "error": None},
-            {"success": False, "output": "", "error": "tar not found"},
-        ]
+        # Command-aware responder (the size-verification retry added 2026-06-10
+        # makes the exact _fly_ssh call sequence variable): the size check
+        # reports a truncated bundle on both attempts, which routes sync into
+        # the same SFTP fallback as a tar failure would.
+        def _ssh_responder(app_name, cmd):
+            if "wc -c" in cmd:
+                return {"success": True, "output": "0", "error": None}
+            if "tar xzf" in cmd:
+                return {"success": False, "output": "", "error": "tar not found"}
+            return {"success": True, "output": "", "error": None}
+
+        mock_ssh.side_effect = _ssh_responder
         mock_sftp.return_value = True
 
         result = sync_to_fly(
