@@ -45,7 +45,6 @@ PUBLIC_PREFIXES = [
     "/api/reports",
     "/healthz",
     "/mcp",               # MCP server for the site's chat tab (lands in v4 M1)
-    "/data/art",          # public art assets only — never the data root
 ]
 
 def is_public_route(path: str) -> bool:

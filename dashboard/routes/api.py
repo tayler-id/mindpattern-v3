@@ -71,8 +71,18 @@ def _strip_pii_dict(d: dict, fields: list[str]) -> dict:
     return out
 
 
+_USER_RE = re.compile(r"^[a-z0-9_-]+$")
+
+
+def _safe_user(user: str) -> Optional[str]:
+    """Reject user ids that could traverse paths (user becomes a path part)."""
+    return user if _USER_RE.fullmatch(user or "") else None
+
+
 def get_memory_db(user_id: str = "ramsay") -> Optional[sqlite3.Connection]:
     """Open memory.db for a user. Fresh connection per request."""
+    if _safe_user(user_id) is None:
+        return None
     db_path = DATA_DIR / user_id / "memory.db"
     if not db_path.exists():
         return None
@@ -486,6 +496,8 @@ async def get_health(user: str = Query("ramsay")):
 @router.get("/api/reports")
 async def list_reports(user: str = Query("ramsay")):
     """Public: list available newsletter reports."""
+    if _safe_user(user) is None:
+        return []
     reports_dir = REPORTS_DIR / user
     if not reports_dir.exists():
         return []
@@ -528,7 +540,7 @@ async def search_reports(
     limit: int = Query(10, le=50),
 ):
     """Public: search newsletter reports by text content."""
-    if not q:
+    if not q or _safe_user(user) is None:
         return []
 
     reports_dir = REPORTS_DIR / user
@@ -572,6 +584,10 @@ async def search_reports(
 @router.get("/api/reports/{date}")
 async def get_report(date: str, user: str = Query("ramsay")):
     """Public: get a single newsletter report by date."""
+    # date becomes a glob and user a path part — validate both (audit:
+    # path traversal via date=../../..)
+    if _valid_date(date) is None or _safe_user(user) is None:
+        return None
     reports_dir = REPORTS_DIR / user
     if not reports_dir.exists():
         return None

@@ -56,10 +56,9 @@ app.include_router(engagement_history.router)
 app.include_router(sse.router)
 app.include_router(api.router)
 
-# Serve data directory for art images
-DATA_DIR = Path(__file__).parent.parent / "data"
-if DATA_DIR.exists():
-    app.mount("/data", StaticFiles(directory=str(DATA_DIR)), name="data")
+# The /data static mount is gone (audit C1: it served memory.db and the
+# identity files to the internet). Art previews for the editors-desk HTML
+# were its only consumer; nothing public reads /data.
 
 
 @app.get("/", response_class=HTMLResponse)

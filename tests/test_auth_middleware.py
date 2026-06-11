@@ -64,6 +64,36 @@ class TestPrivateRoutes:
         assert resp.status_code != 401
 
 
+class TestDataMountGone:
+    def test_memory_db_not_downloadable(self, client):
+        """Audit C1: the raw database must never be reachable."""
+        resp = client.get("/data/ramsay/memory.db")
+        assert resp.status_code in (401, 404)
+
+    def test_identity_files_not_reachable(self, client):
+        resp = client.get("/data/ramsay/mindpattern/soul.md")
+        assert resp.status_code in (401, 404)
+
+
+class TestInputValidation:
+    def test_report_date_traversal_rejected(self, client):
+        """Audit: date=../../../tmp/x read files outside reports/."""
+        resp = client.get("/api/reports/..%2F..%2F..%2Ftmp%2Fx?user=ramsay")
+        assert resp.status_code in (200, 404)
+        if resp.status_code == 200:
+            assert resp.json() is None
+
+    def test_user_traversal_rejected(self, client):
+        resp = client.get("/api/findings?user=../../etc&limit=1")
+        assert resp.status_code == 200
+        assert resp.json() in ([], None)
+
+    def test_valid_user_still_works(self, client):
+        resp = client.get("/api/findings?user=ramsay&limit=1")
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+
 class TestPipelineSecret:
     def test_approvals_with_secret_passes_middleware(self, client, configured):
         resp = client.get(
