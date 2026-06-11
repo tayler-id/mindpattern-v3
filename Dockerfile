@@ -2,31 +2,45 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# claude CLI (native build) — handlers shell out to `claude -p` for post
+# generation. Auth comes from the CLAUDE_CODE_OAUTH_TOKEN Fly secret.
+# tini: real PID 1 so SIGTERM reaches both processes and zombies get reaped.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:$PATH"
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download the fastembed model at build time so cold starts don't fetch 22MB
 RUN python3 -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')"
 
-# Copy the FastAPI dashboard and its dependencies
+# Slack bot + dashboard + the modules they import. harness/ is deliberately
+# excluded — harness commands only run on the Mac.
+COPY slack_bot/ slack_bot/
 COPY dashboard/ dashboard/
 COPY orchestrator/ orchestrator/
 COPY social/ social/
 COPY memory/ memory/
-# reports/ lives on the Fly.io volume at /data — symlinked via /app/data
-# Symlink /app/reports -> /data/reports so the API can find them
-RUN ln -sf /data/reports /app/reports
-COPY users.json .
-COPY social-config.json .
+COPY policies/ policies/
+COPY agents/ agents/
+# users.json (subscriber PII) and social-config.json (phone number) are NOT
+# baked into the image — start.sh symlinks them from the /data volume.
 COPY config.json .
+COPY CLAUDE.md .
+COPY start.sh .
 
-# Fly.io mounts the volume at /data, but the app resolves paths relative to
-# the project root (/app/data/...). Symlink so both paths work.
-RUN ln -sf /data /app/data
+# Fly.io mounts the volume at /data, but code resolves paths relative to the
+# project root (/app/data/...). memory.db, reports, and vault identity files
+# (voice.md, soul.md) arrive on the volume via orchestrator/sync.py daily.
+RUN ln -sf /data /app/data && ln -sf /data/reports /app/reports
 
-ENV HOST=0.0.0.0
-ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
 ENV DATA_DIR=/data
 ENV USERS_JSON=/data/users.json
+ENV HOST=0.0.0.0
+ENV PORT=8080
 
-CMD ["python3", "-m", "uvicorn", "dashboard.app:app", "--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["bash", "start.sh"]

@@ -87,10 +87,15 @@ Every task leaves the system deployable; the newsletter never misses a morning.
 - Deps: Task 7.
 
 **Task 9: Container hardening** (S)
-- `tini` as PID 1 (signal forwarding/zombie reaping — audit start.sh), non-root `USER`,
-  stop COPYing `social-config.json`/`users.json` into the image (read from /data volume).
-- Accept: SIGTERM reaches both processes (graceful bot shutdown fires); container runs unprivileged.
-- Deps: none. Files: Dockerfile, start.sh, fly.toml.
+- `tini` as PID 1 (signal forwarding/zombie reaping — audit start.sh) + SIGTERM trap in
+  start.sh; stop COPYing `social-config.json`/`users.json` into the image (symlinked from
+  the /data volume at start; files uploaded to the volume pre-deploy).
+- DEFERRED: non-root `USER` — the /data volume is root-owned on Fly and claude CLI installs
+  under /root; dropping privileges needs a chown-then-drop entrypoint and a claude reinstall,
+  too much breakage risk for the working phone-post flow in M0. Revisit when the container
+  is next rebuilt (M1 /mcp work).
+- Accept: SIGTERM reaches both processes (graceful bot shutdown fires); image contains no PII files.
+- Deps: none. Files: Dockerfile, start.sh.
 
 ### Checkpoint C: deploy to Fly · contract tests `--live` green · mindpattern.ai site fully working · DB no longer downloadable
 
