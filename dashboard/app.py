@@ -15,9 +15,15 @@ from dashboard.routes import (
     social_history, sse, traces,
 )
 
+from dashboard.auth import enforce_auth
+
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 app = FastAPI(title="Research Agent Dashboard")
+
+# Default-deny: everything not on auth.PUBLIC_PREFIXES requires a bearer
+# token. Registered before CORS so it wraps every route including mounts.
+app.middleware("http")(enforce_auth)
 
 app.add_middleware(
     CORSMiddleware,

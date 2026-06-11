@@ -31,16 +31,62 @@ async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(secur
         raise HTTPException(status_code=401, detail="Invalid token")
     return credentials.credentials
 
-# Public routes (no auth needed)
+# Public routes (no auth needed). This list IS the contract with the
+# vercel-mindpattern site (tests/test_api_contract.py) — public reads only.
 PUBLIC_PREFIXES = [
+    "/api/search",
     "/api/findings",
-    "/api/sources",
-    "/api/patterns",
-    "/api/skills",
     "/api/stats",
+    "/api/patterns",
+    "/api/sources",
+    "/api/skills",        # covers /api/skills/search
+    "/api/skill-domains",
+    "/api/health",
+    "/api/reports",
     "/healthz",
+    "/mcp",               # MCP server for the site's chat tab (lands in v4 M1)
+    "/data/art",          # public art assets only — never the data root
 ]
 
 def is_public_route(path: str) -> bool:
     """Check if a route is public (no auth required)."""
     return any(path.startswith(prefix) for prefix in PUBLIC_PREFIXES)
+
+
+def _token_valid(token: str) -> bool:
+    token_hash = get_token_hash()
+    return bool(token_hash) and hashlib.sha256(token.encode()).hexdigest() == token_hash
+
+
+def _pipeline_secret_valid(provided: str | None) -> bool:
+    """Shared secret for the local pipeline's approval submit/poll calls."""
+    expected = os.environ.get("MP_PIPELINE_SECRET", "")
+    return bool(expected) and provided == expected
+
+
+async def enforce_auth(request: Request, call_next):
+    """Default-deny middleware: everything not on the public allowlist
+    requires a bearer token (or the pipeline secret for /api/approvals).
+
+    Fails CLOSED: with no API_TOKEN_HASH configured, private routes are
+    unreachable rather than open (the v3 failure was enforcement that
+    existed but was never wired in — see docs/audit-2026-06-11.md).
+    """
+    from fastapi.responses import JSONResponse
+
+    if request.method == "OPTIONS":  # CORS preflight
+        return await call_next(request)
+
+    if is_public_route(request.url.path) and request.method in ("GET", "HEAD"):
+        return await call_next(request)
+
+    if request.url.path.startswith("/api/approvals") and _pipeline_secret_valid(
+        request.headers.get("X-Pipeline-Secret")
+    ):
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer ") and _token_valid(auth_header[7:]):
+        return await call_next(request)
+
+    return JSONResponse({"detail": "Authorization required"}, status_code=401)
