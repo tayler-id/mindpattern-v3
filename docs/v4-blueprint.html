@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindPattern v4 — Interactive Blueprint</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#2d3645;
+  --text:#e6edf3; --dim:#9aa7b5; --accent:#58a6ff; --green:#3fb950; --amber:#d29922;
+  --red:#f85149; --purple:#bc8cff; --pink:#ff7b9c; --mono:'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:16px/1.65 -apple-system,'Segoe UI',sans-serif;padding-bottom:120px}
+header{position:sticky;top:0;z-index:50;background:rgba(13,17,23,.95);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:18px}
+header .sub{color:var(--dim);font-size:13px}
+.spacer{flex:1}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:#04111f;border-color:var(--accent);font-weight:600}
+main{max-width:980px;margin:0 auto;padding:36px 24px}
+section{margin-bottom:64px}
+h2{font-size:26px;margin-bottom:6px}
+h3{font-size:18px;margin:26px 0 10px;color:var(--accent)}
+.kicker{color:var(--purple);text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:700}
+p{margin:10px 0;color:#c9d4de}
+.lead{font-size:18px;color:var(--text)}
+em{color:var(--pink);font-style:normal;font-weight:600}
+.c{position:relative;border-radius:10px;transition:box-shadow .15s, background .15s;cursor:default}
+.c:hover{box-shadow:0 0 0 2px var(--accent);background:rgba(88,166,255,.04)}
+.c:hover::after{content:"💬 click to comment";position:absolute;top:-11px;right:8px;background:var(--accent);color:#04111f;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px}
+.c.commented{box-shadow:0 0 0 2px var(--amber)}
+.c .badge{position:absolute;top:-10px;left:-10px;background:var(--amber);color:#1a1200;font-size:12px;font-weight:800;min-width:22px;height:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;z-index:2}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin:14px 0}
+.grid{display:grid;gap:14px;margin:14px 0}
+.grid.two{grid-template-columns:1fr 1fr}
+.grid.three{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:800px){.grid.two,.grid.three{grid-template-columns:1fr}}
+.mental .card h4{font-size:16px;margin-bottom:6px}
+.mental .card .emoji{font-size:26px;display:block;margin-bottom:8px}
+.mental .card p{font-size:14px;color:var(--dim)}
+.flow{display:flex;flex-direction:column;gap:0;margin:18px 0}
+.flowrow{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+.node{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13.5px;flex:1;min-width:110px;text-align:center}
+.node b{display:block;font-size:14px}
+.node small{color:var(--dim)}
+.node.hot{border-color:var(--green)}
+.node.new{border-color:var(--purple)}
+.node.new b::after{content:" ★";color:var(--purple)}
+.arrow{display:flex;align-items:center;color:var(--dim);font-size:18px;padding:0 2px}
+.varrow{text-align:center;color:var(--dim);font-size:18px;line-height:1.1;padding:2px 0}
+.lane{border-left:3px solid var(--border);padding:8px 0 8px 16px;margin:10px 0}
+.lane .where{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+pre{background:#0a0e14;border:1px solid var(--border);border-radius:10px;padding:16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.55;margin:12px 0}
+code{font-family:var(--mono);font-size:13.5px;background:var(--panel2);padding:1px 6px;border-radius:6px}
+pre code{background:none;padding:0}
+.cm{color:#7d8799}.kw{color:#ff7b72}.st{color:#a5d6ff}.fn{color:#d2a8ff}.nm{color:#79c0ff}
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th,td{border:1px solid var(--border);padding:9px 12px;text-align:left;vertical-align:top}
+th{background:var(--panel2);font-size:13px}
+td .src{color:var(--dim);font-size:12.5px}
+.ladder{display:flex;align-items:flex-end;gap:6px;margin:18px 0;height:190px}
+.rung{flex:1;background:var(--panel2);border:1px solid var(--border);border-radius:8px 8px 0 0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:8px 4px;font-size:12px;text-align:center;color:var(--dim)}
+.rung b{color:var(--text);font-size:12.5px}
+.timeline{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+.mile{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--border);border-top:4px solid var(--accent);border-radius:10px;padding:12px 14px;font-size:13.5px}
+.mile b{display:block;font-size:14px}
+.mile small{color:var(--dim)}
+.stat{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0}
+.stat .s{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 18px;text-align:center;flex:1;min-width:130px}
+.stat .s b{display:block;font-size:24px;color:var(--green)}
+.stat .s span{font-size:12.5px;color:var(--dim)}
+.tree{font-family:var(--mono);font-size:13px;line-height:1.7}
+.tree .d{color:var(--accent);font-weight:600}
+.tree .loc{color:var(--amber)}
+.tree .note{color:var(--dim)}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+@media(max-width:800px){.vs{grid-template-columns:1fr}}
+.vs .side{border-radius:12px;padding:16px 18px;border:1px solid var(--border)}
+.vs .bad{background:rgba(248,81,73,.06);border-color:rgba(248,81,73,.4)}
+.vs .good{background:rgba(63,185,80,.06);border-color:rgba(63,185,80,.4)}
+.vs h4{margin-bottom:8px}
+.vs ul{margin-left:18px;font-size:14px;color:#c9d4de}
+.vs li{margin:5px 0}
+.factcard{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-family:var(--mono);font-size:13px;margin:8px 0}
+.factcard .valid{color:var(--green)} .factcard .invalid{color:var(--red);text-decoration:line-through}
+.factcard .meta{color:var(--dim);font-size:12px}
+.qa{border:1px dashed var(--purple);border-radius:12px;padding:14px 18px;margin:12px 0}
+.qa b{color:var(--purple)}
+.qa .rec{color:var(--green);font-size:14px}
+#drawer{position:fixed;right:0;top:0;height:100vh;width:340px;background:var(--panel);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .2s;z-index:90;display:flex;flex-direction:column}
+#drawer.open{transform:none}
+#drawer header{position:static;border-bottom:1px solid var(--border)}
+#drawer .list{flex:1;overflow-y:auto;padding:14px}
+.citem{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px}
+.citem .where{color:var(--accent);font-weight:600;font-size:12px}
+.citem .txt{margin:6px 0;white-space:pre-wrap}
+.citem .meta{display:flex;justify-content:space-between;color:var(--dim);font-size:11.5px}
+.citem .del{color:var(--red);cursor:pointer}
+#popup{position:absolute;z-index:100;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:14px;width:330px;box-shadow:0 12px 40px rgba(0,0,0,.6);display:none}
+#popup .target{font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px}
+#popup textarea{width:100%;height:90px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font:13.5px/1.5 inherit;resize:vertical}
+#popup .row{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}
+#help{background:linear-gradient(90deg,rgba(88,166,255,.12),rgba(188,140,255,.10));border:1px solid var(--accent);border-radius:12px;padding:14px 18px;margin:0 0 30px;font-size:14.5px}
+.toc{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}
+.toc a{color:var(--accent);text-decoration:none;font-size:13px;background:var(--panel);border:1px solid var(--border);padding:5px 11px;border-radius:99px}
+footer{max-width:980px;margin:40px auto;padding:0 24px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧠 MindPattern v4 — Blueprint</h1>
+  <span class="sub">interactive review · 2026-06-11 · built from docs/audit, v4-research, v4-research-bigco</span>
+  <span class="spacer"></span>
+  <button id="toggleDrawer">💬 Comments (<span id="ccount">0</span>)</button>
+  <button class="primary" id="exportBtn">⬇ Export comments for Claude</button>
+</header>
+
+<main>
+<div id="help">
+  <b>How to review this:</b> hover anything — sections, diagrams, code, single paragraphs — and a blue outline appears. <b>Click it to leave a comment.</b> Comments save automatically in your browser. When you're done, hit <b>“Export comments for Claude”</b> — it downloads <code>v4-comments.json</code> to your Downloads folder. Then just tell Claude: <i>“read my comments”</i>.
+  <div class="toc">
+    <a href="#why">Why</a><a href="#system">The System</a><a href="#models">Mental Models</a><a href="#bigco">Big-Co Lessons</a><a href="#kg">Knowledge Graph</a><a href="#harness">Harness</a><a href="#opp">Opportunity Engine</a><a href="#code">Code &amp; Files</a><a href="#plan">Build Plan</a><a href="#questions">Open Questions</a>
+  </div>
+</div>
+
+<!-- ============ WHY ============ -->
+<section id="why">
+  <div class="kicker">Part 1</div>
+  <h2>What we're building &amp; why</h2>
+  <p class="lead c" data-t="The core idea">Today, MindPattern is a <em>newspaper</em>: every morning it researches, writes, publishes — and forgets. v4 turns it into a <em>library that compounds</em>: every finding becomes a dated fact in a knowledge graph, every one of your reactions becomes training signal, and once the library is rich enough, an agent mines it to answer the only question that matters: <b>“with everything you know, what should I build?”</b></p>
+
+  <div class="vs c" data-t="v3 vs v4 comparison">
+    <div class="side bad">
+      <h4>📰 v3 — the newspaper (today)</h4>
+      <ul>
+        <li>13 agents research → newsletter → posted → <b>forgotten</b></li>
+        <li>“Knowledge graph” = hand-maintained markdown links → noise</li>
+        <li>“Self-improvement” = LLM rewrites its own prompts blind → no measurable gain (the literature now calls this <i>context collapse</i>)</li>
+        <li>Yesterday's research barely helps today's</li>
+      </ul>
+    </div>
+    <div class="side good">
+      <h4>📚 v4 — the compounding library</h4>
+      <ul>
+        <li>Same daily run, but every finding becomes <b>typed, dated facts</b> about entities</li>
+        <li>Facts get <b>superseded, never deleted</b> → story timelines</li>
+        <li>Improvement only ships if it <b>beats the current version on replays</b> of real past work</li>
+        <li>Month 6 is categorically smarter than week 1 → <b>opportunity engine</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="stat c" data-t="What we already have (verified stats)">
+    <div class="s"><b>13,894</b><span>findings already stored<br>(Feb 13 → Jun 11)</span></div>
+    <div class="s"><b>1,708</b><span>arXiv paper links<br>in findings</span></div>
+    <div class="s"><b>2,364</b><span>GitHub repo links<br>in findings</span></div>
+    <div class="s"><b>133</b><span>newsletters with<br>8,145 source links</span></div>
+  </div>
+  <p class="c" data-t="Backfill point">That's the punchline of your archive: <em>the graph doesn't start empty.</em> We backfill 4 months of findings — with their papers and posts as provenance — so the knowledge graph is real on day one.</p>
+</section>
+
+<!-- ============ SYSTEM ============ -->
+<section id="system">
+  <div class="kicker">Part 2</div>
+  <h2>The system at a glance</h2>
+  <p>Purple ★ = new in v4. Green = kept and hardened. The shape: data flows down the middle, learning loops feed back from the right.</p>
+
+  <div class="flow c" data-t="System architecture diagram">
+    <div class="flowrow">
+      <div class="node hot"><b>8 sources</b><small>HN, feeds, social…</small></div>
+      <div class="arrow">＋</div>
+      <div class="node new"><b>New sources</b><small>YC api · HN-hiring · PyPI/npm · GDELT · Product Hunt</small></div>
+    </div>
+    <div class="varrow">↓ daily 7 AM</div>
+    <div class="flowrow">
+      <div class="node hot"><b>13 research agents</b><small>claude CLI · no Bash, sandboxed</small></div>
+      <div class="arrow">→</div>
+      <div class="node hot"><b>findings</b><small>memory.db (episodes)</small></div>
+    </div>
+    <div class="varrow">↓</div>
+    <div class="flowrow">
+      <div class="node new"><b>Knowledge graph</b><small>extract → resolve entities → dated facts → weekly topic summaries</small></div>
+    </div>
+    <div class="varrow">↓ &nbsp;&nbsp;&nbsp;&nbsp; ↘</div>
+    <div class="flowrow">
+      <div class="node hot"><b>Newsletter</b><small>reads community summaries + timelines</small></div>
+      <div class="node hot"><b>Social posts</b><small>strict Slack approval</small></div>
+      <div class="node new"><b>Signals</b><small>velocity · gaps · ladder · convergence</small></div>
+    </div>
+    <div class="varrow">↓ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ↓</div>
+    <div class="flowrow">
+      <div class="node hot"><b>Your feedback</b><small>Slack reactions, edits, clicks</small></div>
+      <div class="node new"><b>Improvement harness</b><small>replay gate · lesson ledgers · topic bandit</small></div>
+      <div class="node new"><b>Opportunity engine</b><small>weekly · evidence-cited · tracked verdicts</small></div>
+    </div>
+  </div>
+
+  <h3>Where things run (unchanged)</h3>
+  <div class="c" data-t="Deployment layout">
+    <div class="lane" style="border-color:var(--green)"><span class="where" style="color:var(--green)">Your Mac</span> — the brain. Daily pipeline, the real <code>memory.db</code>, knowledge graph, harness, opportunity engine. Keychain + claude CLI live here.</div>
+    <div class="lane" style="border-color:var(--accent)"><span class="where" style="color:var(--accent)">Fly.io</span> — the 24/7 front door. Slack bot (post from your phone) + the JSON read API your Vercel site calls. Gets a fresh DB <i>snapshot</i> daily; anything it does (phone posts, reactions) goes into a journal the Mac ingests next morning — <b>no more lost writes</b>.</div>
+    <div class="lane" style="border-color:var(--purple)"><span class="where" style="color:var(--purple)">Vercel</span> — your site. Untouched: same 12 endpoints, same shapes, plus one new additive <code>/api/opportunities</code>.</div>
+  </div>
+</section>
+
+<!-- ============ MENTAL MODELS ============ -->
+<section id="models" class="mental">
+  <div class="kicker">Part 3</div>
+  <h2>Five mental models</h2>
+  <p>Each new piece of v4 maps to something familiar. If a model feels wrong, comment on it — these drive the design.</p>
+  <div class="grid two">
+    <div class="card c" data-t="Mental model: card catalog (KG)">
+      <span class="emoji">🗂️</span><h4>The knowledge graph is a card catalog with dated cards</h4>
+      <p>Every fact is a card: <i>“OpenAI —released→ GPT-5”</i> with a <b>valid-from date</b>. When news changes, the old card gets stamped “superseded on date X by card Y” — never thrown away. Ask for any entity and you get its <b>timeline</b>, not a soup of contradictions. (This is exactly how Bloomberg's graph and Zep's Graphiti work.)</p>
+    </div>
+    <div class="card c" data-t="Mental model: shadow mode (replay gate)">
+      <span class="emoji">🚗</span><h4>The replay gate is Tesla's shadow mode</h4>
+      <p>Tesla never ships a new network directly — it rides along silently and gets compared against the current one on real driving. Our version: any new prompt/lesson runs against <b>50+ real past inputs</b> (seeded from your actual edits) and only ships if it <i>beats the incumbent</i>. The industry numbers say ~90% of changes lose — that's why the gate exists.</p>
+    </div>
+    <div class="card c" data-t="Mental model: coach's notebook (lesson ledger)">
+      <span class="emoji">📓</span><h4>Agents learn via a coach's notebook, not brain surgery</h4>
+      <p>v3 let the LLM rewrite its own prompt — Stanford measured that exact pattern collapsing (18k tokens → 122, worse than baseline). v4 instead <b>appends numbered lessons</b>: “#23: Tayler always cuts hype adjectives (helpful 7 / harmful 0)”. Lessons earn or lose points; useless ones retire. The playbook is never rewritten wholesale.</p>
+    </div>
+    <div class="card c" data-t="Mental model: fishing spots (bandit)">
+      <span class="emoji">🎣</span><h4>Source &amp; topic selection works like fishing spots</h4>
+      <p>Each source/topic is a spot. Catch something (you click, react, use a finding) → fish there more. Nothing for weeks → fish less, but <b>never abandon a spot</b> (the news shifts; old spots come back). This is Thompson sampling — the same math behind Netflix artwork and Spotify podcasts — and it's the one thing that genuinely learns online at 1 run/day.</p>
+    </div>
+    <div class="card c" data-t="Mental model: prospector (opportunity engine)" style="grid-column:1/-1">
+      <span class="emoji">⛏️</span><h4>The opportunity engine is a prospector who must show his instruments</h4>
+      <p>He doesn't dig wherever feels lucky — instruments (mention velocity, cross-source corroboration, gap clusters) say where. <b>The LLM never invents a candidate</b>; it only evaluates the spots the math surfaced, must dig up counter-evidence too, and every claim cites finding IDs you can audit. His verdicts get re-checked every week — over months you learn whether to trust him.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BIG-CO ============ -->
+<section id="bigco">
+  <div class="kicker">Part 4</div>
+  <h2>What the big companies taught us → what we steal</h2>
+  <p>Second research pass, primary sources only (their engineering blogs, systems papers, talks). Full citations in <code>docs/v4-research-bigco.md</code>.</p>
+  <table class="c" data-t="Big-co lessons table">
+    <tr><th>Who / what they run</th><th>The lesson</th><th>What v4 steals</th></tr>
+    <tr><td><b>Tesla</b> data engine<div class="src">Karpathy, CVPR 2021: 221 hand-built triggers, clips→unit tests</div></td><td>Failures are <i>mined automatically</i> by triggers; every caught failure becomes a permanent test run on every change.</td><td><b>Triggers</b> on daily output (dedup miss, judge drop, your edit) auto-feed the golden set.</td></tr>
+    <tr><td><b>Netflix</b> interleaving<div class="src">techblog 2017: &gt;100× fewer users than A/B</div></td><td>Paired comparison on the same inputs is wildly more sensitive than separate trials — the only stats that work at small n.</td><td>Replay gate = candidate vs incumbent, <b>paired, judge blind</b>, on identical past inputs.</td></tr>
+    <tr><td><b>YouTube</b> valued watchtime<div class="src">blog.youtube 2021; surveys replaced watch-time</div></td><td>Every engagement proxy gets gamed on a years-long fuse; the fix is a counter-metric closer to true value.</td><td>Engagement only steers <b>what to research</b> (bandit), never <b>how to write</b>. Your explicit feedback is ground truth.</td></tr>
+    <tr><td><b>OpenAI</b> sycophancy rollback<div class="src">openai.com, Apr 2025 post-mortem</div></td><td>Offline evals AND A/B both passed; human “vibe checks” caught it; they shipped anyway and rolled back in 4 days.</td><td><b>Vibe check is launch-blocking</b>: writing-style changes show you a side-by-side sample before going live.</td></tr>
+    <tr><td><b>ChatGPT</b> “Dreaming” + <b>Letta</b> sleep-time<div class="src">openai.com 2026; letta.com</div></td><td>Memory consolidation is universally an async background batch job — never done mid-conversation.</td><td>Our nightly reflector job after the pipeline = the same pattern. Already our shape; now deliberate.</td></tr>
+    <tr><td><b>Zep/Graphiti</b> + <b>Bloomberg</b><div class="src">arXiv 2501.13956; KGC 2021 — “point-in-time” as core property</div></td><td>Facts need event-time validity windows; finance pays millions for “what did we believe on date X”.</td><td>Bitemporal edges: <code>valid_at / invalid_at</code>, four columns in SQLite — invalidate, never delete.</td></tr>
+    <tr><td><b>Apple Saga / LinkedIn</b><div class="src">SIGMOD 2022; LIquid blogs — relational, not graph DBs</div></td><td>Production KGs run on <i>relational node/edge tables</i>; entity resolution at write-time is the part that makes or breaks it; humans review only flagged cases.</td><td>SQLite edge tables (no Neo4j); resolution = alias match → embedding+FTS shortlist → 1 LLM call; uncertain merges flagged for you.</td></tr>
+    <tr><td><b>Mem0</b> reconcile<div class="src">arXiv 2504.19413 — ADD/UPDATE/DELETE/NOOP</div></td><td>New facts get reconciled against existing memory with an explicit decision, with an audit trail.</td><td>Identity files (soul.md, voice.md) update via reconcile-with-revision-log — replacing v3's blind section replace.</td></tr>
+    <tr><td><b>Microsoft/Google/Netflix</b> experiment stats<div class="src">Kohavi: 70–90% of all experiments lose</div></td><td>Even elite teams can't pre-guess winners; the loop only works because a gate kills the 90%.</td><td>Justifies making the replay gate <b>the first thing we build</b> in the harness — everything else routes through it.</td></tr>
+  </table>
+</section>
+
+<!-- ============ KG ============ -->
+<section id="kg">
+  <div class="kicker">Part 5 · build first</div>
+  <h2>The knowledge graph, concretely</h2>
+
+  <h3>Three layers, four daily stages</h3>
+  <div class="flow c" data-t="KG layers + stages">
+    <div class="flowrow">
+      <div class="node"><b>Layer 1 · Episodes</b><small>your findings table, untouched — raw provenance</small></div>
+      <div class="arrow">→</div>
+      <div class="node new"><b>Layer 2 · Entities &amp; facts</b><small>typed, deduped, dated edges</small></div>
+      <div class="arrow">→</div>
+      <div class="node new"><b>Layer 3 · Communities</b><small>weekly topic clusters + summaries</small></div>
+    </div>
+  </div>
+  <div class="c" data-t="KG 4 stages description">
+    <p><b>Stage 1 — Extract</b> (daily, ~15 claude calls): each finding → typed entities (Company, Product, Person, Tech, Paper, Event, Funding) and atomic facts using ~16 fixed verbs (RELEASED, RAISED, ACQUIRED, COMPETES_WITH, PREDICTS…). <em>Typed, not open-ended</em> — open extraction is the #1 documented source of graph noise.</p>
+    <p><b>Stage 2 — Resolve</b> (the make-or-break stage): is “Anthropic PBC” the “Anthropic” we know? Alias table first (free), then embedding+keyword shortlist, then <b>one</b> LLM adjudication call. Never auto-merge on similarity alone (that's how “GPT-5” and “GPT-5-mini” become one blob). Uncertain merges get flagged for you — Apple's quarantine queue, miniature.</p>
+    <p><b>Stage 3 — Upsert &amp; invalidate</b>: new fact contradicts an old one between the same entities? Old edge gets <code>invalid_at</code> stamped + a pointer to what superseded it. Timeline preserved.</p>
+    <p><b>Stage 4 — Consolidate</b> (weekly, ~10 claude calls): cluster the graph into topic communities, re-summarize only the changed ones, recompute importance (PageRank × mentions × recency). Demote, don't delete.</p>
+  </div>
+
+  <h3>What a fact actually looks like</h3>
+  <div class="c" data-t="Bitemporal fact example">
+    <div class="factcard"><span class="valid">● VALID</span> &nbsp;<b>OpenAI</b> —RELEASED→ <b>GPT-5.2</b><br><span class="meta">fact: "OpenAI released GPT-5.2 with 4× cheaper inference" · valid_at 2026-05-28 · episode #13201 (arXiv + HN) · confidence .95</span></div>
+    <div class="factcard"><span class="invalid">● SUPERSEDED</span> &nbsp;<b>OpenAI</b> —FLAGSHIP_MODEL→ <b>GPT-5</b><br><span class="meta">valid 2025-08-07 → 2026-05-28 · invalidated_by episode #13201 · still queryable: “show timeline of OpenAI flagships”</span></div>
+  </div>
+
+  <h3>The schema — 5 tables, that's it</h3>
+  <pre class="c" data-t="KG schema SQL"><code><span class="cm">-- episodes = your existing findings table (13,894 rows ready to backfill)</span>
+<span class="kw">CREATE TABLE</span> entities (
+  id <span class="nm">INTEGER PRIMARY KEY</span>, canonical_name <span class="nm">TEXT</span>, type <span class="nm">TEXT</span>,     <span class="cm">-- 'company'|'product'|...</span>
+  summary <span class="nm">TEXT</span>, embedding <span class="nm">BLOB</span>, importance <span class="nm">REAL DEFAULT</span> 0,
+  first_seen <span class="nm">TEXT</span>, last_seen <span class="nm">TEXT</span>, mention_count <span class="nm">INTEGER DEFAULT</span> 1);
+
+<span class="kw">CREATE TABLE</span> entity_aliases (alias <span class="nm">TEXT PRIMARY KEY</span>, entity_id <span class="nm">INTEGER</span>);
+
+<span class="kw">CREATE TABLE</span> edges (
+  id <span class="nm">INTEGER PRIMARY KEY</span>, src <span class="nm">INTEGER</span>, predicate <span class="nm">TEXT</span>, dst <span class="nm">INTEGER</span>,
+  fact_text <span class="nm">TEXT</span>, episode_id <span class="nm">INTEGER</span>,                <span class="cm">-- provenance, always</span>
+  fact_kind <span class="nm">TEXT</span>,                                    <span class="cm">-- 'fact'|'opinion'|'prediction'</span>
+  valid_at <span class="nm">TEXT</span>, invalid_at <span class="nm">TEXT</span>, invalidated_by <span class="nm">INTEGER</span>,
+  confidence <span class="nm">REAL</span>, created_at <span class="nm">TEXT</span>);
+
+<span class="kw">CREATE TABLE</span> communities (id <span class="nm">INTEGER PRIMARY KEY</span>, label <span class="nm">TEXT</span>, summary <span class="nm">TEXT</span>, updated_at <span class="nm">TEXT</span>);
+<span class="kw">CREATE TABLE</span> community_members (community_id <span class="nm">INTEGER</span>, entity_id <span class="nm">INTEGER</span>);</code></pre>
+  <p class="c" data-t="KG no-overengineering note">No Neo4j, no vector database, no framework. At 15 findings/day the graph is a few thousand entities after a year — NetworkX holds it in memory for the weekly clustering, and brute-force cosine over SQLite blobs takes milliseconds. <em>The discipline is in the pipeline, not the infrastructure</em> — that's the verified lesson from Apple/LinkedIn/Airbnb, who all run relational tables too.</p>
+</section>
+
+<!-- ============ HARNESS ============ -->
+<section id="harness">
+  <div class="kicker">Part 6 · build second</div>
+  <h2>The improvement harness</h2>
+  <p class="c" data-t="Harness honest framing">Honest framing first: at one newsletter/day you <em>cannot</em> A/B-test prompts online (you'd need ~2 months per comparison). So v4 learns online only over <b>small choices</b> (which sources/topics get attention — the bandit) and validates everything else <b>offline against your archive</b> (the replay gate). Your explicit feedback is the scarcest, most valuable signal — every edit you make becomes a permanent test case.</p>
+
+  <div class="flow c" data-t="Harness flywheel diagram">
+    <div class="flowrow">
+      <div class="node"><b>1 · Capture</b><small>traces, judge critiques, your reactions &amp; edits</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>2 · Triggers</b><small>auto-detect failures → golden set grows</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>3 · Reflect</b><small>nightly: distill lessons (deltas only)</small></div>
+    </div>
+    <div class="varrow">↓</div>
+    <div class="flowrow">
+      <div class="node new"><b>4 · Replay gate</b><small>candidate vs incumbent, paired, blind, on 50+ real cases</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>5 · Promote</b><small>+ your side-by-side eyeball for style changes</small></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>6 · Monitor</b><small>7-day drift &gt; 1σ → auto-rollback</small></div>
+    </div>
+  </div>
+
+  <h3>The lesson ledger (what an agent's "learning" looks like)</h3>
+  <table class="c" data-t="Lesson ledger example">
+    <tr><th>#</th><th>agent</th><th>lesson</th><th>helpful</th><th>harmful</th><th>status</th></tr>
+    <tr><td>14</td><td>synthesis</td><td>Lead with the concrete change, not the company name</td><td>9</td><td>1</td><td>active</td></tr>
+    <tr><td>23</td><td>synthesis</td><td>Tayler cuts hype adjectives ("game-changing", "massive") — omit them</td><td>7</td><td>0</td><td>active</td></tr>
+    <tr><td>31</td><td>agent-llm-eng</td><td>Always check if a "new" framework is a rename/fork before reporting</td><td>4</td><td>0</td><td>active</td></tr>
+    <tr><td>08</td><td>synthesis</td><td>Include pricing details in every item</td><td>2</td><td>6</td><td><span style="color:var(--red)">retired</span></td></tr>
+  </table>
+  <p class="c" data-t="Ledger mechanics note">Lessons are <b>appended</b> by the nightly reflector, merged by plain Python (no LLM touches the ledger), cited by ID when used, and auto-retire when harmful ≥ 3× helpful. The prompt file itself never gets rewritten — that's the anti-context-collapse design, and it's what ACE measured +10.6% from.</p>
+</section>
+
+<!-- ============ OPPORTUNITY ============ -->
+<section id="opp">
+  <div class="kicker">Part 7 · build third</div>
+  <h2>The opportunity engine</h2>
+
+  <h3>The source ladder — where timing lives</h3>
+  <p class="c" data-t="Source ladder explanation">An idea climbs: papers → code → hacker chatter → products → <b>money</b> (jobs &amp; funding). Position on the ladder = maturity. <em>Climbing fast = your window.</em> The buildable zone is the middle: insiders are excited, the mainstream hasn't arrived (Bill Gross: timing explains ~42% of startup outcomes).</p>
+  <div class="ladder c" data-t="Source ladder visual">
+    <div class="rung" style="height:35%"><b>arXiv</b>research</div>
+    <div class="rung" style="height:50%"><b>GitHub / PyPI</b>builders</div>
+    <div class="rung" style="height:65%;border-color:var(--green)"><b>HN / Reddit</b>early adopters<br>⭐ buildable zone</div>
+    <div class="rung" style="height:80%;border-color:var(--green)"><b>PH / YC</b>products<br>⭐ buildable zone</div>
+    <div class="rung" style="height:95%"><b>Jobs / Funding</b>budgeted demand</div>
+    <div class="rung" style="height:100%"><b>Mainstream news</b>too late</div>
+  </div>
+
+  <h3>What a weekly opportunity looks like</h3>
+  <div class="card c" data-t="Sample opportunity output card">
+    <b style="color:var(--green)">PURSUE · score 21/30</b> — <b>Compliance copilots for AI-agent audit trails</b>
+    <p style="font-size:14px"><b>Why now</b> (cites episode #12881, #13002): EU AI Act enforcement began May 2026; 3 YC W26 companies adjacent but none owns audit-trail UX.<br>
+    <b>Demand</b> 4/5 — gap cluster: 17 complaint-findings about "can't explain what our agents did", zero linked products.<br>
+    <b>Timing</b> 5/5 — ladder: arXiv+GitHub 9 months ago → HN front page 3× this month → first job postings (2 in HN-hiring).<br>
+    <b>Competition</b> 3/5 — 4 adjacent entities, all velocity-flat. &nbsp;<b>Owner fit</b> 4/5.<br>
+    <b style="color:var(--red)">Counter-evidence</b> (required): episode #11990 — incumbent observability players adding "agent logs"; risk this becomes a feature, not a product.<br>
+    <span style="color:var(--dim);font-size:13px">Watch trigger: re-raise if "agent audit" mention-velocity 2× or a funding event lands. Verdict re-scored weekly; track record visible.</span></p>
+  </div>
+  <p class="c" data-t="Anti-hallucination rule">The structural rule that makes this trustworthy: <em>candidates come from the math, not the model</em>. The LLM only interrogates entities/gaps the signals surfaced, counter-evidence retrieval is mandatory, and every score must cite finding IDs a validator mechanically checks. No citation → score is <code>null</code>, shown as "unknown" — calibrated ignorance over confident fabrication.</p>
+</section>
+
+<!-- ============ CODE ============ -->
+<section id="code">
+  <div class="kicker">Part 8</div>
+  <h2>Code &amp; file structure — the no-over-engineering contract</h2>
+
+  <h3>The file tree, with line budgets</h3>
+  <pre class="tree c" data-t="File tree with LOC budgets"><code><span class="d">core/</span>                      <span class="note">the substrate — boring on purpose</span>
+  db.py                    <span class="loc">~120 loc</span>  <span class="note">one connection manager, WAL, transactions</span>
+  migrations.py            <span class="loc">~80 loc</span>   <span class="note">numbered user_version migrations</span>
+  receipts.py              <span class="loc">~60 loc</span>   <span class="note">idempotency: nothing ever double-sends</span>
+  llm.py                   <span class="loc">~150 loc</span>  <span class="note">ONE claude-CLI wrapper: timeout, killpg, JSON-schema validation, retry</span>
+<span class="d">kg/</span>                        <span class="note">the knowledge graph — ~600 loc total</span>
+  extract.py               <span class="loc">~150 loc</span>  <span class="note">finding → typed entities + facts (1 claude call)</span>
+  resolve.py               <span class="loc">~150 loc</span>  <span class="note">alias → shortlist → LLM adjudicate → merge log</span>
+  edges.py                 <span class="loc">~100 loc</span>  <span class="note">upsert, contradiction → invalidate</span>
+  consolidate.py           <span class="loc">~120 loc</span>  <span class="note">weekly: NetworkX Louvain + changed-community summaries</span>
+  cli.py                   <span class="loc">~100 loc</span>  <span class="note">kg entity|timeline|communities|emerging|search</span>
+<span class="d">harness/</span>                   <span class="note">the learning loop — ~500 loc total</span>
+  golden.py                <span class="loc">~80 loc</span>   <span class="note">golden set; every owner edit auto-appends a case</span>
+  triggers.py              <span class="loc">~80 loc</span>   <span class="note">Tesla-style failure detectors on daily output</span>
+  replay.py                <span class="loc">~120 loc</span>  <span class="note">paired candidate-vs-incumbent, blind judge, win-rate</span>
+  ledger.py                <span class="loc">~100 loc</span>  <span class="note">lesson CRUD, deterministic merge, auto-retire</span>
+  bandit.py                <span class="loc">~60 loc</span>   <span class="note">Thompson sampling, Beta(α,β) per source/topic</span>
+  reflector.py             <span class="loc">~60 loc</span>   <span class="note">nightly job wiring the above together</span>
+<span class="d">opportunities/</span>             <span class="note">~400 loc total, ships in M4</span>
+  signals.py               <span class="loc">~150 loc</span>  <span class="note">velocity, ladder position, gaps, convergence — pure SQL+math</span>
+  miner.py                 <span class="loc">~150 loc</span>  <span class="note">weekly: candidates → interrogate → counter-evidence → score</span>
+  tracker.py               <span class="loc">~80 loc</span>   <span class="note">verdict storage + weekly re-scoring</span>
+<span class="d">sources/</span>                   <span class="note">one file per source, same 3-function shape each</span>
+  yc.py · hn_hiring.py · pypi.py · gdelt.py · product_hunt.py   <span class="loc">~60 loc each</span>
+<span class="d">orchestrator/ memory/ social/ slack_bot/ api/</span>   <span class="note">kept — slimmed &amp; hardened, not rewritten</span></code></pre>
+  <p class="c" data-t="LOC budget meaning">Those budgets are a contract: if a module wants to grow past ~2× its budget, that's a design smell we stop and discuss — not a milestone. Total new code ≈ <b>2,000 lines</b>. For scale: v3's <i>markdown knowledge-graph machinery alone</i> is 1,360 lines, and it gets deleted.</p>
+
+  <h3>Pattern 1 — every LLM call goes through one gate</h3>
+  <pre class="c" data-t="Code: llm.py pattern"><code><span class="cm"># core/llm.py — the ONLY place subprocess meets claude. Fixes v3's three</span>
+<span class="cm"># recurring bugs at once: orphaned processes, unvalidated JSON, silent failures.</span>
+<span class="kw">def</span> <span class="fn">ask</span>(prompt: str, schema: dict, *, model: str = <span class="st">"sonnet"</span>, timeout: int = 300) -&gt; dict | <span class="nm">None</span>:
+    <span class="st">"""One claude -p call. Returns schema-valid dict, or None (logged). Never raises."""</span>
+    proc = subprocess.Popen([...], start_new_session=<span class="nm">True</span>)   <span class="cm"># killpg on timeout — no orphans</span>
+    out = _communicate_or_kill(proc, timeout)
+    <span class="kw">for</span> attempt <span class="kw">in</span> range(2):                                 <span class="cm"># parse → validate → one retry</span>
+        data = _extract_json(out)
+        <span class="kw">if</span> data <span class="kw">and</span> _matches(data, schema):
+            <span class="kw">return</span> data
+        out = _retry_with_error_feedback(prompt, out)
+    log.warning(<span class="st">"llm output invalid after retry: %s"</span>, prompt[:80])
+    <span class="kw">return</span> <span class="nm">None</span>                                              <span class="cm"># caller skips item; pipeline never crashes on bad JSON</span></code></pre>
+
+  <h3>Pattern 2 — entity resolution (the make-or-break 40 lines)</h3>
+  <pre class="c" data-t="Code: resolve.py pattern"><code><span class="cm"># kg/resolve.py — cheap → cheap → one LLM call. Every merge logged.</span>
+<span class="kw">def</span> <span class="fn">resolve</span>(db, name: str, etype: str, context: str) -&gt; int:
+    <span class="kw">if</span> (eid := db.alias_lookup(name)):                       <span class="cm"># 1. exact alias — free, hits ~80% after warmup</span>
+        <span class="kw">return</span> eid
+    cands = db.shortlist(name, etype, k=5)                   <span class="cm"># 2. embedding-cosine ∪ FTS5 keyword, same type only</span>
+    <span class="kw">if</span> <span class="kw">not</span> cands:
+        <span class="kw">return</span> db.create_entity(name, etype, context)
+    verdict = llm.ask(ADJUDICATE.format(name, context, cands), MERGE_SCHEMA)
+    <span class="kw">if</span> verdict <span class="kw">is</span> <span class="nm">None</span> <span class="kw">or</span> verdict[<span class="st">"confidence"</span>] &lt; 0.8:
+        eid = db.create_entity(name, etype, context)
+        db.flag_for_review(eid, cands)                       <span class="cm"># 3. uncertain → Apple-style quarantine, you skim weekly</span>
+        <span class="kw">return</span> eid
+    <span class="kw">if</span> verdict[<span class="st">"same"</span>]:
+        db.add_alias(name, verdict[<span class="st">"entity_id"</span>])
+        db.log_merge(name, verdict)                          <span class="cm"># audit trail — silent merges are how graphs rot</span>
+        <span class="kw">return</span> verdict[<span class="st">"entity_id"</span>]
+    <span class="kw">return</span> db.create_entity(name, etype, context)</code></pre>
+
+  <h3>Pattern 3 — the replay gate</h3>
+  <pre class="c" data-t="Code: replay.py pattern"><code><span class="cm"># harness/replay.py — Netflix-style paired comparison. ~90% of candidates SHOULD die here.</span>
+<span class="kw">def</span> <span class="fn">gate</span>(db, candidate_id: str) -&gt; dict:
+    cases = db.golden_cases(limit=60)                        <span class="cm"># seeded from YOUR past edits + judge extremes</span>
+    wins = losses = 0
+    <span class="kw">for</span> case <span class="kw">in</span> cases:
+        a, b = run_both(case.input, incumbent, candidate)    <span class="cm"># same input, both configs</span>
+        side = random.choice([(a,b), (b,a)])                 <span class="cm"># judge is blind to which is which</span>
+        v = llm.ask(PAIRED_JUDGE.format(case.rubric, *side), VERDICT_SCHEMA)
+        wins += v[<span class="st">"winner"</span>] == which(candidate, side)
+        <span class="kw">if</span> case.source == <span class="st">"owner_edit"</span> <span class="kw">and</span> v[<span class="st">"winner"</span>] != which(candidate, side):
+            losses += 1                                       <span class="cm"># regression on a case YOU corrected = special</span>
+    promote = wins / len(cases) &gt;= 0.60 <span class="kw">and</span> losses == 0
+    db.record_gate_run(candidate_id, wins, losses, promote)
+    <span class="kw">return</span> {<span class="st">"promote"</span>: promote, <span class="st">"win_rate"</span>: wins/len(cases),
+            <span class="st">"needs_eyeball"</span>: candidate.touches_style}         <span class="cm"># style changes → you see a side-by-side first</span></code></pre>
+
+  <div class="card c" data-t="How we keep it simple list">
+    <h4>How we keep it from getting over-engineered</h4>
+    <ul style="margin-left:18px;font-size:14.5px">
+      <li><b>No new infrastructure.</b> SQLite + NetworkX + the claude CLI you already pay for. Zero servers, zero frameworks, one new pip dependency.</li>
+      <li><b>Plain functions, no class hierarchies.</b> Every module is functions over a db connection — the style memory/claims.py already uses (the best code in v3).</li>
+      <li><b>Line budgets are enforced</b> — growth past 2× budget triggers a design conversation, not a refactor sprint.</li>
+      <li><b>Delete as we go:</b> v3's markdown-KG machinery (1,360 loc), claims, cost plumbing, dead phases, `_web_approval` — removed in the same milestones that replace them. v4 should land <i>net smaller</i> than v3.</li>
+      <li><b>Each milestone ships something you use that week</b> — no big-bang integration at the end.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ PLAN ============ -->
+<section id="plan">
+  <div class="kicker">Part 9</div>
+  <h2>Build plan</h2>
+  <div class="timeline c" data-t="Milestone timeline">
+    <div class="mile"><b>M0 · Foundation</b><small>~1 week</small><br>core/ (db, migrations, receipts, llm gate) · lock the API (your Vercel contract untouched) · purge DB from git · strict approval parsing · Fly→Mac journal · kill switch</div>
+    <div class="mile" style="border-top-color:var(--purple)"><b>M1 · Knowledge graph</b><small>~2 weeks</small><br>4-stage pipeline + kg CLI · <b>backfill 13,894 findings</b> · newsletter reads the graph (side-by-side week, then cutover)</div>
+    <div class="mile"><b>M2 · Sources</b><small>~1 week</small><br>YC · HN-hiring · PyPI/npm · GDELT · Product Hunt · problem/solution tagging at ingest</div>
+    <div class="mile" style="border-top-color:var(--purple)"><b>M3 · Harness</b><small>~2 weeks</small><br>golden set seeded from your past edits · triggers · replay gate · lesson ledgers · bandit · delete v3 harness machinery</div>
+    <div class="mile" style="border-top-color:var(--green)"><b>M4 · Opportunities</b><small>~2 weeks</small><br>signals · weekly miner · verdict tracker · Slack delivery + /api/opportunities for the site</div>
+  </div>
+  <p class="c" data-t="Plan note — what keeps running">Throughout: the newsletter ships every morning, social posting keeps working, your Vercel site never breaks. Each milestone has testable success criteria in <code>docs/spec-v4.md</code> (e.g., M1: a planted contradiction must produce a superseded-but-preserved fact; M4: 100% of scores must cite finding IDs that mechanically resolve).</p>
+</section>
+
+<!-- ============ QUESTIONS ============ -->
+<section id="questions">
+  <div class="kicker">Part 10</div>
+  <h2>Open questions — comment your answers here</h2>
+  <div class="qa c" data-t="Q1 backfill depth"><b>1 · Backfill depth:</b> run the KG extraction over all 13,894 findings (a few nights of claude calls), or just the last 60 days? <div class="rec">recommendation: all of it — the timeline depth is what makes the opportunity engine smart.</div></div>
+  <div class="qa c" data-t="Q2 owner.md"><b>2 · owner.md</b> (your skills/interests/time/capital — used to score opportunity fit): I draft it from soul.md + user.md for you to edit, or you write it fresh? <div class="rec">recommendation: I draft, you edit.</div></div>
+  <div class="qa c" data-t="Q3 newsletter cutover"><b>3 · Newsletter cutover:</b> when the graph-based synthesis lands, switch immediately or run old + new side-by-side for a week and you pick? <div class="rec">recommendation: side-by-side week.</div></div>
+  <div class="qa c" data-t="Q4 AskNews"><b>4 · AskNews</b> (the one paid API — pre-extracted news entity graph): evaluate its free tier in M2, or skip paid sources entirely? <div class="rec">recommendation: evaluate free tier, decide with data.</div></div>
+  <div class="qa c" data-t="Q5 X client"><b>5 · X/Twitter client:</b> exists in v3, platform disabled. Keep dormant or delete? <div class="rec">recommendation: keep dormant — it costs nothing.</div></div>
+</section>
+
+</main>
+
+<footer>
+  Sources: <code>docs/audit-2026-06-11.md</code> (70+ verified v3 findings) · <code>docs/v4-research.md</code> (KG / RL / opportunity research, ~60 cited sources) · <code>docs/v4-research-bigco.md</code> (Tesla, Netflix, OpenAI, Anthropic, Google, LinkedIn, Bloomberg, Apple, Spotify, Meta, Waymo — primary sources) · <code>docs/spec-v4.md</code> (the formal spec this page visualizes).
+</footer>
+
+<!-- comment drawer -->
+<div id="drawer">
+  <header><h1 style="font-size:15px">💬 Your comments</h1><span class="spacer"></span><button id="closeDrawer">✕</button></header>
+  <div class="list" id="clist"></div>
+  <div style="padding:14px;border-top:1px solid var(--border)">
+    <button class="primary" style="width:100%" onclick="exportComments()">⬇ Export v4-comments.json</button>
+    <p style="font-size:12px;color:var(--dim);margin-top:8px">Downloads to your Downloads folder. Then tell Claude: “read my comments”.</p>
+  </div>
+</div>
+
+<!-- comment popup -->
+<div id="popup">
+  <div class="target" id="ptarget"></div>
+  <textarea id="ptext" placeholder="What do you think? Questions, disagreements, ideas…"></textarea>
+  <div class="row"><button id="pcancel">Cancel</button><button class="primary" id="psave">Save comment</button></div>
+</div>
+
+<script>
+const KEY = 'mpv4_comments';
+let comments = JSON.parse(localStorage.getItem(KEY) || '[]');
+let activeEl = null;
+
+function save() { localStorage.setItem(KEY, JSON.stringify(comments)); render(); }
+
+function render() {
+  document.getElementById('ccount').textContent = comments.length;
+  // badges
+  document.querySelectorAll('.c').forEach(el => {
+    el.classList.remove('commented');
+    el.querySelector(':scope > .badge')?.remove();
+    const n = comments.filter(c => c.target === el.dataset.t).length;
+    if (n) {
+      el.classList.add('commented');
+      const b = document.createElement('div');
+      b.className = 'badge'; b.textContent = n;
+      el.prepend(b);
+    }
+  });
+  // drawer list
+  const list = document.getElementById('clist');
+  list.innerHTML = comments.length ? '' : '<p style="color:var(--dim);font-size:13px">No comments yet — click any outlined block in the page.</p>';
+  comments.slice().reverse().forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'citem';
+    d.innerHTML = `<div class="where">${esc(c.target)}</div><div class="txt">${esc(c.text)}</div>
+      <div class="meta"><span>${new Date(c.ts).toLocaleString()}</span><span class="del" data-id="${c.id}">delete</span></div>`;
+    list.appendChild(d);
+  });
+  list.querySelectorAll('.del').forEach(x => x.onclick = () => { comments = comments.filter(c => c.id !== x.dataset.id); save(); });
+}
+function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+document.addEventListener('click', e => {
+  const popup = document.getElementById('popup');
+  if (popup.contains(e.target)) return;
+  const el = e.target.closest('.c');
+  if (el && !e.target.closest('#drawer')) {
+    if (e.target.closest('a,button')) return;
+    activeEl = el;
+    document.getElementById('ptarget').textContent = '💬 ' + el.dataset.t;
+    document.getElementById('ptext').value = '';
+    popup.style.display = 'block';
+    const r = el.getBoundingClientRect();
+    popup.style.top = (window.scrollY + r.top + 24) + 'px';
+    popup.style.left = Math.min(r.left + 20, window.innerWidth - 360) + 'px';
+    document.getElementById('ptext').focus();
+  } else if (!popup.contains(e.target)) {
+    popup.style.display = 'none';
+  }
+});
+document.getElementById('pcancel').onclick = () => document.getElementById('popup').style.display = 'none';
+document.getElementById('psave').onclick = () => {
+  const text = document.getElementById('ptext').value.trim();
+  if (text && activeEl) {
+    comments.push({ id: Math.random().toString(36).slice(2), target: activeEl.dataset.t,
+      section: activeEl.closest('section')?.id || 'general', text, ts: new Date().toISOString() });
+    save();
+  }
+  document.getElementById('popup').style.display = 'none';
+};
+document.getElementById('ptext').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) document.getElementById('psave').click();
+});
+document.getElementById('toggleDrawer').onclick = () => document.getElementById('drawer').classList.toggle('open');
+document.getElementById('closeDrawer').onclick = () => document.getElementById('drawer').classList.remove('open');
+document.getElementById('exportBtn').onclick = exportComments;
+function exportComments() {
+  const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), doc: 'v4-blueprint', comments }, null, 2)],
+    { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'v4-comments.json';
+  a.click();
+}
+render();
+</script>
+</body>
+</html>
