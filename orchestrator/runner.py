@@ -238,6 +238,21 @@ class ResearchPipeline:
         prefs = memory.list_preferences(self.db, email=self.user_config.get("email"), effective=True)
         logger.info(f"Loaded {len(prefs)} preferences")
 
+        # ── Ingest Fly-side events (phone posts) so dedup/caps see them ──
+        try:
+            from .journal_ingest import pull_and_ingest
+
+            jr = pull_and_ingest(self.db, self.user_id)
+            if jr.get("error"):
+                logger.warning(f"Journal ingest failed (non-critical): {jr['error']}")
+            elif jr.get("new_lines"):
+                logger.info(
+                    f"Journal ingest: {jr.get('ingested', 0)} ingested, "
+                    f"{jr.get('skipped', 0)} skipped of {jr['new_lines']} new line(s)"
+                )
+        except Exception as e:
+            logger.warning(f"Journal ingest failed (non-critical): {e}")
+
         try:
             resend_key = self._keychain_lookup("resend-api-key")
             if resend_key:

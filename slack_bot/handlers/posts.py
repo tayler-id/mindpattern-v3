@@ -354,6 +354,21 @@ class PostsHandler(BaseHandler):
                         "url": post_result.get("url", ""),
                         "uri": post_result.get("uri", ""),
                     }
+                    # Journal the phone post so the Mac pipeline's dedup,
+                    # rate caps, and receipts see it (M0 task 15).
+                    try:
+                        from core.time import today_utc
+                        from slack_bot import journal
+
+                        journal.append({
+                            "type": "post",
+                            "platform": platform,
+                            "content": draft,
+                            "date": today_utc(),
+                            "url": post_result.get("url", ""),
+                        })
+                    except Exception as e:
+                        logger.warning(f"[mp-posts] journal append failed: {e}")
                 else:
                     results[platform] = {
                         "success": False,
