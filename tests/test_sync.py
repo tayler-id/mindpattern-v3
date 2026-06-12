@@ -4,6 +4,7 @@ All subprocess calls are mocked. No real flyctl or sqlite3 CLI invocations.
 """
 
 import json
+import sqlite3
 import subprocess
 import tarfile
 import tempfile
@@ -44,12 +45,20 @@ def data_tree(tmp_path):
     agents_dir = reports_dir / "agents"
     agents_dir.mkdir()
 
-    # Create a minimal SQLite database file (just bytes, we mock the CLI)
+    # Create REAL (minimal) SQLite databases — create_bundle snapshots them
+    # via the backup API, which rejects fake byte blobs.
     db_path = db_dir / "memory.db"
-    db_path.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE t (x)")
+    conn.execute("INSERT INTO t VALUES (1)")
+    conn.commit()
+    conn.close()
 
     traces_path = db_dir / "traces.db"
-    traces_path.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)
+    conn = sqlite3.connect(traces_path)
+    conn.execute("CREATE TABLE t (x)")
+    conn.commit()
+    conn.close()
 
     # Create report files
     (reports_dir / "2026-03-14.md").write_text("# Report 2026-03-14\n\nContent.\n")

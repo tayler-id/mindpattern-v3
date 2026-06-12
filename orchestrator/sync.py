@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import tarfile
 import tempfile
@@ -120,11 +121,43 @@ def sync_to_fly(
             "error": f"Upload failed: {upload_result['error']}",
         }
 
-    # Step 5: Extract bundle on remote
-    extract_result = _fly_ssh(
-        app_name,
-        f"cd /data && tar xzf {remote_bundle} && rm -f {remote_bundle}",
-    )
+    # Step 5: Verify the upload arrived intact before extracting. A machine
+    # restart (deploy, scale) mid-transfer leaves a truncated bundle that
+    # tar fails on with "Unexpected EOF"; retry the upload once.
+    size_result = _fly_ssh(app_name, f"wc -c < {remote_bundle}")
+    remote_size = int(size_result["output"].split()[0]) if (
+        size_result["success"] and size_result["output"].strip().split()
+    ) else -1
+    if remote_size != bundle_size:
+        log.warning(
+            "Remote bundle size %s != local %s — retrying upload once",
+            remote_size, bundle_size,
+        )
+        upload_result = upload_bundle(bundle_path, remote_bundle, app_name)
+        size_result = _fly_ssh(app_name, f"wc -c < {remote_bundle}")
+        remote_size = int(size_result["output"].split()[0]) if (
+            size_result["success"] and size_result["output"].strip().split()
+        ) else -1
+
+    if remote_size != bundle_size:
+        extract_result = {
+            "success": False,
+            "error": f"bundle truncated after retry (remote {remote_size}, local {bundle_size})",
+        }
+        _fly_ssh(app_name, f"rm -f {remote_bundle}")
+    else:
+        # Step 6: Extract bundle on remote. Remove stale -wal/-shm in the
+        # SAME command — leftover WAL from the replaced database would be
+        # replayed into the fresh file and corrupt it.
+        stale_sidecars = (
+            f"{user_id}/memory.db-wal {user_id}/memory.db-shm "
+            f"{user_id}/traces.db-wal {user_id}/traces.db-shm"
+        )
+        extract_result = _fly_ssh(
+            app_name,
+            f"cd /data && tar xzf {remote_bundle} "
+            f"&& rm -f {remote_bundle} {stale_sidecars}",
+        )
 
     if not extract_result["success"]:
         log.warning(f"Bundle extraction failed: {extract_result['error']}. Falling back to direct SFTP.")
@@ -137,6 +170,12 @@ def sync_to_fly(
         traces_path_local = data_dir / user_id / "traces.db"
         if traces_path_local.exists():
             _fly_sftp_put(app_name, str(traces_path_local), f"/data/{user_id}/traces.db")
+        # Stale sidecars are just as fatal on the fallback path
+        _fly_ssh(
+            app_name,
+            f"cd /data && rm -f {user_id}/memory.db-wal {user_id}/memory.db-shm "
+            f"{user_id}/traces.db-wal {user_id}/traces.db-shm",
+        )
 
     # Clean up local bundle
     bundle_path.unlink(missing_ok=True)
@@ -182,6 +221,7 @@ def create_bundle(
     Bundle structure mirrors the remote /data/ layout:
         {user_id}/memory.db
         {user_id}/traces.db
+        {user_id}/mindpattern/*.md
         reports/{user_id}/YYYY-MM-DD.md
         reports/{user_id}/agents/*.md
 
@@ -198,26 +238,61 @@ def create_bundle(
     traces_path = data_dir / user_id / "traces.db"
     bundle_path = Path(tempfile.mktemp(suffix=".tar.gz", prefix=f"sync-{user_id}-"))
 
-    with tarfile.open(bundle_path, "w:gz") as tf:
-        # Add memory.db
-        if db_path.exists():
-            tf.add(str(db_path), arcname=f"{user_id}/memory.db")
+    # Snapshot the databases via the SQLite backup API instead of taring
+    # the live files — a write landing mid-tar produces a torn copy that
+    # the dashboard then serves (audit: sync.py live-file tar).
+    snap_dir = Path(tempfile.mkdtemp(prefix=f"sync-snap-{user_id}-"))
+    try:
+        with tarfile.open(bundle_path, "w:gz") as tf:
+            # Add memory.db (consistent snapshot)
+            if db_path.exists():
+                snap = snap_dir / "memory.db"
+                _snapshot_db(db_path, snap)
+                tf.add(str(snap), arcname=f"{user_id}/memory.db")
 
-        # Add traces.db (pipeline runs, agent runs, events, etc.)
-        if traces_path.exists():
-            tf.add(str(traces_path), arcname=f"{user_id}/traces.db")
+            # Add traces.db (pipeline runs, agent runs, events, etc.)
+            if traces_path.exists():
+                snap = snap_dir / "traces.db"
+                _snapshot_db(traces_path, snap)
+                tf.add(str(snap), arcname=f"{user_id}/traces.db")
 
-        # Add ALL date-named reports (not just today's — catches missed syncs)
-        for report_file in sorted(reports_dir.glob("????-??-??.md")):
-            tf.add(str(report_file), arcname=f"reports/{user_id}/{report_file.name}")
+            # Add ALL date-named reports (not just today's — catches missed syncs)
+            for report_file in sorted(reports_dir.glob("????-??-??.md")):
+                tf.add(str(report_file), arcname=f"reports/{user_id}/{report_file.name}")
 
-        # Add agent sub-reports
-        agents_dir = reports_dir / "agents"
-        if agents_dir.is_dir():
-            for md_file in sorted(agents_dir.glob("*.md")):
-                tf.add(str(md_file), arcname=f"reports/{user_id}/agents/{md_file.name}")
+            # Add agent sub-reports
+            agents_dir = reports_dir / "agents"
+            if agents_dir.is_dir():
+                for md_file in sorted(agents_dir.glob("*.md")):
+                    tf.add(str(md_file), arcname=f"reports/{user_id}/agents/{md_file.name}")
+
+            # Add vault identity files (voice.md, soul.md, …) — the Fly.io Slack
+            # bot reads these for tone/persona when drafting posts
+            vault_dir = data_dir / user_id / "mindpattern"
+            if vault_dir.is_dir():
+                for md_file in sorted(vault_dir.glob("*.md")):
+                    tf.add(str(md_file), arcname=f"{user_id}/mindpattern/{md_file.name}")
+    finally:
+        shutil.rmtree(snap_dir, ignore_errors=True)
 
     return bundle_path
+
+
+def _snapshot_db(db_path: Path, dest: Path) -> None:
+    """Consistent point-in-time copy via the SQLite backup API.
+
+    Safe against concurrent writers (WAL included) — unlike copying or
+    taring the live file.
+    """
+    src = sqlite3.connect(str(db_path))
+    try:
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
 
 
 def upload_bundle(bundle_path: Path, remote_path: str, app_name: str) -> dict:

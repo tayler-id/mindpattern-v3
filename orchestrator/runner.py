@@ -1360,7 +1360,7 @@ class ResearchPipeline:
 
         Bundle memory.db + reports → upload → dashboard gets fresh data.
         """
-        from .sync import sync_to_fly
+        from .sync import restart_app, sync_to_fly
 
         data_dir = PROJECT_ROOT / "data"
         result = sync_to_fly(
@@ -1371,6 +1371,14 @@ class ResearchPipeline:
 
         if result.get("success"):
             logger.info(f"Sync: {result.get('bytes_uploaded', 0)} bytes uploaded")
+            # Restart so the dashboard reopens the replaced database file —
+            # open connections still point at the old inode (single-user
+            # pipeline, so once-per-sync == once after all users).
+            restart = restart_app("mindpattern")
+            if restart.get("success"):
+                logger.info("Fly app restarted to pick up synced data")
+            else:
+                logger.warning(f"Fly restart failed: {restart.get('error')}")
         else:
             err = result.get("error") or "unknown error"
             logger.warning(f"Sync failed: {err}")
