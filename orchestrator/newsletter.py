@@ -17,6 +17,8 @@ from pathlib import Path
 import markdown2
 import requests
 
+from core import receipts
+
 
 @dataclass
 class ValidationResult:
@@ -32,6 +34,7 @@ class SendResult:
     success: bool
     resend_id: str | None = None
     error: str | None = None
+    skipped: bool = False  # receipt already claimed — sent on a prior run
 
 
 # ── Traces helpers (thin wrappers to avoid hard import) ──────────────────
@@ -193,6 +196,7 @@ def render_html(markdown_text: str) -> str:
     body_html = markdown2.markdown(
         markdown_text,
         extras=["tables", "fenced-code-blocks", "header-ids"],
+        safe_mode="escape",  # raw HTML in agent-written markdown is escaped
     )
 
     return f"""\
@@ -284,6 +288,7 @@ def send_newsletter(
     report_content: str | None = None,
     traces_conn=None,
     pipeline_run_id: str | None = None,
+    db=None,
 ) -> dict:
     """Send newsletter email via Resend API using requests.
 
@@ -300,14 +305,37 @@ def send_newsletter(
             When None, the file is read from disk at send time.
         traces_conn: Optional traces database connection.
         pipeline_run_id: Optional pipeline run ID for tracing.
+        db: memory.db connection for receipts. When provided, the
+            `newsletter:{date}` receipt is claimed BEFORE sending — a
+            crash-and-resume run cannot send the same newsletter twice.
 
-    Returns dict with keys: success, resend_id, error.
+    Returns dict with keys: success, resend_id, error, skipped.
     """
     start = time.monotonic()
     agent_run_id = _trace_start(traces_conn, pipeline_run_id, "newsletter-sending")
 
+    if not receipts.outbound_allowed():
+        result = SendResult(False, error="outbound disabled (MP_DISABLE_OUTBOUND=1)")
+        _trace_end(
+            traces_conn, agent_run_id, "failed",
+            error=result.error,
+            latency_ms=int((time.monotonic() - start) * 1000),
+        )
+        return asdict(result)
+
+    receipt_key = f"newsletter:{date_str}"
+    if db is not None and not receipts.claim(db, receipt_key):
+        result = SendResult(True, skipped=True)
+        _trace_end(
+            traces_conn, agent_run_id, "completed",
+            latency_ms=int((time.monotonic() - start) * 1000),
+        )
+        return asdict(result)
+
     api_key = keychain_lookup("resend-api-key")
     if not api_key:
+        if db is not None:
+            receipts.release(db, receipt_key)  # nothing sent — allow retry
         result = SendResult(False, error="No resend-api-key found in Keychain")
         _trace_end(
             traces_conn, agent_run_id, "failed",
@@ -321,6 +349,8 @@ def send_newsletter(
     # after validation (e.g. feedback footer).
     if report_content is None:
         if not report_path.exists():
+            if db is not None:
+                receipts.release(db, receipt_key)  # nothing sent — allow retry
             result = SendResult(False, error=f"Report file not found: {report_path}")
             _trace_end(
                 traces_conn, agent_run_id, "failed",
@@ -447,11 +477,15 @@ def broadcast_to_subscribers(
     reply_to: str = "feedback@tayler.id",
     traces_conn=None,
     pipeline_run_id: str | None = None,
+    db=None,
 ) -> dict:
     """Send newsletter to all Resend Audience subscribers.
 
     Fetches contacts from the audience, skips excluded/unsubscribed emails,
-    appends a generic subscriber footer, and sends individually.
+    appends a generic subscriber footer, and sends individually. When db is
+    provided, a `broadcast:{date}:{email}` receipt is claimed per recipient
+    BEFORE each send — a crash-and-resume run skips already-sent recipients
+    instead of double-sending (the audit's double-send scenario).
 
     Returns dict with sent_count, failed_count, skipped_count, errors.
     """
@@ -459,6 +493,10 @@ def broadcast_to_subscribers(
     logger = logging.getLogger(__name__)
 
     result = {"sent_count": 0, "failed_count": 0, "skipped_count": 0, "errors": []}
+
+    if not receipts.outbound_allowed():
+        result["errors"].append("outbound disabled (MP_DISABLE_OUTBOUND=1)")
+        return result
 
     api_key = keychain_lookup("resend-api-key")
     if not api_key:
@@ -531,6 +569,13 @@ def broadcast_to_subscribers(
     subject = f"{newsletter_title} — {datetime.strptime(date_str, '%Y-%m-%d').strftime('%B %-d, %Y')}"
 
     for email in contacts:
+        # Per-recipient receipt: a resumed run must not re-send to
+        # recipients who already got today's newsletter.
+        receipt_key = f"broadcast:{date_str}:{email}"
+        if db is not None and not receipts.claim(db, receipt_key):
+            result["skipped_count"] += 1
+            continue
+
         payload = {
             "from": f"{newsletter_title} <{reply_to}>",
             "to": [email],
@@ -557,7 +602,11 @@ def broadcast_to_subscribers(
                     last_error = f"No id in response: {resp_data}"
                     break
             except requests.exceptions.HTTPError as e:
-                status_code = e.response.status_code if e.response else 0
+                # NB: `e.response` truthiness is False for 4xx/5xx responses
+                # (Response.__bool__ == ok) — must compare against None.
+                status_code = (
+                    e.response.status_code if e.response is not None else 0
+                )
                 last_error = f"HTTP {status_code}"
                 if 400 <= status_code < 500 and status_code != 429:
                     break
@@ -574,6 +623,9 @@ def broadcast_to_subscribers(
             _trace_event(traces_conn, pipeline_run_id,
                          "broadcast_sent", json.dumps({"to": email}))
         else:
+            # Receipt stays claimed: a timeout may have delivered anyway,
+            # and a duplicate email costs more than a missed one. The
+            # failure is recorded; receipts.release() is the manual path.
             result["failed_count"] += 1
             result["errors"].append(f"{email}: {last_error}")
             _trace_event(traces_conn, pipeline_run_id,

@@ -883,12 +883,24 @@ class ResearchPipeline:
             report_path, self.user_config, self.date_str,
             report_content=report_path.read_text(),
             traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
+            db=self.db,
         )
 
-        if result.get("success"):
+        if result.get("skipped"):
+            logger.info(
+                f"Newsletter already sent for {self.date_str} "
+                f"(receipt claimed on a prior run) — skipping"
+            )
+        elif result.get("success"):
             logger.info(f"Newsletter sent: {result.get('resend_id')}")
         else:
-            logger.warning(f"Newsletter send failed: {result.get('error')}")
+            # A silent delivery failure means no newsletter and nobody
+            # notices — alert the owner instead of logging-and-completing.
+            logger.error(f"Newsletter send failed: {result.get('error')}")
+            self._send_alert(
+                f"Newsletter send FAILED for {self.date_str}: "
+                f"{result.get('error')}"
+            )
 
         # Broadcast to public subscribers (gated by user config)
         audience_service = self.user_config.get("broadcast_audience")
@@ -903,6 +915,7 @@ class ResearchPipeline:
                     reply_to=self.user_config.get("reply_to", ""),
                     traces_conn=self.traces_conn,
                     pipeline_run_id=self.traces_run_id,
+                    db=self.db,
                 )
                 logger.info(
                     f"Subscriber broadcast: {broadcast['sent_count']} sent, "
