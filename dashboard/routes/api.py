@@ -5,6 +5,7 @@ Private routes: require bearer token auth
 """
 
 import json
+import os
 import re
 import sqlite3
 import struct
@@ -14,7 +15,10 @@ from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, Query, Depends
+from fastapi.responses import JSONResponse
+
 from dashboard.auth import require_auth
+from slack_bot.heartbeat import is_stale as bot_heartbeat_stale
 
 router = APIRouter()
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -631,7 +635,12 @@ async def get_skill_domains(user: str = Query("ramsay")):
 
 @router.get("/healthz")
 async def health():
-    """Public: health check."""
+    """Public: health check.
+
+    On Fly (FLY_APP_NAME set) a stale bot heartbeat returns 503 so the
+    failing health check restarts the machine — a dead Socket Mode
+    connection must not look healthy (M0 task 12).
+    """
     db_ok = False
     conn = get_memory_db()
     if conn is not None:
@@ -643,11 +652,19 @@ async def health():
         finally:
             conn.close()
 
-    return {
+    bot_stale = bot_heartbeat_stale()
+    body = {
         "status": "ok" if db_ok else "degraded",
         "timestamp": datetime.now().isoformat(),
         "database": "connected" if db_ok else "unavailable",
+        "bot": "stale" if bot_stale else "alive",
     }
+
+    if bot_stale and os.environ.get("FLY_APP_NAME"):
+        body["status"] = "bot-dead"
+        return JSONResponse(status_code=503, content=body)
+
+    return body
 
 
 # ── Private endpoints (require auth) ────────────────────────────

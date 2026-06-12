@@ -18,6 +18,7 @@ import os
 import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from slack_sdk import WebClient
@@ -25,7 +26,12 @@ from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 
+from slack_bot import heartbeat
 from slack_bot.registry import _keychain_get, build_handlers
+
+# Slack redelivers events on slow acks and reconnects — remember recently
+# seen event ids for this long so a redelivery is processed exactly once.
+EVENT_DEDUP_TTL_SECONDS = 300
 
 logger = logging.getLogger("slack_bot")
 
@@ -61,9 +67,10 @@ def _get_owner_user_id(client: WebClient) -> str:
     if owner_id:
         return owner_id
 
-    logger.warning(
-        "No owner user ID configured. Bot will respond to ALL users. "
-        "Set 'slack-owner-user-id' in Keychain to restrict."
+    logger.error(
+        "No owner user ID configured — the bot FAILS CLOSED and will refuse "
+        "all commands. Set 'slack-owner-user-id' in Keychain or "
+        "MP_SLACK_OWNER_USER_ID in the environment."
     )
     return ""
 
@@ -124,6 +131,15 @@ class MindPatternBot:
             logger.error("No handlers loaded — check channel config")
             sys.exit(1)
 
+        # Redelivered-event dedup: event id -> monotonic time first seen
+        self._seen_events: dict[str, float] = {}
+
+        # Handlers run long pipelines (claude -p calls). Dispatch on a
+        # dedicated executor so they never block the Socket Mode pool.
+        self._handler_executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="mp-handler"
+        )
+
     def _handle_event(self, client: SocketModeClient, req: SocketModeRequest):
         """Route incoming Socket Mode events to handlers."""
         # Acknowledge immediately
@@ -143,13 +159,26 @@ class MindPatternBot:
         if event_type != "message" or event.get("subtype"):
             return
 
+        # Dedup: Slack redelivers events on slow acks and reconnects.
+        if self._is_duplicate_event(req, event):
+            return
+
+        # Thread replies are consumed by handlers' wait_for_reply() polling
+        # (approvals, follow-ups). Routing them to handle() would start a
+        # second pipeline on the approval text itself.
+        if event.get("thread_ts") and event.get("thread_ts") != event.get("ts"):
+            return
+
         # Ignore bot's own messages
         if event.get("user") == self.bot_user_id or event.get("bot_id"):
             return
 
-        # Security: only process messages from the owner
+        # Security: fail closed — no owner configured means no commands.
+        if not self.owner_user_id:
+            logger.warning("Refusing command: no owner user ID configured")
+            return
         user = event.get("user", "")
-        if self.owner_user_id and user != self.owner_user_id:
+        if user != self.owner_user_id:
             logger.debug(f"Ignoring message from non-owner user {user}")
             return
 
@@ -159,7 +188,27 @@ class MindPatternBot:
         if not handler:
             return  # Message is in a channel we don't handle
 
-        # Dispatch to handler (runs alongside pipeline — claude -p calls don't collide)
+        # Dispatch off the socket thread (claude -p calls run for minutes)
+        self._handler_executor.submit(self._run_handler, handler, channel, event)
+
+    def _is_duplicate_event(self, req: SocketModeRequest, event: dict) -> bool:
+        """TTL-set dedup keyed by Slack's event id (channel:ts fallback)."""
+        event_id = req.payload.get("event_id") or (
+            f"{event.get('channel', '')}:{event.get('event_ts') or event.get('ts', '')}"
+        )
+        now = time.monotonic()
+        self._seen_events = {
+            k: v for k, v in self._seen_events.items()
+            if now - v < EVENT_DEDUP_TTL_SECONDS
+        }
+        if event_id in self._seen_events:
+            logger.info(f"Skipping duplicate event delivery: {event_id}")
+            return True
+        self._seen_events[event_id] = now
+        return False
+
+    def _run_handler(self, handler, channel: str, event: dict):
+        """Execute a handler on the dispatch executor with error reporting."""
         try:
             handler.handle(event)
         except Exception as e:
@@ -176,14 +225,29 @@ class MindPatternBot:
         """Start the Socket Mode connection and listen for events."""
         self.socket_client.socket_mode_request_listeners.append(self._handle_event)
 
+        # Touch BEFORE connecting: the heartbeat file persists on the Fly
+        # volume, so a stale leftover from before a restart must not 503
+        # the machine into a restart loop while we reconnect.
+        heartbeat.touch()
+
         logger.info("Connecting to Slack via Socket Mode...")
         self.socket_client.connect()
         logger.info("Connected. Listening for messages.")
+        heartbeat.touch()
 
-        # Keep the process alive
+        # Keep the process alive; heartbeat ONLY while the socket is
+        # actually connected, so a silently dead connection goes stale
+        # and /healthz fails the Fly health check (2026-06-11 outage).
         try:
             while True:
-                time.sleep(1)
+                time.sleep(heartbeat.TOUCH_INTERVAL_SECONDS)
+                if self.socket_client.is_connected():
+                    heartbeat.touch()
+                else:
+                    logger.warning(
+                        "Socket Mode disconnected — heartbeat withheld "
+                        "(healthz will go stale and Fly will restart)"
+                    )
         except KeyboardInterrupt:
             logger.info("Shutting down...")
             self.socket_client.close()
