@@ -882,12 +882,21 @@ class ResearchPipeline:
 
         # Send — pass file content directly so the footer is guaranteed
         # to be included in the HTML conversion (avoids stale file reads).
-        result = send_newsletter(
-            report_path, self.user_config, self.date_str,
-            report_content=report_path.read_text(),
-            traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
-            db=self.db,
-        )
+        # An exception here must still alert the owner — on 2026-06-12 a
+        # crash inside send_newsletter bypassed the alert path entirely and
+        # the missed newsletter went unnoticed.
+        try:
+            result = send_newsletter(
+                report_path, self.user_config, self.date_str,
+                report_content=report_path.read_text(),
+                traces_conn=self.traces_conn, pipeline_run_id=self.traces_run_id,
+                db=self.db,
+            )
+        except Exception as e:
+            result = {
+                "success": False, "skipped": False,
+                "error": f"{type(e).__name__}: {e}",
+            }
 
         if result.get("skipped"):
             logger.info(

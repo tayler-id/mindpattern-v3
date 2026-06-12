@@ -150,3 +150,32 @@ class TestRenderHtmlEscapesRawHtml:
         html = render_html("# Title\n\n**bold**")
         assert "<h1" in html
         assert "<strong>bold</strong>" in html
+
+
+class TestProductionDbMigrated:
+    """Regression for 2026-06-12: migrations existed and were tested but
+    nothing ran them against the production db — DELIVER crashed on a
+    missing receipts table and the newsletter silently didn't go out.
+    get_db() is the chokepoint; it must migrate."""
+
+    def test_get_db_applies_core_migrations(self, tmp_path):
+        conn = memory.get_db(tmp_path / "fresh.db", user_id="test")
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        receipts_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE name='receipts'"
+        ).fetchone()
+        conn.close()
+        assert version >= 1
+        assert receipts_table is not None
+
+    def test_deliver_exception_still_produces_failure_result(self):
+        """The runner wraps send_newsletter — an exception becomes a failure
+        result so the Slack alert fires instead of being skipped."""
+        from pathlib import Path
+
+        source = Path(__file__).parent.parent.joinpath(
+            "orchestrator", "runner.py"
+        ).read_text()
+        deliver = source.split("def _phase_deliver")[1].split("def _phase_learn")[0]
+        assert "try:" in deliver and "except Exception" in deliver
+        assert deliver.index("send_newsletter(") > deliver.index("try:")

@@ -34,6 +34,14 @@ def get_db(db_path: str | Path | None = None, user_id: str = "ramsay") -> sqlite
     conn.execute("PRAGMA foreign_keys=ON")
 
     _init_schema(conn)
+
+    # Apply core user_version migrations (receipts, ...) at the chokepoint
+    # every consumer goes through. Lesson of 2026-06-12: migrations existed
+    # and were tested but nothing ran them against the PRODUCTION db, so
+    # DELIVER crashed on a missing receipts table and no newsletter went out.
+    from core import migrations
+
+    migrations.migrate(conn)
     return conn
 
 
