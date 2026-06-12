@@ -309,8 +309,8 @@ log "Stage 2: Research scanning for ideas..."
 claude -p "$(cat harness/prompts/research.md)" \
     --model "$(read_config research model)" \
     --max-turns 15 \
-    --allowedTools "Bash Read Glob Grep Write WebSearch WebFetch Agent" \
-    --disallowedTools "Skill" \
+    --allowedTools "Bash Read Glob Grep Write WebSearch Agent" \
+    --disallowedTools "Skill WebFetch" \
     > /tmp/harness-research.log 2>&1 || log "WARN: Research exited with $?"
 
 OPEN_COUNT=$(python3 -m harness.tickets list open 2>/dev/null | wc -l | tr -d ' ')

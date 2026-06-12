@@ -48,9 +48,11 @@ def _agent_env(agent_name: str) -> dict[str, str]:
     env["MINDPATTERN_VAULT"] = str(vault)
     return env
 
-# Tools each agent is allowed to use
+# Tools each research agent is allowed to use. Research agents ingest
+# scraped web content — an injected instruction must never reach a shell
+# or spawn subagents, so Bash and Agent are NOT in this list (audit C6).
 AGENT_ALLOWED_TOOLS = [
-    "Agent", "Bash", "WebSearch", "WebFetch", "Read", "Glob", "Grep",
+    "WebSearch", "WebFetch", "Read", "Glob", "Grep",
 ]
 
 
@@ -375,8 +377,9 @@ def run_single_agent(
     for tool in AGENT_ALLOWED_TOOLS:
         cmd.extend(["--allowedTools", tool])
 
-    # Block skills but allow subagent delegation for deep research
-    cmd.extend(["--disallowedTools", "Skill"])
+    # Belt and suspenders: deny the dangerous tools explicitly too —
+    # allowed-tools alone is not reliably enforced in every harness path.
+    cmd.extend(["--disallowedTools", "Skill Bash Agent Write Edit"])
 
     logger.info(
         f"run_single_agent START: agent={agent_name}, model={model}, "

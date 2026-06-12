@@ -136,6 +136,11 @@ def main():
     parser.add_argument("--skip-social", action="store_true", help="Skip social + engagement phases")
     args = parser.parse_args()
 
+    # --dry-run is REAL: force the global outbound kill switch so no
+    # email, post, or follow can leave the machine (M0 task 14).
+    if args.dry_run:
+        os.environ["MP_DISABLE_OUTBOUND"] = "1"
+
     date_str = args.date or datetime.now().strftime("%Y-%m-%d")
     setup_logging(date_str)
     logger = logging.getLogger("mindpattern")
