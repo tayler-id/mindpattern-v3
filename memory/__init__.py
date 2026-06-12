@@ -24,6 +24,7 @@ from .embeddings import embed_text, embed_texts, cosine_similarity
 from .findings import (
     store_finding,
     search_findings,
+    source_date_from_url,
     get_context,
     store_source,
     get_top_sources,
@@ -136,7 +137,7 @@ __all__ = [
     # Embeddings
     "embed_text", "embed_texts", "cosine_similarity",
     # Findings
-    "store_finding", "search_findings", "get_context",
+    "store_finding", "search_findings", "source_date_from_url", "get_context",
     "store_source", "get_top_sources",
     "store_skill", "search_skills", "list_skills",
     "evaluate_run", "log_agent_run", "get_stats",

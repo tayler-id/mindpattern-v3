@@ -483,6 +483,13 @@ class ResearchPipeline:
             preflight_data=preflight_data,
         )
 
+        # Sources older than this (by URL-embedded date) are resurfaced
+        # content, not today's news.
+        from datetime import timedelta as _td
+        stale_cutoff = (
+            datetime.strptime(self.date_str, "%Y-%m-%d") - _td(days=30)
+        ).strftime("%Y-%m-%d")
+
         # Cross-agent dedup: remove near-duplicate findings across agents
         try:
             self.agent_results, dedup_summary = agent_dispatch.dedup_cross_agent_findings(
@@ -506,11 +513,30 @@ class ResearchPipeline:
                         continue
 
                     # Dedup: check if a near-identical finding exists in the last 10 days
+                    # Dedup gate (2026-06-12 lesson: a January story reached
+                    # the newsletter). Two layers:
+                    # 1. Stale source: a URL carrying its own date >30 days
+                    #    old is resurfaced content, not news. Deterministic.
+                    source_date = memory.source_date_from_url(
+                        finding.get("source_url")
+                    )
+                    if source_date and source_date < stale_cutoff:
+                        logger.info(
+                            f"Skipping stale-source finding ({source_date}): "
+                            f"'{title[:60]}'"
+                        )
+                        continue
+
+                    # 2. Semantic near-duplicate vs 180 days of history
+                    #    (was 10 days — re-coverage older than the window was
+                    #    invisible). 0.90 stays: calibration on real data
+                    #    showed distinct stories score up to 0.81 vs related
+                    #    coverage, so a lower bar censors real news.
                     existing = memory.search_findings(
-                        self.db, f"{title}. {summary}", limit=1, days=10,
+                        self.db, f"{title}. {summary}", limit=1, days=180,
                     )
                     if existing and existing[0].get("similarity", 0) > 0.90:
-                        logger.debug(
+                        logger.info(
                             f"Skipping duplicate: '{title[:50]}' "
                             f"(sim={existing[0]['similarity']:.2f} with '{existing[0]['title'][:50]}')"
                         )

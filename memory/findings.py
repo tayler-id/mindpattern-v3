@@ -1696,3 +1696,35 @@ def _backfill_skills_for_date(
         db.commit()
 
     return added, already
+
+
+# ── Source-date extraction (resurfaced-content guard) ──────────────────
+
+
+# Common date-in-URL patterns: /2026-01-26-slug/, /2026/01/26/, ?date=2026-01-26
+_URL_DATE_PATTERNS = [
+    re.compile(r"/(\d{4})-(\d{2})-(\d{2})[-/]"),
+    re.compile(r"/(\d{4})/(\d{2})/(\d{2})/"),
+    re.compile(r"/(\d{4})/(\d{2})/"),  # year/month only — day defaults to 01
+]
+
+
+def source_date_from_url(url: str | None) -> str | None:
+    """Extract a publication date embedded in a URL, if any.
+
+    Returns 'YYYY-MM-DD' or None. Used to catch old articles resurfacing
+    as fresh findings (2026-06-12: a January MCP Apps post reached the
+    newsletter as today's news — semantic dedup can't catch rewording,
+    but the URL carried its own date).
+    """
+    if not url:
+        return None
+    for pattern in _URL_DATE_PATTERNS:
+        m = pattern.search(url)
+        if m:
+            groups = m.groups()
+            year, month = int(groups[0]), int(groups[1])
+            day = int(groups[2]) if len(groups) > 2 else 1
+            if 2000 <= year <= 2100 and 1 <= month <= 12 and 1 <= day <= 31:
+                return f"{year:04d}-{month:02d}-{day:02d}"
+    return None
