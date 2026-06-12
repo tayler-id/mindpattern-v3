@@ -41,8 +41,8 @@ def test_schema_creates_all_tables(db):
     )
     tables = [row["name"] for row in cur.fetchall()]
     expected = sorted([
-        "agent_metrics", "agent_runs", "alerts", "cost_log", "daily_metrics",
-        "events", "evolution_actions", "pipeline_phases", "pipeline_runs",
+        "agent_metrics", "agent_runs", "alerts", "daily_metrics",
+        "events", "evolution_actions", "pipeline_runs",
         "prompt_versions", "proof_packages", "quality_history", "quality_scores",
         "trace_spans",
     ])

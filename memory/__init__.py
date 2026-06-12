@@ -69,21 +69,8 @@ from .social import (
     count_posts_today,
 )
 
-# Agent evolution
-from .evolution import (
-    get_candidates,
-    check_agent_performance,
-    compute_overlap,
-    log_evolution,
-    spawn_agent,
-    retire_agent,
-    merge_agents,
-)
-
 # Patterns & self-improvement
 from .patterns import (
-    record_pattern,
-    get_recurring,
     consolidate,
     promote,
     prune,
@@ -97,14 +84,6 @@ from .signals import (
     store_signal,
     get_signal_context,
     get_recent_signals,
-)
-
-# Cross-agent topic claiming (NEW in v3)
-from .claims import (
-    claim_topic,
-    is_claimed,
-    list_claims,
-    clear_claims,
 )
 
 # Failure lessons (NEW in v3)
@@ -173,16 +152,12 @@ __all__ = [
     "store_engagement", "check_engagement", "list_engagements",
     "store_pending_post", "get_pending_posts", "mark_pending_posted",
     "count_posts_today",
-    # Evolution
-    "get_candidates", "check_agent_performance", "compute_overlap",
-    "log_evolution", "spawn_agent", "retire_agent", "merge_agents",
     # Patterns
-    "record_pattern", "get_recurring", "consolidate", "promote", "prune",
+    "consolidate", "promote", "prune",
     "store_note", "get_recent_notes", "backfill_note_embeddings",
     # Signals
     "store_signal", "get_signal_context", "get_recent_signals",
     # Claims
-    "claim_topic", "is_claimed", "list_claims", "clear_claims",
     # Failures
     "store_failure", "recent_failures", "failures_for_date", "failure_categories",
     # Corrections

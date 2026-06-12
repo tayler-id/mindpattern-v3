@@ -47,10 +47,8 @@ class ApprovalGateway:
         Args:
             config: Full social-config.json dict. Reads:
                 - gate_timeout_seconds: max wait (None = wait forever)
-                - approval_api_base: dashboard API URL
         """
         self.gate_timeout = config.get("gate_timeout_seconds", None)
-        self.api_base = config.get("approval_api_base", "")
         self.thread_ts = None  # Shared thread for all gates in one pipeline run
 
     # ── Public gates ──────────────────────────────────────────────────
@@ -122,169 +120,6 @@ class ApprovalGateway:
         reply = self._slack_approval(message, self.gate_timeout)
         return self._parse_engagement_reply(reply, len(candidates))
 
-    # ── Web dashboard ─────────────────────────────────────────────────
-
-    def _web_approval(self, items: list[dict], gate_type: str) -> dict | None:
-        """Submit to authenticated dashboard API, poll for response.
-
-        Creates an approval_review record with a unique token, submits items,
-        then polls the API for a decision. Uses bearer token auth.
-
-        Args:
-            items: List of content items for review.
-            gate_type: Type of gate (topic, draft, engagement).
-
-        Returns:
-            Response dict or None if dashboard is unavailable.
-        """
-        if not self.api_base:
-            logger.debug("No approval_api_base configured, skipping web approval")
-            return None
-
-        try:
-            import requests
-        except ImportError:
-            logger.debug("requests library not available for web approval")
-            return None
-
-        token = secrets.token_urlsafe(32)
-        submit_url = f"{self.api_base}/api/approvals"
-
-        try:
-            resp = requests.post(
-                submit_url,
-                json={
-                    "gate_type": gate_type,
-                    "token": token,
-                    "items": items,
-                    "created_at": datetime.now().isoformat(),
-                },
-                headers={"Content-Type": "application/json"},
-                timeout=15,
-            )
-
-            if resp.status_code not in (200, 201):
-                logger.warning(
-                    f"Dashboard API returned {resp.status_code}"
-                )
-                return None
-
-        except Exception as e:
-            logger.warning(f"Dashboard API unreachable: {e}")
-            return None
-
-        # Poll for decision
-        poll_url = f"{self.api_base}/api/approvals/{token}"
-        poll_interval = 30  # seconds
-        logger.info(
-            f"Approval submitted to dashboard (token={token[:8]}...), "
-            f"polling every {poll_interval}s"
-        )
-
-        poll_num = 0
-        effective_timeout = self.gate_timeout if self.gate_timeout is not None else DEFAULT_MAX_TIMEOUT
-        start_time = time.monotonic()
-
-        while True:
-            time.sleep(poll_interval)
-
-            # Safety cap — prevent indefinite blocking
-            if (time.monotonic() - start_time) >= effective_timeout:
-                logger.warning(
-                    f"Web approval timed out after {effective_timeout}s "
-                    f"for {gate_type} gate — returning None to unblock pipeline"
-                )
-                return None
-
-            try:
-                poll_resp = requests.get(poll_url, timeout=10)
-                if poll_resp.status_code != 200:
-                    poll_num += 1
-                    continue
-
-                data = poll_resp.json()
-                status = data.get("status", "pending")
-
-                if status == "pending":
-                    if poll_num > 0 and poll_num % 20 == 0:
-                        logger.debug(
-                            f"Still waiting for {gate_type} approval "
-                            f"({poll_num * poll_interval}s elapsed)"
-                        )
-                    poll_num += 1
-                    continue
-
-                # Decision received
-                logger.info(f"Dashboard approval received: {status}")
-                return self._normalize_web_response(data, gate_type)
-
-            except Exception as e:
-                logger.debug(f"Poll error (will retry): {e}")
-                poll_num += 1
-                continue
-
-    def _normalize_web_response(self, data: dict, gate_type: str) -> dict:
-        """Convert dashboard API response to standard gate format."""
-        status = data.get("status", "rejected")
-
-        if gate_type == "topic":
-            if status == "approved":
-                return {
-                    "action": "go",
-                    "topic_index": data.get("selected_index", 0),
-                    "guidance": data.get("feedback", ""),
-                }
-            elif status == "retry":
-                return {
-                    "action": "retry",
-                    "topic_index": 0,
-                    "guidance": data.get("feedback", ""),
-                }
-            else:
-                return {"action": "skip", "topic_index": 0, "guidance": ""}
-
-        elif gate_type == "draft":
-            if status == "approved":
-                items = data.get("items", [])
-                edits = {}
-                approved_platforms = []
-                for item in items:
-                    platform = item.get("platform", "")
-                    item_status = item.get("status", "approved")
-                    if item_status == "approved":
-                        approved_platforms.append(platform)
-                        if item.get("feedback"):
-                            edits[platform] = item["feedback"]
-
-                if len(approved_platforms) == len(items):
-                    return {
-                        "action": "all",
-                        "platforms": approved_platforms,
-                        "edits": edits,
-                    }
-                else:
-                    return {
-                        "action": "approve_selected",
-                        "platforms": approved_platforms,
-                        "edits": edits,
-                    }
-            else:
-                return {"action": "skip", "platforms": [], "edits": {}}
-
-        elif gate_type == "engagement":
-            if status == "approved":
-                approved = data.get("approved_indices", [])
-                return {
-                    "approved_indices": approved,
-                    "reason": data.get("feedback", ""),
-                }
-            else:
-                return {"approved_indices": [], "reason": data.get("feedback", "")}
-
-        return {"action": "skip"}
-
-    # ── Slack approval (primary) ─────────────────────────────────────
-
     def _get_slack_token(self) -> str | None:
         """Get Slack bot token from macOS Keychain."""
         try:
@@ -349,10 +184,10 @@ class ApprovalGateway:
             return None
 
     def _slack_poll_replies(self, token: str, after_ts: str, timeout_seconds: int | None = None) -> str | None:
-        """Poll Slack channel for any reply after a specific message.
+        """Poll the approval thread for the owner's reply.
 
-        Accepts both threaded replies AND new channel messages posted after
-        the bot's message. Ignores bot messages (only human replies count).
+        Thread-scoped and owner-only (audit C4): channel chatter and
+        non-owner replies are never approvals.
 
         Args:
             token: Slack bot token.

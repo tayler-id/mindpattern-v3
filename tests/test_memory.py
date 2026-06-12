@@ -103,7 +103,6 @@ class TestDB:
             "approval_items",
             "run_log",
             # v3 tables
-            "claimed_topics",
             "failure_lessons",
             "editorial_corrections",
             "entity_graph",
@@ -112,18 +111,12 @@ class TestDB:
         for table in expected_tables:
             assert table in table_names, f"Missing table: {table}"
 
-    def test_fts5_virtual_table_created(self, db):
-        """FTS5 virtual table for keyword search is created."""
+    def test_fts5_virtual_table_not_created(self, db):
+        """findings_fts was dead code — never queried (M0 task 17)."""
         rows = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='findings_fts'"
         ).fetchall()
-        # FTS5 may not be available in all SQLite builds, so we check
-        # the table exists OR that the test environment lacks FTS5 support
-        if len(rows) > 0:
-            assert rows[0]["name"] == "findings_fts"
-        else:
-            # FTS5 not available — acceptable
-            pytest.skip("FTS5 not available in this SQLite build")
+        assert rows == []
 
     def test_compound_index_exists(self, db):
         """Compound index idx_findings_date_agent exists."""
@@ -787,68 +780,6 @@ class TestPatterns:
         ).fetchone()
         assert c_row["status"] == "active"
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 7. memory/claims.py
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestClaims:
-    def test_claim_topic_first_claim_returns_true(self, db):
-        """claim_topic() returns True on first claim."""
-        from memory.claims import claim_topic
-
-        result = claim_topic(db, "2026-03-14", "agent1", "hash123", url="https://example.com")
-        assert result is True
-
-    def test_claim_topic_duplicate_returns_false(self, db):
-        """claim_topic() returns False on duplicate claim by different agent."""
-        from memory.claims import claim_topic
-
-        claim_topic(db, "2026-03-14", "agent1", "hash123")
-        result = claim_topic(db, "2026-03-14", "agent2", "hash123")
-        assert result is False
-
-    def test_claim_topic_same_agent_returns_true(self, db):
-        """claim_topic() returns True when same agent claims same topic."""
-        from memory.claims import claim_topic
-
-        claim_topic(db, "2026-03-14", "agent1", "hash123")
-        result = claim_topic(db, "2026-03-14", "agent1", "hash123")
-        assert result is True
-
-    def test_is_claimed_returns_agent_info(self, db):
-        """is_claimed() returns agent info when claimed."""
-        from memory.claims import claim_topic, is_claimed
-
-        claim_topic(db, "2026-03-14", "agent1", "hash456", url="https://example.com")
-
-        result = is_claimed(db, "2026-03-14", "hash456")
-        assert result is not None
-        assert result["agent"] == "agent1"
-        assert result["url"] == "https://example.com"
-
-    def test_is_claimed_returns_none_when_unclaimed(self, db):
-        """is_claimed() returns None when topic is not claimed."""
-        from memory.claims import is_claimed
-
-        result = is_claimed(db, "2026-03-14", "nonexistent")
-        assert result is None
-
-    def test_clear_claims_removes_all(self, db):
-        """clear_claims() removes all claims for a date."""
-        from memory.claims import claim_topic, clear_claims, is_claimed
-
-        claim_topic(db, "2026-03-14", "agent1", "hash1")
-        claim_topic(db, "2026-03-14", "agent2", "hash2")
-        claim_topic(db, "2026-03-15", "agent1", "hash3")  # different date
-
-        clear_claims(db, "2026-03-14")
-
-        assert is_claimed(db, "2026-03-14", "hash1") is None
-        assert is_claimed(db, "2026-03-14", "hash2") is None
-        # Different date should be unaffected
-        assert is_claimed(db, "2026-03-15", "hash3") is not None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

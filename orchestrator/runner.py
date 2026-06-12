@@ -23,8 +23,6 @@ from .traces_db import (
     create_pipeline_run,
     complete_pipeline_run,
     log_event,
-    create_phase as traces_create_phase,
-    complete_phase as traces_complete_phase,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,7 +56,6 @@ class ResearchPipeline:
         self.newsletter_text: str = ""
         self.newsletter_eval: dict = {}
         self.social_result: dict = {}
-        self.evolve_result: dict = {}
         self.preflight_data: dict | None = None
 
         # Traces DB for observability
@@ -222,10 +219,6 @@ class ResearchPipeline:
             Phase.LEARN: self._phase_learn,
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
-            # Phase.EVOLVE disabled: audit found zero measurable improvement,
-            # 5-8 min LLM waste/run. Revisit when per-agent metrics + clean
-            # reward signal are in place. See reports/audit/evolve.md
-            # Phase.EVOLVE: self._phase_evolve,
             Phase.IDENTITY: self._phase_identity,
             Phase.MIRROR: self._phase_mirror,
             Phase.SYNC: self._phase_sync,
@@ -458,8 +451,6 @@ class ResearchPipeline:
 
     def _phase_research(self) -> dict:
         """Phase 3: Research (13x Sonnet, parallel)."""
-        memory.clear_claims(self.db, self.date_str)
-
         # Use preflight data from TREND_SCAN phase (already ran)
         preflight_data = self.preflight_data
         if preflight_data:
@@ -483,14 +474,11 @@ class ResearchPipeline:
                 ctx = ctx + "\n\n" + signal_context if ctx else signal_context
             return ctx
 
-        current_claims = [c["topic_hash"] for c in memory.list_claims(self.db, self.date_str)]
-
         self.agent_results = agent_dispatch.dispatch_research_agents(
             user_id=self.user_id,
             date_str=self.date_str,
             context_fn=context_fn,
             trends=self.trends,
-            claims=current_claims,
             max_workers=6,
             preflight_data=preflight_data,
         )
@@ -1143,130 +1131,6 @@ class ResearchPipeline:
         )
         return result
 
-    def _phase_evolve(self) -> dict:
-        """Phase: Analyze agent traces and improve skill files."""
-        from orchestrator.analyzer import (
-            build_analyzer_prompt,
-            parse_analyzer_output,
-            apply_analyzer_changes,
-        )
-
-        trace_dir = PROJECT_ROOT / "data" / self.user_id / "mindpattern" / "agents"
-
-        # Collect traced agent names (those with today's trace file)
-        traced_agents = set()
-        if trace_dir.exists():
-            for agent_dir in trace_dir.iterdir():
-                if agent_dir.is_dir() and (agent_dir / f"{self.date_str}.md").exists():
-                    traced_agents.add(agent_dir.name)
-
-        skill_files = self._collect_all_skill_files()
-
-        # Build metrics from this run
-        metrics = {
-            "findings_per_agent": {
-                r.agent_name: len(r.findings)
-                for r in self.agent_results
-            } if self.agent_results else {},
-            "newsletter_eval": self.newsletter_eval,
-            "social_result": {
-                k: v for k, v in self.social_result.items()
-                if k in ("topic", "gate1_outcome", "gate2_outcome", "platforms_posted")
-            } if self.social_result else {},
-        }
-
-        # Get regression data
-        regression_data = []
-        if self.prompt_tracker:
-            regression_data = self.prompt_tracker.check_regression(self.date_str)
-
-        prompt = build_analyzer_prompt(
-            trace_dir=trace_dir,
-            skill_files=skill_files,
-            date_str=self.date_str,
-            metrics=metrics,
-            regression_data=regression_data,
-        )
-
-        output, exit_code = agent_dispatch.run_claude_prompt(
-            prompt, task_type="evolve",
-        )
-
-        if exit_code != 0 or not output:
-            logger.warning("EVOLVE: LLM call failed")
-            return {"evolved": False, "reason": "LLM call failed"}
-
-        changes = parse_analyzer_output(output)
-        if changes is None:
-            logger.warning("EVOLVE: Could not parse output as JSON")
-            return {"evolved": False, "reason": "JSON parse failed"}
-
-        result = apply_analyzer_changes(
-            changes,
-            project_root=PROJECT_ROOT,
-            traced_files=traced_agents,
-            prompt_tracker=self.prompt_tracker,
-        )
-
-        # Record quality snapshots for EVOLVE-phase changes so regressions
-        # can be detected on subsequent runs.  The LEARN phase already
-        # computed quality, so we pull the latest overall_score from
-        # run_quality and stamp every file the analyzer just touched.
-        if self.prompt_tracker and (result["applied"] > 0 or result["reverted"] > 0):
-            try:
-                row = self.db.execute(
-                    "SELECT overall_score FROM run_quality "
-                    "WHERE run_date = ? ORDER BY rowid DESC LIMIT 1",
-                    (self.date_str,),
-                ).fetchone()
-                current_quality = float(row["overall_score"]) if row else None
-            except Exception:
-                current_quality = None
-
-            if current_quality is not None:
-                changed_paths: list[str] = []
-                for c in changes.get("changes", []):
-                    changed_paths.append(c["file"])
-                for r in changes.get("reversions", []):
-                    changed_paths.append(r["file"])
-                for path in changed_paths:
-                    try:
-                        self.prompt_tracker.conn.execute(
-                            """UPDATE prompt_tracker
-                               SET quality_snapshot = ?
-                               WHERE file_path = ?
-                                 AND quality_snapshot IS NULL
-                                 AND id = (
-                                     SELECT id FROM prompt_tracker
-                                     WHERE file_path = ?
-                                     ORDER BY recorded_at DESC LIMIT 1
-                                 )""",
-                            (current_quality, path, path),
-                        )
-                        self.prompt_tracker.conn.commit()
-                    except Exception as e:
-                        logger.warning(
-                            f"EVOLVE: Failed to record quality snapshot for {path}: {e}"
-                        )
-
-        result_dict = {
-            "applied": result.get("applied", 0),
-            "reverted": result.get("reverted", 0),
-            "skipped": result.get("skipped", 0),
-        }
-
-        logger.info(
-            f"EVOLVE: {result_dict['applied']} changes, {result_dict['reverted']} reversions, "
-            f"{result_dict['skipped']} skipped"
-        )
-
-        log_event(self.traces_conn, self.traces_run_id,
-                  "evolve_complete", json.dumps(result))
-
-        self.evolve_result = result_dict
-
-        return {"evolved": True, **result}
-
     def _phase_identity(self) -> dict:
         """Phase: Evolve identity files based on today's results."""
         from memory.identity_evolve import build_evolve_prompt, apply_evolution_diff, parse_llm_output
@@ -1303,12 +1167,6 @@ class ResearchPipeline:
             "social": social,
         }
 
-        # Enrich with skill evolution data from the EVOLVE phase
-        pipeline_results["skill_evolution"] = {
-            "agents_patched": self.evolve_result.get("applied", 0),
-            "agents_reverted": self.evolve_result.get("reverted", 0),
-            "patterns_observed": self.evolve_result.get("skipped", 0),
-        }
 
         prompt = build_evolve_prompt(vault_dir, pipeline_results)
         output, exit_code = agent_dispatch.run_claude_prompt(prompt, task_type="identity")

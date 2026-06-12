@@ -16,12 +16,6 @@ class PipelineMonitor:
     """Observability layer for the research pipeline."""
 
     # Model pricing per 1M tokens (USD)
-    MODEL_PRICING = {
-        "haiku": {"input": 0.25, "output": 1.25},
-        "sonnet": {"input": 3.0, "output": 15.0},
-        "opus": {"input": 15.0, "output": 75.0},
-    }
-
     def __init__(self, traces_conn):
         """Takes traces.db connection.
 
@@ -68,16 +62,6 @@ class PipelineMonitor:
                 UNIQUE(agent_name, run_date)
             );
 
-            CREATE TABLE IF NOT EXISTS cost_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_date TEXT NOT NULL,
-                phase TEXT NOT NULL,
-                model TEXT NOT NULL,
-                input_tokens INTEGER DEFAULT 0,
-                output_tokens INTEGER DEFAULT 0,
-                cost_usd REAL DEFAULT 0.0,
-                created_at TEXT DEFAULT (datetime('now'))
-            );
 
             CREATE TABLE IF NOT EXISTS quality_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,7 +78,6 @@ class PipelineMonitor:
 
             CREATE INDEX IF NOT EXISTS idx_phase_tracking_run ON phase_tracking(pipeline_run_id);
             CREATE INDEX IF NOT EXISTS idx_agent_metrics_date ON agent_metrics(run_date);
-            CREATE INDEX IF NOT EXISTS idx_cost_log_date ON cost_log(run_date);
             CREATE INDEX IF NOT EXISTS idx_quality_history_date ON quality_history(run_date);
         """)
         self.conn.commit()
@@ -318,35 +301,6 @@ class PipelineMonitor:
         )
         self.conn.commit()
 
-    def log_cost(
-        self,
-        run_date: str,
-        phase: str,
-        model: str,
-        input_tokens: int,
-        output_tokens: int,
-    ):
-        """Log cost entry. Calculate cost_usd based on model pricing.
-
-        Args:
-            run_date: ISO date string.
-            phase: Pipeline phase (e.g. 'research', 'synthesis', 'social').
-            model: Model name key (e.g. 'opus', 'sonnet', 'haiku').
-            input_tokens: Number of input tokens consumed.
-            output_tokens: Number of output tokens consumed.
-        """
-        pricing = self.MODEL_PRICING.get(model.lower(), {"input": 0.0, "output": 0.0})
-        cost_usd = (
-            (input_tokens / 1_000_000) * pricing["input"]
-            + (output_tokens / 1_000_000) * pricing["output"]
-        )
-
-        self.conn.execute(
-            "INSERT INTO cost_log (run_date, phase, model, input_tokens, output_tokens, cost_usd) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (run_date, phase, model, input_tokens, output_tokens, round(cost_usd, 6)),
-        )
-        self.conn.commit()
 
     def record_quality(self, run_date: str, scores: dict):
         """Store quality evaluation scores for a run date.
@@ -460,13 +414,6 @@ class PipelineMonitor:
         ).fetchone()
         findings = row["total"] if row and row["total"] else 0
 
-        # Total cost from cost_log
-        row = self.conn.execute(
-            "SELECT SUM(cost_usd) AS total FROM cost_log WHERE run_date = ?",
-            (run_date,),
-        ).fetchone()
-        cost = row["total"] if row and row["total"] else 0.0
-
         # Total duration from agent_metrics (max since agents run in parallel)
         row = self.conn.execute(
             "SELECT SUM(duration_ms) AS total_ms FROM agent_metrics WHERE run_date = ?",
@@ -493,7 +440,6 @@ class PipelineMonitor:
         # Build summary
         parts = [
             f"{findings} findings",
-            f"${cost:.2f}",
             f"{duration_min} min",
         ]
 
@@ -505,163 +451,3 @@ class PipelineMonitor:
 
         return " | ".join(parts)
 
-    def get_daily_cost(self, run_date: str) -> dict:
-        """Get cost breakdown by model and phase for a given date.
-
-        Returns:
-            Dict with keys: total_usd, by_model (dict), by_phase (dict),
-            total_input_tokens, total_output_tokens.
-        """
-        rows = self.conn.execute(
-            "SELECT phase, model, input_tokens, output_tokens, cost_usd "
-            "FROM cost_log WHERE run_date = ?",
-            (run_date,),
-        ).fetchall()
-
-        by_model: dict[str, float] = {}
-        by_phase: dict[str, float] = {}
-        total_input = 0
-        total_output = 0
-        total_usd = 0.0
-
-        for row in rows:
-            model = row["model"]
-            phase = row["phase"]
-            cost = row["cost_usd"]
-
-            by_model[model] = by_model.get(model, 0.0) + cost
-            by_phase[phase] = by_phase.get(phase, 0.0) + cost
-            total_input += row["input_tokens"]
-            total_output += row["output_tokens"]
-            total_usd += cost
-
-        return {
-            "total_usd": round(total_usd, 4),
-            "by_model": {k: round(v, 4) for k, v in by_model.items()},
-            "by_phase": {k: round(v, 4) for k, v in by_phase.items()},
-            "total_input_tokens": total_input,
-            "total_output_tokens": total_output,
-        }
-
-
-if __name__ == "__main__":
-    import sqlite3
-
-    # Create in-memory traces DB
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-
-    monitor = PipelineMonitor(conn)
-    run_date = "2026-03-14"
-    pipeline_run_id = "test-run-001"
-
-    # --- AC #1: Phase tracking ---
-    phase_id = monitor.start_phase(pipeline_run_id, "research")
-    assert isinstance(phase_id, int) and phase_id > 0
-    monitor.end_phase(phase_id, "completed", tokens_used=50000, cost=0.75)
-
-    row = conn.execute("SELECT * FROM phase_tracking WHERE id = ?", (phase_id,)).fetchone()
-    assert row["status"] == "completed"
-    assert row["tokens_used"] == 50000
-    print("AC #1: Phase tracking verified")
-
-    # --- AC #2: Agent metrics ---
-    monitor.record_agent_metrics(
-        "hn-researcher", run_date,
-        findings_count=15, tokens_used=30000, cost=0.45,
-        duration_ms=120000, model_used="opus",
-    )
-    monitor.record_agent_metrics(
-        "arxiv-scanner", run_date,
-        findings_count=12, tokens_used=25000, cost=0.38,
-        duration_ms=90000, model_used="opus",
-    )
-
-    row = conn.execute(
-        "SELECT * FROM agent_metrics WHERE agent_name = ? AND run_date = ?",
-        ("hn-researcher", run_date),
-    ).fetchone()
-    assert row["findings_count"] == 15
-    assert row["model_used"] == "opus"
-    print("AC #2: Agent metrics verified")
-
-    # --- AC #2b: Upsert behavior ---
-    monitor.record_agent_metrics(
-        "hn-researcher", run_date,
-        findings_count=18, tokens_used=35000, cost=0.52,
-        duration_ms=130000, model_used="opus",
-    )
-    row = conn.execute(
-        "SELECT * FROM agent_metrics WHERE agent_name = ? AND run_date = ?",
-        ("hn-researcher", run_date),
-    ).fetchone()
-    assert row["findings_count"] == 18, "Upsert should update findings_count"
-    count = conn.execute(
-        "SELECT COUNT(*) FROM agent_metrics WHERE agent_name = ? AND run_date = ?",
-        ("hn-researcher", run_date),
-    ).fetchone()[0]
-    assert count == 1, "Should have exactly 1 row after upsert"
-    print("AC #2b: Agent metrics upsert verified")
-
-    # --- AC #3: Cost logging ---
-    monitor.log_cost(run_date, "research", "opus", 100000, 20000)
-    monitor.log_cost(run_date, "synthesis", "sonnet", 50000, 10000)
-    monitor.log_cost(run_date, "social", "haiku", 20000, 5000)
-
-    costs = monitor.get_daily_cost(run_date)
-    assert costs["total_usd"] > 0
-    assert "opus" in costs["by_model"]
-    assert "research" in costs["by_phase"]
-    # Verify opus cost: (100000/1M)*15 + (20000/1M)*75 = 1.5 + 1.5 = 3.0
-    assert abs(costs["by_model"]["opus"] - 3.0) < 0.01, f"Opus cost: {costs['by_model']['opus']}"
-    print(f"AC #3: Cost logging verified (total: ${costs['total_usd']:.2f})")
-
-    # --- AC #4: Quality regression detection ---
-    # Store 7 days of history
-    for i in range(7):
-        day = f"2026-03-{7 + i:02d}"
-        monitor.record_quality(day, {
-            "overall": 0.85,
-            "coverage": 0.9, "dedup": 0.95, "sources": 0.8,
-            "actionability": 0.7, "length": 0.85, "topic_balance": 0.8,
-        })
-
-    # Store today with a regression
-    monitor.record_quality(run_date, {
-        "overall": 0.65,
-        "coverage": 0.5, "dedup": 0.95, "sources": 0.8,
-        "actionability": 0.3, "length": 0.85, "topic_balance": 0.8,
-    })
-
-    alert = monitor.check_quality_regression(run_date, threshold=0.1)
-    assert alert is not None, "Should detect regression"
-    assert alert["today_score"] < alert["avg_7d"]
-    assert alert["delta"] < 0
-    print(f"AC #4: Quality regression detected (delta: {alert['delta']:.3f})")
-
-    # No regression when score is similar
-    monitor.record_quality("2026-03-15", {"overall": 0.84, "coverage": 0.9, "dedup": 0.95,
-                                           "sources": 0.8, "actionability": 0.7,
-                                           "length": 0.85, "topic_balance": 0.8})
-    no_alert = monitor.check_quality_regression("2026-03-15", threshold=0.1)
-    assert no_alert is None, "Should not detect regression for stable score"
-    print("AC #4b: No false positive regression")
-
-    # --- AC #5: Summary generation ---
-    summary = monitor.generate_summary(run_date)
-    assert "findings" in summary
-    assert "$" in summary
-    assert "min" in summary
-    assert "Quality" in summary
-    print(f"AC #5: Summary: {summary}")
-
-    # --- AC #6: Phase failure tracking ---
-    fail_id = monitor.start_phase(pipeline_run_id, "sync")
-    monitor.end_phase(fail_id, "failed", error="Connection timeout")
-    row = conn.execute("SELECT * FROM phase_tracking WHERE id = ?", (fail_id,)).fetchone()
-    assert row["status"] == "failed"
-    assert row["error"] == "Connection timeout"
-    print("AC #6: Phase failure tracking verified")
-
-    conn.close()
-    print("\nAll observability.py checks passed.")

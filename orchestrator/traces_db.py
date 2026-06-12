@@ -8,7 +8,7 @@ Tables (14 total):
   v2 originals (9): pipeline_runs, agent_runs, prompt_versions, proof_packages,
                      events, daily_metrics, trace_spans, quality_scores,
                      evolution_actions
-  v3 additions (5): pipeline_phases, agent_metrics, cost_log, alerts,
+  v3 additions: agent_metrics, alerts,
                      quality_history
 """
 
@@ -159,18 +159,6 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
         -- v3 tables (5)
         -- ---------------------------------------------------------------
 
-        CREATE TABLE IF NOT EXISTS pipeline_phases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pipeline_run_id TEXT NOT NULL REFERENCES pipeline_runs(id),
-            phase_name TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'running',
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
-            tokens_used INTEGER,
-            cost REAL,
-            error TEXT
-        );
-
         CREATE TABLE IF NOT EXISTS agent_metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             agent_name TEXT NOT NULL,
@@ -180,16 +168,6 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
             cost REAL,
             duration_ms INTEGER,
             model_used TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS cost_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_date TEXT NOT NULL,
-            phase TEXT NOT NULL,
-            model TEXT NOT NULL,
-            input_tokens INTEGER,
-            output_tokens INTEGER,
-            cost_usd REAL
         );
 
         CREATE TABLE IF NOT EXISTS alerts (
@@ -591,53 +569,9 @@ def refresh_daily_metrics(
 
 
 # ---------------------------------------------------------------------------
-# v3: pipeline_phases helpers
 # ---------------------------------------------------------------------------
 
 
-def create_phase(
-    conn: sqlite3.Connection,
-    pipeline_run_id: str,
-    phase_name: str,
-    *,
-    commit: bool = True,
-) -> int:
-    """Start a new pipeline phase and return its id."""
-    now = datetime.now(timezone.utc).isoformat()
-    cur = conn.execute(
-        "INSERT INTO pipeline_phases (pipeline_run_id, phase_name, status, started_at) "
-        "VALUES (?, ?, 'running', ?)",
-        (pipeline_run_id, phase_name, now),
-    )
-    if commit:
-        conn.commit()
-    return cur.lastrowid
-
-
-def complete_phase(
-    conn: sqlite3.Connection,
-    phase_id: int,
-    status: str = "completed",
-    *,
-    tokens_used: int | None = None,
-    cost: float | None = None,
-    error: str | None = None,
-    commit: bool = True,
-) -> None:
-    """Complete a pipeline phase with final status and optional metrics."""
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        "UPDATE pipeline_phases SET status=?, completed_at=?, tokens_used=?, cost=?, error=? "
-        "WHERE id=?",
-        (status, now, tokens_used, cost, error, phase_id),
-    )
-    if commit:
-        conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# v3: agent_metrics helpers
-# ---------------------------------------------------------------------------
 
 
 def log_agent_metrics(
@@ -664,34 +598,8 @@ def log_agent_metrics(
 
 
 # ---------------------------------------------------------------------------
-# v3: cost_log helpers
 # ---------------------------------------------------------------------------
 
-
-def log_cost(
-    conn: sqlite3.Connection,
-    run_date: str,
-    phase: str,
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    cost_usd: float,
-    *,
-    commit: bool = True,
-) -> None:
-    """Log cost tracking entry by phase and model."""
-    conn.execute(
-        "INSERT INTO cost_log (run_date, phase, model, input_tokens, output_tokens, cost_usd) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (run_date, phase, model, input_tokens, output_tokens, cost_usd),
-    )
-    if commit:
-        conn.commit()
-
-
-# ---------------------------------------------------------------------------
-# v3: alerts helpers
-# ---------------------------------------------------------------------------
 
 
 def create_alert(
@@ -929,8 +837,8 @@ if __name__ == "__main__":
         )
         tables = [row["name"] for row in cur.fetchall()]
         expected = sorted([
-            "agent_metrics", "agent_runs", "alerts", "cost_log", "daily_metrics",
-            "events", "evolution_actions", "pipeline_phases", "pipeline_runs",
+            "agent_metrics", "agent_runs", "alerts", "daily_metrics",
+            "events", "evolution_actions", "pipeline_runs",
             "prompt_versions", "proof_packages", "quality_history", "quality_scores",
             "trace_spans",
         ])
@@ -1003,20 +911,8 @@ if __name__ == "__main__":
         conn.commit()
         print("complete_with_warnings verified")
 
-        # --- v3: pipeline_phases ---
-        pr_id = create_pipeline_run(conn, "research", "test", run_id="phase-test-001")
-        phase_id = create_phase(conn, pr_id, "research")
-        assert phase_id is not None
-        complete_phase(conn, phase_id, "completed", tokens_used=5000, cost=0.03)
-        phase_row = conn.execute("SELECT * FROM pipeline_phases WHERE id = ?", (phase_id,)).fetchone()
-        assert phase_row["status"] == "completed"
-        assert phase_row["tokens_used"] == 5000
-        assert phase_row["cost"] == 0.03
-        assert phase_row["completed_at"] is not None
-        conn.execute("DELETE FROM pipeline_phases WHERE pipeline_run_id = ?", (pr_id,))
         conn.execute("DELETE FROM pipeline_runs WHERE id = ?", (pr_id,))
         conn.commit()
-        print("pipeline_phases (create_phase / complete_phase) verified")
 
         # --- v3: agent_metrics ---
         log_agent_metrics(conn, "hn-researcher", "2026-03-14", 12, 8000, 0.05, 4500, "opus-4")
@@ -1028,15 +924,6 @@ if __name__ == "__main__":
         conn.execute("DELETE FROM agent_metrics WHERE agent_name = 'hn-researcher'")
         conn.commit()
         print("log_agent_metrics verified")
-
-        # --- v3: cost_log ---
-        log_cost(conn, "2026-03-14", "research", "opus-4", 5000, 3000, 0.08)
-        cl_row = conn.execute("SELECT * FROM cost_log WHERE run_date = '2026-03-14'").fetchone()
-        assert cl_row["phase"] == "research"
-        assert cl_row["cost_usd"] == 0.08
-        conn.execute("DELETE FROM cost_log WHERE run_date = '2026-03-14'")
-        conn.commit()
-        print("log_cost verified")
 
         # --- v3: alerts ---
         create_alert(conn, "2026-03-14", "high_cost", "Daily cost exceeded $1.00", "critical")

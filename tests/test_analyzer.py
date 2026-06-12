@@ -8,21 +8,20 @@ from orchestrator.pipeline import Phase, PHASE_ORDER, SKIPPABLE_PHASES
 # ── Pipeline phase tests ──────────────────────────────────────────
 
 def test_phase_semantics():
-    assert hasattr(Phase, "EVOLVE")
+    # Phase.EVOLVE deleted in M0 task 17 (dead phase, no handler)
+    assert not hasattr(Phase, "EVOLVE")
     assert hasattr(Phase, "IDENTITY")
     assert not hasattr(Phase, "ANALYZE")
 
 
-def test_evolve_identity_in_phase_order():
+def test_identity_in_phase_order():
     order = [p.value for p in PHASE_ORDER]
-    evolve_idx = order.index("evolve")
     identity_idx = order.index("identity")
     mirror_idx = order.index("mirror")
-    assert evolve_idx < identity_idx < mirror_idx
+    assert identity_idx < mirror_idx
 
 
-def test_evolve_and_identity_are_skippable():
-    assert Phase.EVOLVE in SKIPPABLE_PHASES
+def test_identity_is_skippable():
     assert Phase.IDENTITY in SKIPPABLE_PHASES
 
 

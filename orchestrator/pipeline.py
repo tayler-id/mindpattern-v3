@@ -19,7 +19,6 @@ class Phase(enum.Enum):
     LEARN = "learn"
     SOCIAL = "social"
     ENGAGEMENT = "engagement"
-    EVOLVE = "evolve"
     IDENTITY = "identity"
     MIRROR = "mirror"
     SYNC = "sync"
@@ -37,7 +36,6 @@ PHASE_ORDER = [
     Phase.LEARN,
     Phase.SOCIAL,
     Phase.ENGAGEMENT,
-    Phase.EVOLVE,
     Phase.IDENTITY,
     Phase.MIRROR,
     Phase.SYNC,
@@ -53,7 +51,7 @@ CRITICAL_PHASES = {Phase.RESEARCH, Phase.SYNTHESIS}
 SKIPPABLE_PHASES = {
     Phase.INIT, Phase.TREND_SCAN, Phase.DELIVER,
     Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-    Phase.EVOLVE, Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
+    Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
 }
 
 VALID_TRANSITIONS: dict[Phase, set[Phase]] = {}

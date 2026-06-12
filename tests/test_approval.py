@@ -584,7 +584,7 @@ class TestRequestEngagementApproval:
 
 # ════════════════════════════════════════════════════════════════════════
 # Timeout Safety — [harness/2026-04-01-006]
-# Bug: _slack_poll_replies() and _web_approval() spin forever when
+# Bug: _slack_poll_replies() spins forever when
 # gate_timeout_seconds is None, blocking the pipeline indefinitely.
 # ════════════════════════════════════════════════════════════════════════
 
@@ -645,45 +645,6 @@ class TestDefaultMaxTimeout:
         with patch("social.approval.time.monotonic", side_effect=fake_monotonic), \
              patch("social.approval.time.sleep"):
             result = gw._slack_poll_replies("xoxb-fake", "9999.0000", timeout_seconds=60)
-
-        assert result is None
-
-    def test_web_approval_times_out_with_default_max(self):
-        """_web_approval returns None after DEFAULT_MAX_TIMEOUT when
-        the dashboard keeps returning 'pending'.
-        """
-        from social.approval import DEFAULT_MAX_TIMEOUT
-
-        gw = ApprovalGateway({
-            "approval_api_base": "http://localhost:9999",
-        })
-
-        call_count = 0
-        fake_start = 1000.0
-
-        def fake_monotonic():
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 1:
-                return fake_start
-            return fake_start + DEFAULT_MAX_TIMEOUT + 1
-
-        # Fake requests module returned by the lazy import
-        fake_requests = MagicMock()
-        # POST succeeds (submit)
-        post_resp = MagicMock()
-        post_resp.status_code = 201
-        fake_requests.post.return_value = post_resp
-        # GET always returns pending
-        get_resp = MagicMock()
-        get_resp.status_code = 200
-        get_resp.json.return_value = {"status": "pending"}
-        fake_requests.get.return_value = get_resp
-
-        with patch("social.approval.time.monotonic", side_effect=fake_monotonic), \
-             patch("social.approval.time.sleep"), \
-             patch.dict("sys.modules", {"requests": fake_requests}):
-            result = gw._web_approval([{"content": "test"}], "topic")
 
         assert result is None
 

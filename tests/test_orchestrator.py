@@ -38,7 +38,7 @@ class TestPhaseEnum:
 
     EXPECTED_PHASES = [
         "init", "trend_scan", "research", "synthesis", "deliver",
-        "learn", "social", "engagement", "evolve", "identity", "mirror",
+        "learn", "social", "engagement", "identity", "mirror",
         "sync", "completed", "failed",
     ]
 
@@ -69,7 +69,7 @@ class TestPhaseOrder:
         expected = [
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            Phase.EVOLVE, Phase.IDENTITY, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
+            Phase.IDENTITY, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
         ]
         assert PHASE_ORDER == expected
 
@@ -270,9 +270,7 @@ class TestCheckpoint:
 # ═══════════════════════════════════════════════════════════════════════
 
 from orchestrator.router import (
-    MODEL_PRICING,
     MODEL_ROUTING,
-    estimate_cost,
     get_max_turns,
     get_model,
     get_timeout,
@@ -313,26 +311,6 @@ class TestRouter:
 
     def test_get_timeout_unknown_defaults_to_300(self):
         assert get_timeout("unknown_task") == 300
-
-    def test_estimate_cost_haiku(self):
-        cost = estimate_cost("haiku", 1_000_000, 1_000_000)
-        expected = (1_000_000 / 1_000_000) * 0.25 + (1_000_000 / 1_000_000) * 1.25
-        assert cost == round(expected, 4)
-
-    def test_estimate_cost_sonnet(self):
-        cost = estimate_cost("sonnet", 1_000_000, 500_000)
-        expected = (1.0 * 3.0) + (0.5 * 15.0)
-        assert cost == round(expected, 4)
-
-    def test_estimate_cost_opus(self):
-        cost = estimate_cost("opus", 100_000, 50_000)
-        expected = (0.1 * 15.0) + (0.05 * 75.0)
-        assert cost == round(expected, 4)
-
-    def test_estimate_cost_unknown_model_uses_sonnet_pricing(self):
-        cost = estimate_cost("unknown_model", 1_000_000, 1_000_000)
-        sonnet_cost = estimate_cost("sonnet", 1_000_000, 1_000_000)
-        assert cost == sonnet_cost
 
     def test_model_routing_has_all_expected_task_types(self):
         expected_tasks = [
@@ -393,7 +371,7 @@ class TestGetAgentList:
 class TestBuildAgentPrompt:
     """build_agent_prompt() includes all expected sections."""
 
-    def _build(self, trends=None, claims=None):
+    def _build(self, trends=None):
         soul_path = PROJECT_ROOT / "verticals" / "ai-tech" / "SOUL.md"
         agents, agents_dir = get_agent_list("ramsay", "ai-tech")
         skill_path = agents_dir / f"{agents[0]}.md"
@@ -405,7 +383,6 @@ class TestBuildAgentPrompt:
             agent_skill_path=skill_path,
             context="Test context",
             trends=trends,
-            claims=claims,
         )
 
     def test_includes_json_schema(self):
@@ -440,19 +417,10 @@ class TestBuildAgentPrompt:
         assert "Trending Topics" in prompt
         assert "GPT-5 release" in prompt
 
-    def test_includes_claims_when_provided(self):
-        claims = ["already-covered-topic-hash"]
-        prompt = self._build(claims=claims)
-        assert "Already Claimed" in prompt
-        assert "already-covered-topic-hash" in prompt
-
     def test_no_trends_section_when_none(self):
         prompt = self._build(trends=None)
         assert "Trending Topics" not in prompt
 
-    def test_no_claims_section_when_none(self):
-        prompt = self._build(claims=None)
-        assert "Already Claimed" not in prompt
 
 
 class TestParseFindings:
@@ -640,9 +608,9 @@ class TestTracesDbInit:
         )
         tables = sorted(row["name"] for row in cur.fetchall())
         expected = sorted([
-            "agent_metrics", "agent_runs", "alerts", "cost_log",
+            "agent_metrics", "agent_runs", "alerts",
             "daily_metrics", "events", "evolution_actions",
-            "pipeline_phases", "pipeline_runs", "prompt_versions",
+            "pipeline_runs", "prompt_versions",
             "proof_packages", "quality_history", "quality_scores",
             "trace_spans",
         ])
@@ -768,37 +736,13 @@ class TestTracesDbCleanup:
 
 
 class TestTracesDbV3Tables:
-    """v3 tables: pipeline_phases, cost_log, alerts."""
+    """v3 tables: alerts."""
 
     @pytest.fixture()
     def db(self, tmp_path):
         conn = traces_db.init_db(tmp_path / "test.db")
         yield conn
         conn.close()
-
-    def test_create_and_complete_phase(self, db):
-        pr_id = traces_db.create_pipeline_run(db, "research", "test")
-        phase_id = traces_db.create_phase(db, pr_id, "research")
-        assert phase_id is not None
-
-        traces_db.complete_phase(
-            db, phase_id, "completed", tokens_used=5000, cost=0.03
-        )
-        row = db.execute(
-            "SELECT * FROM pipeline_phases WHERE id = ?", (phase_id,)
-        ).fetchone()
-        assert row["status"] == "completed"
-        assert row["tokens_used"] == 5000
-        assert row["cost"] == 0.03
-
-    def test_log_cost(self, db):
-        traces_db.log_cost(db, "2026-03-14", "research", "opus", 5000, 3000, 0.08)
-        row = db.execute(
-            "SELECT * FROM cost_log WHERE run_date = '2026-03-14'"
-        ).fetchone()
-        assert row["phase"] == "research"
-        assert row["model"] == "opus"
-        assert row["cost_usd"] == 0.08
 
     def test_create_alert(self, db):
         traces_db.create_alert(

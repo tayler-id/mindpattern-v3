@@ -73,9 +73,9 @@ TIMEOUTS: dict[str, int] = {
     "art_director": 300,
     "illustrator": 180,
     "writer": 300,
-    "critic": 120,
-    "expeditor": 180,
-    "humanizer": 120,
+    "critic": 300,
+    "expeditor": 360,
+    "humanizer": 240,
     "engagement_finder": 300,
     "engagement_writer": 120,
     "evolve": 600,
@@ -83,12 +83,6 @@ TIMEOUTS: dict[str, int] = {
 }
 
 # Cost per 1M tokens (for budget tracking)
-MODEL_PRICING: dict[str, dict[str, float]] = {
-    "haiku": {"input": 0.25, "output": 1.25},
-    "sonnet": {"input": 3.0, "output": 15.0},
-    "opus": {"input": 15.0, "output": 75.0},
-    "claude-opus-4-8[1m]": {"input": 15.0, "output": 75.0},
-}
 
 
 def get_model(task_type: str) -> str:
@@ -107,9 +101,3 @@ def get_timeout(task_type: str) -> int:
     return TIMEOUTS.get(task_type, 300)
 
 
-def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Estimate cost in USD for a given model and token counts."""
-    pricing = MODEL_PRICING.get(model, MODEL_PRICING["sonnet"])
-    input_cost = (input_tokens / 1_000_000) * pricing["input"]
-    output_cost = (output_tokens / 1_000_000) * pricing["output"]
-    return round(input_cost + output_cost, 4)

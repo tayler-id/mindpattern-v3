@@ -337,16 +337,6 @@ def _init_schema(conn: sqlite3.Connection):
 
         -- ── NEW v3 tables ─────────────────────────────────────────────
 
-        CREATE TABLE IF NOT EXISTS claimed_topics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_date TEXT NOT NULL,
-            agent TEXT NOT NULL,
-            topic_hash TEXT NOT NULL,
-            url TEXT,
-            created_at TEXT DEFAULT (datetime('now')),
-            UNIQUE(run_date, topic_hash)
-        );
-
         CREATE TABLE IF NOT EXISTS failure_lessons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_date TEXT NOT NULL,
@@ -410,8 +400,6 @@ def _init_schema(conn: sqlite3.Connection):
         CREATE UNIQUE INDEX IF NOT EXISTS idx_run_log_agent_date ON run_log(agent, run_date);
 
         -- v3 indexes
-        CREATE INDEX IF NOT EXISTS idx_claimed_topics_date ON claimed_topics(run_date);
-        CREATE INDEX IF NOT EXISTS idx_claimed_topics_hash ON claimed_topics(topic_hash);
         CREATE INDEX IF NOT EXISTS idx_failure_lessons_date ON failure_lessons(run_date);
         CREATE INDEX IF NOT EXISTS idx_failure_lessons_category ON failure_lessons(category);
         CREATE INDEX IF NOT EXISTS idx_editorial_corrections_platform ON editorial_corrections(platform);
@@ -421,34 +409,6 @@ def _init_schema(conn: sqlite3.Connection):
     """)
 
     # FTS5 virtual table for keyword search (separate because CREATE VIRTUAL TABLE
-    # doesn't support IF NOT EXISTS in all SQLite versions the same way)
-    try:
-        conn.execute("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS findings_fts USING fts5(
-                title, summary, content='findings', content_rowid='id'
-            )
-        """)
-    except sqlite3.OperationalError:
-        pass  # FTS5 may not be available in all builds
-
     conn.commit()
 
 
-def migrate_existing_db(conn: sqlite3.Connection):
-    """Apply schema fixes to an existing v2 database.
-
-    Safe to run multiple times — all operations are idempotent.
-    Called automatically by _init_schema for new tables/indexes.
-    This handles data-level fixes that CREATE IF NOT EXISTS doesn't cover.
-    """
-    # Fix engagements.created_at type inconsistency
-    # (v2 used TIMESTAMP, v3 uses TEXT — SQLite doesn't enforce types so
-    # existing data is fine, but we add the compound index)
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_findings_date_agent ON findings(run_date, agent)"
-        )
-    except sqlite3.OperationalError:
-        pass
-
-    conn.commit()

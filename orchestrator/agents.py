@@ -122,7 +122,6 @@ def build_agent_prompt(
     agent_skill_path: Path,
     context: str,
     trends: list[dict] | None = None,
-    claims: list[str] | None = None,
     preflight_items: list[dict] | None = None,
     already_covered: list[dict] | None = None,
     identity_dir: Path | None = None,
@@ -133,7 +132,7 @@ def build_agent_prompt(
     1. Critical output rules (JSON schema)
     2. SOUL identity
     3. Agent skill definition
-    4. Dynamic context (date, trends, memory context, claims)
+    4. Dynamic context (date, trends, memory context)
     5. Novelty requirement
     6. Phase 1 (evaluate preflight) + Phase 2 (explore) — or legacy SMTL
     7. Critical output rules repeated
@@ -155,14 +154,6 @@ def build_agent_prompt(
     if trends:
         from preflight.trends import format_trends_for_agents
         trends_section = "\n" + format_trends_for_agents(trends) + "\n"
-
-    claims_section = ""
-    if claims:
-        claims_section = (
-            "\n## Already Claimed Topics (DO NOT duplicate)\n"
-            + "\n".join(f"- {c}" for c in claims)
-            + "\n"
-        )
 
     # Build preflight sections if data available
     preflight_section = ""
@@ -283,7 +274,6 @@ Do not explain your full reasoning — just output the finding.
 
 ## Research Context — {date_str}
 {trends_section}
-{claims_section}
 {context}
 
 ---
@@ -678,7 +668,6 @@ def dispatch_research_agents(
     date_str: str,
     context_fn,
     trends: list[dict] | None = None,
-    claims: list[str] | None = None,
     max_workers: int = 6,
     vertical: str = "ai-tech",
     preflight_data: dict | None = None,
@@ -690,7 +679,6 @@ def dispatch_research_agents(
         date_str: Today's date (YYYY-MM-DD).
         context_fn: Callable(db, agent_name, date_str) -> str that generates context.
         trends: Trending topics from Phase 2.
-        claims: Already-claimed topic hashes.
         max_workers: Max parallel agents.
         vertical: Vertical config to use.
 
@@ -732,7 +720,6 @@ def dispatch_research_agents(
                 agent_skill_path=skill_path,
                 context=context,
                 trends=trends,
-                claims=claims,
                 preflight_items=agent_preflight,
                 already_covered=agent_covered,
                 identity_dir=identity_dir,

@@ -200,16 +200,11 @@ def check_daily_logs():
 
 
 def check_evolve():
-    section("5. EVOLVE phase works correctly")
+    section("5. EVOLVE phase removed (M0 task 17)")
 
-    # Check the phase exists in pipeline
-    from orchestrator.pipeline import Phase, PHASE_ORDER
-    check("Phase.EVOLVE exists", hasattr(Phase, "EVOLVE"))
-    check("EVOLVE in PHASE_ORDER", Phase.EVOLVE in PHASE_ORDER)
-
-    # Check it's skippable
-    from orchestrator.pipeline import CRITICAL_PHASES
-    check("EVOLVE is NOT critical (skippable)", Phase.EVOLVE not in CRITICAL_PHASES)
+    # Phase.EVOLVE was deleted — dead phase with no handler
+    from orchestrator.pipeline import Phase
+    check("Phase.EVOLVE removed", not hasattr(Phase, "EVOLVE"))
 
     # Check identity_evolve handles malformed JSON
     from memory.identity_evolve import parse_llm_output
@@ -357,10 +352,9 @@ def check_voice_guide_removed():
 
 
 def check_skippable():
-    section("10. EVOLVE and MIRROR in SKIPPABLE_PHASES")
+    section("10. MIRROR is skippable")
 
     from orchestrator.pipeline import Phase, CRITICAL_PHASES
-    check("EVOLVE not in CRITICAL_PHASES", Phase.EVOLVE not in CRITICAL_PHASES)
     check("MIRROR not in CRITICAL_PHASES", Phase.MIRROR not in CRITICAL_PHASES)
 
 

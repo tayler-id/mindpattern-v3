@@ -367,12 +367,10 @@ class TestPipelineInit:
         traces.close()
 
     def test_phase_handler_map_has_all_non_terminal_phases(self, pipeline):
-        """Every non-terminal, non-COMPLETED/FAILED phase has a handler.
-        EVOLVE is intentionally disabled (see reports/audit/evolve.md)."""
+        """Every non-terminal, non-COMPLETED/FAILED phase has a handler."""
         expected_phases = {
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
             Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
-            # Phase.EVOLVE disabled: zero measurable improvement, 5-8 min waste/run
             Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
         }
         for phase in expected_phases:
@@ -549,10 +547,8 @@ class TestPhaseResearch:
     @patch("orchestrator.runner.memory.search_findings", return_value=[])
     @patch("orchestrator.runner.memory.get_signal_context", return_value="")
     @patch("orchestrator.runner.memory.get_context", return_value="some context")
-    @patch("orchestrator.runner.memory.list_claims", return_value=[])
-    @patch("orchestrator.runner.memory.clear_claims")
     @patch("orchestrator.runner.agent_dispatch.dispatch_research_agents")
-    def test_happy_path(self, mock_dispatch, mock_clear, mock_claims,
+    def test_happy_path(self, mock_dispatch,
                         mock_ctx, mock_signal, mock_search, mock_store,
                         mock_source, mock_log, pipeline):
         findings = [
@@ -576,13 +572,10 @@ class TestPhaseResearch:
     ])
     @patch("orchestrator.runner.memory.get_signal_context", return_value="")
     @patch("orchestrator.runner.memory.get_context", return_value="")
-    @patch("orchestrator.runner.memory.list_claims", return_value=[])
-    @patch("orchestrator.runner.memory.clear_claims")
     @patch("orchestrator.runner.agent_dispatch.dispatch_research_agents")
-    def test_dedup_skips_similar_findings(self, mock_dispatch, mock_clear,
-                                          mock_claims, mock_ctx, mock_signal,
-                                          mock_search, mock_store, mock_log,
-                                          pipeline):
+    def test_dedup_skips_similar_findings(self, mock_dispatch, mock_ctx,
+                                          mock_signal, mock_search,
+                                          mock_store, mock_log, pipeline):
         findings = [
             {"title": "Dup Finding", "summary": "Same as existing",
              "importance": "medium"},
@@ -598,11 +591,8 @@ class TestPhaseResearch:
 
     @patch("orchestrator.runner.memory.get_signal_context", return_value="")
     @patch("orchestrator.runner.memory.get_context", return_value="")
-    @patch("orchestrator.runner.memory.list_claims", return_value=[])
-    @patch("orchestrator.runner.memory.clear_claims")
     @patch("orchestrator.runner.agent_dispatch.dispatch_research_agents")
-    def test_zero_findings_raises(self, mock_dispatch, mock_clear,
-                                   mock_claims, mock_ctx, mock_signal, pipeline):
+    def test_zero_findings_raises(self, mock_dispatch, mock_ctx, mock_signal, pipeline):
         # All agents failed
         mock_dispatch.return_value = [
             self._make_agent_result(error="timeout", findings=[])
@@ -1007,62 +997,6 @@ class TestPhaseEngagement:
         mock_eng.run.assert_not_called()
 
 
-class TestPhaseEvolve:
-    """_phase_evolve: agent trace analysis and skill improvement."""
-
-    def test_happy_path(self, pipeline, tmp_path):
-        changes = [{"file": "agents/researcher.md", "action": "update"}]
-        apply_result = {"applied": 1, "reverted": 0, "skipped": 0}
-
-        with (
-            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
-            patch("orchestrator.analyzer.build_analyzer_prompt",
-                  return_value="analyze prompt"),
-            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                  return_value=(json.dumps(changes), 0)),
-            patch("orchestrator.analyzer.parse_analyzer_output",
-                  return_value=changes),
-            patch("orchestrator.analyzer.apply_analyzer_changes",
-                  return_value=apply_result),
-        ):
-            # Create trace dir structure
-            trace_dir = tmp_path / "data" / "testuser" / "mindpattern" / "agents"
-            trace_dir.mkdir(parents=True, exist_ok=True)
-
-            result = pipeline._phase_evolve()
-
-        assert result["evolved"] is True
-        assert result["applied"] == 1
-
-    def test_llm_failure_returns_not_evolved(self, pipeline, tmp_path):
-        with (
-            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
-            patch("orchestrator.analyzer.build_analyzer_prompt",
-                  return_value="prompt"),
-            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                  return_value=("", 1)),
-        ):
-            result = pipeline._phase_evolve()
-
-        assert result["evolved"] is False
-        assert "LLM call failed" in result["reason"]
-
-    def test_json_parse_failure(self, pipeline, tmp_path):
-        with (
-            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
-            patch("orchestrator.analyzer.build_analyzer_prompt",
-                  return_value="prompt"),
-            patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
-                  return_value=("not json", 0)),
-            patch("orchestrator.analyzer.parse_analyzer_output",
-                  return_value=None),
-        ):
-            result = pipeline._phase_evolve()
-
-        assert result["evolved"] is False
-        assert "JSON parse failed" in result["reason"]
-
-
 class TestPhaseIdentity:
     """_phase_identity: identity maintenance via LLM."""
 
@@ -1175,7 +1109,6 @@ class TestPipelineRun:
             Phase.LEARN: {"quality": {"overall_score": 0.85}},
             Phase.SOCIAL: {"posts": []},
             Phase.ENGAGEMENT: {"replies_posted": 0},
-            Phase.EVOLVE: {"evolved": False},
             Phase.IDENTITY: {"evolved": False},
             Phase.MIRROR: {"mirrored": True},
             Phase.SYNC: {"success": True},

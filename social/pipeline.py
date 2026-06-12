@@ -574,47 +574,6 @@ class SocialPipeline:
 
         return next_start.strftime("%Y-%m-%d %H:%M:%S")
 
-    def _defer_posts(self, drafts: dict, images: dict) -> list[dict]:
-        """Store approved drafts as pending posts for the next posting window.
-
-        Args:
-            drafts: {platform: content_str} dict of approved drafts.
-            images: {platform: image_path_or_url} dict.
-
-        Returns:
-            List of {platform, pending_id, post_after} dicts.
-        """
-        post_after = self._next_posting_window_start()
-        deferred = []
-
-        for platform, content in drafts.items():
-            if isinstance(content, dict):
-                content = content.get("content", content.get("text", str(content)))
-
-            image = images.get(platform)
-            image_str = str(image) if image else None
-
-            try:
-                pending_id = memory.store_pending_post(
-                    self.db,
-                    platform=platform,
-                    content=content,
-                    post_after=post_after,
-                    image_path=image_str,
-                )
-                deferred.append({
-                    "platform": platform,
-                    "pending_id": pending_id,
-                    "post_after": post_after,
-                })
-                logger.info(
-                    f"Draft approved, deferring {platform} post to "
-                    f"morning window ({post_after})"
-                )
-            except Exception as e:
-                logger.error(f"Failed to defer {platform} post: {e}")
-
-        return deferred
 
     def _post_pending(self, target_platforms: list[str]) -> list[dict]:
         """Check for and post any pending (deferred) posts that are ready.
