@@ -73,7 +73,7 @@ fi
 caffeinate -i -s -w "$$" &
 CAFF_PID=$!
 
-/opt/homebrew/bin/python3 run.py "$@"
+/Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3 run.py "$@"
 EXIT_CODE=$?
 
 # Mark today as done (even on failure — don't retry automatically)
