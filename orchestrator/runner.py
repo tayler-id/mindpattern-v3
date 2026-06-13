@@ -6,6 +6,7 @@ or a Python-only step. The LLM never decides what phase comes next.
 
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime
@@ -939,6 +940,22 @@ class ResearchPipeline:
                 f"Newsletter send FAILED for {self.date_str}: "
                 f"{result.get('error')}"
             )
+
+        # Scheduling contract with run-launchd.sh: the day is marked "done"
+        # (so the 08-11 backup windows stop retrying) ONLY when the newsletter
+        # is confirmed delivered. result.success is True for both a fresh send
+        # and an already-sent skip. The wrapper no longer touches this marker
+        # itself, so a crash or send failure leaves it absent and the next
+        # hourly window retries — receipts make that retry safe. This closed
+        # the 2026-06-13 all-day miss, where a startup crash still marked the
+        # day done. (Single-user pipeline; marker is keyed by date.)
+        if result.get("success"):
+            try:
+                marker_dir = os.environ.get("MP_RAN_MARKER_DIR", "/tmp")
+                Path(marker_dir, f"mindpattern-ran-{self.date_str}").touch()
+                logger.info(f"Marked {self.date_str} delivered (ran-marker written)")
+            except Exception as e:
+                logger.warning(f"Could not write ran-marker: {e}")
 
         # Broadcast to public subscribers (gated by user config)
         audience_service = self.user_config.get("broadcast_audience")

@@ -76,8 +76,16 @@ CAFF_PID=$!
 /Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3 run.py "$@"
 EXIT_CODE=$?
 
-# Mark today as done (even on failure — don't retry automatically)
-touch "$MARKER"
+# NOTE: the ran-marker is NOT touched here. The deliver phase writes
+# "$MARKER" only when the newsletter is confirmed delivered, so a crash or a
+# send failure leaves it absent and the next hourly window (08-11) retries.
+# Before this (2026-06-13) the marker was set even on instant startup crash,
+# turning a one-second bug into an all-day outage. Receipts make retries safe.
+if [ -f "$MARKER" ]; then
+    log "Newsletter delivered — $TODAY marked done"
+else
+    log "WARN: no delivery this run (exit=$EXIT_CODE) — backup window will retry"
+fi
 
 # Clean up
 rm -f "$LOCK"

@@ -677,6 +677,17 @@ class TestPhaseSynthesis:
 class TestPhaseDeliver:
     """_phase_deliver: validates report, appends footer, sends newsletter."""
 
+    @pytest.fixture(autouse=True)
+    def _isolate_marker(self, tmp_path, monkeypatch):
+        """Point the ran-marker at a temp dir so tests don't pollute /tmp
+        or interfere with real launchd scheduling."""
+        self._marker_dir = tmp_path / "markers"
+        self._marker_dir.mkdir()
+        monkeypatch.setenv("MP_RAN_MARKER_DIR", str(self._marker_dir))
+
+    def _marker(self, pipeline):
+        return self._marker_dir / f"mindpattern-ran-{pipeline.date_str}"
+
     @patch("orchestrator.runner.memory.get_feedback_footer", return_value="---\nFeedback footer")
     def test_happy_path(self, mock_footer, pipeline, tmp_path):
         # Set up report file
@@ -699,6 +710,8 @@ class TestPhaseDeliver:
 
         assert result["success"] is True
         assert result["resend_id"] == "re_abc123"
+        # Confirmed delivery → ran-marker written (the day is "done")
+        assert self._marker(pipeline).exists()
 
     @patch("orchestrator.runner.memory.get_feedback_footer", return_value="")
     def test_send_failure_returns_error(self, mock_footer, pipeline, tmp_path):
@@ -709,6 +722,7 @@ class TestPhaseDeliver:
             report_path.write_text("# Newsletter\n\nContent.")
 
             with (
+                patch("orchestrator.runner.ResearchPipeline._send_alert"),
                 patch("orchestrator.newsletter.send_newsletter",
                       return_value={"success": False, "error": "API error"}),
                 patch("orchestrator.newsletter.validate_report",
@@ -717,6 +731,9 @@ class TestPhaseDeliver:
                 result = pipeline._phase_deliver()
 
         assert result["success"] is False
+        # Failed delivery → NO marker, so the backup window retries (the
+        # 2026-06-13 regression: a failed run must not mark the day done).
+        assert not self._marker(pipeline).exists()
 
     @patch("orchestrator.runner.memory.get_feedback_footer", return_value="---\nFeedback footer")
     def test_broadcasts_to_subscribers(self, mock_footer, pipeline, tmp_path):
