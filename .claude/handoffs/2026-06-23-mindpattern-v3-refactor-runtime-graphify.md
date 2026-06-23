@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph HEAD before the shared Claude command-builder slice: `ee16f82 refactor: route all claude dispatch through runner`
+- Code/graph state: KG schema slice committed on top of `7058abe refactor: centralize claude command building`; run `git log --oneline -18` for the exact latest commit hash.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch had sixteen clean save-point commits before the shared Claude command-builder slice:
+This refactor branch now has eighteen save-point commits through the KG schema foundation slice:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -29,8 +29,10 @@ This refactor branch had sixteen clean save-point commits before the shared Clau
 14. `1ba1eaa refactor: kill claude prompt process groups`
 15. `3c96abb refactor: share claude cli process runner`
 16. `ee16f82 refactor: route all claude dispatch through runner`
+17. `7058abe refactor: centralize claude command building`
+18. latest `refactor: add knowledge graph schema`
 
-This handoff was updated again after centralizing Claude command construction. Use `git log --oneline -17` for the exact latest commit hash after the command-builder commit lands.
+This handoff was updated again after adding the KG schema foundation. Use `git log --oneline -18` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -51,6 +53,7 @@ The main completed work is:
 - Added `core.claude_cli` as the shared low-level Claude process primitive. `core.llm.run()` and `run_claude_prompt()` now delegate to `run_claude_process()`, while research/file-agent paths reuse the shared `kill_process_group()` helper and can migrate to the full helper in later slices.
 - Finished the Claude dispatch migration: `run_single_agent()`, `_run_agent_attempt()`, `run_agent_with_files()`, `run_claude_prompt()`, and `core.llm.run()` now all execute Claude through `core.claude_cli.run_claude_process()`.
 - Centralized Claude command construction in `_build_claude_command()` and named tool-policy constants so research, file-writing, and prompt dispatch share one CLI command shape while keeping distinct allowed/disallowed tool policies.
+- Added `kg.schema` as the typed, bi-temporal KG schema foundation in `memory.db`, with idempotent `kg_*` tables, constrained vocabularies, and pure-SQLite regression tests.
 
 ## Verification Already Run
 
@@ -119,6 +122,12 @@ The main completed work is:
 - Compile after identity-test repair: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_agent_defang.py tests/test_identity.py tests/test_orchestrator.py` -> passed.
 - Local live-safe command-builder smoke: `run_single_agent()`, `run_agent_with_files()`, and `run_claude_prompt()` exercised a temporary fake `claude` executable in `/tmp`; output was `shared command builder smoke passed`.
 - Full suite after command builder: `.venv/bin/python3 -m pytest -q` -> `1117 passed, 1 FastAPI/Starlette warning`.
+- KG schema tests: `.venv/bin/python3 -m pytest tests/test_kg_schema.py -q` -> `8 passed`.
+- Compile after KG schema: `python3 -m compileall kg/schema.py tests/test_kg_schema.py` -> passed.
+- KG staged hygiene: `git diff --check -- kg/__init__.py kg/schema.py tests/test_kg_schema.py` -> passed.
+- Graphify update attempts for KG: `graphify update .` and `graphify update . --force` both reported no topology changes because the graph artifacts already contained the KG topology.
+- `graphify explain init_kg_schema` resolves `kg/schema.py` line 131 with incoming calls from `open_kg()`, `test_idempotent()`, and the schema test fixture.
+- `graphify path open_kg init_kg_schema` finds `open_kg() --calls--> init_kg_schema()`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -163,6 +172,8 @@ The main completed work is:
   - `graphify path run_single_agent _build_claude_command` finds a direct one-hop path.
   - `graphify path run_agent_with_files _build_claude_command` finds a direct one-hop path.
   - `graphify path run_claude_prompt _build_claude_command` finds a direct one-hop path.
+  - `graphify explain init_kg_schema` resolves `kg/schema.py` line 131 with incoming calls from `open_kg()` and the schema tests.
+  - `graphify path open_kg init_kg_schema` finds `open_kg() --calls--> init_kg_schema()`.
   - `graphify diagnose multigraph --json` reports 6320 nodes, 9624 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
@@ -186,7 +197,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the shared Claude command-builder slice is committed should still mostly be user/generated state:
+Tracked dirty files after the KG schema slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
@@ -196,7 +207,7 @@ Untracked notable directories/files:
 
 - Agent/local config: `.claude/agents/`, `.claude/commands/`, `.claude/references/`, `.claude/skills/**`
 - Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md`, plus this June 23 handoff
-- Possible source feature slices: `hooks/`, `kg/`, `knowledge/`, `docs/agents/`, `tests/test_kg_schema.py`, `tests/test_session_capture.py`
+- Possible source feature slices: `hooks/`, `knowledge/`, `docs/agents/`, `tests/test_session_capture.py`
 - Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, `tasks/`
 - Runtime/user data: `data/ramsay/journal.offset`, `data/ramsay/mindpattern/knowledge/`, `data/testuser/`
 

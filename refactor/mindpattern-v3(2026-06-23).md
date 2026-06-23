@@ -605,3 +605,33 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: all Claude dispatch callers now share both the process runner and command-shape builder while keeping caller-specific policy choices local and explicit.
   - Security: research and prompt dispatch still explicitly deny dangerous tools; the change makes those denials easier to audit.
   - Performance: command construction is in-process list assembly only and does not change process counts, retry behavior, or timeout behavior.
+
+## Step 18 - Knowledge graph schema foundation
+
+### Changes
+
+- Added the `kg` package as the foundation for a typed, bi-temporal knowledge graph backed by the existing `memory.db`.
+- Added `kg.schema.init_kg_schema()` with idempotent `kg_*` tables for entities, aliases, edges, and communities.
+- Added `kg.schema.open_kg()` so callers get the existing memory DB connection behavior plus ensured KG tables.
+- Added canonical entity type, predicate, and fact type vocabularies to keep future extraction constrained.
+- Added pure-SQLite schema tests for table creation, idempotency, case-insensitive aliases, alias uniqueness, bi-temporal invalidation, nullable provenance, cascade delete behavior, and vocabulary constants.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_kg_schema.py -q` - 8 passed.
+- `python3 -m compileall kg/schema.py tests/test_kg_schema.py` - passed.
+- `git diff --check -- kg/__init__.py kg/schema.py tests/test_kg_schema.py` - passed.
+- `graphify update .` and `graphify update . --force` both reported no topology changes before commit because the current graph artifacts already contained the KG topology.
+- `graphify explain init_kg_schema` - resolved `kg/schema.py` line 131 with incoming calls from `open_kg()`, `test_idempotent()`, and the schema test fixture.
+- `graphify path open_kg init_kg_schema` - found `open_kg() --calls--> init_kg_schema()`.
+- `graphify diagnose multigraph --json` - reported 6320 nodes, 9624 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the schema is idempotent, keeps invalidated facts instead of deleting them, and has regression coverage for the current-view invariant.
+  - Readability: table ownership and vocabulary live in one small module with the public entry points named by their lifecycle role.
+  - Architecture: the KG shares `memory.db` through `memory.db.get_db()` rather than introducing another database file or connection policy.
+  - Security: the slice commits schema code and synthetic tests only; it does not stage personal vault data, generated social drafts, or runtime state.
+  - Performance: schema setup is bounded `CREATE TABLE/INDEX IF NOT EXISTS` work and uses SQLite indexes for alias, entity, predicate, provenance, and current-edge lookups.
