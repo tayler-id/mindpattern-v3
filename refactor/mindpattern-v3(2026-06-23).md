@@ -290,7 +290,7 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
 
 - X/Twitter keyword search remains partially broken upstream: `twitter status` and `twitter user-posts` work, but `twitter search ... --json` returns HTTP 404, so thought-leader/topic X search still underperforms.
 - Some research agents still came in below the 15-20 finding target on the full smoke run, especially thought-leaders, reddit, sources, agents, news, and GitHub pulse.
-- `_phase_sync` succeeds and restarts Fly, but does not call the existing `orchestrator.sync.write_synced_marker()` helper; only the delivery ran-marker is currently written.
+- Closed in Step 10: `_phase_sync` succeeded and restarted Fly but did not call the existing `orchestrator.sync.write_synced_marker()` helper; only the delivery ran-marker was written.
 - `learnings_update` still needs prompt/runtime tuning because it hit max turns in both real runs today. The new guard prevents corrupt output, but does not make the updater succeed.
 
 ### Verification
@@ -311,3 +311,39 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: receipts are confirmed as the duplicate-send boundary for newsletters; source ingestion remains split from embeddings/semantic retrieval.
   - Security: no generated reports, personal `data/`, or recipient data are staged in this slice; delivery evidence is summarized from logs.
   - Performance: the guard adds only a string/exit-code check; Graphify and tests were refreshed after the code change.
+
+## Step 10 - Sync marker and launchd retry boundary
+
+### Changes
+
+- Wired `_phase_sync()` to call `orchestrator.sync.write_synced_marker(self.date_str)` only after:
+  - `sync_to_fly(...)` succeeds, and
+  - `restart_app("mindpattern")` succeeds.
+- Kept restart failure as a warning and deliberately did not write the sync marker on that path, so the morning backup window can retry instead of treating a stale dashboard as complete.
+- Updated `run-launchd.sh` so it skips only when both markers exist:
+  - `mindpattern-ran-<date>` for confirmed delivery
+  - `mindpattern-synced-<date>` for confirmed Fly sync/restart
+- Added a launchd wrapper guardrail test to catch regressions where delivered-but-not-synced days would be skipped.
+- Added runner sync tests for marker write/no-write behavior across success, restart-failure, and sync-failure paths.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSync tests/test_launchd_wrapper.py -q` failed before implementation because `_phase_sync()` did not call `write_synced_marker()` and `run-launchd.sh` had no `SYNC_MARKER`.
+- Focused tests: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSync tests/test_launchd_wrapper.py -q` - 4 passed.
+- Shell syntax: `bash -n run-launchd.sh` - passed.
+- Sync suite: `.venv/bin/python3 -m pytest tests/test_sync.py tests/test_runner.py::TestPhaseSync tests/test_launchd_wrapper.py -q` - 44 passed.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1099 passed, 1 FastAPI/Starlette deprecation warning.
+- Live marker smoke: `MP_RAN_MARKER_DIR=/private/tmp/mindpattern-sync-marker-smoke-2026-06-23 .venv/bin/python3 -c 'from orchestrator.sync import write_synced_marker; write_synced_marker("2026-06-23")'` wrote `/private/tmp/mindpattern-sync-marker-smoke-2026-06-23/mindpattern-synced-2026-06-23`.
+- `graphify update .` - rebuilt graph artifacts to 6260 nodes and 9428 edges from 388 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain write_synced_marker` - resolved `orchestrator/sync.py` and now shows an incoming call from `_phase_sync()`.
+- `graphify path _phase_sync write_synced_marker` - found `_phase_sync() --calls--> write_synced_marker()`.
+- `graphify diagnose multigraph --json` - reported 6260 nodes, 9428 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: delivery and sync completion are now separate scheduler facts; duplicate-send receipts still make retrying a delivered-but-unsynced day safe.
+  - Readability: marker names in the wrapper now distinguish delivery from sync instead of overloading `MARKER`.
+  - Architecture: the existing sync marker helper is now connected to both the orchestrator and launchd guard, closing the stale-dashboard retry hole.
+  - Security: no recipient data, reports, local settings, or personal data are staged; marker files contain no content.
+  - Performance: the wrapper adds two filesystem checks, and `_phase_sync()` adds one marker write only after successful sync/restart.

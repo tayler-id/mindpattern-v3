@@ -1098,12 +1098,33 @@ class TestPhaseSync:
             patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
             patch("orchestrator.sync.sync_to_fly",
                   return_value={"success": True, "bytes_uploaded": 1024}),
+            patch("orchestrator.sync.restart_app",
+                  return_value={"success": True}) as mock_restart,
+            patch("orchestrator.sync.write_synced_marker") as mock_marker,
             patch.object(pipeline, "_send_alert") as mock_alert,
         ):
             result = pipeline._phase_sync()
 
         assert result["success"] is True
         assert result["bytes_uploaded"] == 1024
+        mock_restart.assert_called_once_with("mindpattern")
+        mock_marker.assert_called_once_with(pipeline.date_str)
+        mock_alert.assert_not_called()
+
+    def test_restart_failure_does_not_write_synced_marker(self, pipeline, tmp_path):
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("orchestrator.sync.sync_to_fly",
+                  return_value={"success": True, "bytes_uploaded": 1024}),
+            patch("orchestrator.sync.restart_app",
+                  return_value={"success": False, "error": "restart failed"}),
+            patch("orchestrator.sync.write_synced_marker") as mock_marker,
+            patch.object(pipeline, "_send_alert") as mock_alert,
+        ):
+            result = pipeline._phase_sync()
+
+        assert result["success"] is True
+        mock_marker.assert_not_called()
         mock_alert.assert_not_called()
 
     def test_sync_failure_returns_error(self, pipeline, tmp_path):
@@ -1116,11 +1137,13 @@ class TestPhaseSync:
             patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
             patch("orchestrator.sync.sync_to_fly",
                   return_value={"success": False, "error": "Connection refused"}),
+            patch("orchestrator.sync.write_synced_marker") as mock_marker,
             patch.object(pipeline, "_send_alert") as mock_alert,
         ):
             result = pipeline._phase_sync()
 
         assert result["success"] is False
+        mock_marker.assert_not_called()
         mock_alert.assert_called_once()
         message = mock_alert.call_args[0][0]
         assert "Connection refused" in message

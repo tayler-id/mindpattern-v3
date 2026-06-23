@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph HEAD before the real-pipeline/Learn-guard slice: `1761aea refactor: restore preflight source tool fallback`
+- Code/graph HEAD before the sync-marker/launchd slice: `36dbd4b fix: guard learnings updater failures`
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch had eight clean save-point commits before the real-pipeline/Learn-guard update:
+This refactor branch had nine clean save-point commits before the sync-marker/launchd update:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -21,8 +21,9 @@ This refactor branch had eight clean save-point commits before the real-pipeline
 6. `edef515 docs: add refactor handoff`
 7. `333685e refactor: harden embedding cache boundary`
 8. `1761aea refactor: restore preflight source tool fallback`
+9. `36dbd4b fix: guard learnings updater failures`
 
-This handoff was updated again after the real 2026-06-23 smoke run and Learn-phase guard. Use `git log --oneline -12` for the exact latest commit hash after the commit lands.
+This handoff was updated again after wiring the sync marker into `_phase_sync()` and `run-launchd.sh`. Use `git log --oneline -12` for the exact latest commit hash after the commit lands.
 
 The main completed work is:
 
@@ -35,6 +36,7 @@ The main completed work is:
 - Installed Agent Reach, direct `yt-dlp`, `mcporter`, and `twitter-cli`; patched `preflight/twitter.py` so it no longer hard-depends on unavailable legacy `xreach`.
 - Smoke-tested the real research-to-sync pipeline for `ramsay` on `2026-06-23`; it completed with exit 0, wrote the newsletter report, skipped duplicate sends via receipts, uploaded sync data, and restarted Fly.
 - Guarded `learnings.md` regeneration so a failed `learnings_update` Claude call cannot overwrite the file with CLI error text.
+- Connected the sync marker boundary: `_phase_sync()` writes `mindpattern-synced-<date>` only after successful upload and Fly restart, and `run-launchd.sh` skips only when both delivery and sync markers exist.
 
 ## Verification Already Run
 
@@ -46,6 +48,11 @@ The main completed work is:
 - Learn-phase guard regression: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn::test_learnings_update_failure_does_not_overwrite_existing_file -q` -> first failed on the old overwrite behavior, then passed after the guard.
 - Learn-phase group after guard: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn -q` -> `4 passed`.
 - Full suite after Learn-phase guard: `.venv/bin/python3 -m pytest -q` -> `1097 passed, 1 FastAPI/Starlette warning`.
+- Sync marker focused tests: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSync tests/test_launchd_wrapper.py -q` -> first failed on the old missing marker/wrapper behavior, then `4 passed`.
+- Sync marker broad tests: `.venv/bin/python3 -m pytest tests/test_sync.py tests/test_runner.py::TestPhaseSync tests/test_launchd_wrapper.py -q` -> `44 passed`.
+- Shell syntax: `bash -n run-launchd.sh` -> passed.
+- Full suite after sync marker update: `.venv/bin/python3 -m pytest -q` -> `1099 passed, 1 FastAPI/Starlette warning`.
+- Live marker smoke: `write_synced_marker("2026-06-23")` wrote `/private/tmp/mindpattern-sync-marker-smoke-2026-06-23/mindpattern-synced-2026-06-23`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -61,7 +68,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 387 files; current report shows 6255 nodes and 9424 edges.
+  - `graphify update .` rebuilt clean artifacts from 388 files; current report shows 6260 nodes and 9428 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -69,7 +76,9 @@ The main completed work is:
   - `graphify explain _search_command` resolves `preflight/twitter.py`.
   - `graphify path twitter.py _search_command` finds `twitter.py -> _search_command()`.
   - `graphify explain _phase_learn` resolves `orchestrator/runner.py` line 984.
-  - `graphify diagnose multigraph --json` reports 6255 nodes, 9424 edges, and zero duplicate/missing/dangling/self-loop edges.
+  - `graphify explain write_synced_marker` resolves `orchestrator/sync.py` and shows `_phase_sync()` as an incoming caller.
+  - `graphify path _phase_sync write_synced_marker` finds `_phase_sync() --calls--> write_synced_marker()`.
+  - `graphify diagnose multigraph --json` reports 6260 nodes, 9428 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
 ## Graphify Notes
@@ -77,10 +86,10 @@ The main completed work is:
 - Graphify was reinstalled through `uv tool install graphifyy`.
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
-  - 387 files
-  - 6255 nodes
-  - 9424 edges
-  - freshness marker `1761aea7`
+  - 388 files
+  - 6260 nodes
+  - 9428 edges
+  - freshness marker `36dbd4bd`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -92,7 +101,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the Learn-guard slice is committed should still mostly be user/generated state:
+Tracked dirty files after the sync-marker slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
@@ -119,7 +128,6 @@ There is also a tracked-change recovery patch from earlier in the run:
    - `hooks/session_capture.py` plus `tests/test_session_capture.py`
    - `docs/spec-v4.md`, `v4/`, and top-level spec docs
    - X/Twitter query-search recovery: `twitter search` currently returns HTTP 404 even though auth and `user-posts` work.
-   - Sync marker follow-up: `_phase_sync` uploads and restarts Fly, but does not call `orchestrator.sync.write_synced_marker()`.
    - Learn updater tuning: the new guard prevents bad writes, but `learnings_update` still hit max turns in both real runs today.
 4. Treat `data/ramsay/mindpattern/**` and `data/social-drafts/**` as personal/generated output until the user explicitly says to commit them.
 5. After any code/doc slice:
@@ -166,6 +174,7 @@ Embeddings are semantic retrieval infrastructure, not source collection. They le
 - Commit hooks may launch a Graphify background rebuild. Check `git status` afterward before assuming a commit is finished.
 - The report may remain fresh against the last code commit rather than the Graphify artifact commit because `refactor/` and `graphify-out/` are excluded from ingestion.
 - The full pipeline smoke surfaced quality warnings, low-count research agents, X search 404s, and an oversized identity `soul` update rejection. These did not stop the run, but they are not fixed.
+- `run-launchd.sh` now intentionally reruns delivered-but-not-synced days during backup windows. Newsletter receipts make this safe; the goal is to retry Fly sync/restart instead of leaving mindpattern.ai stale.
 
 ## Security Reminder
 

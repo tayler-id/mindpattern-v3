@@ -1278,7 +1278,7 @@ class ResearchPipeline:
 
         Bundle memory.db + reports → upload → dashboard gets fresh data.
         """
-        from .sync import restart_app, sync_to_fly
+        from .sync import restart_app, sync_to_fly, write_synced_marker
 
         data_dir = PROJECT_ROOT / "data"
         result = sync_to_fly(
@@ -1295,6 +1295,7 @@ class ResearchPipeline:
             restart = restart_app("mindpattern")
             if restart.get("success"):
                 logger.info("Fly app restarted to pick up synced data")
+                write_synced_marker(self.date_str)
             else:
                 logger.warning(f"Fly restart failed: {restart.get('error')}")
         else:

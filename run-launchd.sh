@@ -8,7 +8,9 @@ cd /Users/taylerramsay/Projects/mindpattern-v3
 
 TODAY=$(date +%Y-%m-%d)
 LOCK="/tmp/mindpattern-pipeline.lock"
-MARKER="/tmp/mindpattern-ran-${TODAY}"
+MARKER_DIR="${MP_RAN_MARKER_DIR:-/tmp}"
+MARKER="${MARKER_DIR}/mindpattern-ran-${TODAY}"
+SYNC_MARKER="${MARKER_DIR}/mindpattern-synced-${TODAY}"
 LOGFILE="reports/launchd-decisions.log"
 
 log() {
@@ -21,12 +23,17 @@ log "Date: $TODAY"
 log "User: $(whoami)"
 log "Mac awake since: $(sysctl -n kern.waketime 2>/dev/null || echo unknown)"
 log "Lock file: $([ -f "$LOCK" ] && echo "EXISTS (pid=$(cat "$LOCK" 2>/dev/null))" || echo "none")"
-log "Marker file: $([ -f "$MARKER" ] && echo "EXISTS" || echo "none")"
+log "Delivery marker: $([ -f "$MARKER" ] && echo "EXISTS" || echo "none")"
+log "Sync marker: $([ -f "$SYNC_MARKER" ] && echo "EXISTS" || echo "none")"
 
-# Skip if already ran today
-if [ -f "$MARKER" ]; then
-    log "SKIP: Pipeline already ran today ($TODAY)"
+# Skip only when delivery and Fly sync both completed today.
+if [ -f "$MARKER" ] && [ -f "$SYNC_MARKER" ]; then
+    log "SKIP: Pipeline already delivered and synced today ($TODAY)"
     exit 0
+fi
+
+if [ -f "$MARKER" ] && [ ! -f "$SYNC_MARKER" ]; then
+    log "Delivery marker exists but sync marker is missing — retrying to complete sync"
 fi
 
 # Only run between 6 AM and 12 PM (prevents midnight/late-night triggers)
@@ -81,8 +88,10 @@ EXIT_CODE=$?
 # send failure leaves it absent and the next hourly window (08-11) retries.
 # Before this (2026-06-13) the marker was set even on instant startup crash,
 # turning a one-second bug into an all-day outage. Receipts make retries safe.
-if [ -f "$MARKER" ]; then
-    log "Newsletter delivered — $TODAY marked done"
+if [ -f "$MARKER" ] && [ -f "$SYNC_MARKER" ]; then
+    log "Newsletter delivered and synced — $TODAY marked done"
+elif [ -f "$MARKER" ]; then
+    log "WARN: newsletter delivered but sync marker missing (exit=$EXIT_CODE) — backup window will retry"
 else
     log "WARN: no delivery this run (exit=$EXIT_CODE) — backup window will retry"
 fi
