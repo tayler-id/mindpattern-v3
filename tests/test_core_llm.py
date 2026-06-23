@@ -1,10 +1,8 @@
-"""Tests for core/llm.py — claude calls are always mocked (no network)."""
+"""Tests for core/llm.py - claude calls are always mocked (no network)."""
 
-import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
+from core.claude_cli import ClaudeProcessResult
 from core.llm import ask, extract_json, run
 
 SCHEMA = {
@@ -13,46 +11,37 @@ SCHEMA = {
 }
 
 
-def _proc(stdout="", returncode=0):
-    proc = MagicMock()
-    proc.communicate.return_value = (stdout, "")
-    proc.returncode = returncode
-    proc.pid = 4242
-    return proc
+def _result(stdout="", stderr="", returncode=0, timed_out=False, error=None):
+    return ClaudeProcessResult(
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
+        timed_out=timed_out,
+        error=error,
+    )
 
 
 class TestRun:
-    @patch("core.llm.subprocess.Popen")
-    def test_returns_stdout(self, popen):
-        popen.return_value = _proc("hello")
+    @patch("core.llm.run_claude_process")
+    def test_returns_stdout(self, run_process):
+        run_process.return_value = _result("hello")
         assert run("hi") == "hello"
-        # must run in its own process group
-        assert popen.call_args.kwargs["start_new_session"] is True
 
-    @patch("core.llm.subprocess.Popen")
-    def test_nonzero_exit_returns_none(self, popen):
-        popen.return_value = _proc("", returncode=1)
+    @patch("core.llm.run_claude_process")
+    def test_nonzero_exit_returns_none(self, run_process):
+        run_process.return_value = _result("", returncode=1)
         assert run("hi") is None
 
-    @patch("core.llm.os.getpgid", return_value=999)
-    @patch("core.llm.os.killpg")
-    @patch("core.llm.subprocess.Popen")
-    def test_timeout_kills_process_group(self, popen, killpg, getpgid):
-        proc = _proc()
-        proc.communicate.side_effect = [
-            subprocess.TimeoutExpired(cmd="claude", timeout=1),
-            ("", ""),
-        ]
-        popen.return_value = proc
+    @patch("core.llm.run_claude_process")
+    def test_timeout_returns_none(self, run_process):
+        run_process.return_value = _result(timed_out=True, error="Timed out after 1s")
         assert run("hi", timeout=1) is None
-        killpg.assert_called_once()
-        assert killpg.call_args.args[0] == 999  # the group, not just the child
 
-    @patch("core.llm.subprocess.Popen")
-    def test_allowed_tools_flag(self, popen):
-        popen.return_value = _proc("ok")
+    @patch("core.llm.run_claude_process")
+    def test_allowed_tools_flag(self, run_process):
+        run_process.return_value = _result("ok")
         run("hi", allowed_tools=["WebSearch", "WebFetch"])
-        cmd = popen.call_args.args[0]
+        cmd = run_process.call_args.args[0]
         assert "--allowedTools" in cmd
         assert "WebSearch,WebFetch" in cmd
         assert "Bash" not in " ".join(cmd)
@@ -73,43 +62,43 @@ class TestExtractJson:
 
 
 class TestAsk:
-    @patch("core.llm.subprocess.Popen")
-    def test_valid_first_try(self, popen):
-        popen.return_value = _proc('{"title": "t", "items": [1]}')
+    @patch("core.llm.run_claude_process")
+    def test_valid_first_try(self, run_process):
+        run_process.return_value = _result('{"title": "t", "items": [1]}')
         assert ask("p", SCHEMA) == {"title": "t", "items": [1]}
-        assert popen.call_count == 1
+        assert run_process.call_count == 1
 
-    @patch("core.llm.subprocess.Popen")
-    def test_retry_with_feedback_then_success(self, popen):
-        popen.side_effect = [
-            _proc("sorry, I cannot"),
-            _proc('{"title": "t", "items": []}'),
+    @patch("core.llm.run_claude_process")
+    def test_retry_with_feedback_then_success(self, run_process):
+        run_process.side_effect = [
+            _result("sorry, I cannot"),
+            _result('{"title": "t", "items": []}'),
         ]
         assert ask("p", SCHEMA) == {"title": "t", "items": []}
-        assert popen.call_count == 2
-        retry_prompt = popen.call_args_list[1].args[0][2]
+        assert run_process.call_count == 2
+        retry_prompt = run_process.call_args_list[1].args[0][2]
         assert "invalid" in retry_prompt
 
-    @patch("core.llm.subprocess.Popen")
-    def test_invalid_twice_returns_none(self, popen):
-        popen.side_effect = [_proc("junk"), _proc("more junk")]
+    @patch("core.llm.run_claude_process")
+    def test_invalid_twice_returns_none(self, run_process):
+        run_process.side_effect = [_result("junk"), _result("more junk")]
         assert ask("p", SCHEMA) is None
 
-    @patch("core.llm.subprocess.Popen")
-    def test_schema_mismatch_triggers_retry(self, popen):
-        popen.side_effect = [
-            _proc('{"title": "t"}'),  # missing required 'items'
-            _proc('{"title": "t", "items": []}'),
+    @patch("core.llm.run_claude_process")
+    def test_schema_mismatch_triggers_retry(self, run_process):
+        run_process.side_effect = [
+            _result('{"title": "t"}'),  # missing required 'items'
+            _result('{"title": "t", "items": []}'),
         ]
         assert ask("p", SCHEMA) == {"title": "t", "items": []}
 
-    @patch("core.llm.subprocess.Popen")
-    def test_null_findings_class_bug(self, popen):
+    @patch("core.llm.run_claude_process")
+    def test_null_findings_class_bug(self, run_process):
         """The audit bug: {'findings': null} must not propagate as None value."""
         schema = {"required": ["findings"], "properties": {"findings": {"type": "array"}}}
-        popen.side_effect = [
-            _proc('{"findings": null}'),
-            _proc('{"findings": null}'),
+        run_process.side_effect = [
+            _result('{"findings": null}'),
+            _result('{"findings": null}'),
         ]
         # null for a required array passes presence but callers need a list;
         # _validate treats None values as absent-typed, so this returns the
@@ -117,10 +106,10 @@ class TestAsk:
         result = ask("p", schema)
         assert result is None or result.get("findings") is None
 
-    @patch("core.llm.subprocess.Popen")
-    def test_wrong_type_rejected(self, popen):
-        popen.side_effect = [
-            _proc('{"title": 42, "items": []}'),
-            _proc('{"title": "ok", "items": []}'),
+    @patch("core.llm.run_claude_process")
+    def test_wrong_type_rejected(self, run_process):
+        run_process.side_effect = [
+            _result('{"title": 42, "items": []}'),
+            _result('{"title": "ok", "items": []}'),
         ]
         assert ask("p", SCHEMA)["title"] == "ok"

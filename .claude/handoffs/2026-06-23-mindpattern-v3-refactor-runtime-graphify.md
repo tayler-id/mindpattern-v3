@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph HEAD before the prompt process-group slice: `1048ebf fix: make dry-run skip claude and deploy`
+- Code/graph HEAD before the shared Claude CLI process primitive slice: `1ba1eaa refactor: kill claude prompt process groups`
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch had thirteen clean save-point commits before the prompt process-group update:
+This refactor branch had fourteen clean save-point commits before the shared Claude CLI process primitive update:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -26,8 +26,9 @@ This refactor branch had thirteen clean save-point commits before the prompt pro
 11. `5506511 fix: add learnings fallback`
 12. `4031fd6 fix: constrain identity evolution output`
 13. `1048ebf fix: make dry-run skip claude and deploy`
+14. `1ba1eaa refactor: kill claude prompt process groups`
 
-This handoff was updated again after making non-agent Claude prompt calls use a killable process group. Use `git log --oneline -13` for the exact latest commit hash after the commit lands.
+This handoff was updated again after adding `core.claude_cli` as the shared low-level Claude process primitive. Use `git log --oneline -14` for the exact latest commit hash after the commit lands.
 
 The main completed work is:
 
@@ -45,6 +46,7 @@ The main completed work is:
 - Added an Identity phase length guard: `apply_evolution_diff()` remains strict by default, while `_phase_identity()` opts into deterministic truncation for oversized LLM content before writing vault files.
 - Fixed the dry-run contract: `run.py --dry-run` now sets `MP_DRY_RUN=1`, Claude dispatch helpers return deterministic placeholders without subprocesses, and runner dry phases skip delivery, sync, mirror, identity, learn, social, research, and trend work.
 - Hardened the Claude prompt subprocess boundary: `run_claude_prompt()` now uses `Popen(..., start_new_session=True)` and shares `_kill_process_group()` with research/file-agent dispatch so prompt timeouts cannot leave orphaned Claude child processes.
+- Added `core.claude_cli` as the shared low-level Claude process primitive. `core.llm.run()` and `run_claude_prompt()` now delegate to `run_claude_process()`, while research/file-agent paths reuse the shared `kill_process_group()` helper and can migrate to the full helper in later slices.
 
 ## Verification Already Run
 
@@ -84,6 +86,14 @@ The main completed work is:
 - Compile after prompt-boundary update: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_feedback_processing.py` -> passed.
 - Local live prompt smoke: `run_claude_prompt()` exercised a temporary fake `claude` executable in `/tmp` through the real `Popen` path for both normal prompt mode and large-prompt stdin mode.
 - Full suite after prompt-boundary update: `.venv/bin/python3 -m pytest -q` -> `1109 passed, 1 FastAPI/Starlette warning`.
+- Shared Claude process primitive RED regression: `.venv/bin/python3 -m pytest tests/test_claude_cli.py -q` -> failed before implementation with `ModuleNotFoundError: No module named 'core.claude_cli'`.
+- Shared boundary suite: `.venv/bin/python3 -m pytest tests/test_claude_cli.py -q` -> `4 passed`.
+- Core LLM + shared boundary suite: `.venv/bin/python3 -m pytest tests/test_claude_cli.py tests/test_core_llm.py -q` -> `18 passed`.
+- Focused prompt migration group: `.venv/bin/python3 -m pytest tests/test_claude_cli.py tests/test_core_llm.py tests/test_agents.py::TestRunClaudePromptSuccess tests/test_agents.py::TestRunClaudePromptLargePromptUsesStdin tests/test_agents.py::TestRunClaudePromptFailure tests/test_agents.py::TestDryRunClaudeDispatch -q` -> `25 passed`.
+- Broad affected suites after shared primitive update: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_core_llm.py tests/test_claude_cli.py tests/test_feedback_processing.py tests/test_orchestrator.py -q` -> `173 passed`.
+- Compile after shared primitive update: `python3 -m compileall core/claude_cli.py core/llm.py orchestrator/agents.py tests/test_claude_cli.py tests/test_core_llm.py tests/test_agents.py` -> passed.
+- Local live-safe shared-boundary smoke: `core.llm.run()` and `run_claude_prompt()` exercised a temporary fake `claude` executable in `/tmp`; normal prompt mode and large-prompt stdin mode passed through the shared helper without a real Claude/network call.
+- Full suite after shared primitive update: `.venv/bin/python3 -m pytest -q` -> `1113 passed, 1 FastAPI/Starlette warning`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -99,7 +109,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 388 files; current report shows 6296 nodes and 9502 edges.
+  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6310 nodes and 9565 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -118,7 +128,10 @@ The main completed work is:
   - `graphify path _get_phase_handler _phase_synthesis_dry_run` finds `_get_phase_handler() <--method-- ResearchPipeline --method--> _phase_synthesis_dry_run()`.
   - `graphify explain _kill_process_group` resolves `orchestrator/agents.py` line 78 with incoming calls from all three Claude dispatch paths.
   - `graphify path run_claude_prompt _kill_process_group` finds `run_claude_prompt() --calls--> _kill_process_group()`.
-  - `graphify diagnose multigraph --json` reports 6296 nodes, 9502 edges, and zero duplicate/missing/dangling/self-loop edges.
+  - `graphify explain run_claude_process` resolves `core/claude_cli.py` line 36 with incoming calls from `core.llm.run()` and `run_claude_prompt()`.
+  - `graphify path run_claude_prompt run_claude_process` finds `run_claude_prompt() --calls--> run_claude_process()`.
+  - `graphify path run run_claude_process` finds `run() --calls--> run_claude_process()`; Graphify noted the `run` source name is ambiguous, but selected the core LLM helper.
+  - `graphify diagnose multigraph --json` reports 6310 nodes, 9565 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
 ## Graphify Notes
@@ -126,10 +139,10 @@ The main completed work is:
 - Graphify was reinstalled through `uv tool install graphifyy`.
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
-  - 388 files
-  - 6296 nodes
-  - 9502 edges
-  - freshness marker `1048ebf7`
+  - 390 files
+  - 6310 nodes
+  - 9565 edges
+  - freshness marker `1ba1eaa5`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -141,7 +154,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the prompt process-group slice is committed should still mostly be user/generated state:
+Tracked dirty files after the shared Claude CLI process primitive slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`

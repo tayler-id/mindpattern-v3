@@ -486,3 +486,40 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: research agents, file agents, and prompt calls now share the same child-process safety boundary while keeping their higher-level dispatch contracts separate.
   - Security: no new tools or outbound permissions were added; the live smoke used a temporary local fake `claude` binary and did not touch personal data.
   - Performance: normal prompt execution still waits on one child process; timeout cleanup is bounded by one kill and a short wait.
+
+## Step 15 - Shared Claude CLI process primitive
+
+### Changes
+
+- Added `core/claude_cli.py` as the shared low-level process boundary for Claude CLI calls.
+- Introduced `ClaudeProcessResult`, `run_claude_process()`, and `kill_process_group()` so process startup, stdin, stdout/stderr capture, timeout handling, and startup-error mapping have one contract.
+- Migrated `core.llm.run()` to delegate to `run_claude_process()` while preserving its existing public `str | None` behavior.
+- Migrated `orchestrator.agents.run_claude_prompt()` to delegate to `run_claude_process()` while preserving its existing `(stdout, exit_code)` behavior and large-prompt stdin mode.
+- Reused `kill_process_group()` in `_run_agent_attempt()` and `run_agent_with_files()` without changing their command construction or result classification in this slice.
+- Updated tests so `tests/test_claude_cli.py` owns process-boundary behavior and higher-level tests mock the shared boundary instead of private `subprocess.Popen` details.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_claude_cli.py -q` failed before implementation with `ModuleNotFoundError: No module named 'core.claude_cli'`.
+- Shared boundary suite: `.venv/bin/python3 -m pytest tests/test_claude_cli.py -q` - 4 passed.
+- Core LLM + shared boundary suite: `.venv/bin/python3 -m pytest tests/test_claude_cli.py tests/test_core_llm.py -q` - 18 passed.
+- Focused prompt migration group: `.venv/bin/python3 -m pytest tests/test_claude_cli.py tests/test_core_llm.py tests/test_agents.py::TestRunClaudePromptSuccess tests/test_agents.py::TestRunClaudePromptLargePromptUsesStdin tests/test_agents.py::TestRunClaudePromptFailure tests/test_agents.py::TestDryRunClaudeDispatch -q` - 25 passed.
+- Compile check: `python3 -m compileall core/claude_cli.py core/llm.py orchestrator/agents.py tests/test_claude_cli.py tests/test_core_llm.py tests/test_agents.py` - passed.
+- Broad affected suites: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_core_llm.py tests/test_claude_cli.py tests/test_feedback_processing.py tests/test_orchestrator.py -q` - 173 passed.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1113 passed, 1 FastAPI/Starlette deprecation warning.
+- Local live-safe smoke: exercised `core.llm.run()` and `orchestrator.agents.run_claude_prompt()` against a temporary fake `claude` executable in `/tmp`; verified normal prompt mode and large-prompt stdin mode through the shared helper without making a real Claude/network call.
+- `graphify update .` - rebuilt graph artifacts to 6310 nodes and 9565 edges from 390 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain run_claude_process` - resolved `core/claude_cli.py` line 36 with incoming calls from `core.llm.run()` and `run_claude_prompt()`.
+- `graphify path run_claude_prompt run_claude_process` - found `run_claude_prompt() --calls--> run_claude_process()`.
+- `graphify path run run_claude_process` - found `run() --calls--> run_claude_process()`; Graphify noted the `run` source name is ambiguous, but selected the core LLM helper.
+- `graphify diagnose multigraph --json` - reported 6310 nodes, 9565 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: shared process behavior is now covered at the lowest boundary, while caller tests verify their public return contracts still hold.
+  - Readability: `core.llm` is no longer inaccurately documented as the only Claude CLI gate; process concerns live in a purpose-named module.
+  - Architecture: Claude subprocess execution has a stable internal interface that can be adopted by remaining agent/file paths incrementally.
+  - Security: the helper preserves process-group timeout killing, does not add shell execution, and returns startup errors as data instead of raising through callers.
+  - Performance: the helper adds only dataclass wrapping around the same one-process execution model; no new retries or blocking loops were introduced.

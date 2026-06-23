@@ -1,16 +1,16 @@
 # Graph Report - mindpattern-v3  (2026-06-23)
 
 ## Corpus Check
-- 388 files · ~380,710 words
+- 390 files · ~380,891 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6296 nodes · 9502 edges · 411 communities (386 shown, 25 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 415 edges (avg confidence: 0.5)
+- 6310 nodes · 9565 edges · 423 communities (397 shown, 26 thin omitted)
+- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 439 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1048ebf7`
+- Built from commit: `1ba1eaa5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -387,12 +387,16 @@
 - [[_COMMUNITY_Community 370|Community 370]]
 - [[_COMMUNITY_Community 371|Community 371]]
 - [[_COMMUNITY_Community 372|Community 372]]
+- [[_COMMUNITY_Community 373|Community 373]]
 - [[_COMMUNITY_Community 374|Community 374]]
 - [[_COMMUNITY_Community 375|Community 375]]
 - [[_COMMUNITY_Community 376|Community 376]]
 - [[_COMMUNITY_Community 377|Community 377]]
+- [[_COMMUNITY_Community 378|Community 378]]
 - [[_COMMUNITY_Community 379|Community 379]]
 - [[_COMMUNITY_Community 380|Community 380]]
+- [[_COMMUNITY_Community 381|Community 381]]
+- [[_COMMUNITY_Community 382|Community 382]]
 - [[_COMMUNITY_Community 383|Community 383]]
 - [[_COMMUNITY_Community 384|Community 384]]
 - [[_COMMUNITY_Community 385|Community 385]]
@@ -409,9 +413,17 @@
 - [[_COMMUNITY_Community 398|Community 398]]
 - [[_COMMUNITY_Community 399|Community 399]]
 - [[_COMMUNITY_Community 400|Community 400]]
+- [[_COMMUNITY_Community 412|Community 412]]
 - [[_COMMUNITY_Community 413|Community 413]]
 - [[_COMMUNITY_Community 414|Community 414]]
 - [[_COMMUNITY_Community 415|Community 415]]
+- [[_COMMUNITY_Community 416|Community 416]]
+- [[_COMMUNITY_Community 417|Community 417]]
+- [[_COMMUNITY_Community 418|Community 418]]
+- [[_COMMUNITY_Community 419|Community 419]]
+- [[_COMMUNITY_Community 420|Community 420]]
+- [[_COMMUNITY_Community 421|Community 421]]
+- [[_COMMUNITY_Community 422|Community 422]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Phase` - 72 edges
@@ -426,69 +438,69 @@
 10. `get_db()` - 45 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `TestCodeScanner` --uses--> `Section`  [INFERRED]
-  tests/test_knowledge_sections.py → harness/knowledge_sections.py
-- `TestFindSections` --uses--> `Section`  [INFERRED]
-  tests/test_knowledge_sections.py → harness/knowledge_sections.py
-- `TestFrontmatter` --uses--> `Section`  [INFERRED]
-  tests/test_knowledge_sections.py → harness/knowledge_sections.py
-- `TestLevenshtein` --uses--> `Section`  [INFERRED]
-  tests/test_knowledge_sections.py → harness/knowledge_sections.py
-- `TestParseSections` --uses--> `Section`  [INFERRED]
-  tests/test_knowledge_sections.py → harness/knowledge_sections.py
+- `TestClassifyAgentFailure` --uses--> `ClaudeProcessResult`  [INFERRED]
+  tests/test_agents.py → core/claude_cli.py
+- `TestRetryDelayFullJitter` --uses--> `ClaudeProcessResult`  [INFERRED]
+  tests/test_agents.py → core/claude_cli.py
+- `TestRunSingleAgentRetry` --uses--> `ClaudeProcessResult`  [INFERRED]
+  tests/test_agents.py → core/claude_cli.py
+- `TestAsk` --uses--> `ClaudeProcessResult`  [INFERRED]
+  tests/test_core_llm.py → core/claude_cli.py
+- `TestExtractJson` --uses--> `ClaudeProcessResult`  [INFERRED]
+  tests/test_core_llm.py → core/claude_cli.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (411 total, 25 thin omitted)
+## Communities (423 total, 26 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.05
-Nodes (32): Session, keychain_get(), LinkedInClient, Social media platform API clients — X, Bluesky, LinkedIn.  Replaces v2's social-, Initialize from social-config.json `platforms.x` section.          Loads OAuth c, Read a secret from macOS Keychain or the matching env var.      Falls back to th, Initialize from social-config.json `platforms.bluesky` section.          Loads a, LinkedIn Community Management REST API client for posting text and image content (+24 more)
+Cohesion: 0.07
+Nodes (26): Session, keychain_get(), LinkedInClient, Social media platform API clients — X, Bluesky, LinkedIn.  Replaces v2's social-, Initialize from social-config.json `platforms.x` section.          Loads OAuth c, Read a secret from macOS Keychain or the matching env var.      Falls back to th, Initialize from social-config.json `platforms.bluesky` section.          Loads a, LinkedIn Community Management REST API client for posting text and image content (+18 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.02
-Nodes (98): Checkpoint, Checkpoint/resume logic for pipeline runs.  On failure, run.py can be re-invoked, Find an incomplete pipeline run for this user+date that can be resumed., Clear all checkpoints for a pipeline run (for re-runs)., Save and restore pipeline state across crashes., Write a checkpoint for a completed phase., Load the last checkpoint for a pipeline run.          Returns (phase, state_data, Get all completed phases for a pipeline run, in order. (+90 more)
+Nodes (91): Checkpoint, Checkpoint/resume logic for pipeline runs.  On failure, run.py can be re-invoked, Find an incomplete pipeline run for this user+date that can be resumed., Clear all checkpoints for a pipeline run (for re-runs)., Save and restore pipeline state across crashes., Write a checkpoint for a completed phase., Load the last checkpoint for a pipeline run.          Returns (phase, state_data, Get all completed phases for a pipeline run, in order. (+83 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.05
-Nodes (45): Connection, get_recent_signals(), get_signal_context(), Cross-pipeline signal management.  Signals capture observations from one pipelin, List recent signals with optional filters.      Returns list of {source_pipeline, Store a cross-pipeline signal.      Args:         db: Database connection., Generate markdown signal context for agent dispatch.      Returns a markdown str, store_signal() (+37 more)
+Cohesion: 0.03
+Nodes (82): Connection, failures_for_date(), Get all failure lessons for a specific run date.      Args:         db: Database, accumulate_preference(), _api_get(), apply_preference_decay(), fetch_feedback(), get_feedback_context() (+74 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.13
-Nodes (18): AgentResult, dedup_cross_agent_findings(), _finding_quality_score(), load_user_config(), Result from a single agent execution., Load user config from users.json., Score a finding for dedup tiebreaking: higher = better quality., Remove near-duplicate findings across different agents.      Embeds all finding (+10 more)
+Cohesion: 0.05
+Nodes (51): ClaudeProcessResult, Completed Claude CLI process state., AgentResult, dedup_cross_agent_findings(), Run a single claude -p call for non-agent tasks (synthesis, trends, etc.)., Result from a single agent execution., Remove near-duplicate findings across different agents.      Embeds all finding, run_claude_prompt() (+43 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.15
 Nodes (8): get_max_turns(), get_model(), get_timeout(), Get timeout in seconds for a task type., Get the model ID for a task type. Resolves aliases like opus_1m., Get max turns for a task type., Model routing: correct model, turns, timeout, and cost estimation., TestRouter
 
 ### Community 5 - "Community 5"
-Cohesion: 0.35
-Nodes (3): run_agent_with_files() dispatches claude CLI and reads file-based output., Create a mock Popen that behaves like the real one., TestRunAgentWithFiles
+Cohesion: 0.27
+Nodes (7): _dry_run_file_payload(), Return deterministic structured output for file-writing dry-run agents., Run a claude -p call that writes its output to a file.      Unlike run_claude_pr, run_agent_with_files(), run_agent_with_files() dispatches claude CLI and reads file-based output., Create a mock Popen that behaves like the real one., TestRunAgentWithFiles
 
 ### Community 6 - "Community 6"
-Cohesion: 0.17
-Nodes (7): Tests for dashboard findings route — column allowlist validation., _get_distinct_values must reject column names not in the allowlist., Known-good column names should not raise., A SQL injection payload as column name must raise ValueError., An arbitrary column name not in the allowlist must raise ValueError., Empty string column name must raise ValueError., TestGetDistinctValuesAllowlist
+Cohesion: 0.10
+Nodes (18): atomic_write(), Update a ``## ``-delimited section in a markdown file.      Matching is case-ins, Write *content* to *path* atomically.      Creates parent directories as needed., update_section(), update_section replaces the body of an existing ## section., update_section appends a new section when the heading is not found., update_section matches heading case-insensitively., update_section normalizes underscores to spaces for matching. (+10 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.06
-Nodes (59): index(), Serve the full dashboard page with Pipeline Status as the default tab., Request, approve_all_engagement(), approve_engagement(), approve_package(), approve_single_engagement(), _art_url() (+51 more)
+Nodes (57): Request, approve_all_engagement(), approve_engagement(), approve_package(), approve_single_engagement(), _art_url(), _check_engagement_dedup(), determine_post_status() (+49 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.07
-Nodes (29): Tests for orchestrator/pipeline.py phase transitions and state machine., Failing a skippable phase adds a warning but doesn't fail the pipeline., next_phase property returns the next phase in sequence., next_phase returns None for terminal phases., Phase enum has all 11 execution phases plus COMPLETED and FAILED., PHASE_ORDER follows the documented execution sequence., CRITICAL_PHASES contains RESEARCH and SYNTHESIS., No phase appears in both SKIPPABLE_PHASES and CRITICAL_PHASES. (+21 more)
+Cohesion: 0.05
+Nodes (37): PipelineRun, Record a phase failure., Mark entire pipeline as failed., Get the next phase in sequence, or None if terminal., Return a summary of the pipeline run state., Tracks a single pipeline run through its phase lifecycle., Transition to a new phase. Returns True if valid, raises ValueError if not., Record a phase completion with optional result data. (+29 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.07
-Nodes (26): EngagementHandler, _load_social_config(), #mp-engagement handler: search for people, draft replies, reply sniper.  Two mod, Search for real conversations matching a query and show candidates.          Use, Draft a reply, show for approval, post if approved., Load social-config.json from project root., Post a reply to the correct platform based on URL., Handle messages in #mp-engagement. (+18 more)
+Cohesion: 0.09
+Nodes (20): Any, Response, _api_call_with_retry(), _bot_jitter(), Upload an image via the Images API (initializeUpload + binary PUT).          Ret, Upload a document (PDF) via the Documents API (initializeUpload + binary PUT)., Post to LinkedIn via the Posts API (/rest/posts) with optional image or document, Random sleep for bot-safety between consecutive API calls. (+12 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.05
-Nodes (31): compress_image(), Compress an image to fit within max_bytes (default 950 KB for Bluesky).      Use, X (Twitter) API v2 client using OAuth1 via requests_oauthlib., Follow a user by their X user ID.          Returns {success, already_following,, XClient, mock_keychain(), Tests for the social pipeline modules.  All external API calls and claude CLI ca, Rate limits prevent over-posting when at the limit. (+23 more)
+Nodes (32): deterministic_validate(), expedite(), _get_platform_rules(), Blind validation + deterministic policy checks for social drafts.  The critic is, Policy checks that cannot be gamed by prompt injection.      Uses PolicyEngine w, Expeditor -- final quality gate before approval.      Consolidates all platform, Blind critic review -- sees ONLY the text and platform rules.      Does NOT see, Return a human-readable summary of platform constraints. (+24 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.03
-Nodes (139): batch_similarities(), cosine_similarity(), create_text_embedding(), deserialize_f32(), dot_similarity(), embed_text(), embed_texts(), _get_model() (+131 more)
+Nodes (115): batch_similarities(), cosine_similarity(), create_text_embedding(), deserialize_f32(), dot_similarity(), embed_text(), embed_texts(), _get_model() (+107 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.04
@@ -503,44 +515,44 @@ Cohesion: 0.04
 Nodes (45): Architecture decisions (locked in spec), Checkpoint — After Phase 0, Checkpoint — After Phase 1, Checkpoint — After Phase 2, Checkpoint — After Phase 4, Checkpoint — After Phase 5, Critical gap discovered during planning, Dependency graph (+37 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.13
-Nodes (11): _extract_significant_words(), Is any story repeated across sections? Score 0.0-1.0 (1.0 = no dupes)., Does every section have source URLs?          Score = sections_with_urls / total, Does the newsletter have actionable takeaways?          Checks for presence of:, Is the newsletter 3000-5000 words? 1.0 if in range, scaled down outside., Does coverage match user preferences? Score 0.0-1.0.          Checks whether top, Score newsletter on 6 dimensions.          Args:             newsletter_text: Th, Extract meaningful words from text (lowercase, no stop words, 3+ chars). (+3 more)
+Cohesion: 0.12
+Nodes (12): _extract_significant_words(), Post-synthesis newsletter quality evaluation.  All checks are deterministic Pyth, Is any story repeated across sections? Score 0.0-1.0 (1.0 = no dupes)., Does every section have source URLs?          Score = sections_with_urls / total, Does the newsletter have actionable takeaways?          Checks for presence of:, Is the newsletter 3000-5000 words? 1.0 if in range, scaled down outside., Does coverage match user preferences? Score 0.0-1.0.          Checks whether top, Score newsletter on 6 dimensions.          Args:             newsletter_text: Th (+4 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.12
-Nodes (20): extract_session_data(), format_session_page(), main(), parse_transcript(), Format extracted session data as an Obsidian-compatible markdown page., Write a session page to the sessions directory.      Uses atomic write (tmp + re, Parse a Claude Code .jsonl transcript into a list of message dicts., Regenerate _index.md for the sessions directory. (+12 more)
+Cohesion: 0.10
+Nodes (23): extract_session_data(), format_session_page(), infer_session_title(), main(), parse_transcript(), Infer a short session title from the user's first message., Format extracted session data as an Obsidian-compatible markdown page., Write a session page to the sessions directory.      Uses atomic write (tmp + re (+15 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.22
 Nodes (9): 2.5 Self-Improvement & Learning Mechanisms, Autoresearch Self-Improvement Loop, DPO Fine-Tuning Pipeline, Evaluating Stochasticity in Deep Research Agents, Feedback Loop Extension, Fine-Tuning via RAG Distillation, HCAPO — Hindsight Credit Assignment, Memory-R1: RL-Based Memory Management (+1 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.08
-Nodes (39): _build_indexes(), check(), check_index(), check_refs(), evolve(), _evolve_fix(), _evolve_review(), _evolve_run_complete() (+31 more)
+Cohesion: 0.07
+Nodes (48): _build_indexes(), check(), check_code_refs(), check_index(), check_refs(), check_sections(), evolve(), _evolve_fix() (+40 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.02
-Nodes (106): Environment, _build_agents_data(), _build_corrections_data(), _build_engaged_authors_data(), _build_engagement_follows(), _build_engagement_replies(), _build_posts_data(), _collect_source_data() (+98 more)
+Cohesion: 0.07
+Nodes (37): Environment, _build_corrections_data(), _build_engaged_authors_data(), _build_engagement_follows(), _build_engagement_replies(), generate_mirrors(), _get_env(), _mirror_feedback() (+29 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.03
-Nodes (118): Run the full social pipeline using the same agents as the daily pipeline., _agent_env(), _dry_run_enabled(), _dry_run_file_payload(), _dry_run_prompt_output(), _kill_process_group(), Claude CLI dispatch for research agents.  Key change from v2: instead of one mon, Run a single claude -p call for non-agent tasks (synthesis, trends, etc.). (+110 more)
+Cohesion: 0.07
+Nodes (36): _build_eic_agent_prompt(), create_brief(), _extract_source_urls(), _fallback_brief(), _get_recent_findings(), _load_social_config(), EIC topic selection and creative brief generation for the social pipeline.  Merg, Select a topic for today's social posts.      Steps:     1. Check for any findin (+28 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.10
-Nodes (28): Slack handler for the #mp-harness channel.  Commands:   status   — Show harness, Return a compact summary for injection into scout/agent prompts.     Includes: s, Read a knowledge file, return '' if missing., _read_file(), summary(), bump_priority(), decay_stale(), find_ticket_by_id() (+20 more)
+Cohesion: 0.08
+Nodes (32): HarnessHandler, Slack handler for the #mp-harness channel.  Commands:   status   — Show harness, Handle messages in the #mp-harness channel., Return a compact summary for injection into scout/agent prompts.     Includes: s, Read a knowledge file, return '' if missing., _read_file(), summary(), bump_priority() (+24 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.07
-Nodes (26): accumulate_preference(), apply_preference_decay(), get_feedback_context(), get_preference(), get_preference_context(), list_preferences(), mark_processed(), Generate markdown feedback context for orchestrator dispatch.      Includes unpr (+18 more)
+Cohesion: 0.10
+Nodes (21): _build_agents_data(), _collect_source_data(), _collect_topic_data(), _domain_from_url(), _query_all_findings_for_agent(), _query_findings_for_source_domain(), Fetch findings whose source_url contains a given domain., Group findings by agent and attach topic/source slugs. (+13 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.06
 Nodes (33): 1. Compile (daily/ + conversations/ → knowledge/), 2. Query (Ask the Knowledge Base), 3. Lint (Health Checks), Architecture, Article Formats, Background Flush Process (flush.py), .claude/settings.json, Compile Process (compile.py) (+25 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.11
-Nodes (14): EngagementPipeline, Post a single reply + auto-follow.          Posts the reply via the platform cli, Use LLM to generate specific search queries from research topics.          Takes, Execute search queries against a single platform's API.          Args:, Apply hard filters to raw search results.          Removes posts that don't meet, Find conversations, draft replies, get approval, post engagements.      Runs aft, Remove posts from authors we already follow.          Uses platform API to check, Use LLM to rank posts by relevance and reply-worthiness.          Passes the raw (+6 more)
+Cohesion: 0.09
+Nodes (16): EngagementPipeline, Post a single reply + auto-follow.          Posts the reply via the platform cli, Use LLM to generate specific search queries from research topics.          Takes, Execute search queries against a single platform's API.          Args:, Apply hard filters to raw search results.          Removes posts that don't meet, Find conversations, draft replies, get approval, post engagements.      Runs aft, Remove posts from authors we already follow.          Uses platform API to check, Args:             user_id: User running the pipeline (e.g. "ramsay"). (+8 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.09
@@ -552,19 +564,19 @@ Nodes (31): 10. False ranges, 11. Em dash overuse, 12. Excessive boldface, 13. I
 
 ### Community 27 - "Community 27"
 Cohesion: 0.13
-Nodes (15): ask(), extract_json(), The single gate between this codebase and the claude CLI.  Fixes v3's three recu, Pull a JSON object/array out of model output (bare, fenced, or embedded)., Return an error description, or None if data matches the schema., One claude -p call. Returns stdout text, or None on failure/timeout., claude call that must return JSON matching `schema`.      Schema is a minimal su, run() (+7 more)
+Nodes (15): ask(), extract_json(), Small JSON/text helpers on top of the Claude CLI process boundary.  The subproce, Return an error description, or None if data matches the schema., One claude -p call. Returns stdout text, or None on failure/timeout., claude call that must return JSON matching `schema`.      Schema is a minimal su, Pull a JSON object/array out of model output (bare, fenced, or embedded)., run() (+7 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.09
 Nodes (19): build_evolve_prompt(), Build a prompt that instructs an LLM to produce a JSON evolution diff.      Read, Tests for memory/identity_evolve.py — LLM-driven identity file evolution.  Uses, build_evolve_prompt returns a non-empty string., Prompt contains the current soul.md content., Prompt contains the current user.md content., Prompt contains the current voice.md content., Prompt contains recent entries from decisions.md. (+11 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.04
-Nodes (55): _extract_concept_title(), Knowledge compiler: reads daily research findings and synthesizes persistent con, Read the title from a concept page's frontmatter., append_entry(), archive_old_entries(), atomic_write(), _file_lock(), get_recent_entries() (+47 more)
+Cohesion: 0.09
+Nodes (22): append_entry(), archive_old_entries(), _file_lock(), _normalise_heading(), Atomic read/write for Obsidian vault markdown files.  All writes go through atom, Split markdown text into (heading, body) pairs on ``## `` boundaries.      The f, Append a dated entry to an append-only log file (e.g. decisions.md).      Each e, Acquire an exclusive file lock for read-modify-write operations.      Uses a .lo (+14 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.06
-Nodes (24): ApprovalGateway, Approval system — Slack only.  Posts approval requests to Slack #mindpattern-app, Engagement gate: approve/reject reply candidates via Slack.          Args:, Get Slack bot token from macOS Keychain., Owner's Slack user ID — the only user whose replies count.          Keychain fir, Post a message to the Slack approvals channel.          Returns the Slack API re, Poll the approval thread for the owner's reply.          Thread-scoped and owner, Send approval request to Slack, poll for threaded reply.          All gates in a (+16 more)
+Cohesion: 0.05
+Nodes (25): ApprovalGateway, Approval system — Slack only.  Posts approval requests to Slack #mindpattern-app, Engagement gate: approve/reject reply candidates via Slack.          Args:, Get Slack bot token from macOS Keychain., Owner's Slack user ID — the only user whose replies count.          Keychain fir, Post a message to the Slack approvals channel.          Returns the Slack API re, Poll the approval thread for the owner's reply.          Thread-scoped and owner, Send approval request to Slack, poll for threaded reply.          All gates in a (+17 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.07
@@ -579,12 +591,12 @@ Cohesion: 0.07
 Nodes (27): Agent Allowed Tools, Agent Prompt Structure (Universal), Agent Skill Files (.md) — What Changes, Architecture: Two-Phase Research, Context for Resuming Agent, Dependencies, Design, Expected Preflight Volume (+19 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.14
-Nodes (10): _extract_balanced_json_blocks(), _parse_findings(), Extract all top-level balanced { } blocks from text.      Walks through the stri, Parse JSON findings from agent output.      Strategy:     1. Try direct json.loa, Agent output contains a metadata JSON block followed by the findings block., Finding values contain literal { } characters (e.g. code snippets)., TestParseFindingsWithMultipleJsonBlocks, TestParseFindingsWithNestedBracesInValues (+2 more)
+Cohesion: 0.24
+Nodes (6): _extract_balanced_json_blocks(), _parse_findings(), Extract all top-level balanced { } blocks from text.      Walks through the stri, Parse JSON findings from agent output.      Strategy:     1. Try direct json.loa, _parse_findings() extracts valid JSON findings., TestParseFindings
 
 ### Community 35 - "Community 35"
 Cohesion: 0.06
-Nodes (26): Full social content pipeline — topic to post.      Replaces the monolithic run-s, Args:             user_id: User running the pipeline (e.g. "ramsay")., Get the preferred posting window from config.          Returns:             (sta, Check if the current time is within the preferred posting window.          If no, Calculate the next posting window start time as an ISO string.          If we're, Check for and post any pending (deferred) posts that are ready.          Called, Post to all platforms with random delay between posts.          Jitter range fro, Get list of enabled platform names, optionally filtered. (+18 more)
+Nodes (27): Full social content pipeline — topic to post.      Replaces the monolithic run-s, Args:             user_id: User running the pipeline (e.g. "ramsay")., Get the preferred posting window from config.          Returns:             (sta, Check if the current time is within the preferred posting window.          If no, Calculate the next posting window start time as an ISO string.          If we're, Check for and post any pending (deferred) posts that are ready.          Called, Initialize API clients for each enabled platform., Post to all platforms with random delay between posts.          Jitter range fro (+19 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.07
@@ -595,16 +607,16 @@ Cohesion: 0.08
 Nodes (14): Tests for ApprovalGateway._parse_topic_reply()., go', 'yes', 'approve', 'ok', 'approved' all map to action=go., skip', 'kill', 'no', 'pass' all map to action=skip., retry', 'again', 'redo' all map to action=retry., Numeric reply selects the corresponding topic (1-based)., Number followed by text captures guidance., Number outside 1..num_topics is treated as custom topic., 0' is out of range and treated as custom. (+6 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.12
-Nodes (12): _assign_end_lines(), _extract_first_paragraph(), parse_sections(), Extract the first non-empty paragraph from section body text., Return the line index where content starts (after frontmatter)., Parse markdown text into a hierarchical list of Section objects.      Uses a sta, Assign _end_line to each builder based on the next builder's start., Mutable builder for constructing frozen Section objects. (+4 more)
+Cohesion: 0.11
+Nodes (14): _assign_end_lines(), _extract_first_paragraph(), parse_sections(), Extract the first non-empty paragraph from section body text., Return the line index where content starts (after frontmatter)., Parse markdown text into a hierarchical list of Section objects.      Uses a sta, Assign _end_line to each builder based on the next builder's start., Mutable builder for constructing frozen Section objects. (+6 more)
 
 ### Community 40 - "Community 40"
 Cohesion: 0.11
 Nodes (15): apply_evolution_diff(), Validate and apply an evolution diff to the vault files.      Args:         vaul, action='update' calls vault.update_section and modifies the file., action='append' appends a new dated entry to decisions.md., action='none' skips the file — no writes, no errors., Unknown keys in the diff are rejected with an error., Content exceeding MAX_CONTENT_LENGTH chars is rejected with an error, not an exc, Identity runtime can opt into deterministic truncation for oversized LLM content (+7 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.10
-Nodes (21): init_kg_schema(), open_kg(), Knowledge-graph schema: bi-temporal entities, aliases, edges, communities.  Tabl, Create all kg_* tables and indexes. Idempotent; safe to call repeatedly., Open memory.db (WAL + foreign keys + full memory schema) with the KG     tables, get_db(), _init_schema(), Database connection management and schema initialization.  Manages SQLite connec (+13 more)
+Cohesion: 0.05
+Nodes (36): get_db(), _init_schema(), Database connection management and schema initialization.  Manages SQLite connec, Open (and optionally initialize) the memory database.      Args:         db_path, Initialize all tables with IF NOT EXISTS. Safe to call repeatedly.      Fixes fr, backfill_trend_results(), get_trend_performance(), get_trends_for_date() (+28 more)
 
 ### Community 42 - "Community 42"
 Cohesion: 0.08
@@ -619,12 +631,12 @@ Cohesion: 0.13
 Nodes (23): check_security_sensitive(), determine_review_depth(), gate_diff_scoped(), gate_no_debug(), gate_no_secrets(), gate_syntax_valid(), gate_tests_pass(), _load_config() (+15 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.05
-Nodes (33): get_stats(), get_top_sources(), Compute and return database statistics.      Args:         db: SQLite connection, Store a research finding with its vector embedding.      Args:         db: SQLit, Get top sources by quality.      Args:         db: SQLite connection.         li, store_finding(), backfill_trend_results(), get_trend_performance() (+25 more)
+Cohesion: 0.07
+Nodes (25): get_context(), get_top_sources(), log_agent_run(), _orchestrator_context(), Return today's date as YYYY-MM-DD., Upsert an agent run log entry.      Tracks whether an agent ran on a given date, Store a research finding with its vector embedding.      Args:         db: SQLit, Generate a context block for an agent before dispatch.      Includes:     - Rece (+17 more)
 
 ### Community 46 - "Community 46"
-Cohesion: 0.22
-Nodes (10): _get_owner_user_id(), Get the bot installer's user ID (the owner)., build_handlers(), _keychain_get(), load_channel_config(), Channel → handler registry for the MindPattern Slack bot.  Channel IDs are loade, Read a value from macOS Keychain, falling back to the env var derived     from t, Load channel ID mapping from Keychain or environment.      Expects a JSON blob s (+2 more)
+Cohesion: 0.19
+Nodes (10): build_handlers(), _keychain_get(), load_channel_config(), Channel → handler registry for the MindPattern Slack bot.  Channel IDs are loade, Read a value from macOS Keychain, falling back to the env var derived     from t, Load channel ID mapping from Keychain or environment.      Expects a JSON blob s, Instantiate all handlers with their channel IDs.      Returns: {channel_id: hand, Tests for Slack bot resilience: API error handling, reply timeout defaults.  Tes (+2 more)
 
 ### Community 47 - "Community 47"
 Cohesion: 0.11
@@ -635,8 +647,8 @@ Cohesion: 0.06
 Nodes (49): approval_status(), decide_approval(), get_findings(), get_health(), get_memory_db(), get_patterns(), get_report(), get_skill_domains() (+41 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.08
-Nodes (20): Any, Response, _api_call_with_retry(), Upload an image via the Images API (initializeUpload + binary PUT).          Ret, Upload a document (PDF) via the Documents API (initializeUpload + binary PUT)., Post to LinkedIn via the Posts API (/rest/posts) with optional image or document, Upload media via v1.1 media/upload. Returns media_id_string or None., Post a tweet, optionally with an image.          Returns {success, url, id, erro (+12 more)
+Cohesion: 0.20
+Nodes (6): Tests for _api_call_with_retry()., Retries on HTTP 429 (rate limit) and eventually succeeds., Retries on HTTP 500 (server error) and eventually succeeds., Does NOT retry on HTTP 400 -- raises immediately., Does NOT retry on HTTP 401 -- raises immediately., TestApiCallWithRetry
 
 ### Community 50 - "Community 50"
 Cohesion: 0.08
@@ -647,8 +659,8 @@ Cohesion: 0.14
 Nodes (14): _insert_feedback(), Feedback with processed=1 is not sent to Claude., When there is no unprocessed feedback, no LLM call is made., Weights outside [-3.0, +3.0] are clamped., If Claude returns invalid JSON, feedback is NOT marked processed., If Claude exits non-zero, feedback is NOT marked processed., Preferences with weight=0.0 are not stored., Claude sometimes wraps JSON in markdown code fences. (+6 more)
 
 ### Community 52 - "Community 52"
-Cohesion: 0.11
-Nodes (10): PolicyEngine.validate_social_post with social.json., X post exactly at 280 chars passes., Bluesky post at 301 graphemes fails., Bluesky post at 300 graphemes passes, 301 fails., LinkedIn max_chars is 3000; 3001 fails., game-changer' is caught regardless of case., revolutionize' is caught., Em dash character '\u2014' in content is caught. (+2 more)
+Cohesion: 0.09
+Nodes (17): check_engagement(), Store Gate 2 feedback. Auto-classifies edit_type.      Returns {stored, platform, Store an engagement record. Returns engagement id., Check if we've engaged with author this week.      Returns {already_engaged, cou, List recent posts for dedup context., recent_posts(), store_engagement(), store_social_feedback() (+9 more)
 
 ### Community 53 - "Community 53"
 Cohesion: 0.09
@@ -671,12 +683,12 @@ Cohesion: 0.14
 Nodes (12): Restart the Fly.io app. Only call ONCE after ALL users synced.      Uses flyctl, restart_app(), Tests for restart_app()., Restart succeeds: list machines, then restart the first one., Restart fails when machine list fails., Restart fails when no machines are returned., Restart fails when machine JSON lacks 'id' field., Restart fails when the restart subprocess returns non-zero. (+4 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.13
-Nodes (13): build_suffix_index(), Build a case-insensitive suffix index from slug → path mappings.      For each s, knowledge_dir(), parsed_sections(), Tests for harness/knowledge_sections.py — pure algorithm tests.  Uses temporary, Parse all test files into sections., Build flat section_id → Section lookup., Create a temp knowledge directory with sample files. (+5 more)
+Cohesion: 0.08
+Nodes (13): Missing 'summary' field is caught., Missing 'source_url' field is caught., Invalid importance value (not high/medium/low) is caught., More than 15 findings triggers an error., Zero findings in the output dict triggers an error., Prompt injection 'ignore previous instructions' is detected., Prompt injection 'you are now' is detected., Normal text is NOT incorrectly flagged as injection. (+5 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 0.07
-Nodes (27): bluesky_client(), bluesky_config(), linkedin_client(), linkedin_config(), Tests for social/posting.py — LinkedIn and Bluesky posting clients.  Covers: - L, BlueskyClient.post() returns success with web URL derived from AT URI., BlueskyClient.post() returns success=False when API raises HTTPError., LinkedInClient._upload_document() returns document URN on success. (+19 more)
+Cohesion: 0.06
+Nodes (33): compress_image(), Compress an image to fit within max_bytes (default 950 KB for Bluesky).      Use, bluesky_client(), bluesky_config(), linkedin_client(), linkedin_config(), Tests for social/posting.py — LinkedIn and Bluesky posting clients.  Covers: - L, BlueskyClient.post() returns success with web URL derived from AT URI. (+25 more)
 
 ### Community 60 - "Community 60"
 Cohesion: 0.12
@@ -692,7 +704,7 @@ Nodes (21): 1. How this conclusion was reached (method), 2. The quantitative mod
 
 ### Community 63 - "Community 63"
 Cohesion: 0.05
-Nodes (60): get_memory_db(), finding_detail(), findings_data_by_agent(), findings_data_by_date(), findings_list(), _get_distinct_values(), get_finding_detail(), get_findings_list() (+52 more)
+Nodes (48): get_memory_db(), finding_detail(), findings_data_by_agent(), findings_data_by_date(), findings_list(), _get_distinct_values(), get_finding_detail(), get_findings_list() (+40 more)
 
 ### Community 64 - "Community 64"
 Cohesion: 0.14
@@ -715,20 +727,20 @@ Cohesion: 0.10
 Nodes (19): 1. Category Cannibalization, 2. Architectural Patterns, 3. Business Model Shifts, 4. Builder Moves, 5. Cross-Category Patterns (HIGHEST VALUE), Agent: SaaS Disruption Researcher, Business Analysis, Category Rotation (+11 more)
 
 ### Community 69 - "Community 69"
-Cohesion: 0.25
-Nodes (8): 1.10 Fine-Tuning & Model Optimization, 1.9 Structured Output & Tool Design, Autoresearch Pattern (Karpathy/Lutke), Fine-Tuning with RAG → Distilled Knowledge (ICLR 2026), MCP Tool Descriptions Study, PART 1: RESEARCH AGENTS (65+ Findings), Phil Schmid MCP Best Practices, SWE-grep: RL-Specialized Subtask Models
+Cohesion: 0.11
+Nodes (18): 1.10 Fine-Tuning & Model Optimization, 1.3 Dedup & Content Filtering, 1.5 Web Scraping & Data Extraction, 1.9 Structured Output & Tool Design, Autoresearch Pattern (Karpathy/Lutke), CLI vs MCP — 94% Token Savings, Context Mode MCP — 98% Context Reduction, Cross-Agent Deduplication Gap (Self-Identified) (+10 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 0.17
-Nodes (12): 3.1 EIC / Topic Selection, 3.4 Art Generation, 3.5 Engagement / Reply Pipeline, Agent Browser Protocol (ABP), Instruction Compliance Repetition Hack, Lightpanda Browser — 11x Faster, 9x Less Memory, Luma Agents: Unified Creative Intelligence, PART 3: SOCIAL MEDIA PIPELINE (65+ Findings) (+4 more)
+Cohesion: 0.09
+Nodes (22): 3.1 EIC / Topic Selection, 3.3 Critics / Quality Review, 3.4 Art Generation, 3.5 Engagement / Reply Pipeline, 3.8 Content Strategy, Agent Browser Protocol (ABP), Blind Validation (Zeroshot Pattern), "Chatbait" Pattern Awareness (+14 more)
 
 ### Community 71 - "Community 71"
-Cohesion: 0.20
-Nodes (6): Tests for expedite()., expedite() returns FAIL verdict (not auto-pass) when agent fails., expedite() returns PASS with per-platform verdicts on success., expedite() returns FAIL when agent returns a raw string instead of dict., expedite() parses JSON from a string result when possible., TestExpedite
+Cohesion: 0.13
+Nodes (20): Model routing — right model for each task.  Haiku for cheap scanning, Sonnet for, _art_director_conceive(), _build_illustrator_prompt(), create_art(), _creative_director_review(), _generate_image(), _get_recent_styles(), _illustrator_generate() (+12 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.16
-Nodes (14): check_code_refs(), check_sections(), _print_section_tree(), Validate all sections have leading paragraphs <= 250 chars., Validate @know comments resolve and require-code-mention is enforced., Print a section tree with indentation., CheckResult, flatten_sections() (+6 more)
+Cohesion: 0.11
+Nodes (13): _mirror_agent_indexes(), _parse_agent_log_frontmatter(), Extract YAML frontmatter fields from an agent log markdown file., Generate _index.md for each agent folder and a top-level agents index.      Scan, Tests for _mirror_agent_indexes and _parse_agent_log_frontmatter., If agents/ doesn't exist yet, mirror is a no-op., Per-agent _index.md is generated from agent log files., Top-level agents/_index.md lists all agent folders. (+5 more)
 
 ### Community 73 - "Community 73"
 Cohesion: 0.15
@@ -747,16 +759,16 @@ Cohesion: 0.18
 Nodes (7): Verify that skippable phases don't stop pipeline, critical ones do., Phase.INIT is skippable — failure should not stop the pipeline., Phase.RESEARCH is critical — failure should stop the pipeline., Phase.SYNTHESIS is critical — verify it stops pipeline on failure., Multiple non-critical phases fail — pipeline still completes., Verify _send_alert is called when a critical phase fails., TestErrorRecovery
 
 ### Community 77 - "Community 77"
-Cohesion: 0.20
-Nodes (5): conn(), Tests for the knowledge-graph schema (kg/schema.py).  Pure-SQLite, no network/mo, _tables(), test_creates_all_kg_tables(), test_idempotent()
+Cohesion: 0.15
+Nodes (10): init_kg_schema(), open_kg(), Knowledge-graph schema: bi-temporal entities, aliases, edges, communities.  Tabl, Create all kg_* tables and indexes. Idempotent; safe to call repeatedly., Open memory.db (WAL + foreign keys + full memory schema) with the KG     tables, conn(), Tests for the knowledge-graph schema (kg/schema.py).  Pure-SQLite, no network/mo, _tables() (+2 more)
 
 ### Community 78 - "Community 78"
-Cohesion: 0.17
-Nodes (14): CodeRef, _parse_rg_output(), Pure algorithms for knowledge graph operations. No file I/O.  Provides: section, A resolved wiki-link reference., A @know comment found in Python source., Scan Python source files for # @know: [[target]] comments.      Tries ripgrep fi, Try scanning with ripgrep. Returns None if rg unavailable., Parse ripgrep output lines: path:line:content. (+6 more)
+Cohesion: 0.07
+Nodes (34): build_suffix_index(), CheckResult, CodeRef, has_require_code_mention(), _parse_rg_output(), Pure algorithms for knowledge graph operations. No file I/O.  Provides: section, Build a case-insensitive suffix index from slug → path mappings.      For each s, A resolved wiki-link reference. (+26 more)
 
 ### Community 79 - "Community 79"
-Cohesion: 0.19
-Nodes (13): open_db(), Context manager for database connections. Auto-closes on exit., acquire_lock(), JsonFormatter, load_active_users(), main(), Send pipeline summary to Slack #mindpattern-approvals., Set up dual logging: human-readable to stderr + JSONL to file. (+5 more)
+Cohesion: 0.17
+Nodes (15): open_db(), Context manager for database connections. Auto-closes on exit., get_stats(), Compute and return database statistics.      Args:         db: SQLite connection, acquire_lock(), JsonFormatter, load_active_users(), main() (+7 more)
 
 ### Community 80 - "Community 80"
 Cohesion: 0.15
@@ -807,8 +819,8 @@ Cohesion: 0.18
 Nodes (11): _assign_rss_item(), _assign_to_agents(), Route an RSS item to the right agent(s) based on source name., Route preflight items to agents by source and topic., Run all preflight sources in parallel, dedup-annotate, assign to agents.      Re, run_all(), fetch(), Preflight: YouTube videos from key AI channels via yt-dlp. (+3 more)
 
 ### Community 92 - "Community 92"
-Cohesion: 0.17
-Nodes (16): keychain_lookup(), Report validation and newsletter email delivery via Resend API.  Ported from v2, Strip junk lines before first heading. Restore backup if report is tiny.      Re, Look up a password from macOS Keychain via security CLI.      Returns the passwo, Send newsletter email via Resend API using requests.      Sends BOTH HTML and pl, Start a traces agent_run if connection is available. Returns agent_run_id., Complete a traces agent_run., Log an event to traces.db. (+8 more)
+Cohesion: 0.22
+Nodes (12): keychain_lookup(), Report validation and newsletter email delivery via Resend API.  Ported from v2, Look up a password from macOS Keychain via security CLI.      Returns the passwo, Send newsletter email via Resend API using requests.      Sends BOTH HTML and pl, Start a traces agent_run if connection is available. Returns agent_run_id., Complete a traces agent_run., Log an event to traces.db., send_newsletter() (+4 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.13
@@ -827,24 +839,24 @@ Cohesion: 0.14
 Nodes (6): post_line(), M0 Task 15 — Fly→Mac journal.  Phone posts made through the Fly bot must land in, The receipt the ingest claims is the same key the pipeline claims         before, TestIngestLines, TestJournalWriter, TestPullAndIngest
 
 ### Community 97 - "Community 97"
-Cohesion: 0.04
-Nodes (44): datetime, failure_categories(), failures_for_date(), Failure lesson storage — inspired by RetroAgent pattern.  Stores what went wrong, Count failures by category over the last N days.      Args:         db: Database, Store a failure lesson.      Args:         db: Database connection.         run_, Get recent failure lessons, optionally filtered by category.      Args:, Get all failure lessons for a specific run date.      Args:         db: Database (+36 more)
+Cohesion: 0.06
+Nodes (35): datetime, correction_stats(), Editorial correction storage — inspired by DPO preference learning.  Stores befo, Store an editorial correction.      Args:         db: Database connection., Get recent editorial corrections, optionally filtered by platform.      Args:, Stats on editorial corrections over the last N days.      Args:         db: Data, recent_corrections(), store_correction() (+27 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.12
 Nodes (16): 1. Top 5 Stories Today, 2. Section Deep Dives, 3. Skills of the Day, 4. Feedback Footer, Agent: Newsletter Writer, Banned Phrases — NEVER use these:, Banned Words — NEVER use these:, Content Philosophy: (+8 more)
 
 ### Community 99 - "Community 99"
-Cohesion: 0.09
-Nodes (26): ArgumentParser, build_parser(), cmd_check_duplicate(), cmd_get_exemplars(), cmd_recent_corrections(), cmd_recent_posts(), cmd_search_findings(), _get_db() (+18 more)
+Cohesion: 0.19
+Nodes (16): ArgumentParser, build_parser(), cmd_check_duplicate(), cmd_get_exemplars(), cmd_recent_corrections(), cmd_recent_posts(), cmd_search_findings(), _get_db() (+8 more)
 
 ### Community 100 - "Community 100"
 Cohesion: 0.12
 Nodes (16): Architecture Decisions, Checkpoint A: full suite green incl. contract tests · baseline tagged `pre-m0` in git, Checkpoint B: suite green · `core/` at 100% test coverage (it's small; it's the foundation), Checkpoint C: deploy to Fly · contract tests `--live` green · mindpattern.ai site fully working · DB no longer downloadable, Checkpoint D: suite green · manual phone test: message → drafts → "wait" does NOT post → "skip" works → approve posts exactly once, Checkpoint M0 complete (= spec success criteria), Estimated Effort, Implementation Plan: M0 — Foundation (+8 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.29
-Nodes (4): HarnessHandler, Handle messages in the #mp-harness channel., list_tickets(), List tickets, optionally filtered by status.
+Cohesion: 0.13
+Nodes (19): _get_distinct_domains(), get_skill_detail(), get_skills_list(), get_summary_stats(), Skills Browser tab -- browse skills discovered by research agents in memory.db., Query a single skill by id., Return summary stats: total skills, unique domains, date range., Return Chart.js-native data for skills count grouped by domain (horizontal bar). (+11 more)
 
 ### Community 102 - "Community 102"
 Cohesion: 0.12
@@ -855,8 +867,8 @@ Cohesion: 0.12
 Nodes (10): Tests for CORS middleware configuration on dashboard app.  Verifies that CORSMid, Requests from https://mindpattern.fly.dev get proper CORS headers., OPTIONS preflight from allowed origin returns access-control headers., A normal GET from the allowed origin includes the CORS origin header., Preflight response advertises Authorization and Content-Type., Requests from unknown origins must NOT receive CORS allow headers., OPTIONS from a disallowed origin must not echo that origin back., GET from a disallowed origin must not include allow-origin for it. (+2 more)
 
 ### Community 104 - "Community 104"
-Cohesion: 0.02
-Nodes (64): load_global_config(), Load global config from config.json., NewsletterEvaluator, Post-synthesis newsletter quality evaluation.  All checks are deterministic Pyth, Score a newsletter on coverage, dedup, sources, actionability, length, and topic, Takes memory module db connection for similarity search.          Args:, _get_git_hash(), hash_file() (+56 more)
+Cohesion: 0.03
+Nodes (48): load_global_config(), NewsletterEvaluator, Score a newsletter on coverage, dedup, sources, actionability, length, and topic, Takes memory module db connection for similarity search.          Args:, PromptTracker, Check if any recent prompt changes caused quality regression.          For each, Fall back to traces.db quality tables if prompt_tracker has no snapshots., Track prompt file versions and detect performance regressions.      Uses the pro (+40 more)
 
 ### Community 105 - "Community 105"
 Cohesion: 0.12
@@ -899,8 +911,8 @@ Cohesion: 0.12
 Nodes (10): Tests for memory_cli.py — the agent-facing CLI for memory queries.  Tests cover:, Every subcommand should respond to --help with returncode 0., check-duplicate requires --anchor., An unknown subcommand should produce non-zero exit code., search-findings should handle missing DB gracefully., When the DB file doesn't exist, exit 0 or 1 (not a crash)., TestHelpFlags, TestInvalidCommand (+2 more)
 
 ### Community 115 - "Community 115"
-Cohesion: 0.04
-Nodes (41): _enabled_platforms(), Phase 6: Learn (Python + one Sonnet call)., Execute phases starting from the given phase., Build a safe learnings.md when the LLM updater fails., Phase 7: Social (SocialPipeline).          EIC picks topic → brief → art → write, Phase 8: Engagement.          Find conversations → draft replies → approve → pos, Phase 9: Sync to Fly.io.          Bundle memory.db + reports → upload → dashboar, Map phases to their handler methods. (+33 more)
+Cohesion: 0.12
+Nodes (9): Phase 6: Learn (Python + one Sonnet call)., Build a safe learnings.md when the LLM updater fails., Phase 1: Init (Python only, no LLM)., Process unprocessed user feedback into preference weight changes.          Queri, Phase 2: Trend Scan (deterministic, from preflight data).          Runs prefligh, Phase 3: Research (13x Sonnet, parallel)., Phase 4: Synthesis (Opus, two passes).          Pass 1: Story selection from sum, log_event() (+1 more)
 
 ### Community 116 - "Community 116"
 Cohesion: 0.18
@@ -936,7 +948,7 @@ Nodes (14): Architecture, Channel Handlers, Daily Lifecycle, File Map, MindPatte
 
 ### Community 124 - "Community 124"
 Cohesion: 0.06
-Nodes (37): cluster_findings(), _cluster_label(), compile_knowledge(), fetch_recent_findings(), _format_findings_for_prompt(), generate_index(), match_clusters_to_concepts(), Pick a representative label for a cluster (highest importance finding title). (+29 more)
+Nodes (35): cluster_findings(), _cluster_label(), compile_knowledge(), _extract_concept_title(), fetch_recent_findings(), generate_index(), match_clusters_to_concepts(), Read the title from a concept page's frontmatter. (+27 more)
 
 ### Community 125 - "Community 125"
 Cohesion: 0.05
@@ -947,8 +959,8 @@ Cohesion: 0.20
 Nodes (11): make_entry(), Strip control characters and known prompt injection delimiters from external con, Create a standardized preflight entry dict., _sanitize_external_text(), fetch(), Transform rss-fetch.py output item to preflight entry., Fetch RSS items and return as preflight entries., _transform() (+3 more)
 
 ### Community 127 - "Community 127"
-Cohesion: 0.11
-Nodes (15): build_agent_prompt(), get_agent_list(), Get the list of active agents and their directory.      Checks agent-overrides f, Build the prompt for a single research agent.      Structure (IFScale: critical, Tests for identity file loading in agent prompts., Without identity_dir, falls back to soul_path, Verify --disallowedTools Skill is in the command, vault soul.md should override verticals SOUL.md (+7 more)
+Cohesion: 0.21
+Nodes (6): get_agent_list(), Get the list of active agents and their directory.      Checks agent-overrides f, get_agent_list() returns agents from verticals directory., build_agent_prompt() includes all expected sections., TestBuildAgentPrompt, TestGetAgentList
 
 ### Community 128 - "Community 128"
 Cohesion: 0.13
@@ -975,8 +987,8 @@ Cohesion: 0.14
 Nodes (11): claim(), content_key(), outbound_allowed(), Idempotency receipts + the outbound kill switch.  Every irreversible external ac, False when the global kill switch is set., Stable short hash for content-scoped action keys., Claim an action. True exactly once per key; False on repeat., Manual override: drop a receipt so the action can run again. (+3 more)
 
 ### Community 134 - "Community 134"
-Cohesion: 0.12
-Nodes (19): FastAPI dashboard app factory — Research Agent Dashboard., enforce_auth(), get_token_hash(), is_public_route(), _pipeline_secret_valid(), Bearer token authentication for the dashboard API.  Generate a token: python3 -c, Get the API token hash from environment., Dependency for private endpoints. Raises 401 if token invalid. (+11 more)
+Cohesion: 0.11
+Nodes (21): index(), FastAPI dashboard app factory — Research Agent Dashboard., Serve the full dashboard page with Pipeline Status as the default tab., enforce_auth(), get_token_hash(), is_public_route(), _pipeline_secret_valid(), Bearer token authentication for the dashboard API.  Generate a token: python3 -c (+13 more)
 
 ### Community 135 - "Community 135"
 Cohesion: 0.14
@@ -987,8 +999,8 @@ Cohesion: 0.22
 Nodes (5): find_sections(), _is_subsequence(), Search section IDs with 5-tier matching.      Tiers:     1. Exact match on full, Check if needle segments appear in order within haystack (substring match)., TestFindSections
 
 ### Community 137 - "Community 137"
-Cohesion: 0.18
-Nodes (6): findings_fts was dead code — never queried (M0 task 17)., Compound index idx_findings_date_agent exists., Calling init twice doesn't error., get_db() creates a valid connection with WAL mode and foreign keys., Schema initialization creates all expected tables., TestDB
+Cohesion: 0.12
+Nodes (11): _get_git_hash(), hash_file(), Track prompt changes and detect performance regressions.  Each prompt file gets, Record the current version of a prompt file.          Args:             file_pat, Rollback a prompt file to a previous version using git.          Finds the git c, Record a rollback event in prompt_tracker., SHA256 hash of a file's contents.      Args:         path: Path to the file., Get the most recent git commit hash for a file.      Args:         path: Absolut (+3 more)
 
 ### Community 138 - "Community 138"
 Cohesion: 0.20
@@ -1012,11 +1024,11 @@ Nodes (13): If score >= 7 AND tests pass: Create PR, If score < 7 OR tests fail:
 
 ### Community 143 - "Community 143"
 Cohesion: 0.04
-Nodes (33): in_memory_db(), Tests for the PolicyEngine (policies/engine.py).  Thorough validation of researc, Missing 'summary' field is caught., Missing 'source_url' field is caught., Invalid importance value (not high/medium/low) is caught., More than 15 findings triggers an error., Zero findings in the output dict triggers an error., Prompt injection 'ignore previous instructions' is detected. (+25 more)
+Nodes (30): in_memory_db(), Tests for the PolicyEngine (policies/engine.py).  Thorough validation of researc, PolicyEngine.validate_social_post with social.json., X post exactly at 280 chars passes., Bluesky post at 301 graphemes fails., Bluesky post at 300 graphemes passes, 301 fails., LinkedIn max_chars is 3000; 3001 fails., game-changer' is caught regardless of case. (+22 more)
 
 ### Community 144 - "Community 144"
-Cohesion: 0.08
-Nodes (33): complete_agent_run(), create_agent_run(), create_alert(), get_agent_history(), get_agent_scorecard(), log_agent_metrics(), Insert a new agent_runs record and return its id.      ID format: {pipeline_run_, Mark an agent_runs record as completed (or failed).      Output is truncated to (+25 more)
+Cohesion: 0.07
+Nodes (45): complete_agent_run(), create_agent_run(), create_alert(), create_pipeline_run(), get_agent_history(), get_agent_run(), get_agent_scorecard(), get_pipeline_run() (+37 more)
 
 ### Community 146 - "Community 146"
 Cohesion: 0.18
@@ -1027,12 +1039,12 @@ Cohesion: 0.14
 Nodes (4): Full reasoning is preserved — no truncation., JSON findings output is pretty-printed in code fence., Tool results use collapsible details tags., TestFormatAgentLog
 
 ### Community 148 - "Community 148"
-Cohesion: 0.20
-Nodes (7): Topic template renders findings with daily links., Topic template links to source pages., Topic template links to related topics., Topic template renders gracefully with empty collections., Extract all [[wiki-links]] from rendered text., TestTopicTemplate, _wiki_links()
+Cohesion: 0.16
+Nodes (8): Topic template renders findings with daily links., Topic template links to source pages., Topic template links to related topics., Topic template renders gracefully with empty collections., Source template links to topic pages., Extract all [[wiki-links]] from rendered text., TestTopicTemplate, _wiki_links()
 
 ### Community 149 - "Community 149"
-Cohesion: 0.17
-Nodes (7): Tests for deterministic_validate()., Posts >300 graphemes are flagged for Bluesky., Posts >300 graphemes are flagged for Bluesky., Banned words from social.json are caught., Em dash character is caught., A clean, short post with URL passes validation., TestDeterministicValidate
+Cohesion: 0.12
+Nodes (12): X (Twitter) API v2 client using OAuth1 via requests_oauthlib., Upload media via v1.1 media/upload. Returns media_id_string or None., Post a tweet, optionally with an image.          Returns {success, url, id, erro, Reply to a tweet by ID.          Returns {success, url, id, error}., Follow a user by their X user ID.          Returns {success, already_following,, Search recent tweets.          Returns list of {id, text, author_id, author_name, XClient, XClient.post() sends a POST to /tweets with the text payload. (+4 more)
 
 ### Community 150 - "Community 150"
 Cohesion: 0.15
@@ -1083,8 +1095,8 @@ Cohesion: 0.15
 Nodes (13): Agentforce, Decagon, Devin / Cursor, Glean, Harvey, HubSpot Breeze, Intercom Fin, Ironclad / Spellbook (+5 more)
 
 ### Community 163 - "Community 163"
-Cohesion: 0.20
-Nodes (8): dispatch_research_agents(), get_agent_skill_path(), Resolve the skill file path for an agent (override or vertical)., Dispatch all research agents in parallel via concurrent.futures.      Args:, dispatch_research_agents runs agents concurrently and collects results., dispatch_research_agents handles some agents failing while others succeed., TestDispatchResearchAgentsParallel, TestDispatchResearchAgentsPartialFailure
+Cohesion: 0.12
+Nodes (14): _build_posts_data(), Transform social_posts rows for templates., db(), Tests for memory/mirror.py — SQLite-to-Obsidian mirror generation.  Uses a tempo, Create a fresh in-memory database with full schema initialization., Return a temporary vault directory., generate_mirrors() runs archive_old_entries() on decisions.md., Database pre-loaded with representative test data across all tables. (+6 more)
 
 ### Community 164 - "Community 164"
 Cohesion: 0.25
@@ -1123,8 +1135,8 @@ Cohesion: 0.17
 Nodes (11): Final, ╔══ MAJOR CHECKPOINT — Variant B wins? ══╗, Open questions before `/build`, Phase 0 — Prep, Phase 1 — Foundations, Phase 2 — Extraction, Phase 3 — Replay benchmark, Phase 4 — Live integration foundations (+3 more)
 
 ### Community 174 - "Community 174"
-Cohesion: 0.36
-Nodes (3): Resolve a wiki-link reference to a file path and optional section.      Args:, resolve_ref(), TestResolveRef
+Cohesion: 0.20
+Nodes (11): kill_process_group(), Shared process boundary for Claude CLI calls., Kill a Popen-owned process group, falling back to the direct child., Run one Claude CLI process in a killable process group., run_claude_process(), Run one claude CLI subprocess attempt and classify the outcome., _run_agent_attempt(), Popen (+3 more)
 
 ### Community 175 - "Community 175"
 Cohesion: 0.12
@@ -1179,8 +1191,8 @@ Cohesion: 0.20
 Nodes (10): 1.1 Fix Critical Security Issues, 1.2 Set Up v3 Project Structure, 1.3 Migrate memory.py to Module, 6.1 Integrate Scrapling, 6.2 Integrate Lightpanda (if browser scraping needed), 6.3 Fix RSS Feeds, 6.4 Fix Reddit/X Monitoring, Epic 1: Foundation (Week 1-2) (+2 more)
 
 ### Community 188 - "Community 188"
-Cohesion: 0.13
-Nodes (11): Tests for the humanizer agent upgrade — file existence and integration., The agent file should NOT have a {voice_guide} placeholder — voice is     inline, _humanize() should include voice guide content in the prompt., _humanize() should pass agents/humanizer.md as system_prompt_file., On non-zero exit code, return the original content unchanged., On empty output, return the original content unchanged., test_humanize_loads_voice_guide(), test_humanize_returns_original_on_empty_output() (+3 more)
+Cohesion: 0.15
+Nodes (13): _humanize(), Remove AI writing patterns via one Sonnet call with voice.md + 24 patterns., Tests for the humanizer agent upgrade — file existence and integration., The agent file should NOT have a {voice_guide} placeholder — voice is     inline, _humanize() should include voice guide content in the prompt., _humanize() should pass agents/humanizer.md as system_prompt_file., On non-zero exit code, return the original content unchanged., On empty output, return the original content unchanged. (+5 more)
 
 ### Community 189 - "Community 189"
 Cohesion: 0.33
@@ -1203,8 +1215,8 @@ Cohesion: 0.39
 Nodes (3): Replies outside the thread or from non-owners are never approvals., Run one poll iteration against a mocked Slack replies API., TestThreadScopedOwnerOnlyPolling
 
 ### Community 194 - "Community 194"
-Cohesion: 0.22
-Nodes (8): _dry_run_finding(), Build one deterministic placeholder finding for dry-run orchestration., Run a single claude -p call for one agent, retrying transient API errors.      T, run_single_agent(), run_single_agent handles subprocess.TimeoutExpired., run_single_agent retries transient API errors, not other failures., TestRunSingleAgentRetry, TestRunSingleAgentTimeout
+Cohesion: 0.06
+Nodes (39): _agent_env(), build_agent_prompt(), dispatch_research_agents(), _dry_run_enabled(), _dry_run_finding(), _dry_run_prompt_output(), _finding_quality_score(), get_agent_skill_path() (+31 more)
 
 ### Community 195 - "Community 195"
 Cohesion: 0.12
@@ -1215,16 +1227,16 @@ Cohesion: 0.21
 Nodes (11): get_run_detail(), get_run_list(), Run History tab — browse historical pipeline runs and drill into agent detail., Return run history list with optional filters., Return the date string if it matches YYYY-MM-DD format, else None., Query pipeline_runs for the last 30 days with agent count and duration., Query a specific pipeline run and its agent runs., Return agent detail view for a specific pipeline run. (+3 more)
 
 ### Community 197 - "Community 197"
-Cohesion: 0.13
-Nodes (14): _fly_sftp_put(), Upload a single file via flyctl sftp., data_tree(), Tests for orchestrator/sync.py — Fly.io synchronization.  All subprocess calls a, Create a realistic data/reports directory tree.      Returns dict with keys: dat, Tests for _fly_sftp_put() helper., Returns True on successful SFTP put., Returns False on failed SFTP put. (+6 more)
+Cohesion: 0.24
+Nodes (7): _fly_sftp_put(), Upload a single file via flyctl sftp., Tests for _fly_sftp_put() helper., Returns True on successful SFTP put., Returns False on failed SFTP put., Returns False on exception., TestFlySftpPut
 
 ### Community 198 - "Community 198"
 Cohesion: 0.24
 Nodes (7): _put_and_verify(), SFTP-upload a file and confirm it landed at the expected byte size.      Retries, Tests for verified fallback SFTP uploads., Retries once when the first remote size check is short., Returns False when the remote file never reaches the expected size., A failed SFTP command cannot pass based on a stale remote file size., TestPutAndVerify
 
 ### Community 199 - "Community 199"
-Cohesion: 0.19
-Nodes (8): #mp-skills handler: Paste a skill tip → post to Bluesky + LinkedIn.  Drop a skil, Load voice.md for humanizer., Load social-config.json., Take a raw skill tip, create platform-specific drafts., Post to approved platforms., Handle messages in #mp-skills — skill tip to social post., Process a skill tip message., SkillsHandler
+Cohesion: 0.23
+Nodes (7): Load voice.md for humanizer., Load social-config.json., Take a raw skill tip, create platform-specific drafts., Post to approved platforms., Handle messages in #mp-skills — skill tip to social post., Process a skill tip message., SkillsHandler
 
 ### Community 200 - "Community 200"
 Cohesion: 0.20
@@ -1247,16 +1259,16 @@ Cohesion: 0.20
 Nodes (10): 1. Salesforce Agentforce, Build path, Declarative unit — Topics + Actions + Instructions, Deployment trace — "bump this account to Gold", Grounding — Data Cloud hybrid search, Newer pieces, Runtime — Atlas Reasoning Engine, Source control (+2 more)
 
 ### Community 205 - "Community 205"
-Cohesion: 0.19
-Nodes (8): #mp-tips handler: Paste a tip → post as "Tayler'd Tip!" to Bluesky + LinkedIn., Load voice.md for humanizer., Load social-config.json., Take a raw tip, create platform-specific drafts., Post to approved platforms., Handle messages in #mp-tips — tip to social post as Tayler'd Tip!, Process a tip message., TipsHandler
+Cohesion: 0.12
+Nodes (9): generate_mirrors() creates daily/2026-03-15.md., generate_mirrors() creates topic files based on agent names., generate_mirrors() creates source files from finding URLs., generate_mirrors() creates social/posts.md., generate_mirrors() creates social/corrections.md., generate_mirrors() creates social/engagement-log.md., generate_mirrors() creates people/engaged-authors.md., generate_mirrors() creates _index.md in each subfolder. (+1 more)
 
 ### Community 206 - "Community 206"
 Cohesion: 0.17
 Nodes (7): Tests for ApprovalGateway._format_engagement_message()., Header includes the number of candidates., Each candidate is numbered., Both original content and our reply are shown., Reply instructions appear at the end., Empty candidates list produces header with 0 count., TestFormatEngagementMessage
 
 ### Community 207 - "Community 207"
-Cohesion: 0.33
-Nodes (6): 1.5 Web Scraping & Data Extraction, CLI vs MCP — 94% Token Savings, Context Mode MCP — 98% Context Reduction, Google LangExtract — Open-Source Document Extraction, Scrapling v0.4 — Adaptive Web Scraping with MCP (15.2K stars), WebMCP — 89% Token Efficiency Over Screenshot Automation
+Cohesion: 0.14
+Nodes (11): _make_memory_db(), _make_traces_conn(), memory_db(), In-memory SQLite database mimicking the memory module schema., In-memory traces DB with all required tables., Create an in-memory SQLite DB with the tables runner expects., Verify ResearchPipeline.__init__ loads config, connects DB, and     sets up all, Every non-terminal, non-COMPLETED/FAILED phase has a handler. (+3 more)
 
 ### Community 208 - "Community 208"
 Cohesion: 0.40
@@ -1271,8 +1283,8 @@ Cohesion: 0.20
 Nodes (5): Daily template renders with full agent and findings data., Daily template renders gracefully with empty collections., Daily template output starts with valid YAML frontmatter., Daily template includes wiki-links to topics and sources., TestDailyTemplate
 
 ### Community 213 - "Community 213"
-Cohesion: 0.17
-Nodes (6): Source template renders URL and topic links., Source template quotes URL in frontmatter (contains colons)., Source template links to topic pages., Source template links to daily logs via findings., Source template renders gracefully with empty collections., TestSourceTemplate
+Cohesion: 0.20
+Nodes (5): Source template renders URL and topic links., Source template quotes URL in frontmatter (contains colons)., Source template links to daily logs via findings., Source template renders gracefully with empty collections., TestSourceTemplate
 
 ### Community 214 - "Community 214"
 Cohesion: 0.31
@@ -1304,7 +1316,7 @@ Nodes (7): Tests for ApprovalGateway._slack_approval() with mocked urllib., Slac
 
 ### Community 221 - "Community 221"
 Cohesion: 0.22
-Nodes (8): _acquire_mutex(), main(), MindPattern Slack bot — Socket Mode daemon.  Listens to messages across register, Entry point for the Slack bot daemon., Configure structured logging for the bot daemon., Check if the daily pipeline is running. Returns True if safe to proceed., _setup_logging(), Allow running the bot with: python3 -m slack_bot
+Nodes (7): _acquire_mutex(), main(), MindPattern Slack bot — Socket Mode daemon.  Listens to messages across register, Start the Socket Mode connection and listen for events., Entry point for the Slack bot daemon., Check if the daily pipeline is running. Returns True if safe to proceed., Allow running the bot with: python3 -m slack_bot
 
 ### Community 222 - "Community 222"
 Cohesion: 0.42
@@ -1347,8 +1359,8 @@ Cohesion: 0.25
 Nodes (5): Tests for ApprovalGateway.request_engagement_approval()., Empty candidates list returns without calling Slack., Selective number reply approves only those candidates., When Slack times out, returns empty with timeout reason., TestRequestEngagementApproval
 
 ### Community 232 - "Community 232"
-Cohesion: 0.33
-Nodes (6): 3.3 Critics / Quality Review, Blind Validation (Zeroshot Pattern), Confidence-Aware Self-Consistency — 80% Fewer CoT Tokens, PCAS Deterministic Policy Enforcement, Self-Reflection Security Prompting, TDD Principles for Content Review
+Cohesion: 0.15
+Nodes (7): Daily file wiki-links to topic files., Daily file wiki-links to source files., Topic file wiki-links back to daily log., Source file includes finding history., All generated files use LF line endings only (no CRLF)., Posts file includes gate outcome data., TestContentCorrectness
 
 ### Community 233 - "Community 233"
 Cohesion: 0.36
@@ -1427,28 +1439,32 @@ Cohesion: 0.32
 Nodes (7): heartbeat_path(), is_stale(), Bot liveness heartbeat — written by the bot, read by /healthz.  The 2026-06-11 o, Resolve the heartbeat file path (env override > Fly volume > repo)., Update the heartbeat mtime., True when the heartbeat file is missing or older than stale_after., touch()
 
 ### Community 252 - "Community 252"
-Cohesion: 0.25
-Nodes (5): Tests for _build_writer_agent_prompt()., Prompt includes the brief JSON and voice guide content., When iteration > 1, prompt includes critic feedback section., Prompt tells agent where to write the draft file., TestBuildWriterAgentPrompt
+Cohesion: 0.07
+Nodes (36): #mp-posts handler: idea or URL → full social post pipeline → approve → publish., count_graphemes(), Check a social media post against social.json rules.          Args:, Count user-perceived characters (grapheme clusters) in text., Fallback: approximate grapheme count with len()., _build_writer_agent_prompt(), _load_voice_guide(), Per-platform writing orchestration with the Ralph Loop.  Writer <-> Critic feedb (+28 more)
+
+### Community 253 - "Community 253"
+Cohesion: 0.18
+Nodes (10): Phase 9: Sync to Fly.io.          Bundle memory.db + reports → upload → dashboar, Mark the day's Fly sync as confirmed-complete.      Mirrors the deliver-phase ra, write_synced_marker(), data_tree(), Tests for orchestrator/sync.py — Fly.io synchronization.  All subprocess calls a, Create a realistic data/reports directory tree.      Returns dict with keys: dat, Writes the sync-complete marker under MP_RAN_MARKER_DIR., Return an _fly_ssh responder that forces bundle fallback but verifies DB uploads (+2 more)
 
 ### Community 254 - "Community 254"
 Cohesion: 0.22
 Nodes (5): Migrate quality_history from v1 schema if needed.          v1 stored one row per, Takes traces.db connection.          Args:             traces_conn: sqlite3.Conn, Return column names for a table, or None if it doesn't exist., Create monitoring-specific tables if they don't exist.          Also migrates ta, Migrate agent_metrics from v1 schema if needed.          v1 had ``cost REAL`` in
 
 ### Community 255 - "Community 255"
-Cohesion: 0.40
-Nodes (5): 2.6 Multi-Agent Deliberation for Synthesis, Deliberative Collective Intelligence Framework, Deterministic Pipeline Orchestration (McKinsey), Grok 4.20 Multi-Agent-by-Default, Self-Healing Router — 93% Fewer LLM Calls
+Cohesion: 0.24
+Nodes (7): get_recent_entries(), Return the last *n* ``## ``-headed entries, most recent first.      Args:, get_recent_entries returns the last N entries, most recent first., get_recent_entries returns all entries when fewer than N exist., get_recent_entries returns [] for a nonexistent file., get_recent_entries defaults to n=7., TestGetRecentEntries
 
 ### Community 256 - "Community 256"
 Cohesion: 0.40
 Nodes (3): Corrections template renders before/after pairs., Corrections template output has valid frontmatter., TestCorrectionsTemplate
 
 ### Community 257 - "Community 257"
-Cohesion: 0.25
-Nodes (5): Ensure validate_report does not strip footer content., validate_report must not remove the feedback footer., Duplicate h1 preamble from synthesis agent is stripped., Junk lines before the heading are stripped; footer is kept., TestValidateReportFooter
+Cohesion: 0.22
+Nodes (8): Strip junk lines before first heading. Restore backup if report is tiny.      Re, validate_report(), ValidationResult, Ensure validate_report does not strip footer content., validate_report must not remove the feedback footer., Duplicate h1 preamble from synthesis agent is stripped., Junk lines before the heading are stripped; footer is kept., TestValidateReportFooter
 
 ### Community 258 - "Community 258"
-Cohesion: 0.50
-Nodes (4): 1.3 Dedup & Content Filtering, Cross-Agent Deduplication Gap (Self-Identified), Skills Analysis: 46.3% Duplicate Rate, SkillsBench: Curated Content Beats Auto-Generated
+Cohesion: 0.18
+Nodes (6): Save a checkpoint, then load it back and verify phase + state_data., Load on a nonexistent run returns (None, None)., Saving the same run+phase again updates state_data via upsert., When multiple phases are saved, load returns the most recent one., Save without state_data stores None, load returns (phase, None)., TestSaveAndLoad
 
 ### Community 259 - "Community 259"
 Cohesion: 0.25
@@ -1483,8 +1499,8 @@ Cohesion: 0.29
 Nodes (7): Current Problems, Epic 7: Fly.io Sync Rebuild (Week 7-8), Integration with run.py, Key Improvements Over Current, Redesigned Sync, Server-Side Fix: No More Restart Dependency, What About Real-Time Sync?
 
 ### Community 267 - "Community 267"
-Cohesion: 0.17
-Nodes (11): 2.2 Content Prioritization & Ranking, CROSS-CUTTING THEMES, How to Use This Document, PART 2: SYNTHESIS & NEWSLETTER GENERATION (50 Findings), Self-Applicable Research Catalog, Self-Consistency for Top 5 Selection, Top 10 Most Impactful Findings Across All Categories, Top 10 Research Papers to Implement (+3 more)
+Cohesion: 0.29
+Nodes (6): CROSS-CUTTING THEMES, How to Use This Document, Self-Applicable Research Catalog, Top 10 Most Impactful Findings Across All Categories, Top 10 Research Papers to Implement, Top 10 Tools/Repos for Direct Integration
 
 ### Community 268 - "Community 268"
 Cohesion: 0.29
@@ -1515,8 +1531,8 @@ Cohesion: 0.50
 Nodes (4): 3.6 Account Safety, Multi-Turn Jailbreak Detection (RLM-JB) — 92.5-98% Recall, Two-Stage Jailbreak Defense (Constitutional Classifiers++), X Bot Crackdown
 
 ### Community 275 - "Community 275"
-Cohesion: 0.47
-Nodes (3): infer_session_title(), Infer a short session title from the user's first message., TestInferSessionTitle
+Cohesion: 0.20
+Nodes (6): On Fly/Linux, secrets come from env vars instead of macOS Keychain., Local runs can still use env vars when Keychain has no matching item., Tests for keychain_get()., keychain_get raises RuntimeError when key is not found., keychain_get returns stripped stdout on success., TestKeychainGet
 
 ### Community 277 - "Community 277"
 Cohesion: 0.67
@@ -1563,12 +1579,12 @@ Cohesion: 0.33
 Nodes (6): 1.8 Specific Agent Source Gaps, GitHub Query Bug Fix, Reddit API Integration, Three-Pass Query Methodology for HN, Twitter/X Monitoring, YouTube Data API
 
 ### Community 288 - "Community 288"
-Cohesion: 0.33
-Nodes (6): 2.3 Quality Evaluation (LLM-as-Judge), Black-Box Reliability Certification, Braintrust LLM Evaluation CI/CD, NeMo Evaluator LLM-as-Judge Pipeline, Post-Synthesis Evaluation Agent, Reasoning LLMs-as-Judges Can Be Gamed
+Cohesion: 0.12
+Nodes (16): 2.2 Content Prioritization & Ranking, 2.3 Quality Evaluation (LLM-as-Judge), 2.6 Multi-Agent Deliberation for Synthesis, Black-Box Reliability Certification, Braintrust LLM Evaluation CI/CD, Deliberative Collective Intelligence Framework, Deterministic Pipeline Orchestration (McKinsey), Grok 4.20 Multi-Agent-by-Default (+8 more)
 
 ### Community 289 - "Community 289"
-Cohesion: 0.40
-Nodes (4): Full-jitter exponential backoff: uniform(0, min(cap, base * 2**attempt)).      F, _retry_delay(), _retry_delay returns a value in [0, min(cap, base*2**attempt)]., TestRetryDelayFullJitter
+Cohesion: 0.22
+Nodes (5): generate_mirrors() handles empty database gracefully., Findings with NULL source_url are handled., Running generate_mirrors() twice produces the same output., Titles with special characters don't break file generation., TestEdgeCases
 
 ### Community 290 - "Community 290"
 Cohesion: 0.29
@@ -1603,8 +1619,8 @@ Cohesion: 0.33
 Nodes (6): 8.1 Observability Schema (traces.db), 8.2 PipelineMonitor Class, 8.3 How It Plugs Into the Pipeline, 8.4 Dashboard Observability Endpoints (Private, auth required), 8.5 What You See, Epic 8: Observability System (Week 6-7)
 
 ### Community 298 - "Community 298"
-Cohesion: 0.15
-Nodes (9): _mock_embed_texts(), Tests for orchestrator/agents.py.  Covers: - _parse_findings() (ticket 2026-04-0, _parse_findings must handle 100K+ char outputs in under 1 second., Return deterministic embeddings where similar titles produce similar vectors., Agent output has prose before and after the JSON block., Research prompts must match the tool boundary enforced by run_single_agent., TestBuildAgentPromptToolBoundary, TestParseFindingsLargeOutputPerformance (+1 more)
+Cohesion: 0.22
+Nodes (3): validate_rate_limits() enforces daily limits., Rate limit is enforced even if only social_posts has records., TestPolicyRateLimits
 
 ### Community 299 - "Community 299"
 Cohesion: 0.33
@@ -1615,8 +1631,8 @@ Cohesion: 0.33
 Nodes (6): 3.2 Writers — Voice & Authenticity, Chain-of-Draft for Writers (70-90% Token Reduction), Claude Writing Style Becoming Ubiquitous, DPO Fine-Tuning for Writing, humanizer Skill (5.2K stars), taste-skill — Fix AI Design Slop (1.2K stars)
 
 ### Community 301 - "Community 301"
-Cohesion: 0.28
-Nodes (5): has_require_code_mention(), Check if markdown file has require-code-mention: true in frontmatter., Strip [[...]] markup for character counting., strip_wiki_links_for_length(), TestFrontmatter
+Cohesion: 0.33
+Nodes (5): _get_owner_user_id(), Configure structured logging for the bot daemon., Get the bot installer's user ID (the owner)., _setup_logging(), WebClient
 
 ### Community 302 - "Community 302"
 Cohesion: 0.33
@@ -1643,8 +1659,8 @@ Cohesion: 0.33
 Nodes (6): 2.7 Content Quality Research, AgentDropoutV2 — Cascading Error Prevention, Codified Context Infrastructure, Longer CoT Negatively Correlated with Accuracy, Promptfoo — LLM Red Teaming, Search More, Think Less
 
 ### Community 308 - "Community 308"
-Cohesion: 0.50
-Nodes (4): 3.8 Content Strategy, "Chatbait" Pattern Awareness, Kleo: $62K MRR Solo Dev LinkedIn Tool, METR Study: AI Adds Most Value on Unfamiliar Tasks
+Cohesion: 0.29
+Nodes (4): topics/_index.md contains links to all topic files., sources/_index.md contains links to all source files., daily/_index.md contains links to daily log files., TestIndexFiles
 
 ### Community 309 - "Community 309"
 Cohesion: 0.33
@@ -1691,8 +1707,8 @@ Cohesion: 0.33
 Nodes (6): Called By, Depends On, Known Patterns, Last Modified By Harness, social/approval.py, What It Does
 
 ### Community 320 - "Community 320"
-Cohesion: 0.04
-Nodes (36): ApprovalsHandler, #mp-approvals handler: pipeline approval gate proxy.  The daily pipeline posts a, Handle messages in #mp-approvals., Acknowledge messages in the approvals channel.          The pipeline's _slack_ap, BaseHandler, Base handler for all Slack channel handlers.  Every channel handler inherits fro, Extract URLs from message text. Handles Slack's <url> formatting., Check if a string is a valid HTTP(S) URL. (+28 more)
+Cohesion: 0.05
+Nodes (33): BaseHandler, Base handler for all Slack channel handlers.  Every channel handler inherits fro, Extract URLs from message text. Handles Slack's <url> formatting., Check if a string is a valid HTTP(S) URL., Read a URL's content using Jina Reader. Returns markdown or None., Base class for all channel handlers., Process an incoming message event. Override in subclasses., Post a message to this handler's channel, optionally in a thread. (+25 more)
 
 ### Community 321 - "Community 321"
 Cohesion: 0.27
@@ -1835,8 +1851,8 @@ Cohesion: 0.40
 Nodes (3): Multiple assistant messages each produce a reasoning block., Tool results from user messages are captured., TestMultiTurnTranscript
 
 ### Community 359 - "Community 359"
-Cohesion: 0.40
-Nodes (3): Posts template renders post list with gate outcomes., Posts template output has valid frontmatter., TestPostsTemplate
+Cohesion: 0.29
+Nodes (4): Tests for Jinja2 Obsidian mirror templates in memory/templates/.  Validates that, Posts template renders post list with gate outcomes., Posts template output has valid frontmatter., TestPostsTemplate
 
 ### Community 360 - "Community 360"
 Cohesion: 0.40
@@ -1875,8 +1891,8 @@ Cohesion: 0.50
 Nodes (4): Principle 1: Python Controls Flow, LLM Does Judgment, Principle 2: Institutional Memory in SQLite, Principle 3: Quality Gates Are Code, Not Prompts, Three Core Design Principles
 
 ### Community 369 - "Community 369"
-Cohesion: 0.12
-Nodes (12): _mock_popen(), Create a mock Popen that returns the given stdout/stderr via communicate()., run_single_agent returns parsed findings on a successful subprocess call., run_single_agent handles unparseable output gracefully., run_claude_prompt returns stdout and exit code on success., run_claude_prompt pipes large prompts via stdin., run_claude_prompt returns empty string and exit code 1 on failure., TestRunClaudePromptFailure (+4 more)
+Cohesion: 0.29
+Nodes (3): Test helper methods: _keychain_lookup, _send_alert, close., If no phone is configured, alert just logs., TestHelpers
 
 ### Community 370 - "Community 370"
 Cohesion: 0.50
@@ -1886,21 +1902,37 @@ Nodes (3): Deterministic vs Agentic Boundary, MindPattern Autonomous Harness, Pi
 Cohesion: 0.33
 Nodes (5): _fit_content_to_limit(), LLM-driven identity file evolution for the EVOLVE phase.  After each pipeline ru, Strip Obsidian-active patterns from LLM-produced content., Validate or trim LLM content to the vault write limit.      Returns ``(content,, _sanitize_vault_content()
 
+### Community 373 - "Community 373"
+Cohesion: 0.33
+Nodes (4): ApprovalsHandler, #mp-approvals handler: pipeline approval gate proxy.  The daily pipeline posts a, Handle messages in #mp-approvals., Acknowledge messages in the approvals channel.          The pipeline's _slack_ap
+
 ### Community 374 - "Community 374"
-Cohesion: 0.16
-Nodes (10): PostsHandler, Run the full social pipeline and handle approval flow., Load social-config.json from project root., Format drafts for Slack display.          Flags over-limit drafts (and any other, Parse an approval reply into a list of platforms to post to.          Approval r, Post drafts to approved platforms. Returns {platform: result}., Handle messages in #mp-posts — idea or URL to social post pipeline., Process a message in #mp-posts. (+2 more)
+Cohesion: 0.15
+Nodes (11): PostsHandler, Run the full social pipeline and handle approval flow., Run the full social pipeline using the same agents as the daily pipeline., Load social-config.json from project root., Format drafts for Slack display.          Flags over-limit drafts (and any other, Parse an approval reply into a list of platforms to post to.          Approval r, Post drafts to approved platforms. Returns {platform: result}., Handle messages in #mp-posts — idea or URL to social post pipeline. (+3 more)
 
 ### Community 375 - "Community 375"
-Cohesion: 0.14
-Nodes (9): MindPatternBot, Route incoming Socket Mode events to handlers., TTL-set dedup keyed by Slack's event id (channel:ts fallback)., Execute a handler on the dispatch executor with error reporting., Start the Socket Mode connection and listen for events., Socket Mode bot that routes messages to channel handlers., SocketModeClient, SocketModeRequest (+1 more)
+Cohesion: 0.24
+Nodes (7): MindPatternBot, Route incoming Socket Mode events to handlers., TTL-set dedup keyed by Slack's event id (channel:ts fallback)., Execute a handler on the dispatch executor with error reporting., Socket Mode bot that routes messages to channel handlers., SocketModeClient, SocketModeRequest
 
 ### Community 377 - "Community 377"
 Cohesion: 0.50
 Nodes (4): 12-Metric Reliability Framework, 4.7 Monitoring & Observability, OpenTelemetry Instrumentation, Rudel Session Analytics
 
+### Community 378 - "Community 378"
+Cohesion: 0.40
+Nodes (5): _format_findings_for_prompt(), Knowledge compiler: reads daily research findings and synthesizes persistent con, Format findings as readable text for the LLM prompt., Call Claude to synthesize findings into a concept. Returns parsed JSON or None., _synthesize_concept()
+
 ### Community 380 - "Community 380"
 Cohesion: 0.50
 Nodes (4): 4.8 Deployment, Alibaba OpenSandbox, Cloudflare Agents — Serverless, Docker/Anthropic Sandbox Isolation
+
+### Community 381 - "Community 381"
+Cohesion: 0.33
+Nodes (4): Rate limits prevent over-posting when at the limit., Tests for EngagementPipeline., EngagementPipeline.__init__ accepts config dict., TestEngagementPipeline
+
+### Community 382 - "Community 382"
+Cohesion: 0.33
+Nodes (4): Tests for BlueskyClient., _ensure_session() caches JWT so a second call does not re-auth., BlueskyClient.post() creates proper facets for URLs in content., TestBlueskyClient
 
 ### Community 383 - "Community 383"
 Cohesion: 0.67
@@ -1918,6 +1950,10 @@ Nodes (3): Policy Engine, Research Validation (`policies/research.json`), Social
 Cohesion: 0.67
 Nodes (3): 1. Objective, Non-goals, Success looks like
 
+### Community 412 - "Community 412"
+Cohesion: 0.50
+Nodes (4): _count_diff_lines(), main(), PostToolUse hook: enforce knowledge graph integrity after edits.  Runs after eve, Count changed lines in code vs knowledge files from git diff.      Returns (code
+
 ### Community 413 - "Community 413"
 Cohesion: 0.50
 Nodes (4): Return True if >threshold of *new_content* lines already exist in *section_lines, _section_already_contains(), Direct test of the fuzzy match helper., test_section_already_contains_helper()
@@ -1927,28 +1963,48 @@ Cohesion: 0.50
 Nodes (3): Tests for run-launchd.sh scheduling guardrails., The wrapper must retry delivered-but-not-synced days., test_launchd_skip_requires_delivery_and_sync_markers()
 
 ### Community 415 - "Community 415"
+Cohesion: 0.40
+Nodes (3): read_source_file returns content of an existing file., read_source_file returns '' for a file that does not exist., TestReadSourceFile
+
+### Community 417 - "Community 417"
 Cohesion: 0.50
-Nodes (3): jinja_env(), Tests for Jinja2 Obsidian mirror templates in memory/templates/.  Validates that, Jinja2 Environment pointing at memory/templates/.
+Nodes (3): wait_for_reply timeout parameter must not default to None (infinite)., wait_for_reply() must have a reasonable default timeout., TestWaitForReplyDefaultTimeout
+
+### Community 418 - "Community 418"
+Cohesion: 0.50
+Nodes (3): Socket Mode client should be configured for auto-reconnect., SocketModeClient must be initialized with auto_reconnect_enabled=True., TestBotAutoReconnect
+
+### Community 419 - "Community 419"
+Cohesion: 0.50
+Nodes (3): Socket Mode client should have a ping interval for connection health., SocketModeClient must be initialized with a ping_interval., TestBotPingInterval
+
+### Community 421 - "Community 421"
+Cohesion: 0.50
+Nodes (3): reply() must catch Slack API errors instead of crashing the handler., reply() should have a try/except around chat_postMessage., TestReplyErrorHandling
+
+### Community 422 - "Community 422"
+Cohesion: 0.50
+Nodes (3): get_thread_replies() must catch Slack API errors., get_thread_replies() should have a try/except around conversations_replies., TestGetThreadRepliesErrorHandling
 
 ## Knowledge Gaps
 - **1540 isolated node(s):** `PROJECT_DIR`, `DATA_DIR`, `REPORTS_DIR`, `DRAFTS_DIR`, `DB_PATH` (+1535 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **25 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **26 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ApprovalGateway` connect `Community 30` to `Community 192`, `Community 193`, `Community 35`, `Community 195`, `Community 37`, `Community 230`, `Community 231`, `Community 206`, `Community 175`, `Community 241`, `Community 372`, `Community 20`, `Community 87`, `Community 24`, `Community 379`, `Community 220`, `Community 95`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
-- **Why does `generate_mirrors()` connect `Community 19` to `Community 1`, `Community 2`, `Community 11`, `Community 21`, `Community 29`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **Why does `PolicyEngine` connect `Community 104` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 143`, `Community 145`, `Community 146`, `Community 20`, `Community 21`, `Community 24`, `Community 161`, `Community 34`, `Community 35`, `Community 171`, `Community 52`, `Community 320`, `Community 209`, `Community 115`, `Community 374`, `Community 127`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+- **Why does `generate_mirrors()` connect `Community 19` to `Community 1`, `Community 2`, `Community 163`, `Community 289`, `Community 6`, `Community 72`, `Community 232`, `Community 205`, `Community 308`, `Community 21`, `Community 22`, `Community 29`?**
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
+- **Why does `ApprovalGateway` connect `Community 30` to `Community 192`, `Community 193`, `Community 35`, `Community 195`, `Community 37`, `Community 230`, `Community 231`, `Community 10`, `Community 206`, `Community 175`, `Community 241`, `Community 87`, `Community 24`, `Community 379`, `Community 220`, `Community 95`?**
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
+- **Why does `PolicyEngine` connect `Community 104` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 137`, `Community 10`, `Community 143`, `Community 145`, `Community 146`, `Community 21`, `Community 24`, `Community 30`, `Community 161`, `Community 34`, `Community 35`, `Community 298`, `Community 171`, `Community 58`, `Community 209`, `Community 374`, `Community 252`, `Community 127`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
 - **Are the 51 inferred relationships involving `Phase` (e.g. with `Checkpoint` and `ResearchPipeline`) actually correct?**
   _`Phase` has 51 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 51 inferred relationships involving `Checkpoint` (e.g. with `Phase` and `ResearchPipeline`) actually correct?**
   _`Checkpoint` has 51 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `core — shared substrate for MindPattern: db, time, migrations, receipts, llm.  N`, `SQLite connection discipline.  One way to open a database: WAL mode, foreign key`, `Open a SQLite database with the project-standard pragmas.` to the rest of the system?**
-  _3265 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `core — shared substrate for MindPattern: db, time, migrations, receipts, llm.  N`, `Shared process boundary for Claude CLI calls.`, `Completed Claude CLI process state.` to the rest of the system?**
+  _3269 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.05454545454545454 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06767676767676768 - nodes in this community are weakly interconnected._

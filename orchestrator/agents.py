@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import random
-import signal
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from core.claude_cli import kill_process_group, run_claude_process
 from memory.embeddings import embed_texts
 from . import router
 
@@ -73,17 +73,6 @@ def _dry_run_prompt_output(task_type: str) -> str:
 def _dry_run_file_payload(task_type: str) -> dict:
     """Return deterministic structured output for file-writing dry-run agents."""
     return {"dry_run": True, "task_type": task_type}
-
-
-def _kill_process_group(popen: subprocess.Popen) -> None:
-    """Kill a Popen-owned process group, falling back to the direct child."""
-    try:
-        os.killpg(os.getpgid(popen.pid), signal.SIGKILL)
-    except (OSError, ProcessLookupError, PermissionError):
-        try:
-            popen.kill()
-        except OSError:
-            pass
 
 
 def set_pipeline_date(date_str: str) -> None:
@@ -475,7 +464,7 @@ def _run_agent_attempt(
             logger.warning(
                 f"Agent {agent_name} timed out after {timeout}s, killing process group"
             )
-            _kill_process_group(popen)
+            kill_process_group(popen)
             popen.wait()
             result.killed_by_timeout = True
             result.classification = "timeout"
@@ -987,7 +976,7 @@ def run_agent_with_files(
             )
         except subprocess.TimeoutExpired:
             logger.warning(f"Agent {task_type} timed out after {timeout}s, killing process group")
-            _kill_process_group(popen)
+            kill_process_group(popen)
             popen.wait()
             proc = None
     except Exception as e:
@@ -1092,46 +1081,30 @@ def run_claude_prompt(
     )
     call_start = time.monotonic()
 
-    popen = None
-    try:
-        popen = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE if use_stdin else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(PROJECT_ROOT),
-            env=env,
-            start_new_session=True,
-        )
-        stdout, stderr = popen.communicate(
-            input=prompt if use_stdin else None,
-            timeout=timeout,
-        )
-        call_duration = time.monotonic() - call_start
-        logger.info(
-            f"run_claude_prompt END: task_type={task_type}, "
-            f"exit_code={popen.returncode}, output_len={len(stdout)}, "
-            f"duration={call_duration:.1f}s"
-        )
-        return stdout, popen.returncode
-    except subprocess.TimeoutExpired:
-        if popen is not None:
-            _kill_process_group(popen)
-            try:
-                popen.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                pass
-        call_duration = time.monotonic() - call_start
+    result = run_claude_process(
+        cmd,
+        input_text=prompt if use_stdin else None,
+        timeout=timeout,
+        cwd=PROJECT_ROOT,
+        env=env,
+    )
+    call_duration = time.monotonic() - call_start
+    if result.timed_out:
         logger.error(
             f"run_claude_prompt TIMEOUT: task_type={task_type}, "
             f"timeout={timeout}s, duration={call_duration:.1f}s"
         )
         return "", 1
-    except Exception as e:
-        call_duration = time.monotonic() - call_start
+    if result.error:
         logger.error(
             f"run_claude_prompt ERROR: task_type={task_type}, "
-            f"error={e}, duration={call_duration:.1f}s"
+            f"error={result.error}, duration={call_duration:.1f}s"
         )
         return "", 1
+
+    logger.info(
+        f"run_claude_prompt END: task_type={task_type}, "
+        f"exit_code={result.returncode}, output_len={len(result.stdout)}, "
+        f"duration={call_duration:.1f}s"
+    )
+    return result.stdout, result.returncode

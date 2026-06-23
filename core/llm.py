@@ -1,23 +1,16 @@
-"""The single gate between this codebase and the claude CLI.
+"""Small JSON/text helpers on top of the Claude CLI process boundary.
 
-Fixes v3's three recurring subprocess bugs in one place (audit):
-- orphaned process trees: run with start_new_session and kill the whole
-  process group on timeout (run_claude_prompt lacked this — the synthesis
-  stall / token-burning orphan bug)
-- unvalidated LLM JSON crashing phases: ask() validates against a minimal
-  schema and retries once with error feedback; callers get dict-or-None,
-  never an exception
-- inconsistent timeout/parse handling scattered across modules
+The subprocess behavior lives in core.claude_cli. This module keeps the
+existing text and JSON convenience contracts:
 
-run()  -> raw text or None        (low level)
-ask()  -> schema-valid dict or None (JSON mode)
+run()  -> raw text or None          (text helper)
+ask()  -> schema-valid dict or None (JSON helper)
 """
 
 import json
 import logging
-import os
-import signal
-import subprocess
+
+from .claude_cli import run_claude_process
 
 logger = logging.getLogger(__name__)
 
@@ -37,31 +30,14 @@ def run(
     if allowed_tools is not None:
         cmd += ["--allowedTools", ",".join(allowed_tools)]
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,  # own process group → killable with grandchildren
-    )
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        try:
-            proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            pass
-        logger.warning("claude call timed out after %ds, process group killed", timeout)
+    result = run_claude_process(cmd, timeout=timeout)
+    if result.timed_out:
         return None
 
-    if proc.returncode != 0:
-        logger.warning("claude exited %d: %s", proc.returncode, (stderr or "")[:200])
+    if result.returncode != 0:
+        logger.warning("claude exited %d: %s", result.returncode, (result.stderr or "")[:200])
         return None
-    return stdout
+    return result.stdout
 
 
 def ask(

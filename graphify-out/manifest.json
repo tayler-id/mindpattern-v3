@@ -15,8 +15,8 @@
     "semantic_hash": ""
   },
   "core/llm.py": {
-    "mtime": 1781198666.704065,
-    "ast_hash": "cd820d8526f8eaaf7b3cc72903f29592",
+    "mtime": 1782243238.0195496,
+    "ast_hash": "85aba3a5ea6522e700fa905fa326a248",
     "semantic_hash": ""
   },
   "core/migrations.py": {
@@ -615,8 +615,8 @@
     "semantic_hash": ""
   },
   "orchestrator/agents.py": {
-    "mtime": 1782242570.900069,
-    "ast_hash": "70e330e37b1edf0b40a29c00b4ddcd9d",
+    "mtime": 1782243316.1855288,
+    "ast_hash": "8b3cda716ad468c843bb53d7fa360aae",
     "semantic_hash": ""
   },
   "orchestrator/analyzer.py": {
@@ -970,8 +970,8 @@
     "semantic_hash": ""
   },
   "tests/test_agents.py": {
-    "mtime": 1782242613.5376244,
-    "ast_hash": "a00203b827d622ca88ef122116857a90",
+    "mtime": 1782243352.6536467,
+    "ast_hash": "3ace6c1b5e15cbb57baf40c179b22783",
     "semantic_hash": ""
   },
   "tests/test_analyzer.py": {
@@ -1020,8 +1020,8 @@
     "semantic_hash": ""
   },
   "tests/test_core_llm.py": {
-    "mtime": 1781198689.3444111,
-    "ast_hash": "e46d79a97fe2b8bd2d44fa80095a31b6",
+    "mtime": 1782243382.525703,
+    "ast_hash": "9858b4007969c3a2c693b9170800a767",
     "semantic_hash": ""
   },
   "tests/test_core_receipts.py": {
@@ -2122,6 +2122,16 @@
   "tests/test_launchd_wrapper.py": {
     "mtime": 1782240082.3536084,
     "ast_hash": "058e155716fbd562b6dfc0b816d8887e",
+    "semantic_hash": ""
+  },
+  "core/claude_cli.py": {
+    "mtime": 1782243219.9634202,
+    "ast_hash": "63c6847d293cef2fe3e358b021297a7a",
+    "semantic_hash": ""
+  },
+  "tests/test_claude_cli.py": {
+    "mtime": 1782243153.5653272,
+    "ast_hash": "c110aaa02825658229789058618eb051",
     "semantic_hash": ""
   }
 }

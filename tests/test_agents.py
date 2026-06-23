@@ -8,7 +8,6 @@ Covers:
 """
 
 import json
-import signal
 import subprocess
 import time
 from pathlib import Path
@@ -16,6 +15,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
+from core.claude_cli import ClaudeProcessResult
 from orchestrator.agents import (
     _parse_findings,
     build_agent_prompt,
@@ -419,45 +419,50 @@ class TestRunSingleAgentInvalidJson:
 # ═══════════════════════════════════════════════════════════════════════
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
+@patch("orchestrator.agents.run_claude_process")
 class TestRunClaudePromptSuccess:
     """run_claude_prompt returns stdout and exit code on success."""
 
-    def test_run_claude_prompt_success(self, mock_popen, mock_router):
+    def test_run_claude_prompt_success(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        proc = _mock_popen(stdout="Newsletter content here", stderr="", returncode=0)
-        mock_popen.return_value = proc
+        mock_run_process.return_value = ClaudeProcessResult(
+            stdout="Newsletter content here",
+            stderr="",
+            returncode=0,
+        )
 
         output, exit_code = run_claude_prompt("Write a newsletter", "synthesis_pass1")
 
         assert output == "Newsletter content here"
         assert exit_code == 0
 
-        # Verify subprocess was called
-        mock_popen.assert_called_once()
-        cmd = mock_popen.call_args[0][0]
+        mock_run_process.assert_called_once()
+        cmd = mock_run_process.call_args.args[0]
         assert "claude" in cmd
         # Prompt passed as -p argument for small prompts
         assert "Write a newsletter" in cmd
         # input should be None for small prompts
-        assert proc.communicate.call_args[1].get("input") is None
+        assert mock_run_process.call_args.kwargs["input_text"] is None
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
+@patch("orchestrator.agents.run_claude_process")
 class TestRunClaudePromptLargePromptUsesStdin:
     """run_claude_prompt pipes large prompts via stdin."""
 
-    def test_run_claude_prompt_large_prompt_uses_stdin(self, mock_popen, mock_router):
+    def test_run_claude_prompt_large_prompt_uses_stdin(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "opus"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 600
 
-        proc = _mock_popen(stdout="Output from large prompt", stderr="", returncode=0)
-        mock_popen.return_value = proc
+        mock_run_process.return_value = ClaudeProcessResult(
+            stdout="Output from large prompt",
+            stderr="",
+            returncode=0,
+        )
 
         large_prompt = "x" * 150_000  # >100K chars
         output, exit_code = run_claude_prompt(large_prompt, "synthesis_pass2")
@@ -466,60 +471,53 @@ class TestRunClaudePromptLargePromptUsesStdin:
         assert exit_code == 0
 
         # Verify stdin was used
-        call_kwargs = mock_popen.call_args[1]
-        assert call_kwargs["stdin"] == subprocess.PIPE
-        communicate_kwargs = proc.communicate.call_args[1]
-        assert communicate_kwargs["input"] == large_prompt
+        call_kwargs = mock_run_process.call_args.kwargs
+        assert call_kwargs["input_text"] == large_prompt
 
         # Verify -p argument is "-" (stdin marker)
-        cmd = mock_popen.call_args[0][0]
+        cmd = mock_run_process.call_args.args[0]
         p_idx = cmd.index("-p")
         assert cmd[p_idx + 1] == "-"
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
+@patch("orchestrator.agents.run_claude_process")
 class TestRunClaudePromptFailure:
     """run_claude_prompt returns empty string and exit code 1 on failure."""
 
-    def test_run_claude_prompt_failure(self, mock_popen, mock_router):
+    def test_run_claude_prompt_failure(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        proc = _mock_popen(stdout="", stderr="", returncode=1)
-        proc.communicate.side_effect = subprocess.TimeoutExpired(
-            cmd=["claude"], timeout=300
+        mock_run_process.return_value = ClaudeProcessResult(
+            stdout="",
+            stderr="",
+            returncode=1,
+            timed_out=True,
+            error="Timed out after 300s",
         )
-        mock_popen.return_value = proc
 
         output, exit_code = run_claude_prompt("test prompt", "synthesis_pass1")
 
         assert output == ""
         assert exit_code == 1
 
-    def test_run_claude_prompt_timeout_kills_process_group(self, mock_popen, mock_router):
+    def test_run_claude_prompt_startup_error_returns_failure(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        proc = _mock_popen(stdout="", stderr="", returncode=1)
-        proc.pid = 1234
-        proc.communicate.side_effect = subprocess.TimeoutExpired(
-            cmd=["claude"], timeout=300
+        mock_run_process.return_value = ClaudeProcessResult(
+            stdout="",
+            stderr="",
+            returncode=1,
+            error="missing claude",
         )
-        proc.wait.return_value = None
-        mock_popen.return_value = proc
-
-        with (
-            patch("orchestrator.agents.os.getpgid", return_value=4321),
-            patch("orchestrator.agents.os.killpg") as mock_killpg,
-        ):
-            output, exit_code = run_claude_prompt("test prompt", "synthesis_pass1")
+        output, exit_code = run_claude_prompt("test prompt", "synthesis_pass1")
 
         assert output == ""
         assert exit_code == 1
-        mock_killpg.assert_called_once_with(4321, signal.SIGKILL)
 
 
 class TestDryRunClaudeDispatch:
@@ -528,12 +526,12 @@ class TestDryRunClaudeDispatch:
     def test_run_claude_prompt_dry_run_skips_subprocess(self, monkeypatch):
         monkeypatch.setenv("MP_DRY_RUN", "1")
 
-        with patch("orchestrator.agents.subprocess.Popen") as mock_popen:
+        with patch("orchestrator.agents.run_claude_process") as mock_run_process:
             output, exit_code = run_claude_prompt("Write a newsletter", "synthesis_pass2")
 
         assert exit_code == 0
         assert "Dry-Run Report" in output
-        mock_popen.assert_not_called()
+        mock_run_process.assert_not_called()
 
     def test_run_single_agent_dry_run_skips_popen(self, monkeypatch):
         monkeypatch.setenv("MP_DRY_RUN", "1")
