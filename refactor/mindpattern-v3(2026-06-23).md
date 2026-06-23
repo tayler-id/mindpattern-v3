@@ -153,3 +153,28 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: the repo now has portable Graphify configuration plus committed graph artifacts for agents to inspect without depending on the local tool cache.
   - Security: personal data, local Claude state, DB files, env files, and cost/cache metadata are excluded from ingestion or commit.
   - Performance: the committed artifact set is about 5.6 MB, and Graphify intentionally skips `graph.html` for this 6000+ node graph unless the visualization limit is raised.
+
+## Step 6 - Next-agent handoff
+
+### Changes
+
+- Added `.claude/handoffs/2026-06-23-mindpattern-v3-refactor-runtime-graphify.md` as the current handoff for the next agent.
+- Captured the current branch, recent commits, verification status, Graphify state, dirty worktree classification, and safe next steps.
+- Included the user's upgrade note by recording the observed current tool state: `uv tool list` still reports `graphifyy v0.8.46`.
+
+### Verification
+
+- `uv tool list` - confirmed current Graphify tool install state.
+- `git status --short --untracked-files=normal` - reviewed remaining dirty files to document them accurately.
+- `git diff --check -- .claude/handoffs/2026-06-23-mindpattern-v3-refactor-runtime-graphify.md 'refactor/mindpattern-v3(2026-06-23).md'` - passed.
+
+### Auto Review
+
+- `git diff --check -- .claude/handoffs/2026-06-23-mindpattern-v3-refactor-runtime-graphify.md 'refactor/mindpattern-v3(2026-06-23).md'` - passed.
+- Secret scan found no credential values; the only scanner-term hit was the already-committed Step 5 command text that names patterns such as `TOKEN`.
+- Five-axis review:
+  - Correctness: handoff reflects the current branch, commit stack, Graphify state, verification history, and dirty worktree categories.
+  - Readability: the next agent gets current facts first, then dirty-state triage and safe next steps.
+  - Architecture: handoff points agents back to the progress log and committed Graphify report instead of stale May cleanup context.
+  - Security: sensitive/user-generated directories are called out as do-not-stage-broadly; absolute repo and `/private/tmp` paths are intentional recovery context.
+  - Performance: documentation-only change; no runtime impact.
