@@ -152,6 +152,14 @@ class TestBuildEvolvePrompt:
         prompt = build_evolve_prompt(vault_dir, SAMPLE_PIPELINE_RESULTS)
         assert "JSON" in prompt or "json" in prompt
 
+    def test_includes_content_length_budget(self, vault_dir):
+        """Prompt tells the LLM to stay under the runtime content limit."""
+        from memory.identity_evolve import build_evolve_prompt
+
+        prompt = build_evolve_prompt(vault_dir, SAMPLE_PIPELINE_RESULTS)
+        assert "2600" in prompt
+        assert "3000" in prompt
+
     def test_handles_missing_files_gracefully(self):
         """build_evolve_prompt works even if some vault files are missing."""
         from memory.identity_evolve import build_evolve_prompt
@@ -257,6 +265,30 @@ class TestApplyEvolutionDiff:
         assert any("exceed" in e.lower() or str(MAX_CONTENT_LENGTH) in e
                     for e in result["errors"])
         assert len(result["changes_made"]) == 0
+
+    def test_oversized_content_truncated_when_enabled(self, vault_dir):
+        """Identity runtime can opt into deterministic truncation for oversized LLM content."""
+        from memory.identity_evolve import MAX_CONTENT_LENGTH, apply_evolution_diff
+
+        diff = {
+            "soul": {
+                "action": "update",
+                "section": "Core Values",
+                "content": "x" * (MAX_CONTENT_LENGTH + 500),
+            }
+        }
+
+        result = apply_evolution_diff(vault_dir, diff, truncate_oversized=True)
+
+        assert result["errors"] == []
+        assert len(result["warnings"]) == 1
+        assert "truncated" in result["warnings"][0].lower()
+        assert len(result["changes_made"]) == 1
+
+        text = (vault_dir / "soul.md").read_text(encoding="utf-8")
+        body = text.split("## Core Values", 1)[1].split("## Personality", 1)[0]
+        assert len(body.strip()) <= MAX_CONTENT_LENGTH
+        assert "Trimmed by identity evolution length guard." in body
 
     def test_malformed_input_returns_errors_not_exceptions(self, vault_dir):
         """Malformed diff input (missing action) returns errors, does not raise."""

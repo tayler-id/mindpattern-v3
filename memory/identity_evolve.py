@@ -33,6 +33,8 @@ VALID_ACTIONS = {"update", "none", "append"}
 # Decisions entries include topic, gate outcomes, scores, and pattern notes,
 # which regularly exceed 500 chars. 3000 is generous but still bounded.
 MAX_CONTENT_LENGTH = 3000
+PROMPT_CONTENT_BUDGET = 2600
+_TRUNCATION_SUFFIX = "\n\n[Trimmed by identity evolution length guard.]"
 
 # Patterns that must not appear in LLM-produced content written to vault files.
 # Prevents YAML frontmatter injection, Obsidian wikilink/templater injection, and HTML.
@@ -57,6 +59,51 @@ def _sanitize_vault_content(text: str) -> str:
     # Strip HTML tags
     text = re.sub(r"<(script|iframe|object|embed)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
     return text
+
+
+def _fit_content_to_limit(
+    key: str,
+    content: str,
+    *,
+    truncate_oversized: bool,
+) -> tuple[str, str | None, str | None]:
+    """Validate or trim LLM content to the vault write limit.
+
+    Returns ``(content, error, warning)``. The default mode preserves the strict
+    safety boundary and rejects oversized content. The identity runtime opts
+    into truncation because an overlong LLM section should not prevent all other
+    safe identity updates from applying.
+    """
+    if len(content) <= MAX_CONTENT_LENGTH:
+        return content, None, None
+
+    message = (
+        f"Content for '{key}' is {len(content)} chars, "
+        f"exceeds max {MAX_CONTENT_LENGTH}"
+    )
+    if not truncate_oversized:
+        return content, message, None
+
+    limit = MAX_CONTENT_LENGTH - len(_TRUNCATION_SUFFIX)
+    clipped = content[:limit].rstrip()
+
+    # Prefer cutting at a natural boundary if it does not throw away too much.
+    boundary_candidates = [
+        clipped.rfind("\n\n"),
+        clipped.rfind("\n- "),
+        clipped.rfind(". "),
+    ]
+    boundary = max(boundary_candidates)
+    if boundary >= int(limit * 0.6):
+        end = boundary + 1 if clipped[boundary : boundary + 2] == ". " else boundary
+        clipped = clipped[:end].rstrip()
+
+    fitted = clipped + _TRUNCATION_SUFFIX
+    warning = (
+        f"Content for '{key}' was truncated from {len(content)} "
+        f"to {len(fitted)} chars"
+    )
+    return fitted, None, warning
 
 
 # ── Prompt builder ──────────────────────────────────────────────────────────
@@ -145,6 +192,12 @@ incremental updates to keep the identity files accurate and useful.
 
 Based on the run results, actively update the identity files to accumulate learnings.
 
+Length discipline:
+- Keep every "content" field under {PROMPT_CONTENT_BUDGET} characters.
+- {MAX_CONTENT_LENGTH} characters is the hard runtime cap; anything longer may be trimmed.
+- Rewrite long sections as compact rolling summaries instead of appending unbounded history.
+- Prefer 3-6 bullets for identity sections; put detailed daily evidence in decisions.md.
+
 ### soul.md — UPDATE every run:
 - **Self Assessment**: Update with this run's findings count, newsletter scores, what
   worked and what didn't. This should read as editorial learning, not just metrics.
@@ -177,7 +230,8 @@ Output a single JSON object with these rules:
 - Each value is an object with:
   - "action": one of "update", "append", or "none"
   - "section": (required for "update") the ## section heading to update
-  - "content": (required for "update" and "append") the new text (max 3000 chars)
+  - "content": (required for "update" and "append") the new text
+    (target max {PROMPT_CONTENT_BUDGET} chars; hard max {MAX_CONTENT_LENGTH} chars)
 - "append" is only valid for "decisions" — it adds a new dated entry.
 - "update" replaces the body of the named ## section in the target file.
 - "none" means no change needed for that file.
@@ -247,7 +301,12 @@ def parse_llm_output(raw_output: str) -> dict | None:
 # ── Diff applier ────────────────────────────────────────────────────────────
 
 
-def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
+def apply_evolution_diff(
+    vault_dir: Path,
+    diff_json: dict,
+    *,
+    truncate_oversized: bool = False,
+) -> dict:
     """Validate and apply an evolution diff to the vault files.
 
     Args:
@@ -262,14 +321,15 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
             }
 
     Returns:
-        ``{"changes_made": [...], "errors": [...]}``
+        ``{"changes_made": [...], "errors": [...], "warnings": [...]}``
     """
     vault_dir = Path(vault_dir)
     changes_made: list[str] = []
     errors: list[str] = []
+    warnings: list[str] = []
 
     if not isinstance(diff_json, dict):
-        return {"changes_made": [], "errors": ["diff_json must be a dict"]}
+        return {"changes_made": [], "errors": ["diff_json must be a dict"], "warnings": []}
 
     for key, spec in diff_json.items():
         # Reject unknown keys.
@@ -306,11 +366,14 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
                 errors.append(f"Missing 'content' for append on '{key}'")
                 continue
 
-            if len(content) > MAX_CONTENT_LENGTH:
-                errors.append(
-                    f"Content for '{key}' is {len(content)} chars, exceeds max {MAX_CONTENT_LENGTH}"
-                )
+            content, error, warning = _fit_content_to_limit(
+                key, content, truncate_oversized=truncate_oversized
+            )
+            if error:
+                errors.append(error)
                 continue
+            if warning:
+                warnings.append(warning)
 
             path = vault_dir / FILE_MAP[key]
             try:
@@ -337,11 +400,14 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
                 errors.append(f"Missing 'content' for update on '{key}'")
                 continue
 
-            if len(content) > MAX_CONTENT_LENGTH:
-                errors.append(
-                    f"Content for '{key}' is {len(content)} chars, exceeds max {MAX_CONTENT_LENGTH}"
-                )
+            content, error, warning = _fit_content_to_limit(
+                key, content, truncate_oversized=truncate_oversized
+            )
+            if error:
+                errors.append(error)
                 continue
+            if warning:
+                warnings.append(warning)
 
             path = vault_dir / FILE_MAP[key]
             try:
@@ -350,4 +416,4 @@ def apply_evolution_diff(vault_dir: Path, diff_json: dict) -> dict:
             except Exception as exc:
                 errors.append(f"Failed to update '{section}' in {FILE_MAP[key]}: {exc}")
 
-    return {"changes_made": changes_made, "errors": errors}
+    return {"changes_made": changes_made, "errors": errors, "warnings": warnings}

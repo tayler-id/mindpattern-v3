@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph HEAD before the learnings-fallback slice: `ca284bb fix: mark completed fly syncs`
+- Code/graph HEAD before the identity-length-guard slice: `5506511 fix: add learnings fallback`
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch had ten clean save-point commits before the learnings-fallback update:
+This refactor branch had eleven clean save-point commits before the identity-length-guard update:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -23,8 +23,9 @@ This refactor branch had ten clean save-point commits before the learnings-fallb
 8. `1761aea refactor: restore preflight source tool fallback`
 9. `36dbd4b fix: guard learnings updater failures`
 10. `ca284bb fix: mark completed fly syncs`
+11. `5506511 fix: add learnings fallback`
 
-This handoff was updated again after adding deterministic `learnings.md` fallback repair. Use `git log --oneline -12` for the exact latest commit hash after the commit lands.
+This handoff was updated again after adding deterministic identity diff truncation for oversized LLM output. Use `git log --oneline -12` for the exact latest commit hash after the commit lands.
 
 The main completed work is:
 
@@ -39,6 +40,7 @@ The main completed work is:
 - Guarded `learnings.md` regeneration so a failed `learnings_update` Claude call cannot overwrite the file with CLI error text.
 - Connected the sync marker boundary: `_phase_sync()` writes `mindpattern-synced-<date>` only after successful upload and Fly restart, and `run-launchd.sh` skips only when both delivery and sync markers exist.
 - Added a deterministic Learn fallback: valid existing `learnings.md` is preserved on updater failure, while missing/corrupt files are repaired with a safe markdown summary. The tracked `data/ramsay/learnings.md` baseline no longer contains raw updater error text.
+- Added an Identity phase length guard: `apply_evolution_diff()` remains strict by default, while `_phase_identity()` opts into deterministic truncation for oversized LLM content before writing vault files.
 
 ## Verification Already Run
 
@@ -60,6 +62,11 @@ The main completed work is:
 - Runner suite after fallback: `.venv/bin/python3 -m pytest tests/test_runner.py -q` -> `57 passed`.
 - Compile after fallback: `.venv/bin/python3 -m compileall -q orchestrator/runner.py` -> passed.
 - Full suite after fallback: `.venv/bin/python3 -m pytest -q` -> `1100 passed, 1 FastAPI/Starlette warning`.
+- Identity length guard RED regression: `.venv/bin/python3 -m pytest tests/test_identity_evolve.py -q` -> failed before implementation because the prompt lacked the 2600-character budget and `apply_evolution_diff()` did not accept `truncate_oversized`.
+- Identity length guard focused suite: `.venv/bin/python3 -m pytest tests/test_identity_evolve.py -q` -> `31 passed`.
+- Runner identity suite after length guard: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseIdentity -q` -> `2 passed`.
+- Compile after length guard: `python3 -m compileall memory/identity_evolve.py orchestrator/runner.py` -> passed.
+- Full suite after length guard: `.venv/bin/python3 -m pytest -q` -> `1102 passed, 1 FastAPI/Starlette warning`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -75,7 +82,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 388 files; current report shows 6263 nodes and 9433 edges.
+  - `graphify update .` rebuilt clean artifacts from 388 files; current report shows 6269 nodes and 9443 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -87,7 +94,9 @@ The main completed work is:
   - `graphify path _phase_sync write_synced_marker` finds `_phase_sync() --calls--> write_synced_marker()`.
   - `graphify explain _build_learnings_fallback` resolves `orchestrator/runner.py` line 1115.
   - `graphify path _phase_learn _build_learnings_fallback` finds `_phase_learn() --calls--> _build_learnings_fallback()`.
-  - `graphify diagnose multigraph --json` reports 6263 nodes, 9433 edges, and zero duplicate/missing/dangling/self-loop edges.
+  - `graphify explain _fit_content_to_limit` resolves `memory/identity_evolve.py` line 64 with an incoming call from `apply_evolution_diff()`.
+  - `graphify path _phase_identity _fit_content_to_limit` finds `_phase_identity() --calls--> apply_evolution_diff() --calls--> _fit_content_to_limit()`.
+  - `graphify diagnose multigraph --json` reports 6269 nodes, 9443 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
 ## Graphify Notes
@@ -96,9 +105,9 @@ The main completed work is:
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
   - 388 files
-  - 6263 nodes
-  - 9433 edges
-  - freshness marker `ca284bb6`
+  - 6269 nodes
+  - 9443 edges
+  - freshness marker `5506511a`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -110,7 +119,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the learnings-fallback slice is committed should still mostly be user/generated state:
+Tracked dirty files after the identity-length-guard slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
@@ -181,7 +190,7 @@ Embeddings are semantic retrieval infrastructure, not source collection. They le
 - `graphify update .` may need approval in some sandboxes; the approved prefix was saved earlier and it ran successfully in this session.
 - Commit hooks may launch a Graphify background rebuild. Check `git status` afterward before assuming a commit is finished.
 - The report may remain fresh against the last code commit rather than the Graphify artifact commit because `refactor/` and `graphify-out/` are excluded from ingestion.
-- The full pipeline smoke surfaced quality warnings, low-count research agents, X search 404s, and an oversized identity `soul` update rejection. These did not stop the run, but they are not fixed.
+- The full pipeline smoke surfaced quality warnings, low-count research agents, X search 404s, and an oversized identity `soul` update rejection. The identity rejection is now covered by the length guard; X search 404s, low-count research agents, and quality warnings remain open.
 - `run-launchd.sh` now intentionally reruns delivered-but-not-synced days during backup windows. Newsletter receipts make this safe; the goal is to retry Fly sync/restart instead of leaving mindpattern.ai stale.
 - `data/ramsay/learnings.md` is tracked and was repaired from raw updater error text to a generic safe baseline. Future updater failures now preserve valid content or write deterministic fallback content.
 

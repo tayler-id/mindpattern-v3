@@ -1298,10 +1298,12 @@ class ResearchPipeline:
             logger.warning("IDENTITY: Could not parse LLM output as JSON")
             return {"evolved": False, "reason": "JSON parse failed"}
 
-        result = apply_evolution_diff(vault_dir, diff)
+        result = apply_evolution_diff(vault_dir, diff, truncate_oversized=True)
 
         if result.get("changes_made"):
             logger.info(f"IDENTITY: {result['changes_made']}")
+        if result.get("warnings"):
+            logger.warning(f"IDENTITY warnings: {result['warnings']}")
         if result.get("errors"):
             logger.warning(f"IDENTITY errors: {result['errors']}")
 

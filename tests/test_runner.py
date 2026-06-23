@@ -1081,12 +1081,17 @@ class TestPhaseIdentity:
             patch("memory.identity_evolve.parse_llm_output",
                   return_value=diff),
             patch("memory.identity_evolve.apply_evolution_diff",
-                  return_value=apply_result),
+                  return_value=apply_result) as mock_apply,
         ):
             result = pipeline._phase_identity()
 
         assert result["evolved"] is True
         assert result["changes_made"] == 1
+        mock_apply.assert_called_once_with(
+            tmp_path / "data" / pipeline.user_id / "mindpattern",
+            diff,
+            truncate_oversized=True,
+        )
 
     def test_llm_failure(self, pipeline, tmp_path):
         pipeline.evolve_result = {}

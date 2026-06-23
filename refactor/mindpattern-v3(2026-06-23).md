@@ -380,3 +380,34 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: Learn phase keeps the LLM summarizer as the preferred path but has a deterministic resilience path for runtime failures.
   - Security: the repaired baseline contains generic operating notes only, no recipient details or private source output.
   - Performance: fallback construction is in-process string formatting and only runs when the LLM updater fails or returns unusable output.
+
+## Step 12 - Identity evolution length guard
+
+### Changes
+
+- Fixed the Identity phase gap found in the real smoke run where the LLM produced a `soul` section update over the 3000-character vault guardrail.
+- Kept `apply_evolution_diff()` strict by default: direct oversized content is still rejected unless the caller explicitly opts into truncation.
+- Added an identity-runtime opt-in path: `_phase_identity()` now calls `apply_evolution_diff(..., truncate_oversized=True)`, so overlong LLM content is sanitized, deterministically trimmed, warned about, and still applied when otherwise valid.
+- Tightened the identity prompt with a 2600-character target budget, a 3000-character hard cap, and guidance to rewrite long identity sections as compact rolling summaries instead of appending unbounded history.
+- Added regression coverage for both prompt budget text and runtime truncation, plus a runner assertion that the identity phase passes the opt-in flag.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_identity_evolve.py -q` failed before implementation because the prompt lacked the 2600-character budget and `apply_evolution_diff()` did not accept `truncate_oversized`.
+- Focused identity suite: `.venv/bin/python3 -m pytest tests/test_identity_evolve.py -q` - 31 passed.
+- Runner identity suite: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseIdentity -q` - 2 passed.
+- Compile check: `python3 -m compileall memory/identity_evolve.py orchestrator/runner.py` - passed.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1102 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt graph artifacts to 6269 nodes and 9443 edges from 388 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain _fit_content_to_limit` - resolved `memory/identity_evolve.py` line 64 with an incoming call from `apply_evolution_diff()`.
+- `graphify path _phase_identity _fit_content_to_limit` - found `_phase_identity() --calls--> apply_evolution_diff() --calls--> _fit_content_to_limit()`.
+- `graphify diagnose multigraph --json` - reported 6269 nodes, 9443 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the vault safety boundary remains fail-closed by default, while the runtime LLM path now repairs the specific overlong-output failure seen in the real run.
+  - Readability: the new helper returns `(content, error, warning)`, keeping apply-time control flow explicit instead of hiding truncation in the vault writer.
+  - Architecture: prompt constraints, diff validation, and runtime resilience now share one limit constant and one applier path.
+  - Security: LLM content is still sanitized before length handling, and truncation is opt-in only; no personal vault data or social drafts are staged in this slice.
+  - Performance: truncation is bounded string work on at most one content field per diff key and only runs when the LLM exceeds the cap.
