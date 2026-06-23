@@ -4,24 +4,45 @@ Loads BAAI/bge-small-en-v1.5 (384-dim) ONCE at module import time.
 All vectors are normalized by the model, so cosine similarity = dot product.
 """
 
+import os
 import struct
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 EMBEDDING_DIM = 384
+FASTEMBED_CACHE_ENV = "FASTEMBED_CACHE_DIR"
+DEFAULT_FASTEMBED_CACHE_DIR = Path.home() / ".cache" / "mindpattern" / "fastembed"
+
+# Persist fastembed's ONNX cache outside /var/folders (macOS purges tmp dirs,
+# which leaves dangling symlinks and silently breaks the RESEARCH phase).
+FASTEMBED_CACHE_DIR = str(DEFAULT_FASTEMBED_CACHE_DIR)
 
 # Module-level singleton — loads once on first import
 _model = None
+
+
+def resolve_fastembed_cache_dir() -> Path:
+    """Return the persistent fastembed cache directory."""
+    return Path(os.environ.get(FASTEMBED_CACHE_ENV, FASTEMBED_CACHE_DIR)).expanduser()
+
+
+def create_text_embedding():
+    """Create the fastembed TextEmbedding model with the project cache path."""
+    from fastembed import TextEmbedding
+
+    cache_dir = resolve_fastembed_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return TextEmbedding(model_name=EMBEDDING_MODEL, cache_dir=str(cache_dir))
 
 
 def _get_model():
     """Get or initialize the embedding model singleton."""
     global _model
     if _model is None:
-        from fastembed import TextEmbedding
-        _model = TextEmbedding(model_name=EMBEDDING_MODEL)
+        _model = create_text_embedding()
     return _model
 
 

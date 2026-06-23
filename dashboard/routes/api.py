@@ -8,7 +8,6 @@ import json
 import os
 import re
 import sqlite3
-import struct
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,6 +17,8 @@ from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 
 from dashboard.auth import require_auth
+from memory.embeddings import deserialize_f32 as _deserialize_f32
+from memory.embeddings import embed_text as _embed_text
 from slack_bot.heartbeat import is_stale as bot_heartbeat_stale
 
 router = APIRouter()
@@ -27,22 +28,6 @@ DATA_DIR = PROJECT_ROOT / "data"
 _reports_candidates = [PROJECT_ROOT / "reports", DATA_DIR / ".." / "reports", Path("/data/reports")]
 REPORTS_DIR = next((p for p in _reports_candidates if p.exists()), PROJECT_ROOT / "reports")
 USERS_FILE = PROJECT_ROOT / "users.json"
-
-
-def _deserialize_f32(blob: bytes) -> list[float]:
-    """Deserialize bytes back to a float vector."""
-    return list(struct.unpack(f"{len(blob) // 4}f", blob))
-
-
-def _embed_text(text: str) -> list[float]:
-    """Generate a 384-dim embedding. Lazy-loads the model."""
-    global _embed_model
-    if "_embed_model" not in globals() or _embed_model is None:
-        from fastembed import TextEmbedding
-        globals()["_embed_model"] = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
-    return list(_embed_model.embed([text]))[0].tolist()
-
-_embed_model = None
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Patterns for stripping PII from text fields

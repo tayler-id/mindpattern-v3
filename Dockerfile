@@ -13,8 +13,11 @@ ENV PATH="/root/.local/bin:$PATH"
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the fastembed model at build time so cold starts don't fetch 22MB
-RUN python3 -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')"
+# Pre-download the fastembed model at build time into the same persistent cache
+# path used by memory.embeddings at runtime.
+ENV FASTEMBED_CACHE_DIR=/root/.cache/mindpattern/fastembed
+RUN mkdir -p "$FASTEMBED_CACHE_DIR" \
+    && python3 -c "import os; from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5', cache_dir=os.environ['FASTEMBED_CACHE_DIR'])"
 
 # Slack bot + dashboard + the modules they import. harness/ is deliberately
 # excluded — harness commands only run on the Mac.

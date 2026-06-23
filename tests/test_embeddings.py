@@ -1,21 +1,26 @@
 """Tests for memory/embeddings.py pure math functions.
 
 Tests cosine_similarity, dot_similarity, serialize/deserialize round-trip,
-and batch_similarities (used for dedup filtering throughout the pipeline).
-No model loading — fastembed is never imported.
+batch_similarities (used for dedup filtering throughout the pipeline), and
+fastembed cache wiring. No real model loading — fastembed is faked in cache tests.
 """
 
 import math
 import struct
+import sys
+import types
 
 import numpy as np
 import pytest
 
 from memory.embeddings import (
+    EMBEDDING_MODEL,
     batch_similarities,
     cosine_similarity,
+    create_text_embedding,
     deserialize_f32,
     dot_similarity,
+    resolve_fastembed_cache_dir,
     serialize_f32,
 )
 
@@ -174,3 +179,37 @@ def test_batch_similarities_empty_embeddings():
     query = [1.0, 0.0, 0.0]
     results = batch_similarities(query, [], threshold=None)
     assert results == []
+
+
+# ── fastembed cache wiring ──────────────────────────────────────────────
+
+
+def test_resolve_fastembed_cache_dir_respects_env(monkeypatch, tmp_path):
+    """The cache dir can be overridden for container/runtime environments."""
+    cache_dir = tmp_path / "fastembed-cache"
+    monkeypatch.setenv("FASTEMBED_CACHE_DIR", str(cache_dir))
+
+    assert resolve_fastembed_cache_dir() == cache_dir
+
+
+def test_create_text_embedding_uses_persistent_cache(monkeypatch, tmp_path):
+    """Model construction creates and passes the configured persistent cache dir."""
+    calls = []
+
+    class FakeTextEmbedding:
+        def __init__(self, *, model_name: str, cache_dir: str):
+            calls.append({"model_name": model_name, "cache_dir": cache_dir})
+
+    cache_dir = tmp_path / "fastembed-cache"
+    monkeypatch.setenv("FASTEMBED_CACHE_DIR", str(cache_dir))
+    monkeypatch.setitem(
+        sys.modules,
+        "fastembed",
+        types.SimpleNamespace(TextEmbedding=FakeTextEmbedding),
+    )
+
+    model = create_text_embedding()
+
+    assert isinstance(model, FakeTextEmbedding)
+    assert cache_dir.is_dir()
+    assert calls == [{"model_name": EMBEDDING_MODEL, "cache_dir": str(cache_dir)}]

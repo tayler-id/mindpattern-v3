@@ -65,8 +65,8 @@
     "semantic_hash": ""
   },
   "dashboard/routes/api.py": {
-    "mtime": 1781218816.424329,
-    "ast_hash": "3d077a2c00f3470e60aeed1bc2541790",
+    "mtime": 1782236455.765337,
+    "ast_hash": "ee49e7ef765cf04ea141e0ca2175decf",
     "semantic_hash": ""
   },
   "dashboard/routes/editors_desk.py": {
@@ -545,8 +545,8 @@
     "semantic_hash": ""
   },
   "memory/embeddings.py": {
-    "mtime": 1781305360.8332846,
-    "ast_hash": "4578c55cbd984e7d824bc3b73ba1a193",
+    "mtime": 1782236490.3170962,
+    "ast_hash": "881614799e04224289a48f6a1a7128a1",
     "semantic_hash": ""
   },
   "memory/failures.py": {
@@ -1055,8 +1055,8 @@
     "semantic_hash": ""
   },
   "tests/test_embeddings.py": {
-    "mtime": 1775059672.0,
-    "ast_hash": "25fdc4ffad76e98ea7d9cdff33b24045",
+    "mtime": 1782236455.9383304,
+    "ast_hash": "2370cdb7a95a5d4990de7d8cd862bf30",
     "semantic_hash": ""
   },
   "tests/test_evaluator.py": {
@@ -1945,8 +1945,8 @@
     "semantic_hash": ""
   },
   "requirements.txt": {
-    "mtime": 1781305360.8366296,
-    "ast_hash": "958a7ea77915e97801afa2de0abc9194",
+    "mtime": 1782236769.105382,
+    "ast_hash": "aef9ee2a1b8f12261b6cd935b16ce427",
     "semantic_hash": ""
   },
   "research/agent-assurance-handover-sample.html": {

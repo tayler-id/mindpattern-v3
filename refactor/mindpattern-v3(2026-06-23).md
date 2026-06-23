@@ -178,3 +178,38 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: handoff points agents back to the progress log and committed Graphify report instead of stale May cleanup context.
   - Security: sensitive/user-generated directories are called out as do-not-stage-broadly; absolute repo and `/private/tmp` paths are intentional recovery context.
   - Performance: documentation-only change; no runtime impact.
+
+## Step 7 - FastEmbed cache boundary hardening
+
+### Changes
+
+- Centralized fastembed model construction in `memory.embeddings.create_text_embedding()`.
+- Added `FASTEMBED_CACHE_DIR` support with a persistent default at `~/.cache/mindpattern/fastembed` so macOS temp-dir cleanup does not break the RESEARCH embedding phase.
+- Reused the shared `memory.embeddings` serializer and embedder from `dashboard/routes/api.py` instead of keeping a duplicate dashboard-local fastembed singleton.
+- Updated the Docker build pre-download step to use the same `FASTEMBED_CACHE_DIR` path as runtime.
+- Tightened the fastembed dependency floor to `fastembed>=0.7.3,<1.0`, the oldest locally verified version with `TextEmbedding(..., cache_dir=...)`.
+- Added tests for cache-dir resolution and model construction without loading a real fastembed model.
+- Verified current source-tool install state: `graphify` is installed, but `agent-reach`, `xreach`, `twitter`, `yt-dlp`, `mcporter`, and `exa-mcp-server` are still missing from PATH.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_embeddings.py -q` - 17 passed.
+- `.venv/bin/python3 -m pytest tests/test_dashboard_findings.py tests/test_api_contract.py -q` - 17 passed, 1 FastAPI/Starlette deprecation warning.
+- `.venv/bin/python3 -m pytest tests/test_embeddings.py tests/test_dashboard_findings.py tests/test_api_contract.py -q` - 34 passed after sharing the dashboard embedding path.
+- `.venv/bin/python3 -m pytest tests/ -x -q` - 1094 passed, 1 FastAPI/Starlette deprecation warning.
+- `.venv/bin/python3 -m pytest tests/test_embeddings.py tests/test_dashboard_findings.py tests/test_api_contract.py -q` - 34 passed after tightening the fastembed dependency floor.
+- `.venv/bin/python3 -m compileall -q memory/embeddings.py dashboard/routes/api.py` - passed.
+- `graphify update .` - refreshed graph artifacts to 6246 nodes and 9407 edges from 387 files; rerun after the requirements edit reported no topology changes.
+- `graphify explain create_text_embedding` - resolved `memory/embeddings.py` with links to `_get_model()` and the cache tests.
+- `graphify path api.py create_text_embedding` - found `api.py -> embeddings.py -> create_text_embedding()`.
+- `graphify diagnose multigraph --json` - reported 6246 nodes, 9407 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- `git diff --check -- Dockerfile dashboard/routes/api.py memory/embeddings.py tests/test_embeddings.py requirements.txt graphify-out 'refactor/mindpattern-v3(2026-06-23).md'` - passed before staging.
+- Five-axis review:
+  - Correctness: cache-dir behavior is tested with an environment override, and dashboard semantic search now uses the same embedding code path as memory storage.
+  - Readability: fastembed construction lives behind one named factory instead of being duplicated in dashboard routes.
+  - Architecture: source collection remains separate from semantic retrieval; missing X/Exa/YouTube tools still need installation before ingestion comes back.
+  - Security: cache paths are local filesystem locations only; no personal data or generated `data/` files are included in this slice.
+  - Performance: the model still lazy-loads once per process, and Docker pre-download uses the same persistent cache to avoid runtime cold fetches.
