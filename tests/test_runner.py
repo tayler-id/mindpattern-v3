@@ -845,6 +845,28 @@ class TestPhaseLearn:
         assert result["pruned"]["pruned"] == 5
 
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
+           return_value=("Error: Reached max turns (5)", 1))
+    @patch("orchestrator.runner.memory.get_stats", return_value={})
+    @patch("orchestrator.runner.memory.prune", return_value={})
+    @patch("orchestrator.runner.memory.promote", return_value={})
+    @patch("orchestrator.runner.memory.consolidate", return_value={})
+    @patch("orchestrator.runner.memory.evaluate_run",
+           return_value={"overall_score": 0.85})
+    def test_learnings_update_failure_does_not_overwrite_existing_file(
+        self, mock_eval, mock_consolidate, mock_promote, mock_prune,
+        mock_stats, mock_claude, pipeline, tmp_path
+    ):
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            data_dir = tmp_path / "data" / "testuser"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            learnings_file = data_dir / "learnings.md"
+            learnings_file.write_text("# Existing learnings\nKeep this.")
+
+            pipeline._phase_learn()
+
+        assert learnings_file.read_text() == "# Existing learnings\nKeep this."
+
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
            return_value=("", 0))
     @patch("orchestrator.runner.memory.get_stats", return_value={})
     @patch("orchestrator.runner.memory.prune", return_value={})

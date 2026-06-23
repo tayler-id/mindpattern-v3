@@ -1070,14 +1070,22 @@ class ResearchPipeline:
             f"Database stats: {json.dumps(stats, indent=2)}\n\n"
             f"Quality this run: {json.dumps(quality, indent=2)}"
         )
-        output, _ = agent_dispatch.run_claude_prompt(
+        output, exit_code = agent_dispatch.run_claude_prompt(
             learnings_prompt, "learnings_update",
             system_prompt_file="agents/learnings-updater.md",
         )
-        if output.strip():
+        cleaned_output = output.strip()
+        if exit_code == 0 and cleaned_output and not cleaned_output.startswith("Error:"):
             dest = PROJECT_ROOT / "data" / self.user_id / "learnings.md"
             dest.write_text(output)
             logger.info(f"Learnings.md regenerated ({len(output)} chars)")
+        elif exit_code != 0 or cleaned_output.startswith("Error:"):
+            logger.warning(
+                "Learnings.md update skipped after updater failure "
+                "(exit_code=%s, output_len=%s)",
+                exit_code,
+                len(output),
+            )
 
         return {
             "quality": quality,

@@ -258,3 +258,56 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: the app no longer hard-depends on dead `xreach`, but the Twitter source remains query-search based and still depends on upstream `twitter-cli search` health.
   - Security: tool installs were outside the repo; no cookies, tokens, or personal data were committed. Twitter authentication is local machine state.
   - Performance: fallback command selection is a small PATH check; source fetch time remains dominated by external CLI/network calls.
+
+## Step 9 - Real pipeline smoke and Learn-phase guard
+
+### Changes
+
+- Ran a real full pipeline smoke for `ramsay` on `2026-06-23` after restoring source tools.
+- Confirmed newsletter delivery was not failing:
+  - The earlier run sent the owner newsletter through Resend at `2026-06-23T11:31:12` and logged `Newsletter sent`.
+  - The subscriber broadcast sent 1 message at `2026-06-23T11:31:13`.
+  - The later full smoke skipped duplicate owner and subscriber sends because the `newsletter:2026-06-23` and broadcast receipts were already claimed.
+- Fixed the Learn phase so a failed `learnings_update` Claude call cannot overwrite `data/<user>/learnings.md` with an error string such as `Error: Reached max turns (5)`.
+- Added a regression test that preserves an existing learnings file when the updater exits nonzero.
+
+### Real Pipeline Smoke Result
+
+- Command: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23`
+- Exit: `0`
+- Duration: `1211s`
+- Final summary: `141 findings | 58 min | Quality: 0.86`
+- Sync: `35609772 bytes uploaded`; Fly app restarted.
+- Trend scan: 188 preflight items, 8 trends detected.
+- Research: 13/13 agents succeeded, 181 raw findings, 82 stored after dedup.
+- Synthesis: wrote `reports/ramsay/2026-06-23.md`, 6450 words; newsletter eval `overall=0.865`, `coverage=0.95`, `dedup=1.0`, `sources=0.846`.
+- Deliver: report validated at 45281 bytes; duplicate-send receipts prevented resending today's newsletter during the smoke run.
+- Learn: stored 20 entity relationships and backfilled 9 trend results; the old code then wrote failed updater output, which this step now guards against.
+- Social/engagement: skipped because no social platforms are enabled in `social-config.json`.
+- Identity: appended to decisions, but rejected an oversized `soul` update over the 3000-character guardrail.
+
+### Remaining Gaps
+
+- X/Twitter keyword search remains partially broken upstream: `twitter status` and `twitter user-posts` work, but `twitter search ... --json` returns HTTP 404, so thought-leader/topic X search still underperforms.
+- Some research agents still came in below the 15-20 finding target on the full smoke run, especially thought-leaders, reddit, sources, agents, news, and GitHub pulse.
+- `_phase_sync` succeeds and restarts Fly, but does not call the existing `orchestrator.sync.write_synced_marker()` helper; only the delivery ran-marker is currently written.
+- `learnings_update` still needs prompt/runtime tuning because it hit max turns in both real runs today. The new guard prevents corrupt output, but does not make the updater succeed.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn::test_learnings_update_failure_does_not_overwrite_existing_file -q` failed before the code guard because the file was overwritten with `Error: Reached max turns (5)`.
+- GREEN regression: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn::test_learnings_update_failure_does_not_overwrite_existing_file -q` - 1 passed.
+- Learn group: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn -q` - 4 passed.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1097 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt graph artifacts to 6255 nodes and 9424 edges from 387 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain _phase_learn` - resolved `orchestrator/runner.py` line 984 with `ResearchPipeline`, `backfill_trend_results()`, and `log_event()` connections.
+- `graphify diagnose multigraph --json` - reported 6255 nodes, 9424 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the full live pipeline completed through sync with exit 0; the discovered Learn corruption path is now covered by a regression test.
+  - Readability: the Learn updater write condition now makes the success criteria explicit: clean exit, non-empty output, and no error-prefix output.
+  - Architecture: receipts are confirmed as the duplicate-send boundary for newsletters; source ingestion remains split from embeddings/semantic retrieval.
+  - Security: no generated reports, personal `data/`, or recipient data are staged in this slice; delivery evidence is summarized from logs.
+  - Performance: the guard adds only a string/exit-code check; Graphify and tests were refreshed after the code change.
