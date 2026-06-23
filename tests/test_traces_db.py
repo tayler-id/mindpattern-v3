@@ -7,6 +7,7 @@ import json
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -19,6 +20,7 @@ from orchestrator.traces_db import (
     get_agent_scorecard,
     init_db,
     log_agent_metrics,
+    resolve_traces_db_path,
 )
 
 
@@ -47,6 +49,27 @@ def test_schema_creates_all_tables(db):
         "trace_spans",
     ])
     assert tables == expected
+
+
+def test_resolve_traces_db_path_supports_explicit_user_and_data_dir(tmp_path):
+    """traces.db path resolution should not bake in the ramsay user directory."""
+    path = resolve_traces_db_path(user_id="alice", data_dir=tmp_path / "data")
+    assert path == tmp_path / "data" / "alice" / "traces.db"
+
+
+def test_capture_prompt_versions_uses_project_root_by_default(db):
+    """Git prompt-version capture should run from the repo root, not data/<user>."""
+    agent_path = Path("agents/example-agent.md")
+
+    with patch("orchestrator.traces_db.subprocess.run") as mock_run:
+        mock_run.return_value.stdout = "abc123\n"
+
+        from orchestrator import traces_db
+
+        result = traces_db.capture_prompt_versions(db, [agent_path])
+
+    assert result == {"example-agent": "abc123"}
+    assert mock_run.call_args.kwargs["cwd"] == str(traces_db.PROJECT_ROOT)
 
 
 # ---- get_agent_history ----

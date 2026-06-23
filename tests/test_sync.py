@@ -17,11 +17,13 @@ from orchestrator.sync import (
     FLYCTL,
     _fly_sftp_put,
     _fly_ssh,
+    _put_and_verify,
     _wal_checkpoint,
     create_bundle,
     restart_app,
     sync_to_fly,
     upload_bundle,
+    write_synced_marker,
 )
 
 # ────────────────────────────────────────────────────────────────────────
@@ -74,6 +76,33 @@ def data_tree(tmp_path):
         "user_id": user_id,
         "tmp_path": tmp_path,
     }
+
+
+def _ssh_success_with_uploaded_bundle_size(upload_mock):
+    """Return an _fly_ssh mock responder for the normal upload/extract path."""
+    def _respond(app_name, cmd):
+        if "wc -c" in cmd and "sync-bundle.tar.gz" in cmd:
+            bundle_path = Path(upload_mock.call_args.args[0])
+            return {"success": True, "output": str(bundle_path.stat().st_size), "error": None}
+        return {"success": True, "output": "", "error": None}
+
+    return _respond
+
+
+def _ssh_bundle_truncated_then_fallback_sizes(data_tree):
+    """Return an _fly_ssh responder that forces bundle fallback but verifies DB uploads."""
+    def _respond(app_name, cmd):
+        if "wc -c" not in cmd:
+            return {"success": True, "output": "", "error": None}
+        if "sync-bundle.tar.gz" in cmd:
+            return {"success": True, "output": "0", "error": None}
+        if cmd.endswith("/memory.db"):
+            return {"success": True, "output": str(data_tree["db_path"].stat().st_size), "error": None}
+        if cmd.endswith("/traces.db"):
+            return {"success": True, "output": str(data_tree["traces_path"].stat().st_size), "error": None}
+        return {"success": True, "output": "0", "error": None}
+
+    return _respond
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -459,8 +488,8 @@ class TestSyncToFly:
         )
         # Upload succeeds
         mock_upload.return_value = {"success": True, "error": None}
-        # SSH commands succeed (mkdir, extract)
-        mock_ssh.return_value = {"success": True, "output": "", "error": None}
+        # SSH commands succeed and the remote bundle size matches the local file.
+        mock_ssh.side_effect = _ssh_success_with_uploaded_bundle_size(mock_upload)
 
         result = sync_to_fly(
             data_tree["user_id"],
@@ -516,18 +545,8 @@ class TestSyncToFly:
         )
         mock_upload.return_value = {"success": True, "error": None}
 
-        # Command-aware responder (the size-verification retry added 2026-06-10
-        # makes the exact _fly_ssh call sequence variable): the size check
-        # reports a truncated bundle on both attempts, which routes sync into
-        # the same SFTP fallback as a tar failure would.
-        def _ssh_responder(app_name, cmd):
-            if "wc -c" in cmd:
-                return {"success": True, "output": "0", "error": None}
-            if "tar xzf" in cmd:
-                return {"success": False, "output": "", "error": "tar not found"}
-            return {"success": True, "output": "", "error": None}
-
-        mock_ssh.side_effect = _ssh_responder
+        # Bundle size checks fail, then direct DB fallback uploads verify by size.
+        mock_ssh.side_effect = _ssh_bundle_truncated_then_fallback_sizes(data_tree)
         mock_sftp.return_value = True
 
         result = sync_to_fly(
@@ -552,7 +571,7 @@ class TestSyncToFly:
             args=[], returncode=1, stdout="", stderr="db locked"
         )
         mock_upload.return_value = {"success": True, "error": None}
-        mock_ssh.return_value = {"success": True, "output": "", "error": None}
+        mock_ssh.side_effect = _ssh_success_with_uploaded_bundle_size(mock_upload)
 
         result = sync_to_fly(
             data_tree["user_id"],
@@ -579,7 +598,7 @@ class TestSyncToFly:
             args=[], returncode=0, stdout="", stderr=""
         )
         mock_upload.return_value = {"success": True, "error": None}
-        mock_ssh.return_value = {"success": True, "output": "", "error": None}
+        mock_ssh.side_effect = _ssh_success_with_uploaded_bundle_size(mock_upload)
 
         sync_to_fly(
             data_tree["user_id"],
@@ -606,7 +625,7 @@ class TestSyncToFly:
             args=[], returncode=0, stdout="", stderr=""
         )
         mock_upload.return_value = {"success": True, "error": None}
-        mock_ssh.return_value = {"success": True, "output": "", "error": None}
+        mock_ssh.side_effect = _ssh_success_with_uploaded_bundle_size(mock_upload)
 
         # Run sync
         sync_to_fly(data_tree["user_id"], data_tree["data_dir"], app_name="testapp")
@@ -687,3 +706,69 @@ class TestFlySftpPut:
         """Returns False on exception."""
         result = _fly_sftp_put("myapp", "/local/file.db", "/remote/file.db")
         assert result is False
+
+
+# ────────────────────────────────────────────────────────────────────────
+# _put_and_verify() helper
+# ────────────────────────────────────────────────────────────────────────
+
+
+class TestPutAndVerify:
+    """Tests for verified fallback SFTP uploads."""
+
+    @patch("orchestrator.sync._remote_size")
+    @patch("orchestrator.sync._fly_sftp_put")
+    def test_retries_until_remote_size_matches(self, mock_put, mock_size, tmp_path):
+        """Retries once when the first remote size check is short."""
+        local_path = tmp_path / "memory.db"
+        local_path.write_bytes(b"abc")
+        mock_size.side_effect = [1, 3]
+
+        result = _put_and_verify("myapp", local_path, "/data/user/memory.db")
+
+        assert result is True
+        assert mock_put.call_count == 2
+
+    @patch("orchestrator.sync._remote_size")
+    @patch("orchestrator.sync._fly_sftp_put")
+    def test_fails_after_two_size_mismatches(self, mock_put, mock_size, tmp_path):
+        """Returns False when the remote file never reaches the expected size."""
+        local_path = tmp_path / "memory.db"
+        local_path.write_bytes(b"abc")
+        mock_size.return_value = 1
+
+        result = _put_and_verify("myapp", local_path, "/data/user/memory.db")
+
+        assert result is False
+        assert mock_put.call_count == 2
+
+    @patch("orchestrator.sync._remote_size")
+    @patch("orchestrator.sync._fly_sftp_put")
+    def test_failed_upload_does_not_accept_stale_matching_remote_size(
+        self, mock_put, mock_size, tmp_path
+    ):
+        """A failed SFTP command cannot pass based on a stale remote file size."""
+        local_path = tmp_path / "memory.db"
+        local_path.write_bytes(b"abc")
+        mock_put.return_value = False
+        mock_size.return_value = 3
+
+        result = _put_and_verify("myapp", local_path, "/data/user/memory.db")
+
+        assert result is False
+        assert mock_put.call_count == 2
+        mock_size.assert_not_called()
+
+
+# ────────────────────────────────────────────────────────────────────────
+# write_synced_marker() helper
+# ────────────────────────────────────────────────────────────────────────
+
+
+def test_write_synced_marker_uses_configured_marker_dir(tmp_path, monkeypatch):
+    """Writes the sync-complete marker under MP_RAN_MARKER_DIR."""
+    monkeypatch.setenv("MP_RAN_MARKER_DIR", str(tmp_path))
+
+    write_synced_marker("2026-06-23")
+
+    assert (tmp_path / "mindpattern-synced-2026-06-23").exists()

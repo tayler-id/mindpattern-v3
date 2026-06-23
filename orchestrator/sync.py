@@ -164,12 +164,24 @@ def sync_to_fly(
         # Fallback: upload reports directly via SFTP (more reliable)
         for report_file in sorted(reports_dir.glob("????-??-??.md")):
             _fly_sftp_put(app_name, str(report_file), f"/data/reports/{user_id}/{report_file.name}")
-        # Upload DBs directly
-        if db_path.exists():
-            _fly_sftp_put(app_name, str(db_path), f"/data/{user_id}/memory.db")
+        # Upload DBs directly — and VERIFY each landed at the expected size.
+        # The databases are what the dashboard reads; before this, a 47 MB file
+        # silently dropped mid-transfer by the SFTP fallback over a flaky tunnel
+        # still returned "success", leaving the dashboard stale for the whole
+        # day (the recurring "didn't sync to Fly" bug). Verify + retry once, and
+        # fail loudly if it still won't land so the sync-only retry path kicks in.
         traces_path_local = data_dir / user_id / "traces.db"
-        if traces_path_local.exists():
-            _fly_sftp_put(app_name, str(traces_path_local), f"/data/{user_id}/traces.db")
+        for db_name, db_local in (("memory.db", db_path), ("traces.db", traces_path_local)):
+            if not db_local.exists():
+                continue
+            if not _put_and_verify(app_name, db_local, f"/data/{user_id}/{db_name}"):
+                bundle_path.unlink(missing_ok=True)
+                return {
+                    "success": False,
+                    "bytes_uploaded": 0,
+                    "files_included": files_included,
+                    "error": f"fallback SFTP could not land {db_name} at expected size",
+                }
         # Stale sidecars are just as fatal on the fallback path
         _fly_ssh(
             app_name,
@@ -388,6 +400,22 @@ def restart_app(app_name: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+def write_synced_marker(date_str: str) -> None:
+    """Mark the day's Fly sync as confirmed-complete.
+
+    Mirrors the deliver-phase ran-marker (``mindpattern-ran-<date>``).
+    run-launchd.sh treats *delivered-but-not-synced* as a retry signal, so
+    this marker — written only after a verified sync — is what finally stops
+    the morning windows from re-running the sync. Keyed by date (single user).
+    """
+    try:
+        marker_dir = os.environ.get("MP_RAN_MARKER_DIR", "/tmp")
+        Path(marker_dir, f"mindpattern-synced-{date_str}").touch()
+        log.info("Marked %s synced (synced-marker written)", date_str)
+    except OSError as e:
+        log.warning("Could not write synced-marker: %s", e)
+
+
 # ── Private helpers ──────────────────────────────────────────────────────
 
 
@@ -460,6 +488,40 @@ def _fly_sftp_put(app_name: str, local_path: str, remote_path: str) -> bool:
     except Exception as e:
         log.warning(f"SFTP put failed for {local_path}: {e}")
         return False
+
+
+def _remote_size(app_name: str, remote_path: str) -> int:
+    """Return the byte size of a remote file, or -1 if it can't be read."""
+    res = _fly_ssh(app_name, f"wc -c < {remote_path}")
+    parts = res["output"].split() if res.get("success") else []
+    try:
+        return int(parts[0]) if parts else -1
+    except ValueError:
+        return -1
+
+
+def _put_and_verify(app_name: str, local_path: Path, remote_path: str) -> bool:
+    """SFTP-upload a file and confirm it landed at the expected byte size.
+
+    Retries the upload once on a size mismatch (a truncated transfer over a
+    flaky tunnel). Returns True only when the remote size matches local — so
+    a silently-dropped database surfaces as a sync failure instead of a
+    stale-but-"successful" dashboard.
+    """
+    expected = local_path.stat().st_size
+    for attempt in (1, 2):
+        uploaded = _fly_sftp_put(app_name, str(local_path), remote_path)
+        if not uploaded:
+            log.warning("SFTP %s failed (attempt %s/2)", remote_path, attempt)
+            continue
+        actual = _remote_size(app_name, remote_path)
+        if actual == expected:
+            return True
+        log.warning(
+            "SFTP %s landed at %s bytes, expected %s (attempt %s/2)",
+            remote_path, actual, expected, attempt,
+        )
+    return False
 
 
 if __name__ == "__main__":

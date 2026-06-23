@@ -15,6 +15,7 @@ Tables (14 total):
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import uuid
@@ -27,7 +28,31 @@ from typing import Generator
 # Default database path — resolves relative to the mindpattern-v3 project root
 # ---------------------------------------------------------------------------
 
-TRACES_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "ramsay" / "traces.db"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_USER_ID = "ramsay"
+
+
+def resolve_traces_db_path(
+    db_path: Path | str | None = None,
+    *,
+    user_id: str | None = None,
+    data_dir: Path | str | None = None,
+) -> Path:
+    """Resolve the traces.db path without baking one user into call sites."""
+    if db_path is not None:
+        return Path(db_path)
+
+    selected_user = (
+        user_id
+        or os.environ.get("MP_USER_ID")
+        or os.environ.get("DASHBOARD_USER")
+        or DEFAULT_USER_ID
+    )
+    root = Path(data_dir) if data_dir is not None else PROJECT_ROOT / "data"
+    return root / selected_user / "traces.db"
+
+
+TRACES_DB_PATH = resolve_traces_db_path()
 
 MAX_OUTPUT_BYTES = 10_240  # 10 KB truncation limit per architecture
 
@@ -37,9 +62,13 @@ MAX_OUTPUT_BYTES = 10_240  # 10 KB truncation limit per architecture
 # ---------------------------------------------------------------------------
 
 
-def get_db(db_path: Path | None = None) -> sqlite3.Connection:
+def get_db(
+    db_path: Path | str | None = None,
+    *,
+    user_id: str | None = None,
+) -> sqlite3.Connection:
     """Open a connection to traces.db with WAL mode and Row factory."""
-    path = db_path or TRACES_DB_PATH
+    path = resolve_traces_db_path(db_path, user_id=user_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=10.0)
     conn.row_factory = sqlite3.Row
@@ -48,9 +77,13 @@ def get_db(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: Path | None = None) -> sqlite3.Connection:
+def init_db(
+    db_path: Path | str | None = None,
+    *,
+    user_id: str | None = None,
+) -> sqlite3.Connection:
     """Create all tables if they don't exist and return the connection."""
-    conn = get_db(db_path)
+    conn = get_db(db_path, user_id=user_id)
 
     conn.executescript("""
         -- ---------------------------------------------------------------
@@ -193,9 +226,13 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
 
 
 @contextmanager
-def open_traces_db(db_path: Path | None = None) -> Generator[sqlite3.Connection, None, None]:
+def open_traces_db(
+    db_path: Path | str | None = None,
+    *,
+    user_id: str | None = None,
+) -> Generator[sqlite3.Connection, None, None]:
     """Context manager that opens traces.db (with init) and closes on exit."""
-    conn = init_db(db_path)
+    conn = init_db(db_path, user_id=user_id)
     try:
         yield conn
     finally:
@@ -445,7 +482,7 @@ def capture_prompt_versions(
     Agents whose files have no git history (untracked) are skipped.
     """
     if repo_root is None:
-        repo_root = TRACES_DB_PATH.parent
+        repo_root = PROJECT_ROOT
 
     now = datetime.now(timezone.utc).isoformat()
     result: dict[str, str] = {}
