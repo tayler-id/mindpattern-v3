@@ -291,7 +291,7 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
 - X/Twitter keyword search remains partially broken upstream: `twitter status` and `twitter user-posts` work, but `twitter search ... --json` returns HTTP 404, so thought-leader/topic X search still underperforms.
 - Some research agents still came in below the 15-20 finding target on the full smoke run, especially thought-leaders, reddit, sources, agents, news, and GitHub pulse.
 - Closed in Step 10: `_phase_sync` succeeded and restarted Fly but did not call the existing `orchestrator.sync.write_synced_marker()` helper; only the delivery ran-marker was written.
-- `learnings_update` still needs prompt/runtime tuning because it hit max turns in both real runs today. The new guard prevents corrupt output, but does not make the updater succeed.
+- Closed in Step 11: `learnings_update` needed prompt/runtime tuning because it hit max turns in both real runs today. The Step 9 guard prevented new corrupt writes, but did not repair existing corrupt learnings or guarantee a useful fallback.
 
 ### Verification
 
@@ -347,3 +347,36 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: the existing sync marker helper is now connected to both the orchestrator and launchd guard, closing the stale-dashboard retry hole.
   - Security: no recipient data, reports, local settings, or personal data are staged; marker files contain no content.
   - Performance: the wrapper adds two filesystem checks, and `_phase_sync()` adds one marker write only after successful sync/restart.
+
+## Step 11 - Learnings fallback and baseline repair
+
+### Changes
+
+- Added a deterministic `_build_learnings_fallback()` path for `learnings.md`.
+- `_phase_learn()` now:
+  - writes normal LLM output on clean success,
+  - preserves a valid existing `learnings.md` if the LLM updater fails,
+  - repairs missing or corrupt `learnings.md` files with deterministic run facts if the updater fails.
+- Tightened `agents/learnings-updater.md` so the LLM uses only prompt-provided run data and stays under 500 words.
+- Repaired the tracked `data/ramsay/learnings.md` baseline, which had contained only `Error: Reached max turns (5)` since the initial commit.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn::test_learnings_update_failure_repairs_corrupt_error_file -q` failed before implementation because the corrupt `Error:` file remained unchanged.
+- Learn group: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseLearn -q` - 5 passed.
+- Runner suite: `.venv/bin/python3 -m pytest tests/test_runner.py -q` - 57 passed.
+- Compile check: `.venv/bin/python3 -m compileall -q orchestrator/runner.py` - passed.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1100 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt graph artifacts to 6263 nodes and 9433 edges from 388 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain _build_learnings_fallback` - resolved `orchestrator/runner.py` line 1115.
+- `graphify path _phase_learn _build_learnings_fallback` - found `_phase_learn() --calls--> _build_learnings_fallback()`.
+- `graphify diagnose multigraph --json` - reported 6263 nodes, 9433 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: updater failure can no longer leave agents reading raw CLI error text; tests cover both valid-file preservation and corrupt-file repair.
+  - Readability: fallback output is a simple markdown summary with explicit latest-run and operating-note sections.
+  - Architecture: Learn phase keeps the LLM summarizer as the preferred path but has a deterministic resilience path for runtime failures.
+  - Security: the repaired baseline contains generic operating notes only, no recipient details or private source output.
+  - Performance: fallback construction is in-process string formatting and only runs when the LLM updater fails or returns unusable output.

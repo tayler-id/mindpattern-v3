@@ -1075,17 +1075,33 @@ class ResearchPipeline:
             system_prompt_file="agents/learnings-updater.md",
         )
         cleaned_output = output.strip()
+        dest = PROJECT_ROOT / "data" / self.user_id / "learnings.md"
         if exit_code == 0 and cleaned_output and not cleaned_output.startswith("Error:"):
-            dest = PROJECT_ROOT / "data" / self.user_id / "learnings.md"
+            dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(output)
             logger.info(f"Learnings.md regenerated ({len(output)} chars)")
-        elif exit_code != 0 or cleaned_output.startswith("Error:"):
+        else:
+            existing = dest.read_text().strip() if dest.exists() else ""
             logger.warning(
                 "Learnings.md update skipped after updater failure "
                 "(exit_code=%s, output_len=%s)",
                 exit_code,
                 len(output),
             )
+            if not existing or existing.startswith("Error:"):
+                fallback = self._build_learnings_fallback(
+                    stats=stats,
+                    quality=quality,
+                    consolidate_result=consolidate_result,
+                    promote_result=promote_result,
+                    prune_result=prune_result,
+                    regressions=regressions,
+                    entity_relationships_stored=entity_relationships_stored,
+                    trend_backfill_count=trend_backfill_count,
+                )
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(fallback)
+                logger.info("Learnings.md regenerated with deterministic fallback")
 
         return {
             "quality": quality,
@@ -1095,6 +1111,48 @@ class ResearchPipeline:
             "prompt_regressions": regressions,
             "entity_relationships_stored": entity_relationships_stored,
         }
+
+    def _build_learnings_fallback(
+        self,
+        *,
+        stats: dict,
+        quality: dict,
+        consolidate_result: dict,
+        promote_result: dict,
+        prune_result: dict,
+        regressions: list,
+        entity_relationships_stored: int,
+        trend_backfill_count: int,
+    ) -> str:
+        """Build a safe learnings.md when the LLM updater fails."""
+        findings = stats.get("findings", stats.get("findings_count", "n/a"))
+        sources = stats.get("sources", stats.get("source_count", "n/a"))
+        quality_score = quality.get("overall_score", quality.get("overall", "n/a"))
+
+        lines = [
+            "# Learnings",
+            "",
+            f"Last updated: {self.date_str}",
+            "",
+            "## Latest Run",
+            f"- Quality overall: {quality_score}",
+            f"- Findings stored: {findings}",
+            f"- Sources tracked: {sources}",
+            f"- Memory consolidated: {consolidate_result}",
+            f"- Memory promoted: {promote_result}",
+            f"- Memory pruned: {prune_result}",
+            f"- Entity relationships stored: {entity_relationships_stored}",
+            f"- Trend results backfilled: {trend_backfill_count}",
+            f"- Prompt regressions detected: {len(regressions or [])}",
+            "",
+            "## Operating Notes",
+            "- Prefer fresh, source-backed findings over already-covered stories.",
+            "- Treat source-tool failures as partial coverage gaps, not as empty research days.",
+            "- Preserve duplicate-send and sync receipts; retries should repair state without resending.",
+            "- If the LLM updater fails, keep this deterministic summary rather than error text.",
+            "",
+        ]
+        return "\n".join(lines)
 
     def _phase_social(self) -> dict:
         """Phase 7: Social (SocialPipeline).
