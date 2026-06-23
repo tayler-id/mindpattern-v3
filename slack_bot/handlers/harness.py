@@ -31,6 +31,16 @@ class HarnessHandler(BaseHandler):
         text = event.get("text", "").strip().lower()
         thread_ts = event.get("ts")
 
+        # The harness (git repo, ticket files, run.sh) only exists on the Mac.
+        # The Fly.io container image deliberately excludes harness/.
+        if not (PROJECT_ROOT / "harness").is_dir():
+            self.reply(
+                "Harness commands only run on the Mac — this bot instance is remote. "
+                "Run the harness locally with `bash harness/run.sh`.",
+                thread_ts,
+            )
+            return
+
         if text.startswith("status"):
             self._cmd_status(thread_ts)
         elif text.startswith("tickets"):

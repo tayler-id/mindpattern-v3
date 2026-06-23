@@ -103,6 +103,21 @@ class TestKeychainGet:
         with patch("social.posting.subprocess.run", return_value=fake_result):
             assert keychain_get("some-key") == "my-secret-value"
 
+    def test_non_macos_reads_matching_env_var(self):
+        """On Fly/Linux, secrets come from env vars instead of macOS Keychain."""
+        with patch("social.posting.sys.platform", "linux"):
+            with patch.dict("social.posting.os.environ", {"SOME_KEY": "env-secret"}):
+                assert keychain_get("some-key") == "env-secret"
+
+    def test_macos_falls_back_to_env_when_keychain_missing(self):
+        """Local runs can still use env vars when Keychain has no matching item."""
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=44, stdout="", stderr="not found"
+        )
+        with patch("social.posting.subprocess.run", return_value=fake_result):
+            with patch.dict("social.posting.os.environ", {"SOME_KEY": "env-secret"}):
+                assert keychain_get("some-key") == "env-secret"
+
 
 # ────────────────────────────────────────────────────────────────────────
 # social/posting.py — compress_image
@@ -317,6 +332,110 @@ class TestLinkedInClient:
         assert payload["visibility"] == "PUBLIC"
         assert payload["author"] == "urn:li:person:member123"
         assert payload["distribution"]["feedDistribution"] == "MAIN_FEED"
+
+    def test_default_version_computed_when_config_omits_it(self, mock_keychain):
+        """When api_version is not in config, client computes a recent YYYYMM value."""
+        from datetime import datetime, timezone
+        config = {
+            "api_base": "https://api.linkedin.com",
+            "target_chars": 1350,
+            "keychain": {"access_token": "linkedin-access-token"},
+        }
+        client = LinkedInClient(config)
+        version = client.session.headers["Linkedin-Version"]
+        assert isinstance(version, str)
+        assert len(version) == 6 and version.isdigit()
+        year = int(version[:4])
+        now_year = datetime.now(timezone.utc).year
+        assert now_year - 1 <= year <= now_year
+
+    def test_config_version_normalized(self, mock_keychain):
+        """An 8-digit YYYYMMDD value in config is normalized to YYYYMM."""
+        config = {
+            "api_base": "https://api.linkedin.com",
+            "api_version": "20250401",
+            "target_chars": 1350,
+            "keychain": {"access_token": "linkedin-access-token"},
+        }
+        client = LinkedInClient(config)
+        assert client.session.headers["Linkedin-Version"] == "202504"
+
+    def test_post_refuses_content_over_commentary_limit(self, mock_keychain, linkedin_config):
+        """LinkedIn commentary over 3000 chars is rejected before any API call."""
+        client = LinkedInClient(linkedin_config)
+        with patch.object(client.session, "request") as mock_request:
+            result = client.post("x" * (LinkedInClient.COMMENTARY_MAX_CHARS + 1))
+
+        assert result["success"] is False
+        assert "exceeds LinkedIn" in result["error"]
+        mock_request.assert_not_called()
+
+    def test_post_migrates_old_nonexistent_version_to_recent_default(self, mock_keychain, linkedin_config):
+        """On retired versions, client jumps forward to a recent supported default."""
+        client = LinkedInClient(linkedin_config)
+        client._person_urn = "urn:li:person:member123"
+
+        rejected = MagicMock()
+        rejected.status_code = 426
+        rejected.text = '{"status":426,"code":"NONEXISTENT_VERSION","message":"Requested version 202501 is not active"}'
+        rejected.headers = {}
+
+        accepted = MagicMock()
+        accepted.status_code = 201
+        accepted.headers = {"x-restli-id": "urn:li:share:42"}
+        accepted.json.return_value = {}
+        accepted.text = ""
+
+        # requests.HTTPError gets raised by raise_for_status on 426
+        from requests import HTTPError
+        rejected.raise_for_status.side_effect = HTTPError(response=rejected)
+        accepted.raise_for_status.return_value = None
+
+        responses = [rejected, accepted]
+
+        def side_effect(method, url, **kwargs):
+            return responses.pop(0)
+
+        with patch.object(client, "_compute_default_version", return_value="202604"):
+            with patch.object(client.session, "request", side_effect=side_effect):
+                result = client.post("hello")
+
+        assert result["success"] is True
+        # Session header updated from retired 202501 to a recent supported version.
+        assert client.session.headers["Linkedin-Version"] == "202604"
+
+    def test_post_steps_back_when_recent_default_is_rejected(self, mock_keychain, linkedin_config):
+        """If the recent default is not active yet, client steps back one month."""
+        config = {**linkedin_config, "api_version": "202604"}
+        client = LinkedInClient(config)
+        client._person_urn = "urn:li:person:member123"
+
+        rejected = MagicMock()
+        rejected.status_code = 426
+        rejected.text = '{"status":426,"code":"NONEXISTENT_VERSION","message":"Requested version 202604 is not active"}'
+        rejected.headers = {}
+
+        accepted = MagicMock()
+        accepted.status_code = 201
+        accepted.headers = {"x-restli-id": "urn:li:share:42"}
+        accepted.json.return_value = {}
+        accepted.text = ""
+
+        from requests import HTTPError
+        rejected.raise_for_status.side_effect = HTTPError(response=rejected)
+        accepted.raise_for_status.return_value = None
+
+        responses = [rejected, accepted]
+
+        def side_effect(method, url, **kwargs):
+            return responses.pop(0)
+
+        with patch.object(client, "_compute_default_version", return_value="202604"):
+            with patch.object(client.session, "request", side_effect=side_effect):
+                result = client.post("hello")
+
+        assert result["success"] is True
+        assert client.session.headers["Linkedin-Version"] == "202603"
 
     def test_verify_token(self, mock_keychain, linkedin_config):
         """verify_token() calls /v2/userinfo and returns the response."""

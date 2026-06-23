@@ -3,6 +3,10 @@ primary_region = "sjc"
 
 [build]
 
+# One machine runs both the dashboard (mindpattern.ai newsletter viewer,
+# inbound HTTP below) and the Socket Mode Slack bot (outbound WebSocket).
+# See start.sh.
+
 [env]
   DATA_DIR = "/data"
   USERS_JSON = "/data/users.json"
@@ -32,5 +36,5 @@ primary_region = "sjc"
   destination = "/data"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = "shared-cpu-2x"
+  memory = "2gb"

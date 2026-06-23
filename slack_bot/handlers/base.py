@@ -76,13 +76,14 @@ class BaseHandler:
         ]
 
     def wait_for_reply(
-        self, thread_ts: str, timeout: int = 300, poll_interval: int = 5
+        self, thread_ts: str, timeout: int = 900, poll_interval: int = 5
     ) -> str | None:
         """Poll for a human reply in a thread. Returns reply text or None on timeout.
 
         Args:
             thread_ts: Thread timestamp to poll.
-            timeout: Max wait in seconds. Defaults to 300 (5 min).
+            timeout: Max wait in seconds. Defaults to 900 (15 min — approvals
+                often come from a phone, not someone watching the channel).
             poll_interval: Seconds between polls.
         """
         start = time.monotonic()
@@ -133,9 +134,14 @@ class BaseHandler:
                 ["curl", "-sL", f"https://r.jina.ai/{url}"],
                 capture_output=True, text=True, timeout=timeout,
             )
-            if proc.returncode == 0 and proc.stdout.strip():
-                return proc.stdout.strip()
-            return None
+            if proc.returncode != 0 or not proc.stdout.strip():
+                return None
+            out = proc.stdout.strip()
+            # Jina returns JSON error bodies with HTTP 200 for blocked/paywalled hosts.
+            if out.startswith("{") and '"SecurityCompromiseError"' in out[:300]:
+                logger.warning("Jina blocked %s: %s", url, out[:200])
+                return None
+            return out
         except subprocess.TimeoutExpired:
             logger.warning(f"Jina Reader timed out for {url}")
             return None

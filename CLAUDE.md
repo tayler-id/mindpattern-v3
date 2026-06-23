@@ -10,8 +10,8 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - **SQLite databases**: `data/ramsay/memory.db` (user data, 17+ tables), `data/ramsay/traces.db` (observability, 14 tables)
 - **Pipeline**: `orchestrator/runner.py` — 12 phases in fixed order (INIT → TREND_SCAN → RESEARCH → SYNTHESIS → DELIVER → LEARN → SOCIAL → ENGAGEMENT → EVOLVE → IDENTITY → MIRROR → SYNC)
 - **Agent dispatch**: `orchestrator/agents.py` — `run_single_agent()`, `run_claude_prompt()`, `dispatch_research_agents()`
-- **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern
-- **Dashboard**: FastAPI on Fly.io (`mindpattern.fly.dev`)
+- **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern. Runs 24/7 on Fly.io (app `mindpattern`, alongside the dashboard via `start.sh`); harness commands stay Mac-only. Secrets come from Fly secrets (env vars) in the container, macOS Keychain locally.
+- **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
 - **Scheduling**: macOS launchd via `run-launchd.sh` (7 AM daily)
 
 ## Code Conventions
@@ -73,3 +73,27 @@ The knowledge graph (`harness/knowledge/`) is a set of interconnected markdown f
 ## Autonomous Harness
 
 The harness (`harness/`) is a self-improving outer loop. See `harness/CLAUDE.md` for ticket schema and agent workflows. Agents in the harness use TDD: write failing tests first, then implement.
+
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues at `tayler-id/mindpattern-v3` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical labels — defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

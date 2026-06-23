@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import random
 import re
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -30,11 +32,23 @@ log = logging.getLogger(__name__)
 
 
 def keychain_get(service_name: str) -> str | None:
-    """Read a secret from macOS Keychain.
+    """Read a secret from macOS Keychain or the matching env var.
 
-    Returns the secret string, or None if the lookup times out.
-    Raises RuntimeError if the key is not found (non-timeout failure).
+    Falls back to the env var derived from the service name
+    (bluesky-app-password → BLUESKY_APP_PASSWORD); on non-macOS hosts
+    (the Fly.io container) the env var is the only source.
+
+    Returns the secret string, or None if the Keychain lookup times out.
+    Raises RuntimeError if the secret is found in neither place.
     """
+    env_val = os.environ.get(service_name.upper().replace("-", "_"))
+    if sys.platform != "darwin":
+        if env_val:
+            return env_val
+        raise RuntimeError(
+            f"Secret '{service_name}' not set — expected env var "
+            f"{service_name.upper().replace('-', '_')} on non-macOS hosts"
+        )
     try:
         result = subprocess.run(
             ["security", "find-generic-password", "-s", service_name, "-w"],
@@ -46,6 +60,8 @@ def keychain_get(service_name: str) -> str | None:
         log.error("Keychain lookup timed out for '%s'", service_name)
         return None
     if result.returncode != 0:
+        if env_val:
+            return env_val
         raise RuntimeError(
             f"Could not read '{service_name}' from macOS Keychain: {result.stderr.strip()}"
         )
@@ -829,10 +845,47 @@ class LinkedInClient:
     See: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
     """
 
-    # LinkedIn API version — YYYYMM format.  Update when migrating to a
-    # newer version.  The version is sent on every request via the
-    # ``Linkedin-Version`` header which is *required* by the REST API.
-    DEFAULT_API_VERSION = "202501"
+    # LinkedIn retires each API version after roughly a year, so compute a
+    # recent-but-safe version at runtime rather than pinning a string that will
+    # eventually age out. A pinned value in social-config.json is still honored
+    # as the starting attempt, but if LinkedIn rejects an old pinned version we
+    # jump forward to the computed default before trying older recent versions.
+    VERSION_FALLBACK_STEPS = 13  # cover ~one year of monthly versions
+
+    @staticmethod
+    def _compute_default_version(offset_months: int = 2) -> str:
+        """Return a LinkedIn API version string (YYYYMM) offset_months behind today."""
+        now = datetime.now(timezone.utc)
+        y, m = now.year, now.month - offset_months
+        while m <= 0:
+            m += 12
+            y -= 1
+        return f"{y:04d}{m:02d}"
+
+    @staticmethod
+    def _normalize_version(value: str) -> str:
+        """Accept YYYYMM or YYYYMMDD (strip trailing digits) and return YYYYMM."""
+        digits = "".join(ch for ch in str(value) if ch.isdigit())
+        return digits[:6] if len(digits) >= 6 else digits
+
+    @staticmethod
+    def _step_back_version(version: str) -> str:
+        """Return the previous month's version string."""
+        v = LinkedInClient._normalize_version(version)
+        y, m = int(v[:4]), int(v[4:6])
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+        return f"{y:04d}{m:02d}"
+
+    def _fallback_version(self, attempts: int) -> str:
+        """Pick the next version after a NONEXISTENT_VERSION response."""
+        default_version = self._compute_default_version()
+        current = self._normalize_version(self.api_version)
+        if attempts == 0 and current < default_version:
+            return default_version
+        return self._step_back_version(current)
 
     def __init__(self, config: dict):
         """Initialize from social-config.json `platforms.linkedin` section.
@@ -849,7 +902,11 @@ class LinkedInClient:
         if self.api_base.endswith("/v2"):
             self.api_base = self.api_base[: -len("/v2")]
 
-        self.api_version = config.get("api_version", self.DEFAULT_API_VERSION)
+        configured_version = config.get("api_version")
+        if configured_version:
+            self.api_version = self._normalize_version(configured_version)
+        else:
+            self.api_version = self._compute_default_version()
         self.target_chars = config.get("target_chars", 1350)
 
         kc = config["keychain"]
@@ -907,6 +964,47 @@ class LinkedInClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _linkedin_rest_call(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """POST/GET to a versioned LinkedIn /rest/ endpoint with auto version fallback.
+
+        LinkedIn retires versions after ~12 months. If the server rejects our
+        configured version with 426 NONEXISTENT_VERSION, step back one month and
+        retry, up to VERSION_FALLBACK_STEPS times. On success, leave the new
+        version on the session so subsequent calls skip the rollback.
+        """
+        attempts = 0
+        while True:
+            try:
+                return _api_call_with_retry(self.session, method, url, **kwargs)
+            except requests.HTTPError as exc:
+                resp = exc.response
+                if resp is None or resp.status_code != 426:
+                    raise
+                body = resp.text or ""
+                if "NONEXISTENT_VERSION" not in body:
+                    raise
+                if attempts >= self.VERSION_FALLBACK_STEPS:
+                    log.error(
+                        "LinkedIn rejected %d consecutive versions ending at %s — "
+                        "update api_version in social-config.json",
+                        attempts + 1, self.api_version,
+                    )
+                    raise
+                fallback_version = self._fallback_version(attempts)
+                log.warning(
+                    "LinkedIn version %s rejected (NONEXISTENT_VERSION); "
+                    "retrying with %s. Consider updating social-config.json.",
+                    self.api_version, fallback_version,
+                )
+                self.api_version = fallback_version
+                self.session.headers["Linkedin-Version"] = fallback_version
+                attempts += 1
+
     def _upload_image(self, image_path: Path) -> str | None:
         """Upload an image via the Images API (initializeUpload + binary PUT).
 
@@ -924,8 +1022,7 @@ class LinkedInClient:
         }
 
         try:
-            resp = _api_call_with_retry(
-                self.session,
+            resp = self._linkedin_rest_call(
                 "POST",
                 f"{self.api_base}/rest/images?action=initializeUpload",
                 json=init_payload,
@@ -973,8 +1070,7 @@ class LinkedInClient:
         }
 
         try:
-            resp = _api_call_with_retry(
-                self.session,
+            resp = self._linkedin_rest_call(
                 "POST",
                 f"{self.api_base}/rest/documents?action=initializeUpload",
                 json=init_payload,
@@ -1005,11 +1101,25 @@ class LinkedInClient:
             log.error("LinkedIn document binary upload failed: %s", exc)
             return None
 
+    # LinkedIn REST API commentary limit (3000 chars).
+    COMMENTARY_MAX_CHARS = 3000
+
     def post(self, content: str, image_path: Path | None = None, document_path: Path | None = None) -> dict:
         """Post to LinkedIn via the Posts API (/rest/posts) with optional image or document.
 
         Returns {success, url, id, error}.
         """
+        if len(content) > self.COMMENTARY_MAX_CHARS:
+            log.error(
+                "LinkedIn post exceeds %d char limit (%d chars) — refusing to post truncated content",
+                self.COMMENTARY_MAX_CHARS, len(content),
+            )
+            return {
+                "success": False, "url": "", "id": "",
+                "error": f"Content exceeds LinkedIn {self.COMMENTARY_MAX_CHARS} char limit ({len(content)} chars)",
+            }
+
+        log.info("LinkedIn posting %d chars", len(content))
         person_urn = self._get_person_urn()
 
         payload: dict[str, Any] = {
@@ -1044,8 +1154,7 @@ class LinkedInClient:
                 }
 
         try:
-            resp = _api_call_with_retry(
-                self.session,
+            resp = self._linkedin_rest_call(
                 "POST",
                 f"{self.api_base}/rest/posts",
                 json=payload,

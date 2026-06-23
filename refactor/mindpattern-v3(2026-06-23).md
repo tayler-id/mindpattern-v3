@@ -92,3 +92,32 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: dangerous tool access is denied in both command construction and prompt guidance, reducing prompt-injection blast radius for research agents.
   - Security: shell/subagent tools remain unavailable to research agents that process scraped external content; Synchrony bans gate both research and social output.
   - Performance: retry backoff only applies to transient failures and keeps normal 13-agent concurrency unchanged.
+
+## Step 4 - Fly runtime and social posting hardening
+
+### Changes
+
+- Added environment-variable fallback for Slack and social secrets on non-macOS hosts while preserving macOS Keychain lookup locally.
+- Guarded Slack harness commands when the bot is running in the Fly container that does not include `harness/`.
+- Increased Slack approval wait time to 15 minutes and filtered Jina `SecurityCompromiseError` JSON bodies out of article reads.
+- Updated Fly VM sizing and documented that the Fly machine runs both dashboard HTTP and Slack Socket Mode.
+- Added LinkedIn API version normalization and version fallback for `/rest/` calls.
+- Fixed the dirty LinkedIn fallback bug so a retired old configured version migrates forward to a recent supported default instead of retrying an even older retired version.
+- Added a LinkedIn 3000-character commentary guard so posting fails closed instead of truncating.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_social.py::TestLinkedInClient::test_post_migrates_old_nonexistent_version_to_recent_default tests/test_social.py::TestLinkedInClient::test_post_steps_back_when_recent_default_is_rejected -q` - 2 passed after the fix.
+- `.venv/bin/python3 -m pytest tests/test_social.py tests/test_slack_bot.py -q` - 52 passed.
+- `.venv/bin/python3 -m pytest tests/ -x -q` - 1092 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - ran after the Graphify reinstall; the committed graph artifacts will be refreshed in the next slice so their freshness marker points at this Step 4 commit.
+
+### Auto Review
+
+- `git diff --check -- CLAUDE.md fly.toml slack_bot/handlers/base.py slack_bot/handlers/harness.py slack_bot/registry.py social/posting.py tests/test_slack_bot.py tests/test_social.py 'refactor/mindpattern-v3(2026-06-23).md'` - passed.
+- Five-axis review:
+  - Correctness: tests cover env-var secret fallback, Fly harness absence, Jina security-compromise filtering, LinkedIn length limits, and LinkedIn version fallback from retired configured versions.
+  - Readability: platform-specific secret lookup and LinkedIn retry behavior stay in small helpers instead of spreading conditionals across call sites.
+  - Architecture: local macOS Keychain behavior remains the default while Fly/container runtime gets explicit environment-backed secrets and harness gating.
+  - Security: the runtime fails closed for unavailable credentials, unsafe Jina bodies, and oversized LinkedIn commentary; no secret values are logged.
+  - Performance: Slack command guards are constant-time checks, and LinkedIn version fallback is bounded by the existing retry loop.

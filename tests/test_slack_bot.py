@@ -5,12 +5,58 @@ in the test environment.
 """
 
 import ast
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+# slack_sdk isn't installed in the test env; stub it so base.py imports cleanly.
+if "slack_sdk" not in sys.modules:
+    slack_sdk_stub = MagicMock()
+    sys.modules["slack_sdk"] = slack_sdk_stub
+    sys.modules["slack_sdk.errors"] = MagicMock()
+
 SLACK_BOT_DIR = Path(__file__).parent.parent / "slack_bot"
+
+
+class TestReadUrlRejectsJinaErrorBody:
+    """read_url() must not return Jina's SecurityCompromiseError JSON as content."""
+
+    def test_jina_blocked_response_returns_none(self):
+        from slack_bot.handlers.base import BaseHandler
+
+        blocked_body = (
+            '{"data":null,"code":451,"name":"SecurityCompromiseError",'
+            '"status":45102,"message":"Anonymous access to domain '
+            'www.bostonglobe.com blocked until Mon May 11 2026 14:49:07 GMT+0000"}'
+        )
+        fake_proc = MagicMock(returncode=0, stdout=blocked_body, stderr="")
+        with patch("slack_bot.handlers.base.subprocess.run", return_value=fake_proc):
+            assert BaseHandler.read_url("https://www.bostonglobe.com/foo") is None
+
+    def test_normal_markdown_passes_through(self):
+        from slack_bot.handlers.base import BaseHandler
+
+        fake_proc = MagicMock(
+            returncode=0,
+            stdout="Title: Hello\n\nSome article body here.",
+            stderr="",
+        )
+        with patch("slack_bot.handlers.base.subprocess.run", return_value=fake_proc):
+            out = BaseHandler.read_url("https://example.com/")
+            assert out is not None and "Some article body" in out
+
+
+class TestKeychainEnvFallback:
+    """Slack secrets use env vars on non-macOS hosts such as Fly.io."""
+
+    def test_non_macos_reads_matching_env_var(self):
+        from slack_bot.registry import _keychain_get
+
+        with patch("slack_bot.registry.sys.platform", "linux"):
+            with patch.dict("slack_bot.registry.os.environ", {"SLACK_BOT_TOKEN": "xoxb-test"}):
+                assert _keychain_get("slack-bot-token") == "xoxb-test"
 
 
 class TestReplyErrorHandling:

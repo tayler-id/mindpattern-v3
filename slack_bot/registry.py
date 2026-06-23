@@ -6,7 +6,9 @@ Adding a new handler = create a handler file + add it to HANDLER_CLASSES.
 
 import json
 import logging
+import os
 import subprocess
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +25,25 @@ HANDLER_CLASSES: dict[str, str] = {
 
 
 def _keychain_get(service: str) -> str | None:
-    """Read a value from macOS Keychain."""
-    try:
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", service, "-a", "mindpattern", "-w"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        logger.error(f"Keychain lookup timed out for {service}")
-    except Exception as e:
-        logger.error(f"Keychain lookup failed for {service}: {e}")
-    return None
+    """Read a value from macOS Keychain, falling back to the env var derived
+    from the service name (slack-bot-token → SLACK_BOT_TOKEN).
+
+    On non-macOS hosts (the Fly.io container) Keychain is skipped entirely
+    and only the env var is consulted.
+    """
+    if sys.platform == "darwin":
+        try:
+            result = subprocess.run(
+                ["security", "find-generic-password", "-s", service, "-a", "mindpattern", "-w"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            logger.error(f"Keychain lookup timed out for {service}")
+        except Exception as e:
+            logger.error(f"Keychain lookup failed for {service}: {e}")
+    return os.environ.get(service.upper().replace("-", "_")) or None
 
 
 def load_channel_config() -> dict[str, str]:
