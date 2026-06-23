@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: KG schema slice committed on top of `7058abe refactor: centralize claude command building`; run `git log --oneline -18` for the exact latest commit hash.
+- Code/graph state: session knowledge hook slice staged on top of `3271ce3 refactor: add knowledge graph schema`; run `git log --oneline -19` for the exact latest commit hash after it lands.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has eighteen save-point commits through the KG schema foundation slice:
+This refactor branch now has nineteen save-point commits through the session knowledge hook slice once the current staged slice lands:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -30,9 +30,10 @@ This refactor branch now has eighteen save-point commits through the KG schema f
 15. `3c96abb refactor: share claude cli process runner`
 16. `ee16f82 refactor: route all claude dispatch through runner`
 17. `7058abe refactor: centralize claude command building`
-18. latest `refactor: add knowledge graph schema`
+18. `3271ce3 refactor: add knowledge graph schema`
+19. latest `refactor: add session knowledge hooks`
 
-This handoff was updated again after adding the KG schema foundation. Use `git log --oneline -18` for the exact latest commit hashes.
+This handoff was updated again after adding the interactive session knowledge hooks. Use `git log --oneline -19` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -54,6 +55,7 @@ The main completed work is:
 - Finished the Claude dispatch migration: `run_single_agent()`, `_run_agent_attempt()`, `run_agent_with_files()`, `run_claude_prompt()`, and `core.llm.run()` now all execute Claude through `core.claude_cli.run_claude_process()`.
 - Centralized Claude command construction in `_build_claude_command()` and named tool-policy constants so research, file-writing, and prompt dispatch share one CLI command shape while keeping distinct allowed/disallowed tool policies.
 - Added `kg.schema` as the typed, bi-temporal KG schema foundation in `memory.db`, with idempotent `kg_*` tables, constrained vocabularies, and pure-SQLite regression tests.
+- Added interactive session knowledge hooks and `.claude/settings.json` registration: session start injects compiled knowledge, session end/pre-compact spawn non-blocking flush work, and session capture writes tested conversation summaries.
 
 ## Verification Already Run
 
@@ -128,6 +130,14 @@ The main completed work is:
 - Graphify update attempts for KG: `graphify update .` and `graphify update . --force` both reported no topology changes because the graph artifacts already contained the KG topology.
 - `graphify explain init_kg_schema` resolves `kg/schema.py` line 131 with incoming calls from `open_kg()`, `test_idempotent()`, and the schema test fixture.
 - `graphify path open_kg init_kg_schema` finds `open_kg() --calls--> init_kg_schema()`.
+- Session hook settings validation: `python3 -m json.tool .claude/settings.json` -> passed.
+- Session hook suites: `.venv/bin/python3 -m pytest tests/test_session_capture.py tests/test_session_hook.py -q` -> `50 passed`.
+- Compile after session hooks: `python3 -m compileall hooks/session_capture.py hooks/session_end.py hooks/session_start.py hooks/pre_compact.py tests/test_session_capture.py` -> passed.
+- Session hook staged hygiene: `git diff --check -- .claude/settings.json hooks/__init__.py hooks/session_capture.py hooks/session_end.py hooks/session_start.py hooks/pre_compact.py tests/test_session_capture.py` -> passed.
+- `graphify explain session_start.py` resolves `hooks/session_start.py` with `main()` contained.
+- `graphify explain session_end.py` resolves `hooks/session_end.py` with `main()`, `_check_dedup()`, `_write_dedup()`, and `_extract_context()`.
+- `graphify explain pre_compact.py` resolves `hooks/pre_compact.py` with the same dedup/context helpers.
+- `graphify explain _update_sessions_index` resolves `hooks/session_capture.py` line 389 with an incoming call from `main()`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -174,6 +184,7 @@ The main completed work is:
   - `graphify path run_claude_prompt _build_claude_command` finds a direct one-hop path.
   - `graphify explain init_kg_schema` resolves `kg/schema.py` line 131 with incoming calls from `open_kg()` and the schema tests.
   - `graphify path open_kg init_kg_schema` finds `open_kg() --calls--> init_kg_schema()`.
+  - `graphify explain session_start.py`, `graphify explain session_end.py`, `graphify explain pre_compact.py`, and `graphify explain _update_sessions_index` all resolve the session hook entry points/helpers.
   - `graphify diagnose multigraph --json` reports 6320 nodes, 9624 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
@@ -197,9 +208,9 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the KG schema slice is committed should still mostly be user/generated state:
+Tracked dirty files after the session hook slice is committed should still mostly be user/generated state:
 
-- Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
+- Local/editor state: `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
 - Source/doc candidates: `docs/spec-v4.md`, plus the unrelated `requirements.txt` Pillow hunk if it remains unstaged.
 
@@ -207,7 +218,7 @@ Untracked notable directories/files:
 
 - Agent/local config: `.claude/agents/`, `.claude/commands/`, `.claude/references/`, `.claude/skills/**`
 - Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md`, plus this June 23 handoff
-- Possible source feature slices: `hooks/`, `knowledge/`, `docs/agents/`, `tests/test_session_capture.py`
+- Possible source feature slices: `knowledge/`, `docs/agents/`
 - Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, `tasks/`
 - Runtime/user data: `data/ramsay/journal.offset`, `data/ramsay/mindpattern/knowledge/`, `data/testuser/`
 

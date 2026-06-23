@@ -635,3 +635,39 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: the KG shares `memory.db` through `memory.db.get_db()` rather than introducing another database file or connection policy.
   - Security: the slice commits schema code and synthetic tests only; it does not stage personal vault data, generated social drafts, or runtime state.
   - Performance: schema setup is bounded `CREATE TABLE/INDEX IF NOT EXISTS` work and uses SQLite indexes for alias, entity, predicate, provenance, and current-edge lookups.
+
+## Step 19 - Session knowledge hooks
+
+### Changes
+
+- Added interactive session hooks:
+  - `hooks/session_start.py` injects compiled knowledge context at session start.
+  - `hooks/session_end.py` captures substantial conversations and spawns the knowledge flush worker out of band.
+  - `hooks/pre_compact.py` captures context before compaction using the same non-blocking flush path with a higher turn threshold.
+- Added `hooks/session_capture.py` as a tested standalone parser/formatter for writing human-AI session summaries into the vault.
+- Registered the hooks in `.claude/settings.json` and added a Graphify pre-search hint hook for `grep`/`rg`/`find` style Bash searches.
+- Added `tests/test_session_capture.py` for transcript parsing, session extraction, markdown formatting, title inference, and atomic session-file writes.
+- Left runtime hook state (`knowledge/state/`, pycache, generated sessions) unstaged.
+
+### Verification
+
+- `python3 -m json.tool .claude/settings.json` - passed.
+- `.venv/bin/python3 -m pytest tests/test_session_capture.py tests/test_session_hook.py -q` - 50 passed.
+- `python3 -m compileall hooks/session_capture.py hooks/session_end.py hooks/session_start.py hooks/pre_compact.py tests/test_session_capture.py` - passed.
+- `git diff --check -- .claude/settings.json hooks/__init__.py hooks/session_capture.py hooks/session_end.py hooks/session_start.py hooks/pre_compact.py tests/test_session_capture.py` - passed.
+- `graphify update .` - reported no topology changes because the hook topology was already present in the current graph artifacts.
+- `graphify explain session_start.py` - resolved `hooks/session_start.py` with `main()` contained.
+- `graphify explain session_end.py` - resolved `hooks/session_end.py` with `main()`, `_check_dedup()`, `_write_dedup()`, and `_extract_context()`.
+- `graphify explain pre_compact.py` - resolved `hooks/pre_compact.py` with the same dedup/context helpers.
+- `graphify explain _update_sessions_index` - resolved `hooks/session_capture.py` line 389 with an incoming call from `main()`.
+- `graphify diagnose multigraph --json` - reported 6320 nodes, 9624 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: hook parser/formatter behavior is covered by tests, settings JSON parses, and existing pipeline transcript-hook tests still pass.
+  - Readability: hook entry points are split by lifecycle event instead of mixing start, end, pre-compact, and session-page formatting in one file.
+  - Architecture: hooks do local file I/O only in the foreground; expensive knowledge flushing is spawned out of band and guarded against recursive Claude invocation.
+  - Security: hook code skips pipeline agents where appropriate, avoids committing captured conversation/runtime state, and the Graphify hint hook only emits static context.
+  - Performance: session start reads bounded markdown context, session end/pre-compact cap extracted turns/chars, and flush work runs in a background process.
