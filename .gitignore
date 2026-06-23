@@ -54,6 +54,8 @@ Thumbs.db
 # Claude Code worktrees and agent state
 .claude/worktrees/
 .claude/*.bak-*
+.claude/skills/*
+!.claude/skills/session-handoff
 .agent/
 .agents/
 .pi/
@@ -61,11 +63,18 @@ Thumbs.db
 
 # Local analysis tool state
 .understand-anything/
+knowledge/state/
 graphify-out/.graphify_python
 graphify-out/cache/
 graphify-out/cost.json
 graphify-out/graph.html
 graphify-out/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+
+# Generated/local knowledge state
+data/*/journal.offset
+data/testuser/
+data/*/mindpattern/knowledge/
+data/*/mindpattern/decisions-archive.md
 
 # Obsidian
 .obsidian/

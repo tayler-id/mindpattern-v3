@@ -760,3 +760,34 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: Claude-specific local workflow config is now explicit project documentation instead of unstaged ambient state.
   - Security: no secrets are committed; ignored skill symlinks, personal data, Obsidian state, runtime knowledge state, and the stale personal handoff stay out of this slice.
   - Performance: documentation/config only; no runtime code path changed.
+
+## Step 23 - Final guardrails and branch verification
+
+### Changes
+
+- Added `.gitignore` guardrails for local Claude skill symlinks while preserving the already tracked `session-handoff` symlink.
+- Added ignore coverage for new runtime-only knowledge state:
+  - `knowledge/state/`
+  - `data/*/journal.offset`
+  - `data/testuser/`
+  - `data/*/mindpattern/knowledge/`
+  - `data/*/mindpattern/decisions-archive.md`
+- Reduced dirty-status noise without deleting or reverting any user/generated files.
+
+### Verification
+
+- `git check-ignore -v .claude/skills/api-and-interface-design knowledge/state/last-flush.json data/ramsay/journal.offset data/testuser/journal.offset data/ramsay/mindpattern/knowledge/concepts/index.md data/ramsay/mindpattern/decisions-archive.md` - confirmed all local/runtime paths are ignored by the new rules.
+- `git diff --check -- .gitignore` - passed.
+- `.venv/bin/python3 -m pytest tests/ -x -q` - 1118 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - reported no code-graph topology changes.
+- `graphify diagnose multigraph --json` - reported 6321 nodes, 9628 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the ignore rules target only untracked local/runtime paths and preserve tracked files, so no source or user data is removed.
+  - Readability: local Claude state, tool state, and generated knowledge state are named in the relevant `.gitignore` sections.
+  - Architecture: runtime state from the new knowledge hooks/compiler is now separated from source-controlled package code.
+  - Security: generated personal knowledge output, local test-user data, and broken local skill symlinks are protected from accidental broad staging.
+  - Performance: ignore-only change; no runtime code path changed.

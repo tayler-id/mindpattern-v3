@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: Agent workflow docs/config slice staged on top of `ec52c3a docs: update v4 context principles`; run `git log --oneline -22` for the exact latest commit hash after it lands.
+- Code/graph state: Final guardrails/verification slice staged on top of `5c20a5e docs: add agent workflow docs`; run `git log --oneline -23` for the exact latest commit hash after it lands.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has twenty-two save-point commits through the agent workflow docs/config slice once the current staged slice lands:
+This refactor branch now has twenty-three save-point commits through the final guardrails/verification slice once the current staged slice lands:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -34,9 +34,10 @@ This refactor branch now has twenty-two save-point commits through the agent wor
 19. `5043d1d refactor: add session knowledge hooks`
 20. `5debe68 refactor: add knowledge compiler`
 21. `ec52c3a docs: update v4 context principles`
-22. latest `docs: add agent workflow docs`
+22. `5c20a5e docs: add agent workflow docs`
+23. latest `chore: ignore local runtime artifacts`
 
-This handoff was updated again after adding project Claude agent/command/reference docs and `docs/agents` guidance. Use `git log --oneline -22` for the exact latest commit hashes.
+This handoff was updated again after adding final ignore guardrails for local/runtime artifacts and running the final full branch verification. Use `git log --oneline -23` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -62,6 +63,7 @@ The main completed work is:
 - Added the `knowledge` package for post-pipeline knowledge compilation and background conversation flushes; fixed `compile_knowledge(..., dry_run=True)` so it counts planned work without Claude calls or vault writes.
 - Updated the V4 spec with context-engineering principles and moved the Pillow dependency bound to `>=11,<12`, matching the tested virtualenv runtime.
 - Added project-level Claude workflow docs/config: code-reviewer, test-engineer, security-auditor, slash-command docs, reusable checklists, and `docs/agents` guidance for domain vocabulary plus GitHub issue triage.
+- Added `.gitignore` guardrails for local Claude skill symlinks, `knowledge/state/`, generated knowledge pages, journal offsets, and local test-user data so future broad staging does not capture runtime/personal artifacts.
 
 ## Verification Already Run
 
@@ -163,6 +165,12 @@ The main completed work is:
 - `graphify update .` reported no code-graph topology changes for the agent workflow docs/config slice.
 - `graphify diagnose multigraph --json` still reports 6321 nodes, 9628 edges, and zero duplicate/missing/dangling/self-loop edges.
 - `graphify check-update .` exited cleanly with no output.
+- Final full suite after all refactor/doc/guardrail work: `.venv/bin/python3 -m pytest tests/ -x -q` -> `1118 passed, 1 FastAPI/Starlette warning`.
+- Final ignore guardrail check: `git check-ignore -v .claude/skills/api-and-interface-design knowledge/state/last-flush.json data/ramsay/journal.offset data/testuser/journal.offset data/ramsay/mindpattern/knowledge/concepts/index.md data/ramsay/mindpattern/decisions-archive.md` -> confirmed ignored.
+- Final `.gitignore` hygiene: `git diff --check -- .gitignore` -> passed.
+- Final `graphify update .` reported no code-graph topology changes.
+- Final `graphify diagnose multigraph --json` still reports 6321 nodes, 9628 edges, and zero duplicate/missing/dangling/self-loop edges.
+- Final `graphify check-update .` exited cleanly with no output.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -239,13 +247,12 @@ Tracked dirty files after the V4 spec/Pillow slice is committed should still mos
 - Local/editor state: `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
 
-Untracked notable directories/files after the agent workflow docs/config slice should be:
+Untracked notable directories/files after the final guardrails slice should be:
 
-- Agent/local config not staged: `.claude/skills/**` symlinks. These point into ignored `.agents/skills/**`; do not commit them alone or a fresh clone will have broken links.
 - Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md` is stale/personal context from `main`; do not commit without explicit review.
 - Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, `tasks/`
 - Operational local config: `launchd/com.taylerramsay.daily-research.plist` contains absolute local paths; inspect before deciding whether to commit as a sample/config.
-- Runtime/user data: `data/ramsay/journal.offset`, `data/ramsay/mindpattern/knowledge/`, `data/testuser/`
+- Empty/placeholder docs: `agents/projects-researcher/2026-03-04.md`, empty files under `concepts/` unless those drafts are later filled.
 
 There is also a tracked-change recovery patch from earlier in the run:
 
