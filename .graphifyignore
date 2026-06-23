@@ -1,0 +1,76 @@
+# graphify-out itself
+graphify-out/
+
+# Python build / runtime
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Secrets / config
+.env
+.env.*
+*.pem
+social-config.json
+config.json
+skills-lock.json
+
+# Databases & WAL
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Logs / runtime artifacts
+*.log
+*.jsonl
+*.lock
+
+# Generated / daily output (108+ entries, regenerates every run)
+reports/
+refactor/
+
+# Personal data, identity, donor samples — sensitive, not codebase knowledge
+data/
+
+# Agent / IDE / harness state
+.agent/
+.agents/
+.pi/
+.kiro/
+.context/
+.gstack/
+.obsidian/
+.idea/
+.vscode/
+.claude/
+.harness-worktrees/
+knowledge/state/
+
+# Git internals (graphify skips .git already, but be explicit)
+.git/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+
+# Top-level oddities to skip
+--preview
+ramsay
+logo.png
+74.md
+Untitled*.canvas
+
+# Node (defensive — in case dashboard adds a frontend later)
+node_modules/
+
+# Translations / vendored locale dirs (if any get added)
+docs/translations/

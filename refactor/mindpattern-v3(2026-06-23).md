@@ -121,3 +121,35 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: local macOS Keychain behavior remains the default while Fly/container runtime gets explicit environment-backed secrets and harness gating.
   - Security: the runtime fails closed for unavailable credentials, unsafe Jina bodies, and oversized LinkedIn commentary; no secret values are logged.
   - Performance: Slack command guards are constant-time checks, and LinkedIn version fallback is bounded by the existing retry loop.
+
+## Step 5 - Graphify restoration and clean graph artifacts
+
+### Changes
+
+- Reinstalled Graphify as `graphifyy==0.8.46` through `uv tool install graphifyy`; `graphify` and `graphify-mcp` are now available from `~/.local/bin`.
+- Moved the stale pre-clean `graphify-out/` aside intact to `/private/tmp/mindpattern-v3-graphify-out-preclean-2026-06-23` before regenerating artifacts; preserved the intermediate pre-`refactor/`-ignore graph at `/private/tmp/mindpattern-v3-graphify-out-pre-refactor-ignore-2026-06-23`.
+- Added `.graphifyignore` so Graphify indexes project code/docs while excluding databases, personal data, `.claude/`, `.obsidian/`, generated reports, refactor progress logs, and transient `knowledge/state/` files.
+- Added Graphify-local ignore rules for `.graphify_python`, cache, cost telemetry, generated HTML, and dated backup directories.
+- Added a merge attribute for `graphify-out/graph.json`.
+- Regenerated portable Graphify artifacts in `graphify-out/`: `graph.json`, `manifest.json`, `.graphify_labels.json`, `.graphify_root`, and `GRAPH_REPORT.md`.
+
+### Verification
+
+- `uv tool list` - confirmed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
+- `graphify update .` - rebuilt the graph from 387 files with 6242 nodes and 9395 edges, with freshness metadata against commit `1ae8fb8f`.
+- `graphify explain "LinkedInClient"` - resolved `social/posting.py` `LinkedInClient` with 54 connections.
+- `graphify path "Slack Approval Gateway" "LinkedInClient"` - found `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
+- `graphify diagnose multigraph --json` - reported 6242 nodes, 9395 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `rg -n "settings\\.local|\\\"source_file\\\": \\\"\\.claude/|knowledge/state|refactor/mindpattern" graphify-out/graph.json graphify-out/manifest.json graphify-out/GRAPH_REPORT.md graphify-out/.graphify_labels.json` - no matches.
+- `git check-ignore -v graphify-out/.graphify_python graphify-out/cache/stat-index.json graphify-out/cost.json graphify-out/2026-06-23/graph.json` - confirmed local Graphify state/backups are ignored.
+
+### Auto Review
+
+- `git diff --check -- .gitignore .graphifyignore .gitattributes graphify-out 'refactor/mindpattern-v3(2026-06-23).md'` - passed.
+- `rg -n "/Users/taylerramsay|/private/tmp|API_KEY|TOKEN|SECRET|PASSWORD|settings\\.local" graphify-out/graph.json graphify-out/manifest.json graphify-out/GRAPH_REPORT.md graphify-out/.graphify_labels.json` - no matches.
+- Five-axis review:
+  - Correctness: Graphify CLI resolves project symbols, paths between architecture nodes, and reports a structurally valid graph with no dangling endpoints or duplicate edges.
+  - Readability: `.graphifyignore` separates repo knowledge from generated, personal, and local agent state; `.gitignore` keeps Graphify runtime debris out of status.
+  - Architecture: the repo now has portable Graphify configuration plus committed graph artifacts for agents to inspect without depending on the local tool cache.
+  - Security: personal data, local Claude state, DB files, env files, and cost/cache metadata are excluded from ingestion or commit.
+  - Performance: the committed artifact set is about 5.6 MB, and Graphify intentionally skips `graph.html` for this 6000+ node graph unless the visualization limit is raised.
