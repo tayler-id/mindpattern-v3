@@ -137,9 +137,10 @@ def main():
     args = parser.parse_args()
 
     # --dry-run is REAL: force the global outbound kill switch so no
-    # email, post, or follow can leave the machine (M0 task 14).
+    # email, post, follow, Claude call, or deploy can leave the machine.
     if args.dry_run:
         os.environ["MP_DISABLE_OUTBOUND"] = "1"
+        os.environ["MP_DRY_RUN"] = "1"
 
     date_str = args.date or datetime.now().strftime("%Y-%m-%d")
     setup_logging(date_str)
@@ -175,7 +176,7 @@ def main():
             try:
                 from orchestrator.runner import ResearchPipeline
 
-                pipeline = ResearchPipeline(user_id, date_str)
+                pipeline = ResearchPipeline(user_id, date_str, dry_run=args.dry_run)
                 result = pipeline.run()
 
                 if result != 0:

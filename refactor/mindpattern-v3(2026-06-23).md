@@ -411,3 +411,41 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: prompt constraints, diff validation, and runtime resilience now share one limit constant and one applier path.
   - Security: LLM content is still sanitized before length handling, and truncation is opt-in only; no personal vault data or social drafts are staged in this slice.
   - Performance: truncation is bounded string work on at most one content field per diff key and only runs when the LLM exceeds the cap.
+
+## Step 13 - Dry-run no-LLM/no-deploy contract
+
+### Changes
+
+- Fixed `run.py --dry-run` so it now sets both safety switches:
+  - `MP_DISABLE_OUTBOUND=1` blocks email/social outbound paths.
+  - `MP_DRY_RUN=1` makes Claude dispatch helpers skip subprocesses.
+- Added dry-run guards to all Claude dispatch boundaries:
+  - `run_claude_prompt()`
+  - `run_single_agent()`
+  - `run_agent_with_files()`
+- Added runner-level dry-run phase handlers so a dry run completes the phase machine without real fetch/research/synthesis/deliver/learn/social/identity/mirror/sync work.
+- Dry-run synthesis writes a separate ignored `reports/<user>/<date>-dry-run.md` placeholder instead of overwriting the real daily newsletter.
+- `ResearchPipeline(..., dry_run=True)` now records dry-run metadata in traces and keeps terminal phase handler behavior unchanged.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_agent_defang.py::TestDryRunKillSwitch tests/test_agents.py::TestDryRunClaudeDispatch tests/test_runner.py::TestDryRunPhases -q` failed before implementation because `MP_DRY_RUN` was not set, Claude subprocess helpers still ran, and dry-run sync could still reach Fly restart.
+- Focused dry-run regression group: `.venv/bin/python3 -m pytest tests/test_agent_defang.py::TestDryRunKillSwitch tests/test_agents.py::TestDryRunClaudeDispatch tests/test_runner.py::TestDryRunPhases -q` - 8 passed.
+- Expanded runner/agent safety suites: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_runner.py tests/test_agent_defang.py -q` - 98 passed.
+- Compile check: `python3 -m compileall run.py orchestrator/agents.py orchestrator/runner.py` - passed.
+- Live dry-run CLI smoke: `.venv/bin/python3 run.py --dry-run --user ramsay --date 2099-01-01` - exit 0; every phase logged `DRY RUN`, wrote only ignored `reports/ramsay/2099-01-01-dry-run.md`, skipped deliver/sync, and did not add tracked runtime files.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1108 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt graph artifacts to 6292 nodes and 9488 edges from 388 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain _dry_run_enabled` - resolved `orchestrator/agents.py` line 31 with incoming calls from all three Claude dispatch helpers.
+- `graphify explain _phase_synthesis_dry_run` - resolved `orchestrator/runner.py` line 254.
+- `graphify path _get_phase_handler _phase_synthesis_dry_run` - found `_get_phase_handler() <--method-- ResearchPipeline --method--> _phase_synthesis_dry_run()`.
+- `graphify diagnose multigraph --json` - reported 6292 nodes, 9488 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: dry-run now matches the CLI help text: it skips real Claude subprocesses and completes without send/deploy phases.
+  - Readability: dry-run behavior is explicit at the runner phase map and at each Claude dispatch boundary.
+  - Architecture: the runner owns phase-level dry-run behavior, while dispatch helpers provide a second safety layer for direct calls.
+  - Security: `MP_DISABLE_OUTBOUND` remains set, sync/deploy is skipped, and the live smoke did not stage personal data or runtime reports.
+  - Performance: dry-run now finishes in-process in about 120ms instead of spending model/runtime minutes.

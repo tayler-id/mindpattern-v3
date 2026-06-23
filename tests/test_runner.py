@@ -1184,6 +1184,32 @@ class TestPhaseSync:
         assert "2" in message  # newsletter count
 
 
+class TestDryRunPhases:
+    """Dry-run uses local placeholders and skips outbound/deploy phases."""
+
+    def test_dry_run_synthesis_writes_separate_placeholder_report(self, pipeline, tmp_path):
+        pipeline.dry_run = True
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            result = pipeline._get_phase_handler(Phase.SYNTHESIS)()
+
+        report_path = tmp_path / "reports" / pipeline.user_id / f"{pipeline.date_str}-dry-run.md"
+        assert result["dry_run"] is True
+        assert result["report_path"] == str(report_path)
+        assert report_path.exists()
+        assert "Dry-Run Report" in report_path.read_text()
+        assert not (tmp_path / "reports" / pipeline.user_id / f"{pipeline.date_str}.md").exists()
+
+    def test_dry_run_sync_skips_fly(self, pipeline):
+        pipeline.dry_run = True
+
+        with patch("orchestrator.sync.sync_to_fly") as mock_sync:
+            result = pipeline._get_phase_handler(Phase.SYNC)()
+
+        assert result == {"dry_run": True, "skipped": True, "phase": "sync"}
+        mock_sync.assert_not_called()
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 3. Pipeline.run() — full pipeline execution
 # ═══════════════════════════════════════════════════════════════════════

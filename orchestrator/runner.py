@@ -46,9 +46,16 @@ def _enabled_platforms(social_config: dict) -> list[str]:
 class ResearchPipeline:
     """Orchestrates the full research pipeline for a single user."""
 
-    def __init__(self, user_id: str, date_str: str | None = None):
+    def __init__(
+        self,
+        user_id: str,
+        date_str: str | None = None,
+        *,
+        dry_run: bool = False,
+    ):
         self.user_id = user_id
         self.date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+        self.dry_run = dry_run or os.environ.get("MP_DRY_RUN") == "1"
         self.user_config = agent_dispatch.load_user_config(user_id)
         self.global_config = agent_dispatch.load_global_config()
         self.db = memory.get_db(user_id=user_id)
@@ -77,7 +84,11 @@ class ResearchPipeline:
             self.traces_conn,
             pipeline_type="research",
             trigger="manual",
-            metadata=json.dumps({"user_id": user_id, "date": self.date_str}),
+            metadata=json.dumps({
+                "user_id": user_id,
+                "date": self.date_str,
+                "dry_run": self.dry_run,
+            }),
             run_id=self.pipeline.run_id,
             status="running",
         )
@@ -211,6 +222,14 @@ class ResearchPipeline:
 
     def _get_phase_handler(self, phase: Phase):
         """Map phases to their handler methods."""
+        if phase in {Phase.COMPLETED, Phase.FAILED}:
+            return None
+
+        if getattr(self, "dry_run", False):
+            if phase == Phase.SYNTHESIS:
+                return self._phase_synthesis_dry_run
+            return lambda phase=phase: self._phase_dry_run_skip(phase)
+
         return {
             Phase.INIT: self._phase_init,
             Phase.TREND_SCAN: self._phase_trend_scan,
@@ -226,6 +245,33 @@ class ResearchPipeline:
         }.get(phase)
 
     # ── Phase handlers ─────────────────────────────────────────────────
+
+    def _phase_dry_run_skip(self, phase: Phase) -> dict:
+        """Skip a phase that would fetch, mutate, send, or deploy in dry-run."""
+        logger.info("DRY RUN: skipping %s phase", phase.value)
+        return {"dry_run": True, "skipped": True, "phase": phase.value}
+
+    def _phase_synthesis_dry_run(self) -> dict:
+        """Write a local placeholder report without touching the real daily report."""
+        report_dir = PROJECT_ROOT / "reports" / self.user_id
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / f"{self.date_str}-dry-run.md"
+
+        self.newsletter_text = (
+            f"# Dry-Run Report - {self.date_str}\n\n"
+            "This is a dry-run placeholder. No Claude calls, outbound sends, "
+            "or Fly syncs were performed.\n"
+        )
+        self.newsletter_eval = {"dry_run": True}
+        report_path.write_text(self.newsletter_text)
+        logger.info("DRY RUN: wrote placeholder report to %s", report_path)
+
+        return {
+            "dry_run": True,
+            "word_count": len(self.newsletter_text.split()),
+            "report_path": str(report_path),
+            "eval_scores": self.newsletter_eval,
+        }
 
     def _phase_init(self) -> dict:
         """Phase 1: Init (Python only, no LLM)."""

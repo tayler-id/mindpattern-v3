@@ -19,6 +19,7 @@ from orchestrator.agents import (
     _parse_findings,
     build_agent_prompt,
     run_single_agent,
+    run_agent_with_files,
     run_claude_prompt,
     dispatch_research_agents,
     AgentResult,
@@ -497,6 +498,47 @@ class TestRunClaudePromptFailure:
 
         assert output == ""
         assert exit_code == 1
+
+
+class TestDryRunClaudeDispatch:
+    """MP_DRY_RUN skips real Claude subprocesses at dispatch boundaries."""
+
+    def test_run_claude_prompt_dry_run_skips_subprocess(self, monkeypatch):
+        monkeypatch.setenv("MP_DRY_RUN", "1")
+
+        with patch("orchestrator.agents.subprocess.run") as mock_run:
+            output, exit_code = run_claude_prompt("Write a newsletter", "synthesis_pass2")
+
+        assert exit_code == 0
+        assert "Dry-Run Report" in output
+        mock_run.assert_not_called()
+
+    def test_run_single_agent_dry_run_skips_popen(self, monkeypatch):
+        monkeypatch.setenv("MP_DRY_RUN", "1")
+
+        with patch("orchestrator.agents.subprocess.Popen") as mock_popen:
+            result = run_single_agent("news-researcher", "find news")
+
+        assert result.classification == "success"
+        assert result.findings
+        assert result.findings[0]["source_name"] == "Dry Run"
+        mock_popen.assert_not_called()
+
+    def test_run_agent_with_files_dry_run_skips_popen(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MP_DRY_RUN", "1")
+        output_file = tmp_path / "eic-topic.json"
+
+        with patch("orchestrator.agents.subprocess.Popen") as mock_popen:
+            result = run_agent_with_files(
+                system_prompt_file="agents/eic.md",
+                prompt="select a topic",
+                output_file=str(output_file),
+                task_type="eic",
+            )
+
+        assert result == {"dry_run": True, "task_type": "eic"}
+        assert json.loads(output_file.read_text()) == result
+        mock_popen.assert_not_called()
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -28,6 +28,52 @@ SOCIAL_DRAFTS_DIR = PROJECT_ROOT / "data" / "social-drafts"
 _pipeline_date: str | None = None
 
 
+def _dry_run_enabled() -> bool:
+    """Return True when CLI/model calls must be skipped."""
+    return os.environ.get("MP_DRY_RUN") == "1"
+
+
+def _dry_run_finding(agent_name: str) -> dict:
+    """Build one deterministic placeholder finding for dry-run orchestration."""
+    return {
+        "title": f"Dry-run finding for {agent_name}",
+        "summary": (
+            "Placeholder finding generated locally because MP_DRY_RUN=1. "
+            "No Claude call or web research was performed."
+        ),
+        "importance": "low",
+        "category": "dry-run",
+        "source_url": None,
+        "source_name": "Dry Run",
+    }
+
+
+def _dry_run_prompt_output(task_type: str) -> str:
+    """Return deterministic stdout for dry-run Claude prompt calls."""
+    if task_type == "feedback_processor":
+        return json.dumps({"preferences": []})
+    if task_type == "identity":
+        return json.dumps({
+            "soul": {"action": "none"},
+            "user": {"action": "none"},
+            "voice": {"action": "none"},
+            "decisions": {"action": "none"},
+        })
+    if task_type == "learnings_update":
+        return "# Learnings\n\nDry-run: Claude updater skipped.\n"
+    if task_type == "synthesis_pass1":
+        return "Dry-run story selection. Use placeholder synthesis output."
+    if task_type == "synthesis_pass2":
+        date_label = _pipeline_date or "unknown date"
+        return f"# Dry-Run Report - {date_label}\n\nThis is a dry-run placeholder.\n"
+    return json.dumps({"dry_run": True, "task_type": task_type})
+
+
+def _dry_run_file_payload(task_type: str) -> dict:
+    """Return deterministic structured output for file-writing dry-run agents."""
+    return {"dry_run": True, "task_type": task_type}
+
+
 def set_pipeline_date(date_str: str) -> None:
     """Set the pipeline date so subprocess env vars include it."""
     global _pipeline_date
@@ -480,6 +526,20 @@ def run_single_agent(
     through the claude CLI — i.e. Tayler's Anthropic subscription, never the paid
     API. `_sleep` / `_rng` are injection points for tests.
     """
+    if _dry_run_enabled():
+        finding = _dry_run_finding(agent_name)
+        payload = {"findings": [finding]}
+        logger.info("DRY RUN: skipping Claude research agent %s", agent_name)
+        return AgentResult(
+            agent_name=agent_name,
+            findings=[finding],
+            raw_output=json.dumps(payload),
+            exit_code=0,
+            duration_ms=0,
+            error=None,
+            classification="success",
+        )
+
     rng = _rng if _rng is not None else random.Random()
     model = router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
@@ -873,6 +933,16 @@ def run_agent_with_files(
     if output_path.exists():
         output_path.unlink()
 
+    if _dry_run_enabled():
+        logger.info("DRY RUN: skipping Claude file agent %s", task_type)
+        payload = _dry_run_file_payload(task_type)
+        if output_path.suffix == ".md":
+            text = f"# Dry Run\n\nTask type: {task_type}\n"
+            output_path.write_text(text)
+            return {"text": text.strip()}
+        output_path.write_text(json.dumps(payload))
+        return payload
+
     cmd = [
         "claude", "-p", prompt,
         "--model", model,
@@ -971,6 +1041,10 @@ def run_claude_prompt(
 
     Returns (output_text, exit_code).
     """
+    if _dry_run_enabled():
+        logger.info("DRY RUN: skipping Claude prompt task_type=%s", task_type)
+        return _dry_run_prompt_output(task_type), 0
+
     model = router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)

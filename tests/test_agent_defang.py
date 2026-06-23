@@ -62,6 +62,18 @@ class TestDryRunKillSwitch:
         )
         assert gate, "--dry-run does not force the kill switch"
 
+    def test_dry_run_sets_claude_skip_switch(self):
+        """run.py --dry-run must force MP_DRY_RUN=1 so Claude calls are skipped."""
+        source = (PROJECT_ROOT / "run.py").read_text()
+        assert 'os.environ["MP_DRY_RUN"] = "1"' in source
+        gate = re.search(
+            r"if args\.dry_run:\s*\n"
+            r"\s*os\.environ\[\"MP_DISABLE_OUTBOUND\"\] = \"1\"\s*\n"
+            r"\s*os\.environ\[\"MP_DRY_RUN\"\] = \"1\"",
+            source,
+        )
+        assert gate, "--dry-run does not force the Claude dry-run switch"
+
     def test_kill_switch_blocks_send(self, monkeypatch):
         """End check: with the switch set, outbound_allowed() is False."""
         from core import receipts
