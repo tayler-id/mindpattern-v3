@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: V4 spec/Pillow bound slice staged on top of `5debe68 refactor: add knowledge compiler`; run `git log --oneline -21` for the exact latest commit hash after it lands.
+- Code/graph state: Agent workflow docs/config slice staged on top of `ec52c3a docs: update v4 context principles`; run `git log --oneline -22` for the exact latest commit hash after it lands.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has twenty-one save-point commits through the V4 spec/Pillow bound slice once the current staged slice lands:
+This refactor branch now has twenty-two save-point commits through the agent workflow docs/config slice once the current staged slice lands:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -33,9 +33,10 @@ This refactor branch now has twenty-one save-point commits through the V4 spec/P
 18. `3271ce3 refactor: add knowledge graph schema`
 19. `5043d1d refactor: add session knowledge hooks`
 20. `5debe68 refactor: add knowledge compiler`
-21. latest `docs: update v4 context principles`
+21. `ec52c3a docs: update v4 context principles`
+22. latest `docs: add agent workflow docs`
 
-This handoff was updated again after adding the V4 context-engineering principles and verified Pillow 11 dependency bound. Use `git log --oneline -21` for the exact latest commit hashes.
+This handoff was updated again after adding project Claude agent/command/reference docs and `docs/agents` guidance. Use `git log --oneline -22` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -60,6 +61,7 @@ The main completed work is:
 - Added interactive session knowledge hooks and `.claude/settings.json` registration: session start injects compiled knowledge, session end/pre-compact spawn non-blocking flush work, and session capture writes tested conversation summaries.
 - Added the `knowledge` package for post-pipeline knowledge compilation and background conversation flushes; fixed `compile_knowledge(..., dry_run=True)` so it counts planned work without Claude calls or vault writes.
 - Updated the V4 spec with context-engineering principles and moved the Pillow dependency bound to `>=11,<12`, matching the tested virtualenv runtime.
+- Added project-level Claude workflow docs/config: code-reviewer, test-engineer, security-auditor, slash-command docs, reusable checklists, and `docs/agents` guidance for domain vocabulary plus GitHub issue triage.
 
 ## Verification Already Run
 
@@ -155,6 +157,12 @@ The main completed work is:
 - Spec/dependency hygiene: `git diff --check -- docs/spec-v4.md requirements.txt` -> passed.
 - `graphify update .` reported no code-graph topology changes for the spec/dependency slice.
 - `graphify explain "Context-engineering principles"` resolves `docs/spec-v4.md` line 107.
+- Agent workflow docs/config hygiene: `git diff --check -- .claude/agents .claude/commands .claude/references docs/agents` -> passed.
+- Agent workflow docs/config secret scan found only benign example IDs and command namespace text; no credential-looking values.
+- Agent workflow docs/config compile check: `python3 -m compileall -q .claude/agents .claude/commands .claude/references docs/agents` -> passed.
+- `graphify update .` reported no code-graph topology changes for the agent workflow docs/config slice.
+- `graphify diagnose multigraph --json` still reports 6321 nodes, 9628 edges, and zero duplicate/missing/dangling/self-loop edges.
+- `graphify check-update .` exited cleanly with no output.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -231,12 +239,12 @@ Tracked dirty files after the V4 spec/Pillow slice is committed should still mos
 - Local/editor state: `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
 
-Untracked notable directories/files:
+Untracked notable directories/files after the agent workflow docs/config slice should be:
 
-- Agent/local config: `.claude/agents/`, `.claude/commands/`, `.claude/references/`, `.claude/skills/**`
-- Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md`, plus this June 23 handoff
-- Possible source feature slices: `docs/agents/`
+- Agent/local config not staged: `.claude/skills/**` symlinks. These point into ignored `.agents/skills/**`; do not commit them alone or a fresh clone will have broken links.
+- Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md` is stale/personal context from `main`; do not commit without explicit review.
 - Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, `tasks/`
+- Operational local config: `launchd/com.taylerramsay.daily-research.plist` contains absolute local paths; inspect before deciding whether to commit as a sample/config.
 - Runtime/user data: `data/ramsay/journal.offset`, `data/ramsay/mindpattern/knowledge/`, `data/testuser/`
 
 There is also a tracked-change recovery patch from earlier in the run:
@@ -247,10 +255,9 @@ There is also a tracked-change recovery patch from earlier in the run:
 
 1. Re-check dirty status with `git status --short --untracked-files=normal`.
 2. Classify remaining changes into small commit slices. Do not stage broad directories like `data/` or `.claude/` without inspecting content.
-3. Likely next source slices to inspect:
-   - `kg/` plus `tests/test_kg_schema.py`
-   - `hooks/session_capture.py` plus `tests/test_session_capture.py`
-   - `docs/spec-v4.md`, `v4/`, and top-level spec docs
+3. Remaining optional source/doc slices to inspect:
+   - `launchd/com.taylerramsay.daily-research.plist` if local scheduling config should be versioned.
+   - `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, and `tasks/` if older research/spec drafts should be preserved in git.
    - X/Twitter query-search recovery: `twitter search` currently returns HTTP 404 even though auth and `user-posts` work.
 4. Treat `data/ramsay/mindpattern/**` and `data/social-drafts/**` as personal/generated output until the user explicitly says to commit them.
 5. After any code/doc slice:

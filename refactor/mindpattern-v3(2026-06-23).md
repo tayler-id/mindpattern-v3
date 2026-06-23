@@ -731,3 +731,32 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: the spec now aligns V4 agent design with the script-over-prose and decomposed-prompt direction used by the new hooks/knowledge work.
   - Security: no credentials, generated vault data, or runtime state are included.
   - Performance: dependency metadata and docs only; no runtime code path changed.
+
+## Step 22 - Agent workflow docs and Claude command config
+
+### Changes
+
+- Added project-level Claude agent profiles for code review, testing, and security review.
+- Added slash-command documentation for planning, spec, build, review, test, simplify, and ship workflows.
+- Added reusable reference checklists for accessibility, performance, security, and testing patterns.
+- Added `docs/agents/` guidance for project domain vocabulary, GitHub issue tracking, and triage label state.
+- Deliberately left `.claude/skills/*` symlinks unstaged because they point into ignored `.agents/skills/*` targets and would be broken in a fresh clone if committed alone.
+- Deliberately left the old May handoff unstaged because it is stale and contains personal operating context from a different branch/session.
+
+### Verification
+
+- `git diff --check -- .claude/agents .claude/commands .claude/references docs/agents` - passed.
+- Secret scan over `.claude/agents`, `.claude/commands`, `.claude/references`, and `docs/agents` found only benign example IDs and command namespace text; no credential-looking values.
+- `python3 -m compileall -q .claude/agents .claude/commands .claude/references docs/agents` - passed.
+- `graphify update .` - reported no code-graph topology changes.
+- `graphify diagnose multigraph --json` - reported 6321 nodes, 9628 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: command docs map to the existing skill workflow names, and `docs/agents` clarifies the GitHub issue path versus the autonomous harness ticket queue.
+  - Readability: workflow guidance is split into small files by role, command, reference checklist, and project agent docs.
+  - Architecture: Claude-specific local workflow config is now explicit project documentation instead of unstaged ambient state.
+  - Security: no secrets are committed; ignored skill symlinks, personal data, Obsidian state, runtime knowledge state, and the stale personal handoff stay out of this slice.
+  - Performance: documentation/config only; no runtime code path changed.
