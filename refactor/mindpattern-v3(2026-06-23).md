@@ -449,3 +449,40 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: the runner owns phase-level dry-run behavior, while dispatch helpers provide a second safety layer for direct calls.
   - Security: `MP_DISABLE_OUTBOUND` remains set, sync/deploy is skipped, and the live smoke did not stage personal data or runtime reports.
   - Performance: dry-run now finishes in-process in about 120ms instead of spending model/runtime minutes.
+
+## Step 14 - Claude prompt process-group boundary
+
+### Changes
+
+- Fixed `run_claude_prompt()` so non-agent Claude prompt calls now use `subprocess.Popen(..., start_new_session=True)` instead of `subprocess.run(...)`.
+- Added `_kill_process_group()` and reused it across:
+  - `_run_agent_attempt()`
+  - `run_agent_with_files()`
+  - `run_claude_prompt()`
+- Preserved the existing public return contract for prompt calls: `(stdout, exit_code)` on completion and `("", 1)` on timeout/startup failure.
+- Kept large prompts on stdin mode, but now through `Popen(..., stdin=PIPE)` so OS argument-length protection and process-group timeout protection both apply.
+- Updated feedback-processing tests to mock `run_claude_prompt()` directly instead of mocking its old subprocess implementation detail.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunClaudePromptFailure::test_run_claude_prompt_timeout_kills_process_group -q` failed before implementation because `run_claude_prompt()` had no process group to kill.
+- Focused prompt dispatch group: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunClaudePromptSuccess tests/test_agents.py::TestRunClaudePromptLargePromptUsesStdin tests/test_agents.py::TestRunClaudePromptFailure tests/test_agents.py::TestDryRunClaudeDispatch -q` - 7 passed.
+- Feedback processing suite: `.venv/bin/python3 -m pytest tests/test_feedback_processing.py -q` - 9 passed.
+- Compile check: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_feedback_processing.py` - passed.
+- Broad affected suites: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_feedback_processing.py tests/test_orchestrator.py -q` - 155 passed.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1109 passed, 1 FastAPI/Starlette deprecation warning.
+- Local live prompt smoke: ran `run_claude_prompt()` against a temporary fake `claude` executable in `/tmp`; verified both normal prompt mode and large-prompt stdin mode through the real `Popen` path without making a real Claude/network call.
+- `graphify update .` - rebuilt graph artifacts to 6296 nodes and 9502 edges from 388 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain _kill_process_group` - resolved `orchestrator/agents.py` line 78 with incoming calls from all three Claude dispatch paths.
+- `graphify path run_claude_prompt _kill_process_group` - found `run_claude_prompt() --calls--> _kill_process_group()`.
+- `graphify diagnose multigraph --json` - reported 6296 nodes, 9502 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the timeout regression now proves the whole process group is killed for prompt calls, closing the old synthesis orphan risk while preserving stdout/exit-code behavior.
+  - Readability: process-group termination now has one named helper instead of three slightly different inline kill blocks.
+  - Architecture: research agents, file agents, and prompt calls now share the same child-process safety boundary while keeping their higher-level dispatch contracts separate.
+  - Security: no new tools or outbound permissions were added; the live smoke used a temporary local fake `claude` binary and did not touch personal data.
+  - Performance: normal prompt execution still waits on one child process; timeout cleanup is bounded by one kill and a short wait.

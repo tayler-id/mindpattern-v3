@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph HEAD before the dry-run contract slice: `4031fd6 fix: constrain identity evolution output`
+- Code/graph HEAD before the prompt process-group slice: `1048ebf fix: make dry-run skip claude and deploy`
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch had twelve clean save-point commits before the dry-run contract update:
+This refactor branch had thirteen clean save-point commits before the prompt process-group update:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -25,8 +25,9 @@ This refactor branch had twelve clean save-point commits before the dry-run cont
 10. `ca284bb fix: mark completed fly syncs`
 11. `5506511 fix: add learnings fallback`
 12. `4031fd6 fix: constrain identity evolution output`
+13. `1048ebf fix: make dry-run skip claude and deploy`
 
-This handoff was updated again after making `run.py --dry-run` skip Claude, outbound, and deploy phases. Use `git log --oneline -12` for the exact latest commit hash after the commit lands.
+This handoff was updated again after making non-agent Claude prompt calls use a killable process group. Use `git log --oneline -13` for the exact latest commit hash after the commit lands.
 
 The main completed work is:
 
@@ -43,6 +44,7 @@ The main completed work is:
 - Added a deterministic Learn fallback: valid existing `learnings.md` is preserved on updater failure, while missing/corrupt files are repaired with a safe markdown summary. The tracked `data/ramsay/learnings.md` baseline no longer contains raw updater error text.
 - Added an Identity phase length guard: `apply_evolution_diff()` remains strict by default, while `_phase_identity()` opts into deterministic truncation for oversized LLM content before writing vault files.
 - Fixed the dry-run contract: `run.py --dry-run` now sets `MP_DRY_RUN=1`, Claude dispatch helpers return deterministic placeholders without subprocesses, and runner dry phases skip delivery, sync, mirror, identity, learn, social, research, and trend work.
+- Hardened the Claude prompt subprocess boundary: `run_claude_prompt()` now uses `Popen(..., start_new_session=True)` and shares `_kill_process_group()` with research/file-agent dispatch so prompt timeouts cannot leave orphaned Claude child processes.
 
 ## Verification Already Run
 
@@ -75,6 +77,13 @@ The main completed work is:
 - Compile after dry-run contract: `python3 -m compileall run.py orchestrator/agents.py orchestrator/runner.py` -> passed.
 - Live dry-run CLI smoke: `.venv/bin/python3 run.py --dry-run --user ramsay --date 2099-01-01` -> exit `0`; all phases logged `DRY RUN`, deliver/sync were skipped, and only ignored `reports/ramsay/2099-01-01-dry-run.md` was written.
 - Full suite after dry-run contract: `.venv/bin/python3 -m pytest -q` -> `1108 passed, 1 FastAPI/Starlette warning`.
+- Claude prompt process-group RED regression: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunClaudePromptFailure::test_run_claude_prompt_timeout_kills_process_group -q` -> failed before implementation because `run_claude_prompt()` had no process group to kill.
+- Claude prompt focused group: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunClaudePromptSuccess tests/test_agents.py::TestRunClaudePromptLargePromptUsesStdin tests/test_agents.py::TestRunClaudePromptFailure tests/test_agents.py::TestDryRunClaudeDispatch -q` -> `7 passed`.
+- Feedback processing suite after prompt-boundary test update: `.venv/bin/python3 -m pytest tests/test_feedback_processing.py -q` -> `9 passed`.
+- Broad affected suites after prompt-boundary update: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_feedback_processing.py tests/test_orchestrator.py -q` -> `155 passed`.
+- Compile after prompt-boundary update: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_feedback_processing.py` -> passed.
+- Local live prompt smoke: `run_claude_prompt()` exercised a temporary fake `claude` executable in `/tmp` through the real `Popen` path for both normal prompt mode and large-prompt stdin mode.
+- Full suite after prompt-boundary update: `.venv/bin/python3 -m pytest -q` -> `1109 passed, 1 FastAPI/Starlette warning`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -90,7 +99,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 388 files; current report shows 6292 nodes and 9488 edges.
+  - `graphify update .` rebuilt clean artifacts from 388 files; current report shows 6296 nodes and 9502 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -107,7 +116,9 @@ The main completed work is:
   - `graphify explain _dry_run_enabled` resolves `orchestrator/agents.py` line 31 with incoming calls from `run_claude_prompt()`, `run_single_agent()`, and `run_agent_with_files()`.
   - `graphify explain _phase_synthesis_dry_run` resolves `orchestrator/runner.py` line 254.
   - `graphify path _get_phase_handler _phase_synthesis_dry_run` finds `_get_phase_handler() <--method-- ResearchPipeline --method--> _phase_synthesis_dry_run()`.
-  - `graphify diagnose multigraph --json` reports 6292 nodes, 9488 edges, and zero duplicate/missing/dangling/self-loop edges.
+  - `graphify explain _kill_process_group` resolves `orchestrator/agents.py` line 78 with incoming calls from all three Claude dispatch paths.
+  - `graphify path run_claude_prompt _kill_process_group` finds `run_claude_prompt() --calls--> _kill_process_group()`.
+  - `graphify diagnose multigraph --json` reports 6296 nodes, 9502 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
 ## Graphify Notes
@@ -116,9 +127,9 @@ The main completed work is:
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
   - 388 files
-  - 6292 nodes
-  - 9488 edges
-  - freshness marker `4031fd6a`
+  - 6296 nodes
+  - 9502 edges
+  - freshness marker `1048ebf7`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -130,7 +141,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the dry-run contract slice is committed should still mostly be user/generated state:
+Tracked dirty files after the prompt process-group slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`

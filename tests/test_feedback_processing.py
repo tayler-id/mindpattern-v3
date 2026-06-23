@@ -3,13 +3,13 @@
 Verifies that unprocessed user feedback is parsed via Claude into
 preference weight changes, and that mark_processed() is called.
 
-No real Claude CLI calls — subprocess is mocked.
+No real Claude CLI calls - the prompt dispatch boundary is mocked.
 """
 
 import json
 import sqlite3
 from datetime import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -60,8 +60,8 @@ class TestProcessPendingFeedback:
             runner.user_config = {"email": "user@example.com"}
             return runner
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_feedback_parsed_into_preferences(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_feedback_parsed_into_preferences(self, mock_llm, db):
         """Unprocessed feedback is sent to Claude and preferences are updated."""
         _insert_feedback(db, "I want more coverage on AI safety")
         _insert_feedback(db, "Too much security content, less please")
@@ -72,9 +72,7 @@ class TestProcessPendingFeedback:
                 {"topic": "agent security", "weight": -1.5},
             ]
         })
-        mock_subprocess.return_value = MagicMock(
-            stdout=llm_response, returncode=0
-        )
+        mock_llm.return_value = (llm_response, 0)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
@@ -93,15 +91,13 @@ class TestProcessPendingFeedback:
         ).fetchone()["c"]
         assert unprocessed == 0
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_mark_processed_called_even_for_empty_preferences(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_mark_processed_called_even_for_empty_preferences(self, mock_llm, db):
         """Acknowledgment-only feedback still gets marked as processed."""
         _insert_feedback(db, "Great issue, keep it up!")
 
         llm_response = json.dumps({"preferences": []})
-        mock_subprocess.return_value = MagicMock(
-            stdout=llm_response, returncode=0
-        )
+        mock_llm.return_value = (llm_response, 0)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
@@ -118,8 +114,8 @@ class TestProcessPendingFeedback:
         ).fetchone()["c"]
         assert unprocessed == 0
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_already_processed_feedback_is_skipped(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_already_processed_feedback_is_skipped(self, mock_llm, db):
         """Feedback with processed=1 is not sent to Claude."""
         _insert_feedback(db, "Old feedback", processed=1)
 
@@ -127,18 +123,18 @@ class TestProcessPendingFeedback:
         runner._process_pending_feedback()
 
         # Claude should not have been called
-        mock_subprocess.assert_not_called()
+        mock_llm.assert_not_called()
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_no_feedback_does_not_call_claude(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_no_feedback_does_not_call_claude(self, mock_llm, db):
         """When there is no unprocessed feedback, no LLM call is made."""
         runner = self._make_runner(db)
         runner._process_pending_feedback()
 
-        mock_subprocess.assert_not_called()
+        mock_llm.assert_not_called()
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_weight_clamped_to_range(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_weight_clamped_to_range(self, mock_llm, db):
         """Weights outside [-3.0, +3.0] are clamped."""
         _insert_feedback(db, "I absolutely need way more AI coverage")
 
@@ -148,9 +144,7 @@ class TestProcessPendingFeedback:
                 {"topic": "crypto", "weight": -5.0},
             ]
         })
-        mock_subprocess.return_value = MagicMock(
-            stdout=llm_response, returncode=0
-        )
+        mock_llm.return_value = (llm_response, 0)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
@@ -162,14 +156,12 @@ class TestProcessPendingFeedback:
         assert pref_dict["ai"] == 3.0
         assert pref_dict["crypto"] == -3.0
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_invalid_json_is_handled_gracefully(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_invalid_json_is_handled_gracefully(self, mock_llm, db):
         """If Claude returns invalid JSON, feedback is NOT marked processed."""
         _insert_feedback(db, "More AI please")
 
-        mock_subprocess.return_value = MagicMock(
-            stdout="Sorry, I can't parse that.", returncode=0
-        )
+        mock_llm.return_value = ("Sorry, I can't parse that.", 0)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
@@ -180,14 +172,12 @@ class TestProcessPendingFeedback:
         ).fetchone()["c"]
         assert unprocessed == 1
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_nonzero_exit_code_is_handled(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_nonzero_exit_code_is_handled(self, mock_llm, db):
         """If Claude exits non-zero, feedback is NOT marked processed."""
         _insert_feedback(db, "More AI please")
 
-        mock_subprocess.return_value = MagicMock(
-            stdout="", returncode=1
-        )
+        mock_llm.return_value = ("", 1)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
@@ -198,8 +188,8 @@ class TestProcessPendingFeedback:
         ).fetchone()["c"]
         assert unprocessed == 1
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_zero_weight_preferences_are_skipped(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_zero_weight_preferences_are_skipped(self, mock_llm, db):
         """Preferences with weight=0.0 are not stored."""
         _insert_feedback(db, "This is better")
 
@@ -208,9 +198,7 @@ class TestProcessPendingFeedback:
                 {"topic": "general", "weight": 0.0},
             ]
         })
-        mock_subprocess.return_value = MagicMock(
-            stdout=llm_response, returncode=0
-        )
+        mock_llm.return_value = (llm_response, 0)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
@@ -226,15 +214,13 @@ class TestProcessPendingFeedback:
         ).fetchone()["c"]
         assert unprocessed == 0
 
-    @patch("orchestrator.agents.subprocess.run")
-    def test_json_with_markdown_fences_is_parsed(self, mock_subprocess, db):
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_json_with_markdown_fences_is_parsed(self, mock_llm, db):
         """Claude sometimes wraps JSON in markdown code fences."""
         _insert_feedback(db, "Less funding news")
 
         fenced = '```json\n{"preferences": [{"topic": "funding", "weight": -1.0}]}\n```'
-        mock_subprocess.return_value = MagicMock(
-            stdout=fenced, returncode=0
-        )
+        mock_llm.return_value = (fenced, 0)
 
         runner = self._make_runner(db)
         runner._process_pending_feedback()
