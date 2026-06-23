@@ -213,3 +213,48 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: source collection remains separate from semantic retrieval; missing X/Exa/YouTube tools still need installation before ingestion comes back.
   - Security: cache paths are local filesystem locations only; no personal data or generated `data/` files are included in this slice.
   - Performance: the model still lazy-loads once per process, and Docker pre-download uses the same persistent cache to avoid runtime cold fetches.
+
+## Step 8 - Source tool restore and Twitter CLI fallback
+
+### Changes
+
+- Installed Agent Reach with `uv tool install "https://github.com/Panniantong/agent-reach/archive/main.zip"`; current installed version is `agent-reach v1.5.0`.
+- Ran `agent-reach install --env=auto` and `agent-reach install --env=auto --channels=twitter`.
+- Installed direct command tools needed by preflight:
+  - `yt-dlp v2026.6.9`
+  - `twitter-cli v0.8.5` exposing `twitter`
+  - `mcporter v0.12.0`
+- Confirmed legacy `xreach` cannot be installed from the package registry; `uv tool install xreach` reports the package is unavailable.
+- Added a `preflight/twitter.py` command selector that prefers legacy `xreach` when present but falls back to current `twitter search -n ... --json`.
+- Normalized both supported Twitter JSON shapes:
+  - legacy `xreach`: `{"items": [...]}`
+  - current `twitter-cli`: a top-level list of tweet objects with nested `metrics`
+- Added tests for both Twitter/X CLI backends.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_preflight.py -q` - 27 passed.
+- `.venv/bin/python3 -m compileall -q preflight/twitter.py tests/test_preflight.py` - passed.
+- `git diff --check -- preflight/twitter.py tests/test_preflight.py` - passed.
+- `agent-reach doctor` - reports 7/13 active channels; YouTube, RSS, Exa semantic search, web reader, V2EX, Twitter/X, and Bilibili basic are available; GitHub CLI is installed but not authenticated.
+- `mcporter list exa --status` - reports Exa healthy with 2 tools.
+- `mcporter call exa.web_search_exa query="AI agents" numResults=1` - returned a live Exa result.
+- `yt-dlp --dump-json --flat-playlist --playlist-items 1:1 https://www.youtube.com/@Fireship/videos` - returned one live YouTube item.
+- `preflight.exa.fetch(queries=["AI agents"], num_results=1)` - returned 1 item.
+- `preflight.youtube.fetch(..., max_per_channel=1)` - returned 1 item.
+- `twitter status` - authenticated successfully, and `twitter user-posts ... -n 1 --json` works.
+- `twitter search "AI agents" -n 1 --json` - still fails upstream with HTTP 404, so query-based X search is installed but not healthy yet.
+- `preflight.twitter.fetch(queries=["AI agents"], count=1)` - reaches `twitter-cli` but returns 0 because `twitter search` fails upstream.
+- `graphify update .` - rebuilt graph artifacts to 6254 nodes and 9420 edges from 387 files.
+- `graphify explain _search_command` - resolved `preflight/twitter.py`.
+- `graphify path twitter.py _search_command` - found `twitter.py -> _search_command()`.
+- `graphify diagnose multigraph --json` - reported 6254 nodes, 9420 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: unit tests cover both legacy and current CLI output formats; live Exa and YouTube preflight paths work end to end.
+  - Readability: command selection and JSON normalization are isolated in named helpers instead of branching inside the fetch loop.
+  - Architecture: the app no longer hard-depends on dead `xreach`, but the Twitter source remains query-search based and still depends on upstream `twitter-cli search` health.
+  - Security: tool installs were outside the repo; no cookies, tokens, or personal data were committed. Twitter authentication is local machine state.
+  - Performance: fallback command selection is a small PATH check; source fetch time remains dominated by external CLI/network calls.

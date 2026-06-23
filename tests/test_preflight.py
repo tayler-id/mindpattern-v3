@@ -1,5 +1,6 @@
 """Tests for preflight module — all source scripts + orchestration."""
 import json
+import subprocess
 from pathlib import Path
 
 from preflight import make_entry, parse_ndjson, TOOLS_DIR
@@ -140,6 +141,83 @@ def test_parse_twitter_date():
     from preflight.twitter import _parse_twitter_date
     dt = _parse_twitter_date("Sun Mar 16 10:00:00 +0000 2026")
     assert dt.startswith("2026-03-16")
+
+
+def test_twitter_fetch_falls_back_to_twitter_cli(monkeypatch):
+    import preflight.twitter as twitter
+
+    calls = []
+
+    def fake_which(name):
+        return "/bin/twitter" if name == "twitter" else None
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps([
+                {
+                    "id": "123456",
+                    "text": "AI agents are the future of software...",
+                    "createdAtISO": "2026-03-16T10:00:00Z",
+                    "metrics": {"likes": 500, "retweets": 100, "views": 50000},
+                }
+            ]),
+            stderr="",
+        )
+
+    monkeypatch.setattr(twitter.shutil, "which", fake_which)
+    monkeypatch.setattr(twitter.subprocess, "run", fake_run)
+
+    entries = twitter.fetch(queries=["AI agents"], count=1)
+
+    assert calls == [[
+        "twitter", "search", "AI agents", "-n", "1", "--json",
+        "--exclude", "retweets", "--exclude", "replies",
+    ]]
+    assert entries[0]["source"] == "twitter"
+    assert entries[0]["url"] == "https://x.com/i/status/123456"
+    assert entries[0]["published"] == "2026-03-16T10:00:00Z"
+    assert entries[0]["metrics"]["views"] == 50000
+
+
+def test_twitter_fetch_prefers_xreach(monkeypatch):
+    import preflight.twitter as twitter
+
+    calls = []
+
+    def fake_which(name):
+        return f"/bin/{name}" if name == "xreach" else None
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({
+                "items": [
+                    {
+                        "id": "legacy123",
+                        "text": "Legacy xreach shape",
+                        "createdAt": "Sun Mar 16 10:00:00 +0000 2026",
+                        "likeCount": 7,
+                        "retweetCount": 2,
+                        "viewCount": 900,
+                    }
+                ]
+            }),
+            stderr="",
+        )
+
+    monkeypatch.setattr(twitter.shutil, "which", fake_which)
+    monkeypatch.setattr(twitter.subprocess, "run", fake_run)
+
+    entries = twitter.fetch(queries=["AI agents"], count=2)
+
+    assert calls == [["xreach", "search", "AI agents", "--count", "2", "--json"]]
+    assert entries[0]["url"] == "https://x.com/i/status/legacy123"
+    assert entries[0]["metrics"] == {"likes": 7, "retweets": 2, "views": 900}
 
 
 # ── Exa tests ─────────────────────────────────────────────────────
