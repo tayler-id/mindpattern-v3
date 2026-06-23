@@ -62,3 +62,33 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: cleanup separates local tool/runtime state from source-controlled project artifacts.
   - Security: `users.json` and SQLite files are protected from accidental staging.
   - Performance: no runtime behavior changed.
+
+## Step 3 - Research agent reliability and tool boundary
+
+### Changes
+
+- Added failure classification for research-agent CLI calls: `overloaded`, `rate_limit`, `server_error`, `timeout`, `parse_error`, `other`, and `success`.
+- Retried transient Anthropic CLI failures with full-jitter exponential backoff while keeping calls on the `claude` CLI subscription path.
+- Switched per-agent execution to process-group-aware `Popen` so timeouts kill the whole subprocess tree.
+- Recorded the final classification on `AgentResult` so overloaded/rate-limit failures are no longer collapsed to "Non-zero exit code".
+- Tightened research-agent allowed tools and explicitly denied `Skill`, `Bash`, `Agent`, `Write`, and `Edit`.
+- Updated the research prompt to remove shell CLI and subagent instructions; Phase 2 now names only the allowed direct tools.
+- Added policy `banned_entities` checks for research findings and social posts.
+- Captured the source-tool install commands and the `xreach` vs current `twitter` CLI mismatch in `docs/spec-research-reliability.md`.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_agents.py::TestBuildAgentPromptToolBoundary -q` - 1 passed.
+- `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_agent_defang.py tests/test_policies.py -q` - 66 passed.
+- `.venv/bin/python3 -m pytest tests/ -x -q` - 1087 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - failed because `graphify` is not installed in this shell.
+
+### Auto Review
+
+- `git diff --check -- orchestrator/agents.py tests/test_agents.py policies/engine.py policies/research.json policies/social.json tests/test_policies.py docs/spec-research-reliability.md 'refactor/mindpattern-v3(2026-06-23).md'` - passed.
+- Five-axis review:
+  - Correctness: retry behavior, no-retry paths, jitter bounds, prompt/tool boundary, and banned-entity policies are covered by tests.
+  - Readability: retry classification is separated from subprocess execution; prompt instructions are now consistent with runtime tool permissions.
+  - Architecture: dangerous tool access is denied in both command construction and prompt guidance, reducing prompt-injection blast radius for research agents.
+  - Security: shell/subagent tools remain unavailable to research agents that process scraped external content; Synchrony bans gate both research and social output.
+  - Performance: retry backoff only applies to transient failures and keeps normal 13-agent concurrency unchanged.

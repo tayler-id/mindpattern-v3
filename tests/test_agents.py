@@ -17,6 +17,7 @@ import pytest
 
 from orchestrator.agents import (
     _parse_findings,
+    build_agent_prompt,
     run_single_agent,
     run_claude_prompt,
     dispatch_research_agents,
@@ -610,3 +611,177 @@ class TestDispatchResearchAgentsPartialFailure:
         assert len(bad) == 1
         assert bad[0].error is not None
         assert "crashed" in bad[0].error.lower()
+
+
+class TestBuildAgentPromptToolBoundary:
+    """Research prompts must match the tool boundary enforced by run_single_agent."""
+
+    def test_preflight_exploration_uses_only_allowed_direct_tools(self, tmp_path):
+        soul_path = tmp_path / "SOUL.md"
+        soul_path.write_text("Soul")
+        skill_path = tmp_path / "agent.md"
+        skill_path.write_text("Skill")
+
+        prompt = build_agent_prompt(
+            agent_name="test-agent",
+            user_id="ramsay",
+            date_str="2026-06-23",
+            soul_path=soul_path,
+            agent_skill_path=skill_path,
+            context="Recent Findings: none",
+            preflight_items=[
+                {
+                    "source": "rss",
+                    "source_name": "Example",
+                    "title": "Example release",
+                    "url": "https://example.com/release",
+                    "content_preview": "A recent item.",
+                }
+            ],
+        )
+
+        assert "## Phase 2: Explore Beyond Preflight" in prompt
+        for tool in ("WebSearch", "WebFetch", "Read", "Glob", "Grep"):
+            assert tool in prompt
+
+        banned_prompt_fragments = (
+            "mcporter call",
+            "curl -s",
+            "xreach search",
+            "yt-dlp",
+            "Subagent Delegation",
+            "Agent tool",
+            "Spawn subagents",
+        )
+        for fragment in banned_prompt_fragments:
+            assert fragment not in prompt
+
+        assert "Do not use shell commands" in prompt
+        assert "Do not spawn subagents" in prompt
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Transient-error classification + retry (529/429/5xx) — spec-research-reliability
+# ═══════════════════════════════════════════════════════════════════════
+
+import random as _random
+
+from orchestrator.agents import classify_agent_failure, _retry_delay
+
+# The real claude CLI message that broke 2026-06-23 (148 chars, on stdout, exit 1).
+OVERLOAD_MSG = (
+    "API Error: 529 Overloaded. This is a server-side issue, usually temporary — "
+    "try again in a moment. If it persists, check https://status.claude.com.\n"
+)
+
+
+class TestClassifyAgentFailure:
+    """classify_agent_failure inspects stdout/stderr, not just the exit code."""
+
+    def test_overloaded_529(self):
+        assert classify_agent_failure(1, OVERLOAD_MSG, "") == "overloaded"
+
+    def test_rate_limit_429(self):
+        assert classify_agent_failure(1, "API Error: 429 rate limit exceeded", "") == "rate_limit"
+
+    def test_server_error_5xx(self):
+        assert classify_agent_failure(1, "API Error: 500 Internal server error", "") == "server_error"
+
+    def test_parse_error_on_clean_exit(self):
+        # Clean exit, output just didn't parse — NOT transient, must not retry.
+        assert classify_agent_failure(0, "rambling non-json text", "") == "parse_error"
+
+    def test_other_on_nonzero_with_no_signature(self):
+        assert classify_agent_failure(1, "some unexpected failure", "") == "other"
+
+
+class TestRetryDelayFullJitter:
+    """_retry_delay returns a value in [0, min(cap, base*2**attempt)]."""
+
+    def test_within_full_jitter_bounds(self):
+        rng = _random.Random(0)
+        for attempt in range(5):
+            cap = min(60.0, 2.0 * (2 ** attempt))
+            for _ in range(50):
+                d = _retry_delay(attempt, 2.0, 60.0, rng)
+                assert 0.0 <= d <= cap
+
+    def test_cap_is_enforced(self):
+        rng = _random.Random(1)
+        # base*2**10 would be 2048s; cap pins it to max_delay.
+        for _ in range(50):
+            assert 0.0 <= _retry_delay(10, 2.0, 60.0, rng) <= 60.0
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.subprocess.Popen")
+class TestRunSingleAgentRetry:
+    """run_single_agent retries transient API errors, not other failures."""
+
+    @staticmethod
+    def _router(mock_router):
+        mock_router.get_model.return_value = "opus"
+        mock_router.get_max_turns.return_value = 35
+        mock_router.get_timeout.return_value = 1800
+
+    def test_retries_overloaded_then_recovers(self, mock_popen, mock_router):
+        self._router(mock_router)
+        # First attempt: 529. Second attempt: valid findings.
+        mock_popen.side_effect = [
+            _mock_popen(stdout=OVERLOAD_MSG, returncode=1),
+            _mock_popen(stdout=VALID_FINDINGS_JSON, returncode=0),
+        ]
+        sleeper = MagicMock()
+
+        result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
+
+        assert result.classification == "success"
+        assert len(result.findings) == 1
+        assert result.error is None
+        assert mock_popen.call_count == 2     # retried once
+        sleeper.assert_called_once()           # backed off once between attempts
+
+    def test_does_not_retry_parse_error(self, mock_popen, mock_router):
+        self._router(mock_router)
+        mock_popen.side_effect = [_mock_popen(stdout="not json", returncode=0)]
+        sleeper = MagicMock()
+
+        result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
+
+        assert result.classification == "parse_error"
+        assert result.findings == []
+        assert mock_popen.call_count == 1     # no retry
+        sleeper.assert_not_called()
+
+    def test_does_not_retry_timeout(self, mock_popen, mock_router):
+        self._router(mock_router)
+        proc = MagicMock()
+        proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["claude"], timeout=1800)
+        proc.pid = 12345
+        mock_popen.return_value = proc
+        sleeper = MagicMock()
+
+        result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
+
+        assert result.classification == "timeout"
+        assert result.killed_by_timeout is True
+        assert mock_popen.call_count == 1     # timeouts are not retried (this spec)
+        sleeper.assert_not_called()
+
+    def test_gives_up_after_max_attempts(self, mock_popen, mock_router):
+        self._router(mock_router)
+        mock_popen.side_effect = [
+            _mock_popen(stdout=OVERLOAD_MSG, returncode=1) for _ in range(3)
+        ]
+        sleeper = MagicMock()
+
+        result = run_single_agent(
+            "a", "p", max_attempts=3, _sleep=sleeper, _rng=_random.Random(0)
+        )
+
+        assert result.classification == "overloaded"
+        assert result.findings == []
+        assert mock_popen.call_count == 3      # all attempts used
+        assert sleeper.call_count == 2         # sleep between attempts, not after the last
+        # The real cause is recorded — no more useless "Non-zero exit code".
+        assert "overloaded" in (result.error or "").lower()

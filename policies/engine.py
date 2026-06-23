@@ -151,6 +151,21 @@ class PolicyEngine:
                             f"matched pattern '{pattern}'"
                         )
 
+            # Banned entities — reject findings that mention blocked companies
+            banned_entities = self.rules.get("banned_entities", [])
+            for field in text_fields:
+                value = finding.get(field, "")
+                if value:
+                    for pattern in banned_entities:
+                        try:
+                            if re.search(pattern, value):
+                                errors.append(
+                                    f"{prefix}: banned entity in '{field}': "
+                                    f"matched '{pattern}'"
+                                )
+                        except re.error:
+                            pass
+
         return errors
 
     # ── Social post validation ───────────────────────────────────────
@@ -227,6 +242,20 @@ class PolicyEngine:
                 if pattern in content:
                     errors.append(
                         f"[{platform}] Banned pattern detected: '{pattern}'"
+                    )
+
+        # Banned entities (regex) — companies/orgs that must never be mentioned
+        banned_entities = self.rules.get("banned_entities", [])
+        for pattern in banned_entities:
+            try:
+                if re.search(pattern, content):
+                    errors.append(
+                        f"[{platform}] Banned entity detected: '{pattern}'"
+                    )
+            except re.error:
+                if pattern in content:
+                    errors.append(
+                        f"[{platform}] Banned entity detected: '{pattern}'"
                     )
 
         return errors

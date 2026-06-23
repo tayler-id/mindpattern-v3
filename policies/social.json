@@ -24,6 +24,11 @@
         "(?i)built with my autonomous pipeline",
         "(?i)check out what mindpattern"
     ],
+    "banned_entities": [
+        "(?i)synchrony\\s*bank",
+        "(?i)synchorny\\s*bank",
+        "(?i)synchrony\\s*financial"
+    ],
     "rate_limits": {
         "bluesky": {"max_posts_per_day": 3, "max_follows_per_day": 100},
         "linkedin": {"max_posts_per_day": 1, "max_follows_per_day": 50}

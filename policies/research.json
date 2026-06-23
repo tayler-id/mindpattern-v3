@@ -5,6 +5,10 @@
     "min_findings_per_agent": 1,
     "max_summary_length": 1000,
     "max_age_hours": 48,
+    "banned_entities": [
+        "(?i)synchrony\\s*bank",
+        "(?i)synchrony\\s*financial"
+    ],
     "injection_patterns": [
         "ignore previous instructions",
         "ignore all instructions",

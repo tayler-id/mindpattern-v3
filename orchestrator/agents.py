@@ -8,6 +8,7 @@ gets a focused prompt with its context. Python controls the orchestration.
 import json
 import logging
 import os
+import random
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -66,6 +67,7 @@ class AgentResult:
     duration_ms: int = 0
     killed_by_timeout: bool = False
     error: str | None = None
+    classification: str | None = None
 
 
 def load_user_config(user_id: str) -> dict:
@@ -210,18 +212,19 @@ Select ALL qualifying new items as findings (minimum 15, target 18-20). For each
 ## Phase 2: Explore Beyond Preflight
 
 The preflight data covers known sources. Now find what it MISSED.
-Use these tools to discover 3-5 additional findings:
+Use only these allowed direct research tools to discover 3-5 additional findings:
 
-- Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
-- Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
-- Twitter search: xreach search "query" --count 10 --json
-- YouTube transcripts: yt-dlp --dump-json "URL"
-- WebSearch (last resort): only if Exa doesn't cover it
+- WebSearch for discovery across the public web
+- WebFetch for deep reads of known URLs
+- Read, Glob, and Grep only for local repository or vault context
 
 Look for:
 - Stories that broke in the last 6 hours (too recent for RSS/feeds)
 - Primary sources not in our feed list
 - Reactions and follow-ups to stories in the preflight data
+
+Do not use shell commands, external CLIs, or network commands.
+Do not spawn subagents; do the verification directly with the allowed tools.
 
 Target: 20-25 total findings (15-20 from Phase 1 + 3-5 from Phase 2).
 
@@ -318,11 +321,10 @@ When evaluating a story's importance, consider:
 - Is this a genuine development or marketing hype?
 - Could this be old news resurfacing? Check the actual publication date, not when it was shared.
 
-### Subagent Delegation
-For high-signal stories that need deep investigation, spawn a subagent:
-- Use the Agent tool to delegate deep reads of long documents
-- Spawn subagents for parallel verification across multiple sources
-- Do NOT spawn subagents for simple searches — use WebSearch directly
+### Tool Boundary
+Use only the direct tools allowed for this research subprocess: WebSearch,
+WebFetch, Read, Glob, and Grep. Do not use shell commands, external CLIs,
+write/edit tools, or subagents.
 
 ### Self-Critique Gate (MANDATORY — do this BEFORE outputting JSON)
 Review EVERY finding against these checks before including it:
@@ -343,48 +345,63 @@ CRITICAL REMINDER: Output ONLY the JSON object with "findings" array. No other t
     return prompt
 
 
-def run_single_agent(
-    agent_name: str,
-    prompt: str,
-    task_type: str = "research_agent",
-) -> AgentResult:
-    """Run a single claude -p call for one agent.
+# Failure classes that are transient/server-side and worth retrying. A 529
+# (overloaded_error), 429 (rate_limit_error), or 5xx is recoverable — Anthropic
+# marks them retryable — so we re-invoke the same claude CLI call (staying on
+# Tayler's subscription, NOT the paid API) with backoff + full jitter.
+_TRANSIENT_CLASSIFICATIONS = frozenset({"overloaded", "rate_limit", "server_error"})
 
-    Returns AgentResult with parsed findings or error.
+
+def classify_agent_failure(exit_code: int, stdout: str, stderr: str) -> str:
+    """Classify why an agent produced no findings.
+
+    Returns one of: overloaded | rate_limit | server_error | parse_error | other.
+    The claude CLI surfaces API errors as text on stdout (e.g.
+    "API Error: 529 Overloaded ...") with a non-zero exit and empty stderr, so we
+    inspect both streams — the old code recorded a useless "Non-zero exit code".
     """
-    model = router.get_model(task_type)
-    max_turns = router.get_max_turns(task_type)
-    timeout = router.get_timeout(task_type)
+    blob = f"{stdout}\n{stderr}".lower()
+    if "overloaded" in blob or "529" in blob:
+        return "overloaded"
+    if "rate limit" in blob or "rate_limit" in blob or "429" in blob:
+        return "rate_limit"
+    if (
+        "internal server error" in blob
+        or "service unavailable" in blob
+        or "api error: 500" in blob
+        or "api error: 502" in blob
+        or "api error: 503" in blob
+    ):
+        return "server_error"
+    if exit_code == 0:
+        return "parse_error"  # clean exit, output just didn't parse — not retryable
+    return "other"
 
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-    ]
 
-    # Add allowed tools
-    for tool in AGENT_ALLOWED_TOOLS:
-        cmd.extend(["--allowedTools", tool])
+def _retry_delay(attempt: int, base_delay: float, max_delay: float, rng: random.Random) -> float:
+    """Full-jitter exponential backoff: uniform(0, min(cap, base * 2**attempt)).
 
-    # Belt and suspenders: deny the dangerous tools explicitly too —
-    # allowed-tools alone is not reliably enforced in every harness path.
-    cmd.extend(["--disallowedTools", "Skill Bash Agent Write Edit"])
+    Full jitter (not fixed backoff) is essential — when all 13 agents 529 at
+    once, lockstep retries just re-trigger the overload; jitter desynchronizes
+    them while concurrency stays at 13.
+    """
+    cap = min(max_delay, base_delay * (2 ** attempt))
+    return rng.uniform(0, cap)
 
-    logger.info(
-        f"run_single_agent START: agent={agent_name}, model={model}, "
-        f"prompt_size={len(prompt)} chars, max_turns={max_turns}, timeout={timeout}s"
-    )
-    start = time.monotonic()
+
+def _run_agent_attempt(
+    agent_name: str,
+    cmd: list[str],
+    env: dict,
+    timeout: int,
+    start: float,
+) -> AgentResult:
+    """Run one claude CLI subprocess attempt and classify the outcome."""
     result = AgentResult(agent_name=agent_name)
-
-    # Pass agent identity to SessionEnd hook for transcript capture
-    env = _agent_env(agent_name)
-
     try:
-        # Use Popen with process group so we can kill the entire tree on timeout.
-        # subprocess.run(timeout=) only kills the direct child on macOS,
-        # leaving orphaned subagent processes that consume API tokens.
+        # Popen with its own process group so we kill the whole tree on timeout
+        # (subprocess.run timeout only kills the direct child on macOS, orphaning
+        # subagents that keep consuming the subscription).
         popen = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -396,7 +413,6 @@ def run_single_agent(
         )
         try:
             stdout, stderr = popen.communicate(timeout=timeout)
-            proc = subprocess.CompletedProcess(cmd, popen.returncode, stdout, stderr)
         except subprocess.TimeoutExpired:
             import os as _os
             import signal as _signal
@@ -409,40 +425,112 @@ def run_single_agent(
                 popen.kill()
             popen.wait()
             result.killed_by_timeout = True
+            result.classification = "timeout"
             result.error = f"Timed out after {timeout}s"
             result.duration_ms = int((time.monotonic() - start) * 1000)
             return result
 
-        result.exit_code = proc.returncode
-        result.raw_output = proc.stdout
+        result.exit_code = popen.returncode
+        result.raw_output = stdout
         result.duration_ms = int((time.monotonic() - start) * 1000)
 
-        if proc.returncode != 0:
-            result.error = proc.stderr[:500] if proc.stderr else "Non-zero exit code"
-            logger.warning(
-                f"Agent {agent_name} exited with code {proc.returncode}, "
-                f"duration={result.duration_ms}ms, "
-                f"stderr_preview='{(proc.stderr or '')[:200]}'"
-            )
-            # Still try to parse findings — agent may have produced valid output
-            # before a hook failure set exit code to non-zero
-            if proc.stdout and proc.stdout.strip():
-                result.findings = _parse_findings(proc.stdout, agent_name)
-                if result.findings:
-                    logger.info(
-                        f"Agent {agent_name} had non-zero exit but produced "
-                        f"{len(result.findings)} findings — recovering output"
-                    )
-                    result.error = None  # Clear error since we got findings
+        findings = _parse_findings(stdout, agent_name) if stdout and stdout.strip() else []
+        if findings:
+            # Success even with a non-zero exit (e.g. a post-output hook failed)
+            # — we still got usable findings.
+            result.findings = findings
+            result.classification = "success"
+            result.error = None
             return result
 
-        # Parse JSON findings from output
-        result.findings = _parse_findings(proc.stdout, agent_name)
+        # No findings — classify the failure from exit code + output streams.
+        cls = classify_agent_failure(popen.returncode, stdout or "", stderr or "")
+        result.classification = cls
+        if cls == "parse_error":
+            result.error = None  # clean exit, just unparseable — not an error per se
+        else:
+            preview = (stdout or stderr or "").strip()[:500]
+            result.error = preview or f"{cls} (exit {popen.returncode})"
+        return result
 
     except Exception as e:
         result.error = str(e)
+        result.classification = "other"
         result.duration_ms = int((time.monotonic() - start) * 1000)
         logger.error(f"Agent {agent_name} failed: {e}")
+        return result
+
+
+def run_single_agent(
+    agent_name: str,
+    prompt: str,
+    task_type: str = "research_agent",
+    *,
+    max_attempts: int = 3,
+    base_delay: float = 2.0,
+    max_delay: float = 60.0,
+    _sleep=time.sleep,
+    _rng: random.Random | None = None,
+) -> AgentResult:
+    """Run a single claude -p call for one agent, retrying transient API errors.
+
+    Transient failures (529 overloaded, 429 rate limit, 5xx) are retried up to
+    `max_attempts` with full-jitter exponential backoff. Non-transient outcomes
+    (success, parse_error, timeout, other) return immediately. Every call goes
+    through the claude CLI — i.e. Tayler's Anthropic subscription, never the paid
+    API. `_sleep` / `_rng` are injection points for tests.
+    """
+    rng = _rng if _rng is not None else random.Random()
+    model = router.get_model(task_type)
+    max_turns = router.get_max_turns(task_type)
+    timeout = router.get_timeout(task_type)
+
+    cmd = [
+        "claude", "-p", prompt,
+        "--model", model,
+        "--max-turns", str(max_turns),
+        "--output-format", "text",
+    ]
+    for tool in AGENT_ALLOWED_TOOLS:
+        cmd.extend(["--allowedTools", tool])
+    # Belt and suspenders: deny the dangerous tools explicitly too —
+    # allowed-tools alone is not reliably enforced in every harness path.
+    cmd.extend(["--disallowedTools", "Skill Bash Agent Write Edit"])
+
+    logger.info(
+        f"run_single_agent START: agent={agent_name}, model={model}, "
+        f"prompt_size={len(prompt)} chars, max_turns={max_turns}, "
+        f"timeout={timeout}s, max_attempts={max_attempts}"
+    )
+    start = time.monotonic()
+    # Pass agent identity to SessionEnd hook for transcript capture
+    env = _agent_env(agent_name)
+
+    result = AgentResult(agent_name=agent_name)
+    for attempt in range(max_attempts):
+        result = _run_agent_attempt(agent_name, cmd, env, timeout, start)
+
+        if result.classification not in _TRANSIENT_CLASSIFICATIONS:
+            if result.classification not in ("success", "parse_error"):
+                logger.warning(
+                    f"Agent {agent_name} failed: classification={result.classification}, "
+                    f"exit={result.exit_code}, duration={result.duration_ms}ms, "
+                    f"error_preview='{(result.error or '')[:200]}'"
+                )
+            return result
+
+        if attempt < max_attempts - 1:
+            delay = _retry_delay(attempt, base_delay, max_delay, rng)
+            logger.warning(
+                f"Agent {agent_name} transient failure ({result.classification}); "
+                f"retry {attempt + 1}/{max_attempts - 1} in {delay:.1f}s"
+            )
+            _sleep(delay)
+        else:
+            logger.warning(
+                f"Agent {agent_name} transient failure ({result.classification}) — "
+                f"exhausted {max_attempts} attempts, giving up"
+            )
 
     return result
 
