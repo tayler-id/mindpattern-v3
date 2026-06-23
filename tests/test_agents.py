@@ -8,7 +8,6 @@ Covers:
 """
 
 import json
-import subprocess
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
@@ -325,26 +324,34 @@ VALID_FINDINGS_JSON = json.dumps({
 })
 
 
-def _mock_popen(stdout="", stderr="", returncode=0):
-    """Create a mock Popen that returns the given stdout/stderr via communicate()."""
-    mock_proc = MagicMock()
-    mock_proc.communicate.return_value = (stdout, stderr)
-    mock_proc.returncode = returncode
-    mock_proc.pid = 12345
-    return mock_proc
+def _process_result(
+    stdout="",
+    stderr="",
+    returncode=0,
+    timed_out=False,
+    error=None,
+):
+    """Create a shared Claude process result for agent tests."""
+    return ClaudeProcessResult(
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
+        timed_out=timed_out,
+        error=error,
+    )
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
+@patch("orchestrator.agents.run_claude_process")
 class TestRunSingleAgentSuccess:
-    """run_single_agent returns parsed findings on a successful subprocess call."""
+    """run_single_agent returns parsed findings on a successful Claude call."""
 
-    def test_run_single_agent_success(self, mock_popen, mock_router):
+    def test_run_single_agent_success(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        mock_popen.return_value = _mock_popen(
+        mock_run_process.return_value = _process_result(
             stdout=VALID_FINDINGS_JSON, returncode=0
         )
 
@@ -359,29 +366,53 @@ class TestRunSingleAgentSuccess:
         assert result.findings[0]["title"] == "Test Finding"
         assert result.duration_ms >= 0
 
-        # Verify subprocess was called with claude CLI
-        mock_popen.assert_called_once()
-        cmd = mock_popen.call_args[0][0]
+        # Verify the shared process runner was called with the claude CLI.
+        mock_run_process.assert_called_once()
+        cmd = mock_run_process.call_args.args[0]
         assert cmd[0] == "claude"
         assert "-p" in cmd
 
 
-@patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
-class TestRunSingleAgentTimeout:
-    """run_single_agent handles subprocess.TimeoutExpired."""
+class TestRunSingleAgentSharedProcessRunner:
+    """run_single_agent delegates Claude process execution to core.claude_cli."""
 
-    def test_run_single_agent_timeout(self, mock_popen, mock_router):
+    @patch("orchestrator.agents.router")
+    @patch("orchestrator.agents.run_claude_process")
+    def test_run_single_agent_uses_shared_process_runner(
+        self, mock_run_process, mock_router, monkeypatch
+    ):
+        monkeypatch.setenv("PATH", "")
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+        mock_run_process.return_value = ClaudeProcessResult(
+            stdout=VALID_FINDINGS_JSON,
+            stderr="",
+            returncode=0,
+        )
+
+        result = run_single_agent("test-agent", "test prompt")
+
+        assert result.classification == "success"
+        assert len(result.findings) == 1
+        mock_run_process.assert_called_once()
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.run_claude_process")
+class TestRunSingleAgentTimeout:
+    """run_single_agent handles shared-runner timeouts."""
+
+    def test_run_single_agent_timeout(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 60
 
-        mock_proc = MagicMock()
-        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(
-            cmd=["claude"], timeout=60
+        mock_run_process.return_value = _process_result(
+            returncode=1,
+            timed_out=True,
+            error="Timed out after 60s",
         )
-        mock_proc.pid = 12345
-        mock_popen.return_value = mock_proc
 
         result = run_single_agent("slow-agent", "long prompt")
 
@@ -393,16 +424,16 @@ class TestRunSingleAgentTimeout:
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
+@patch("orchestrator.agents.run_claude_process")
 class TestRunSingleAgentInvalidJson:
     """run_single_agent handles unparseable output gracefully."""
 
-    def test_run_single_agent_invalid_json(self, mock_popen, mock_router):
+    def test_run_single_agent_invalid_json(self, mock_run_process, mock_router):
         mock_router.get_model.return_value = "sonnet"
         mock_router.get_max_turns.return_value = 10
         mock_router.get_timeout.return_value = 300
 
-        mock_popen.return_value = _mock_popen(
+        mock_run_process.return_value = _process_result(
             stdout="This is not JSON at all, just rambling text.", returncode=0
         )
 
@@ -521,9 +552,9 @@ class TestRunClaudePromptFailure:
 
 
 class TestDryRunClaudeDispatch:
-    """MP_DRY_RUN skips real Claude subprocesses at dispatch boundaries."""
+    """MP_DRY_RUN skips real Claude process execution at dispatch boundaries."""
 
-    def test_run_claude_prompt_dry_run_skips_subprocess(self, monkeypatch):
+    def test_run_claude_prompt_dry_run_skips_process_runner(self, monkeypatch):
         monkeypatch.setenv("MP_DRY_RUN", "1")
 
         with patch("orchestrator.agents.run_claude_process") as mock_run_process:
@@ -533,22 +564,22 @@ class TestDryRunClaudeDispatch:
         assert "Dry-Run Report" in output
         mock_run_process.assert_not_called()
 
-    def test_run_single_agent_dry_run_skips_popen(self, monkeypatch):
+    def test_run_single_agent_dry_run_skips_process_runner(self, monkeypatch):
         monkeypatch.setenv("MP_DRY_RUN", "1")
 
-        with patch("orchestrator.agents.subprocess.Popen") as mock_popen:
+        with patch("orchestrator.agents.run_claude_process") as mock_run_process:
             result = run_single_agent("news-researcher", "find news")
 
         assert result.classification == "success"
         assert result.findings
         assert result.findings[0]["source_name"] == "Dry Run"
-        mock_popen.assert_not_called()
+        mock_run_process.assert_not_called()
 
-    def test_run_agent_with_files_dry_run_skips_popen(self, monkeypatch, tmp_path):
+    def test_run_agent_with_files_dry_run_skips_process_runner(self, monkeypatch, tmp_path):
         monkeypatch.setenv("MP_DRY_RUN", "1")
         output_file = tmp_path / "eic-topic.json"
 
-        with patch("orchestrator.agents.subprocess.Popen") as mock_popen:
+        with patch("orchestrator.agents.run_claude_process") as mock_run_process:
             result = run_agent_with_files(
                 system_prompt_file="agents/eic.md",
                 prompt="select a topic",
@@ -558,7 +589,7 @@ class TestDryRunClaudeDispatch:
 
         assert result == {"dry_run": True, "task_type": "eic"}
         assert json.loads(output_file.read_text()) == result
-        mock_popen.assert_not_called()
+        mock_run_process.assert_not_called()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -776,7 +807,7 @@ class TestRetryDelayFullJitter:
 
 
 @patch("orchestrator.agents.router")
-@patch("orchestrator.agents.subprocess.Popen")
+@patch("orchestrator.agents.run_claude_process")
 class TestRunSingleAgentRetry:
     """run_single_agent retries transient API errors, not other failures."""
 
@@ -786,12 +817,12 @@ class TestRunSingleAgentRetry:
         mock_router.get_max_turns.return_value = 35
         mock_router.get_timeout.return_value = 1800
 
-    def test_retries_overloaded_then_recovers(self, mock_popen, mock_router):
+    def test_retries_overloaded_then_recovers(self, mock_run_process, mock_router):
         self._router(mock_router)
         # First attempt: 529. Second attempt: valid findings.
-        mock_popen.side_effect = [
-            _mock_popen(stdout=OVERLOAD_MSG, returncode=1),
-            _mock_popen(stdout=VALID_FINDINGS_JSON, returncode=0),
+        mock_run_process.side_effect = [
+            _process_result(stdout=OVERLOAD_MSG, returncode=1),
+            _process_result(stdout=VALID_FINDINGS_JSON, returncode=0),
         ]
         sleeper = MagicMock()
 
@@ -800,40 +831,41 @@ class TestRunSingleAgentRetry:
         assert result.classification == "success"
         assert len(result.findings) == 1
         assert result.error is None
-        assert mock_popen.call_count == 2     # retried once
+        assert mock_run_process.call_count == 2     # retried once
         sleeper.assert_called_once()           # backed off once between attempts
 
-    def test_does_not_retry_parse_error(self, mock_popen, mock_router):
+    def test_does_not_retry_parse_error(self, mock_run_process, mock_router):
         self._router(mock_router)
-        mock_popen.side_effect = [_mock_popen(stdout="not json", returncode=0)]
+        mock_run_process.side_effect = [_process_result(stdout="not json", returncode=0)]
         sleeper = MagicMock()
 
         result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
 
         assert result.classification == "parse_error"
         assert result.findings == []
-        assert mock_popen.call_count == 1     # no retry
+        assert mock_run_process.call_count == 1     # no retry
         sleeper.assert_not_called()
 
-    def test_does_not_retry_timeout(self, mock_popen, mock_router):
+    def test_does_not_retry_timeout(self, mock_run_process, mock_router):
         self._router(mock_router)
-        proc = MagicMock()
-        proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["claude"], timeout=1800)
-        proc.pid = 12345
-        mock_popen.return_value = proc
+        mock_run_process.return_value = _process_result(
+            returncode=1,
+            timed_out=True,
+            error="Timed out after 1800s",
+        )
         sleeper = MagicMock()
 
         result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
 
         assert result.classification == "timeout"
         assert result.killed_by_timeout is True
-        assert mock_popen.call_count == 1     # timeouts are not retried (this spec)
+        assert mock_run_process.call_count == 1     # timeouts are not retried (this spec)
         sleeper.assert_not_called()
 
-    def test_gives_up_after_max_attempts(self, mock_popen, mock_router):
+    def test_gives_up_after_max_attempts(self, mock_run_process, mock_router):
         self._router(mock_router)
-        mock_popen.side_effect = [
-            _mock_popen(stdout=OVERLOAD_MSG, returncode=1) for _ in range(3)
+        mock_run_process.side_effect = [
+            _process_result(stdout=OVERLOAD_MSG, returncode=1) for _ in range(3)
         ]
         sleeper = MagicMock()
 
@@ -843,7 +875,7 @@ class TestRunSingleAgentRetry:
 
         assert result.classification == "overloaded"
         assert result.findings == []
-        assert mock_popen.call_count == 3      # all attempts used
+        assert mock_run_process.call_count == 3      # all attempts used
         assert sleeper.call_count == 2         # sleep between attempts, not after the last
         # The real cause is recorded — no more useless "Non-zero exit code".
         assert "overloaded" in (result.error or "").lower()

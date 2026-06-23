@@ -523,3 +523,39 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: Claude subprocess execution has a stable internal interface that can be adopted by remaining agent/file paths incrementally.
   - Security: the helper preserves process-group timeout killing, does not add shell execution, and returns startup errors as data instead of raising through callers.
   - Performance: the helper adds only dataclass wrapping around the same one-process execution model; no new retries or blocking loops were introduced.
+
+## Step 16 - Finish Claude dispatch process-runner migration
+
+### Changes
+
+- Migrated `_run_agent_attempt()` to call `run_claude_process()` instead of owning direct `subprocess.Popen` setup and timeout handling.
+- Migrated `run_agent_with_files()` to call `run_claude_process()` while preserving file-output parsing, stale-output deletion, and debug-log writing.
+- Removed the remaining `subprocess` dependency from `orchestrator/agents.py`; all Claude process execution in the module now flows through `core.claude_cli`.
+- Updated research-agent retry, timeout, parse-error, dry-run, and file-agent tests to mock `run_claude_process()` rather than private `Popen` details.
+- Added RED coverage proving `run_single_agent()` and `run_agent_with_files()` delegate to the shared process runner.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunSingleAgentSharedProcessRunner::test_run_single_agent_uses_shared_process_runner -q` failed before implementation because `run_single_agent()` still tried to execute `claude` directly.
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_orchestrator.py::TestRunAgentWithFiles::test_uses_shared_process_runner -q` failed before implementation because `run_agent_with_files()` still tried to execute `claude` directly.
+- New RED tests after implementation: both targeted tests passed.
+- Affected dispatch group: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunSingleAgentSuccess tests/test_agents.py::TestRunSingleAgentSharedProcessRunner tests/test_agents.py::TestRunSingleAgentTimeout tests/test_agents.py::TestRunSingleAgentInvalidJson tests/test_agents.py::TestRunSingleAgentRetry tests/test_orchestrator.py::TestRunAgentWithFiles -q` - 15 passed.
+- Compile check: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_orchestrator.py` - passed.
+- Broader affected suites: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_orchestrator.py tests/test_core_llm.py tests/test_claude_cli.py -q` - 166 passed.
+- Local live-safe smoke: exercised `run_single_agent()`, `run_agent_with_files()`, and `run_claude_prompt()` against a temporary fake `claude` executable in `/tmp`; all three paths used the shared runner without a real Claude/network call.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1115 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt graph artifacts to 6314 nodes and 9605 edges from 390 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain run_claude_process` - resolved `core/claude_cli.py` line 36 with incoming calls from `core.llm.run()`, `run_claude_prompt()`, `run_agent_with_files()`, and `_run_agent_attempt()`.
+- `graphify path run_single_agent run_claude_process` - found `run_single_agent() --calls--> _run_agent_attempt() --calls--> run_claude_process()`.
+- `graphify path run_agent_with_files run_claude_process` - found `run_agent_with_files() --calls--> run_claude_process()`.
+- `graphify diagnose multigraph --json` - reported 6314 nodes, 9605 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: caller contracts remain covered for findings parsing, timeout classification, retry policy, dry-run skipping, file-output parsing, and debug logs.
+  - Readability: `orchestrator/agents.py` no longer interleaves business classification logic with raw process setup and cleanup mechanics.
+  - Architecture: all Claude process execution now has one internal primitive, while each caller still owns its domain-specific command construction and result mapping.
+  - Security: process execution remains shell-free, timeout cleanup remains in `core.claude_cli`, and the smoke used only a temporary local fake executable.
+  - Performance: the migration keeps the same single-process execution model and retry behavior; no additional process launches or retries were introduced.

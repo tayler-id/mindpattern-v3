@@ -9,14 +9,13 @@ import json
 import logging
 import os
 import random
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from core.claude_cli import kill_process_group, run_claude_process
+from core.claude_cli import run_claude_process
 from memory.embeddings import embed_texts
 from . import router
 
@@ -76,7 +75,7 @@ def _dry_run_file_payload(task_type: str) -> dict:
 
 
 def set_pipeline_date(date_str: str) -> None:
-    """Set the pipeline date so subprocess env vars include it."""
+    """Set the pipeline date so Claude process env vars include it."""
     global _pipeline_date
     _pipeline_date = date_str
 
@@ -443,64 +442,45 @@ def _run_agent_attempt(
     timeout: int,
     start: float,
 ) -> AgentResult:
-    """Run one claude CLI subprocess attempt and classify the outcome."""
+    """Run one Claude CLI process attempt and classify the outcome."""
     result = AgentResult(agent_name=agent_name)
-    try:
-        # Popen with its own process group so we kill the whole tree on timeout
-        # (subprocess.run timeout only kills the direct child on macOS, orphaning
-        # subagents that keep consuming the subscription).
-        popen = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(PROJECT_ROOT),
-            env=env,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = popen.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            logger.warning(
-                f"Agent {agent_name} timed out after {timeout}s, killing process group"
-            )
-            kill_process_group(popen)
-            popen.wait()
-            result.killed_by_timeout = True
-            result.classification = "timeout"
-            result.error = f"Timed out after {timeout}s"
-            result.duration_ms = int((time.monotonic() - start) * 1000)
-            return result
+    process = run_claude_process(cmd, timeout=timeout, cwd=PROJECT_ROOT, env=env)
+    result.duration_ms = int((time.monotonic() - start) * 1000)
 
-        result.exit_code = popen.returncode
-        result.raw_output = stdout
-        result.duration_ms = int((time.monotonic() - start) * 1000)
-
-        findings = _parse_findings(stdout, agent_name) if stdout and stdout.strip() else []
-        if findings:
-            # Success even with a non-zero exit (e.g. a post-output hook failed)
-            # — we still got usable findings.
-            result.findings = findings
-            result.classification = "success"
-            result.error = None
-            return result
-
-        # No findings — classify the failure from exit code + output streams.
-        cls = classify_agent_failure(popen.returncode, stdout or "", stderr or "")
-        result.classification = cls
-        if cls == "parse_error":
-            result.error = None  # clean exit, just unparseable — not an error per se
-        else:
-            preview = (stdout or stderr or "").strip()[:500]
-            result.error = preview or f"{cls} (exit {popen.returncode})"
+    if process.timed_out:
+        result.killed_by_timeout = True
+        result.classification = "timeout"
+        result.error = process.error or f"Timed out after {timeout}s"
         return result
 
-    except Exception as e:
-        result.error = str(e)
+    if process.error:
+        result.error = process.error
         result.classification = "other"
-        result.duration_ms = int((time.monotonic() - start) * 1000)
-        logger.error(f"Agent {agent_name} failed: {e}")
         return result
+
+    stdout = process.stdout
+    stderr = process.stderr
+    result.exit_code = process.returncode
+    result.raw_output = stdout
+
+    findings = _parse_findings(stdout, agent_name) if stdout and stdout.strip() else []
+    if findings:
+        # Success even with a non-zero exit (e.g. a post-output hook failed)
+        # — we still got usable findings.
+        result.findings = findings
+        result.classification = "success"
+        result.error = None
+        return result
+
+    # No findings — classify the failure from exit code + output streams.
+    cls = classify_agent_failure(process.returncode, stdout or "", stderr or "")
+    result.classification = cls
+    if cls == "parse_error":
+        result.error = None  # clean exit, just unparseable — not an error per se
+    else:
+        preview = (stdout or stderr or "").strip()[:500]
+        result.error = preview or f"{cls} (exit {process.returncode})"
+    return result
 
 
 def run_single_agent(
@@ -955,40 +935,18 @@ def run_agent_with_files(
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
 
-    proc = None
-    try:
-        # Use Popen with process group so we can kill the entire tree on timeout.
-        # subprocess.run(timeout=) doesn't kill grandchild processes on macOS,
-        # causing the bot to hang when claude spawns subagents.
-        popen = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(PROJECT_ROOT),
-            env=env,
-            start_new_session=True,
-        )
-        try:
-            stdout, stderr = popen.communicate(timeout=timeout)
-            proc = subprocess.CompletedProcess(
-                cmd, popen.returncode, stdout, stderr,
-            )
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Agent {task_type} timed out after {timeout}s, killing process group")
-            kill_process_group(popen)
-            popen.wait()
-            proc = None
-    except Exception as e:
-        logger.error(f"Agent {task_type} failed to start: {e}")
-        proc = None
+    process = run_claude_process(cmd, timeout=timeout, cwd=PROJECT_ROOT, env=env)
+    if process.timed_out:
+        logger.warning(f"Agent {task_type} timed out after {timeout}s")
+    if process.error and not process.timed_out:
+        logger.error(f"Agent {task_type} failed to start: {process.error}")
 
     # Write debug log
     SOCIAL_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     debug_log_path = SOCIAL_DRAFTS_DIR / f"{task_type}-debug.log"
-    exit_code = proc.returncode if proc else -1
-    stdout = proc.stdout if proc else ""
-    stderr = proc.stderr if proc else ""
+    exit_code = process.returncode if not (process.timed_out or process.error) else -1
+    stdout = process.stdout
+    stderr = process.stderr or process.error or ""
     debug_log_path.write_text(
         f"exit_code: {exit_code}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n"
     )
