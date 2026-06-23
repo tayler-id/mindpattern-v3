@@ -586,6 +586,34 @@ class TestCompileKnowledge:
 
     @patch("knowledge.compile.run_claude_prompt")
     @patch("knowledge.compile.embed_texts")
+    def test_dry_run_counts_planned_work_without_writes(self, mock_embed, mock_claude, findings_db, vault_dir):
+        from knowledge.compile import compile_knowledge
+
+        mock_embed.side_effect = [
+            _make_similar_embeddings(7, base_idx=12),
+            [],
+            _make_fake_embeddings(1),
+        ]
+
+        stats = compile_knowledge(
+            db=findings_db,
+            vault_dir=vault_dir,
+            date_str="2026-04-06",
+            lookback_days=7,
+            dry_run=True,
+        )
+
+        assert stats["dry_run"] is True
+        assert stats["findings_processed"] == 7
+        assert stats["clusters"] == 1
+        assert stats["concepts_created"] == 1
+        assert stats["concepts_updated"] == 0
+        assert list((vault_dir / "knowledge" / "concepts").glob("*.md")) == []
+        assert not (vault_dir / "knowledge" / "index.md").exists()
+        mock_claude.assert_not_called()
+
+    @patch("knowledge.compile.run_claude_prompt")
+    @patch("knowledge.compile.embed_texts")
     def test_handles_claude_error_gracefully(self, mock_embed, mock_claude, findings_db, vault_dir):
         from knowledge.compile import compile_knowledge
 

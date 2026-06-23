@@ -671,3 +671,38 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: hooks do local file I/O only in the foreground; expensive knowledge flushing is spawned out of band and guarded against recursive Claude invocation.
   - Security: hook code skips pipeline agents where appropriate, avoids committing captured conversation/runtime state, and the Graphify hint hook only emits static context.
   - Performance: session start reads bounded markdown context, session end/pre-compact cap extracted turns/chars, and flush work runs in a background process.
+
+## Step 20 - Knowledge compiler package
+
+### Changes
+
+- Added the `knowledge` package used by the session hooks:
+  - `knowledge.compile` clusters recent findings, matches them to concept pages, synthesizes concepts, writes concept pages, and regenerates the knowledge index.
+  - `knowledge.flush` summarizes captured conversation context in the background and appends it to daily conversation logs.
+  - `knowledge.config`, `knowledge/run.sh`, templates, and `knowledge/AGENTS.md` document and operationalize the compiler.
+- Fixed the known `knowledge.compile --dry-run` no-op by adding a `dry_run` parameter to `compile_knowledge()`.
+- Dry-run now computes findings/clusters/planned creates/updates without calling Claude and without writing concept/index files.
+- Added a regression test proving the dry-run path does not call the LLM or write vault files.
+- Left local runtime state (`knowledge/state/`, `.DS_Store`, pycache) unstaged.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_compile.py -q` - 19 passed.
+- `python3 -m compileall knowledge/compile.py knowledge/flush.py knowledge/config.py tests/test_compile.py` - passed.
+- `bash -n knowledge/run.sh` - passed.
+- `git diff --check -- knowledge/AGENTS.md knowledge/__init__.py knowledge/compile.py knowledge/config.py knowledge/flush.py knowledge/run.sh knowledge/templates/concept.md knowledge/templates/connection.md tests/test_compile.py` - passed.
+- `graphify update .` - rebuilt graph artifacts to 6321 nodes, 9628 edges, and 427 communities; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain compile_knowledge` - resolved `knowledge/compile.py` line 416 with calls to fetch, cluster, match, synthesize, write, and index helpers.
+- `graphify explain _run_claude_extract` - resolved `knowledge/flush.py` line 80 with an incoming call from `main()`.
+- `rg -n "test_dry_run_counts_planned_work_without_writes" graphify-out/graph.json` - confirmed the dry-run regression test is represented in the graph.
+- `graphify diagnose multigraph --json` - reported 6321 nodes, 9628 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: compiler behavior is covered for finding fetch, clustering, concept matching, page writes, index generation, LLM failures, malformed JSON, and dry-run no-write/no-LLM behavior.
+  - Readability: compiler phases are separated into named helpers; the flush worker keeps hook-time capture separate from slower LLM summarization.
+  - Architecture: knowledge compilation remains a standalone post-pipeline package, while hooks and `run.sh` integrate it without making daily delivery depend on it.
+  - Security: no captured conversations, generated concept pages, `.DS_Store`, pycache, or `knowledge/state/` runtime files are committed.
+  - Performance: dry-run avoids LLM and file writes, compiler clustering is embedding-based with greedy assignment, and flush work is intentionally outside the hook foreground path.

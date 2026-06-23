@@ -500,8 +500,8 @@
     "semantic_hash": ""
   },
   "knowledge/compile.py": {
-    "mtime": 1775583213.0,
-    "ast_hash": "063b59f75f3d385c07ee023635f8e56f",
+    "mtime": 1782246253.4926379,
+    "ast_hash": "8727cb03c4a7f287ff1ccbdb7e561a96",
     "semantic_hash": ""
   },
   "knowledge/config.py": {
@@ -1010,8 +1010,8 @@
     "semantic_hash": ""
   },
   "tests/test_compile.py": {
-    "mtime": 1781198363.970041,
-    "ast_hash": "1743cc9bc9fbd2c7df0a42584196095a",
+    "mtime": 1782246263.9744112,
+    "ast_hash": "3cb9a38961d76352926726fc5aacfe3c",
     "semantic_hash": ""
   },
   "tests/test_core_db.py": {

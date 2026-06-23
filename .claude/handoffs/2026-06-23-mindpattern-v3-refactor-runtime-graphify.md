@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: session knowledge hook slice staged on top of `3271ce3 refactor: add knowledge graph schema`; run `git log --oneline -19` for the exact latest commit hash after it lands.
+- Code/graph state: knowledge compiler slice staged on top of `5043d1d refactor: add session knowledge hooks`; run `git log --oneline -20` for the exact latest commit hash after it lands.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has nineteen save-point commits through the session knowledge hook slice once the current staged slice lands:
+This refactor branch now has twenty save-point commits through the knowledge compiler slice once the current staged slice lands:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -31,9 +31,10 @@ This refactor branch now has nineteen save-point commits through the session kno
 16. `ee16f82 refactor: route all claude dispatch through runner`
 17. `7058abe refactor: centralize claude command building`
 18. `3271ce3 refactor: add knowledge graph schema`
-19. latest `refactor: add session knowledge hooks`
+19. `5043d1d refactor: add session knowledge hooks`
+20. latest `refactor: add knowledge compiler`
 
-This handoff was updated again after adding the interactive session knowledge hooks. Use `git log --oneline -19` for the exact latest commit hashes.
+This handoff was updated again after adding the knowledge compiler package and fixing its dry-run path. Use `git log --oneline -20` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -56,6 +57,7 @@ The main completed work is:
 - Centralized Claude command construction in `_build_claude_command()` and named tool-policy constants so research, file-writing, and prompt dispatch share one CLI command shape while keeping distinct allowed/disallowed tool policies.
 - Added `kg.schema` as the typed, bi-temporal KG schema foundation in `memory.db`, with idempotent `kg_*` tables, constrained vocabularies, and pure-SQLite regression tests.
 - Added interactive session knowledge hooks and `.claude/settings.json` registration: session start injects compiled knowledge, session end/pre-compact spawn non-blocking flush work, and session capture writes tested conversation summaries.
+- Added the `knowledge` package for post-pipeline knowledge compilation and background conversation flushes; fixed `compile_knowledge(..., dry_run=True)` so it counts planned work without Claude calls or vault writes.
 
 ## Verification Already Run
 
@@ -138,6 +140,14 @@ The main completed work is:
 - `graphify explain session_end.py` resolves `hooks/session_end.py` with `main()`, `_check_dedup()`, `_write_dedup()`, and `_extract_context()`.
 - `graphify explain pre_compact.py` resolves `hooks/pre_compact.py` with the same dedup/context helpers.
 - `graphify explain _update_sessions_index` resolves `hooks/session_capture.py` line 389 with an incoming call from `main()`.
+- Knowledge compiler suite: `.venv/bin/python3 -m pytest tests/test_compile.py -q` -> `19 passed`.
+- Compile after knowledge compiler: `python3 -m compileall knowledge/compile.py knowledge/flush.py knowledge/config.py tests/test_compile.py` -> passed.
+- Knowledge shell check: `bash -n knowledge/run.sh` -> passed.
+- Knowledge staged hygiene: `git diff --check -- knowledge/AGENTS.md knowledge/__init__.py knowledge/compile.py knowledge/config.py knowledge/flush.py knowledge/run.sh knowledge/templates/concept.md knowledge/templates/connection.md tests/test_compile.py` -> passed.
+- `graphify update .` rebuilt artifacts to `6321 nodes / 9628 edges / 427 communities`; `graph.html` was skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain compile_knowledge` resolves `knowledge/compile.py` line 416 with calls to fetch, cluster, match, synthesize, write, and index helpers.
+- `graphify explain _run_claude_extract` resolves `knowledge/flush.py` line 80 with an incoming call from `main()`.
+- `rg -n "test_dry_run_counts_planned_work_without_writes" graphify-out/graph.json` confirms the dry-run regression is represented in the graph.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -153,7 +163,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6320 nodes and 9624 edges.
+  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6321 nodes and 9628 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -185,7 +195,8 @@ The main completed work is:
   - `graphify explain init_kg_schema` resolves `kg/schema.py` line 131 with incoming calls from `open_kg()` and the schema tests.
   - `graphify path open_kg init_kg_schema` finds `open_kg() --calls--> init_kg_schema()`.
   - `graphify explain session_start.py`, `graphify explain session_end.py`, `graphify explain pre_compact.py`, and `graphify explain _update_sessions_index` all resolve the session hook entry points/helpers.
-  - `graphify diagnose multigraph --json` reports 6320 nodes, 9624 edges, and zero duplicate/missing/dangling/self-loop edges.
+  - `graphify explain compile_knowledge` resolves `knowledge/compile.py` line 416 and `graphify explain _run_claude_extract` resolves `knowledge/flush.py` line 80.
+  - `graphify diagnose multigraph --json` reports 6321 nodes, 9628 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
 ## Graphify Notes
@@ -194,9 +205,9 @@ The main completed work is:
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
   - 390 files
-  - 6320 nodes
-  - 9624 edges
-  - freshness marker `ee16f827`
+  - 6321 nodes
+  - 9628 edges
+  - freshness marker `5043d1d1`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -208,7 +219,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the session hook slice is committed should still mostly be user/generated state:
+Tracked dirty files after the knowledge compiler slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
@@ -218,7 +229,7 @@ Untracked notable directories/files:
 
 - Agent/local config: `.claude/agents/`, `.claude/commands/`, `.claude/references/`, `.claude/skills/**`
 - Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md`, plus this June 23 handoff
-- Possible source feature slices: `knowledge/`, `docs/agents/`
+- Possible source feature slices: `docs/agents/`
 - Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, `tasks/`
 - Runtime/user data: `data/ramsay/journal.offset`, `data/ramsay/mindpattern/knowledge/`, `data/testuser/`
 
