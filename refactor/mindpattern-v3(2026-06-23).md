@@ -706,3 +706,28 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: knowledge compilation remains a standalone post-pipeline package, while hooks and `run.sh` integrate it without making daily delivery depend on it.
   - Security: no captured conversations, generated concept pages, `.DS_Store`, pycache, or `knowledge/state/` runtime files are committed.
   - Performance: dry-run avoids LLM and file writes, compiler clustering is embedding-based with greedy assignment, and flush work is intentionally outside the hook foreground path.
+
+## Step 21 - V4 context spec and Pillow bound
+
+### Changes
+
+- Added the V4 spec's context-engineering principles: deterministic work belongs in scripts, agent prompts are decomposed artifacts, golden cases are eval files, and model tiering is per decomposed task.
+- Updated the Pillow dependency bound from `>=10,<11` to `>=11,<12`, matching the local verified virtualenv version `11.3.0`.
+
+### Verification
+
+- `.venv/bin/python3 -m pytest tests/test_social.py::TestCompressImage -q` - 2 passed.
+- `.venv/bin/python3 -m pytest tests/test_compile.py tests/test_social.py::TestCompressImage -q` - 21 passed.
+- `git diff --check -- docs/spec-v4.md requirements.txt` - passed.
+- `graphify update .` - reported no code-graph topology changes.
+- `graphify explain "Context-engineering principles"` - resolved `docs/spec-v4.md` line 107.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the Pillow range matches the installed/tested runtime and the image-compression tests cover the direct PIL usage path.
+  - Readability: the added spec section is grouped under Code Style and states the principles as operational rules.
+  - Architecture: the spec now aligns V4 agent design with the script-over-prose and decomposed-prompt direction used by the new hooks/knowledge work.
+  - Security: no credentials, generated vault data, or runtime state are included.
+  - Performance: dependency metadata and docs only; no runtime code path changed.

@@ -104,6 +104,20 @@ def record_fact(db: sqlite3.Connection, fact: ExtractedFact, episode_id: int) ->
 - LLM JSON output is validated against a schema before use; invalid → retry once → skip + log, never crash the phase.
 - Functions that exist must have callers; dead code is deleted in the same PR that orphans it.
 
+### Context-engineering principles (adopted 2026-06-11 from the skills/rules/scripts framework)
+- **Deterministic work is code, never prose**: anything predictable (status checks, validation,
+  scoring, merging) is a script the agent CALLS; the model is reserved for judgment (relevance,
+  contradiction, drafting). When tempted to describe a procedure in a prompt, write a script.
+- **Agent prompts are decomposed artifacts, not mega-prompts** (lands in M3 with the ledger work):
+  shared rules file (always-on, short: cite sources, never fabricate, output schema) + per-agent
+  skill (the conditional workflow) + scripts for prose-instructed mechanics. Lessons append to
+  the skill section, never the rules.
+- **Golden cases are eval files**: `tests/golden/*.eval.md` — scenario, expected behavior,
+  score-100/score-0 rubric. Human-writable, replay-gate-readable.
+- **Model tiering per decomposed step**: schema-constrained atomic tasks (KG extraction, entity
+  adjudication, classification) run on sonnet/haiku; synthesis, opportunity interrogation, and
+  reflection stay on the strong model. Router decides per task type, not per phase.
+
 ## Testing Strategy
 
 - pytest, `tests/test_*.py`, no network, no API keys; claude CLI always mocked (existing convention).

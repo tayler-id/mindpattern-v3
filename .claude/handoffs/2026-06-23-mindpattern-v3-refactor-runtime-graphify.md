@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: knowledge compiler slice staged on top of `5043d1d refactor: add session knowledge hooks`; run `git log --oneline -20` for the exact latest commit hash after it lands.
+- Code/graph state: V4 spec/Pillow bound slice staged on top of `5debe68 refactor: add knowledge compiler`; run `git log --oneline -21` for the exact latest commit hash after it lands.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has twenty save-point commits through the knowledge compiler slice once the current staged slice lands:
+This refactor branch now has twenty-one save-point commits through the V4 spec/Pillow bound slice once the current staged slice lands:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -32,9 +32,10 @@ This refactor branch now has twenty save-point commits through the knowledge com
 17. `7058abe refactor: centralize claude command building`
 18. `3271ce3 refactor: add knowledge graph schema`
 19. `5043d1d refactor: add session knowledge hooks`
-20. latest `refactor: add knowledge compiler`
+20. `5debe68 refactor: add knowledge compiler`
+21. latest `docs: update v4 context principles`
 
-This handoff was updated again after adding the knowledge compiler package and fixing its dry-run path. Use `git log --oneline -20` for the exact latest commit hashes.
+This handoff was updated again after adding the V4 context-engineering principles and verified Pillow 11 dependency bound. Use `git log --oneline -21` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -58,6 +59,7 @@ The main completed work is:
 - Added `kg.schema` as the typed, bi-temporal KG schema foundation in `memory.db`, with idempotent `kg_*` tables, constrained vocabularies, and pure-SQLite regression tests.
 - Added interactive session knowledge hooks and `.claude/settings.json` registration: session start injects compiled knowledge, session end/pre-compact spawn non-blocking flush work, and session capture writes tested conversation summaries.
 - Added the `knowledge` package for post-pipeline knowledge compilation and background conversation flushes; fixed `compile_knowledge(..., dry_run=True)` so it counts planned work without Claude calls or vault writes.
+- Updated the V4 spec with context-engineering principles and moved the Pillow dependency bound to `>=11,<12`, matching the tested virtualenv runtime.
 
 ## Verification Already Run
 
@@ -148,6 +150,11 @@ The main completed work is:
 - `graphify explain compile_knowledge` resolves `knowledge/compile.py` line 416 with calls to fetch, cluster, match, synthesize, write, and index helpers.
 - `graphify explain _run_claude_extract` resolves `knowledge/flush.py` line 80 with an incoming call from `main()`.
 - `rg -n "test_dry_run_counts_planned_work_without_writes" graphify-out/graph.json` confirms the dry-run regression is represented in the graph.
+- Pillow/image compression check: `.venv/bin/python3 -m pytest tests/test_social.py::TestCompressImage -q` -> `2 passed`.
+- V4 spec/Pillow combined check: `.venv/bin/python3 -m pytest tests/test_compile.py tests/test_social.py::TestCompressImage -q` -> `21 passed`.
+- Spec/dependency hygiene: `git diff --check -- docs/spec-v4.md requirements.txt` -> passed.
+- `graphify update .` reported no code-graph topology changes for the spec/dependency slice.
+- `graphify explain "Context-engineering principles"` resolves `docs/spec-v4.md` line 107.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -219,11 +226,10 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the knowledge compiler slice is committed should still mostly be user/generated state:
+Tracked dirty files after the V4 spec/Pillow slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`
-- Source/doc candidates: `docs/spec-v4.md`, plus the unrelated `requirements.txt` Pillow hunk if it remains unstaged.
 
 Untracked notable directories/files:
 
