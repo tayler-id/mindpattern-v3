@@ -40,3 +40,25 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
 
 - `graphify update .` could not run because `graphify` is not installed in this shell.
 - The worktree had many unrelated pre-existing dirty files before this step; this commit should stage only the files listed above plus this progress log.
+
+## Step 2 - Worktree preservation guardrails
+
+### Changes
+
+- Created a tracked-change recovery patch at `/private/tmp/mindpattern-v3-tracked-dirty-2026-06-23.patch` before cleanup work.
+- Restored `.gitignore` protections for `*.db`, `*.db.*`, and `users.json`.
+- Added ignore coverage for local-only state that should not enter commits: `.mlx-venv/`, `.understand-anything/`, and Claude backup files.
+
+### Verification
+
+- `git check-ignore -v users.json .mlx-venv .understand-anything .claude/settings.json.bak-pre-graphify` - confirmed all four are ignored.
+
+### Auto Review
+
+- `git diff --check -- .gitignore 'refactor/mindpattern-v3(2026-06-23).md'` - passed.
+- Five-axis review:
+  - Correctness: ignore rules now match the project convention that databases and PII config must not be committed.
+  - Readability: rules stay in the existing `.gitignore` sections instead of adding a second footer block.
+  - Architecture: cleanup separates local tool/runtime state from source-controlled project artifacts.
+  - Security: `users.json` and SQLite files are protected from accidental staging.
+  - Performance: no runtime behavior changed.

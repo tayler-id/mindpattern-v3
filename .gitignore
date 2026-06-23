@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .venv/
 venv/
+.mlx-venv/
 *.egg-info/
 dist/
 build/
@@ -12,6 +13,9 @@ build/
 # Data (sacred — never commit the DBs)
 data/*/memory.db
 data/*/traces.db
+*.db
+*.db.*
+users.json
 
 # Voice donor samples (third-party content, never commit)
 data/voice-donor/samples/
@@ -49,10 +53,14 @@ Thumbs.db
 
 # Claude Code worktrees and agent state
 .claude/worktrees/
+.claude/*.bak-*
 .agent/
 .agents/
 .pi/
 .kiro/
+
+# Local analysis tool state
+.understand-anything/
 
 # Obsidian
 .obsidian/
@@ -68,8 +76,3 @@ skills-lock.json
 /ramsay-shm
 /ramsay-wal
 --preview
-
-# M0 task 18: never commit databases or PII config anywhere in the tree
-*.db
-*.db.*
-users.json
