@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph HEAD before the full Claude dispatch process-runner migration slice: `3c96abb refactor: share claude cli process runner`
+- Code/graph HEAD before the shared Claude command-builder slice: `ee16f82 refactor: route all claude dispatch through runner`
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch had fifteen clean save-point commits before the full Claude dispatch process-runner migration:
+This refactor branch had sixteen clean save-point commits before the shared Claude command-builder slice:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -28,8 +28,9 @@ This refactor branch had fifteen clean save-point commits before the full Claude
 13. `1048ebf fix: make dry-run skip claude and deploy`
 14. `1ba1eaa refactor: kill claude prompt process groups`
 15. `3c96abb refactor: share claude cli process runner`
+16. `ee16f82 refactor: route all claude dispatch through runner`
 
-This handoff was updated again after migrating research-agent and file-writing Claude dispatch onto `core.claude_cli`. Use `git log --oneline -16` for the exact latest commit hash after the commit lands.
+This handoff was updated again after centralizing Claude command construction. Use `git log --oneline -17` for the exact latest commit hash after the command-builder commit lands.
 
 The main completed work is:
 
@@ -49,6 +50,7 @@ The main completed work is:
 - Hardened the Claude prompt subprocess boundary: `run_claude_prompt()` now uses `Popen(..., start_new_session=True)` and shares `_kill_process_group()` with research/file-agent dispatch so prompt timeouts cannot leave orphaned Claude child processes.
 - Added `core.claude_cli` as the shared low-level Claude process primitive. `core.llm.run()` and `run_claude_prompt()` now delegate to `run_claude_process()`, while research/file-agent paths reuse the shared `kill_process_group()` helper and can migrate to the full helper in later slices.
 - Finished the Claude dispatch migration: `run_single_agent()`, `_run_agent_attempt()`, `run_agent_with_files()`, `run_claude_prompt()`, and `core.llm.run()` now all execute Claude through `core.claude_cli.run_claude_process()`.
+- Centralized Claude command construction in `_build_claude_command()` and named tool-policy constants so research, file-writing, and prompt dispatch share one CLI command shape while keeping distinct allowed/disallowed tool policies.
 
 ## Verification Already Run
 
@@ -103,6 +105,20 @@ The main completed work is:
 - Compile after full migration: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_orchestrator.py` -> passed.
 - Local live-safe full-dispatch smoke: `run_single_agent()`, `run_agent_with_files()`, and `run_claude_prompt()` exercised a temporary fake `claude` executable in `/tmp`; all three paths used the shared runner without a real Claude/network call.
 - Full suite after full migration: `.venv/bin/python3 -m pytest -q` -> `1115 passed, 1 FastAPI/Starlette warning`.
+- Shared command-builder RED regressions:
+  - `.venv/bin/python3 -m pytest tests/test_agents.py::TestBuildClaudeCommand -q` failed before implementation because `_build_claude_command` did not exist.
+  - `.venv/bin/python3 -m pytest tests/test_agent_defang.py::TestResearchAgentTools::test_dispatch_cmd_denies_dangerous_tools -q` failed before implementation for the same missing import.
+- Shared command-builder tests: `.venv/bin/python3 -m pytest tests/test_agents.py::TestBuildClaudeCommand -q` -> `2 passed`.
+- Defang command-policy test after command builder: `.venv/bin/python3 -m pytest tests/test_agent_defang.py::TestResearchAgentTools::test_dispatch_cmd_denies_dangerous_tools -q` -> `1 passed`.
+- Command-shape caller group: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunSingleAgentSuccess tests/test_agents.py::TestRunClaudePromptSuccess tests/test_agents.py::TestRunClaudePromptLargePromptUsesStdin tests/test_orchestrator.py::TestRunAgentWithFiles::test_builds_correct_claude_command -q` -> `4 passed`.
+- Compile after command builder: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_agent_defang.py tests/test_orchestrator.py` -> passed.
+- Broad affected suites before the identity-test repair: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_agent_defang.py tests/test_orchestrator.py tests/test_core_llm.py tests/test_claude_cli.py -q` -> `176 passed`.
+- First full suite after the command-builder code failed only in `tests/test_identity.py::test_skill_tool_blocked_in_run_single_agent`, because that test inspected source text instead of the built command. It was updated to assert `_build_claude_command()` output.
+- Identity policy repair: `.venv/bin/python3 -m pytest tests/test_identity.py::test_skill_tool_blocked_in_run_single_agent -q` -> `1 passed`.
+- Broad affected suites after the identity-test repair: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_agent_defang.py tests/test_identity.py tests/test_orchestrator.py tests/test_core_llm.py tests/test_claude_cli.py -q` -> `179 passed`.
+- Compile after identity-test repair: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_agent_defang.py tests/test_identity.py tests/test_orchestrator.py` -> passed.
+- Local live-safe command-builder smoke: `run_single_agent()`, `run_agent_with_files()`, and `run_claude_prompt()` exercised a temporary fake `claude` executable in `/tmp`; output was `shared command builder smoke passed`.
+- Full suite after command builder: `.venv/bin/python3 -m pytest -q` -> `1117 passed, 1 FastAPI/Starlette warning`.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -118,7 +134,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6314 nodes and 9605 edges.
+  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6320 nodes and 9624 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -143,7 +159,11 @@ The main completed work is:
   - `graphify explain run_claude_process` now also shows incoming calls from `run_agent_with_files()` and `_run_agent_attempt()`.
   - `graphify path run_single_agent run_claude_process` finds `run_single_agent() --calls--> _run_agent_attempt() --calls--> run_claude_process()`.
   - `graphify path run_agent_with_files run_claude_process` finds `run_agent_with_files() --calls--> run_claude_process()`.
-  - `graphify diagnose multigraph --json` reports 6314 nodes, 9605 edges, and zero duplicate/missing/dangling/self-loop edges.
+  - `graphify explain _build_claude_command` resolves `orchestrator/agents.py` line 111 and shows incoming calls from `run_single_agent()`, `run_agent_with_files()`, `run_claude_prompt()`, and related tests.
+  - `graphify path run_single_agent _build_claude_command` finds a direct one-hop path.
+  - `graphify path run_agent_with_files _build_claude_command` finds a direct one-hop path.
+  - `graphify path run_claude_prompt _build_claude_command` finds a direct one-hop path.
+  - `graphify diagnose multigraph --json` reports 6320 nodes, 9624 edges, and zero duplicate/missing/dangling/self-loop edges.
   - `graphify check-update .` exited cleanly with no output.
 
 ## Graphify Notes
@@ -152,9 +172,9 @@ The main completed work is:
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
   - 390 files
-  - 6314 nodes
-  - 9605 edges
-  - freshness marker `3c96abbc`
+  - 6320 nodes
+  - 9624 edges
+  - freshness marker `ee16f827`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -166,7 +186,7 @@ The main completed work is:
 
 Do not reset or clean blindly. Some of this is likely user/personal/generated state.
 
-Tracked dirty files after the full Claude dispatch process-runner migration slice is committed should still mostly be user/generated state:
+Tracked dirty files after the shared Claude command-builder slice is committed should still mostly be user/generated state:
 
 - Local/editor state: `.claude/settings.json`, `.obsidian/app.json`, `.obsidian/workspace.json`
 - Personal/generated data: `data/ramsay/mindpattern/**`, `data/social-drafts/**`

@@ -615,8 +615,8 @@
     "semantic_hash": ""
   },
   "orchestrator/agents.py": {
-    "mtime": 1782244229.7912896,
-    "ast_hash": "c83a0025245b3051ffd041584c48ee69",
+    "mtime": 1782244949.1576207,
+    "ast_hash": "83de3207450176b9c3d89ed388571dff",
     "semantic_hash": ""
   },
   "orchestrator/analyzer.py": {
@@ -965,13 +965,13 @@
     "semantic_hash": ""
   },
   "tests/test_agent_defang.py": {
-    "mtime": 1782241711.8956969,
-    "ast_hash": "cbcb1932930278a1168b02cc5499038f",
+    "mtime": 1782244904.9946082,
+    "ast_hash": "e81f74c6b287ecfb28428c159f8ff098",
     "semantic_hash": ""
   },
   "tests/test_agents.py": {
-    "mtime": 1782244234.1071434,
-    "ast_hash": "6b66e6dae2133e803e1e49eae73e6db4",
+    "mtime": 1782244894.0609012,
+    "ast_hash": "ba140fc673604d9a33d3caa48faf131b",
     "semantic_hash": ""
   },
   "tests/test_analyzer.py": {
@@ -1080,8 +1080,8 @@
     "semantic_hash": ""
   },
   "tests/test_identity.py": {
-    "mtime": 1773952632.0,
-    "ast_hash": "226029bd13a37b876a1deb0f10d32c9a",
+    "mtime": 1782245154.0024738,
+    "ast_hash": "4c44da9b8f6e50200f8a07a5bc223cda",
     "semantic_hash": ""
   },
   "tests/test_identity_evolve.py": {

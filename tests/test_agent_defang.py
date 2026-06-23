@@ -8,7 +8,11 @@ the outbound kill switch.
 import re
 from pathlib import Path
 
-from orchestrator.agents import AGENT_ALLOWED_TOOLS
+from orchestrator.agents import (
+    _build_claude_command,
+    AGENT_ALLOWED_TOOLS,
+    RESEARCH_DISALLOWED_TOOLS,
+)
 
 PROJECT_ROOT = Path(__file__).parent.parent
 
@@ -29,10 +33,14 @@ class TestResearchAgentTools:
     def test_dispatch_cmd_denies_dangerous_tools(self):
         """The built claude command must explicitly disallow Bash/Agent —
         allowed-tools alone is not reliably enforced."""
-        source = (PROJECT_ROOT / "orchestrator" / "agents.py").read_text()
-        match = re.search(r'--disallowedTools",\s*"([^"]+)"', source)
-        assert match, "disallowedTools flag missing from run_single_agent"
-        denied = match.group(1).split()
+        cmd = _build_claude_command(
+            "research prompt",
+            model="opus",
+            max_turns=35,
+            allowed_tools=AGENT_ALLOWED_TOOLS,
+            disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
+        )
+        denied = cmd[cmd.index("--disallowedTools") + 1].split()
         for tool in ("Bash", "Agent", "Write", "Edit", "Skill"):
             assert tool in denied
 

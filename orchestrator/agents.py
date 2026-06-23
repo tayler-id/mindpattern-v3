@@ -101,6 +101,40 @@ def _agent_env(agent_name: str) -> dict[str, str]:
 AGENT_ALLOWED_TOOLS = [
     "WebSearch", "WebFetch", "Read", "Glob", "Grep",
 ]
+RESEARCH_DISALLOWED_TOOLS = "Skill Bash Agent Write Edit"
+FILE_AGENT_DEFAULT_ALLOWED_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
+FILE_AGENT_DISALLOWED_TOOLS = "Agent"
+PROMPT_DEFAULT_ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
+PROMPT_DISALLOWED_TOOLS = "Agent,Write,Edit,NotebookEdit,Skill"
+
+
+def _build_claude_command(
+    prompt_arg: str,
+    *,
+    model: str,
+    max_turns: int,
+    system_prompt_file: str | None = None,
+    allowed_tools: list[str] | None = None,
+    disallowed_tools: str | None = None,
+) -> list[str]:
+    """Build the common Claude CLI command shape used by dispatch helpers."""
+    cmd = [
+        "claude", "-p", prompt_arg,
+        "--model", model,
+        "--max-turns", str(max_turns),
+        "--output-format", "text",
+    ]
+
+    if system_prompt_file:
+        cmd.extend(["--append-system-prompt-file", system_prompt_file])
+
+    for tool in allowed_tools or []:
+        cmd.extend(["--allowedTools", tool])
+
+    if disallowed_tools:
+        cmd.extend(["--disallowedTools", disallowed_tools])
+
+    return cmd
 
 
 @dataclass
@@ -521,17 +555,15 @@ def run_single_agent(
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-    ]
-    for tool in AGENT_ALLOWED_TOOLS:
-        cmd.extend(["--allowedTools", tool])
     # Belt and suspenders: deny the dangerous tools explicitly too —
     # allowed-tools alone is not reliably enforced in every harness path.
-    cmd.extend(["--disallowedTools", "Skill Bash Agent Write Edit"])
+    cmd = _build_claude_command(
+        prompt,
+        model=model,
+        max_turns=max_turns,
+        allowed_tools=AGENT_ALLOWED_TOOLS,
+        disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
+    )
 
     logger.info(
         f"run_single_agent START: agent={agent_name}, model={model}, "
@@ -894,7 +926,7 @@ def run_agent_with_files(
     output_file. Returns parsed dict or None on failure.
     """
     if allowed_tools is None:
-        allowed_tools = ["Read", "Write", "Bash", "Glob", "Grep"]
+        allowed_tools = FILE_AGENT_DEFAULT_ALLOWED_TOOLS
 
     model = router.get_model(task_type)
     max_turns = router.get_max_turns(task_type)
@@ -919,18 +951,15 @@ def run_agent_with_files(
         output_path.write_text(json.dumps(payload))
         return payload
 
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-        "--append-system-prompt-file", system_prompt_file,
-    ]
-    for tool in allowed_tools:
-        cmd.extend(["--allowedTools", tool])
-
     # Prevent subagent dispatch — agents must do their own work
-    cmd.extend(["--disallowedTools", "Agent"])
+    cmd = _build_claude_command(
+        prompt,
+        model=model,
+        max_turns=max_turns,
+        system_prompt_file=system_prompt_file,
+        allowed_tools=allowed_tools,
+        disallowed_tools=FILE_AGENT_DISALLOWED_TOOLS,
+    )
 
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
@@ -1001,32 +1030,18 @@ def run_claude_prompt(
     # For large prompts, use stdin pipe instead of -p argument
     use_stdin = len(prompt) > 100_000
 
-    if use_stdin:
-        cmd = [
-            "claude", "-p", "-",
-            "--model", model,
-            "--max-turns", str(max_turns),
-            "--output-format", "text",
-        ]
-    else:
-        cmd = [
-            "claude", "-p", prompt,
-            "--model", model,
-            "--max-turns", str(max_turns),
-            "--output-format", "text",
-        ]
-
-    if system_prompt_file:
-        cmd.extend(["--append-system-prompt-file", system_prompt_file])
-
-    tools = allowed_tools if allowed_tools is not None else ["Read", "Glob", "Grep"]
-    for tool in tools:
-        cmd.extend(["--allowedTools", tool])
-
     # Prevent subagent dispatch and file writing — agents must return output
     # via stdout, not write to files. Write/Edit would let the agent put the
     # newsletter in a file instead of returning it.
-    cmd.extend(["--disallowedTools", "Agent,Write,Edit,NotebookEdit,Skill"])
+    tools = allowed_tools if allowed_tools is not None else PROMPT_DEFAULT_ALLOWED_TOOLS
+    cmd = _build_claude_command(
+        "-" if use_stdin else prompt,
+        model=model,
+        max_turns=max_turns,
+        system_prompt_file=system_prompt_file,
+        allowed_tools=tools,
+        disallowed_tools=PROMPT_DISALLOWED_TOOLS,
+    )
 
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)

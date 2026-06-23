@@ -559,3 +559,49 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: all Claude process execution now has one internal primitive, while each caller still owns its domain-specific command construction and result mapping.
   - Security: process execution remains shell-free, timeout cleanup remains in `core.claude_cli`, and the smoke used only a temporary local fake executable.
   - Performance: the migration keeps the same single-process execution model and retry behavior; no additional process launches or retries were introduced.
+
+## Step 17 - Shared Claude command builder
+
+### Changes
+
+- Added `_build_claude_command()` so Claude CLI command construction has one shared shape for research agents, file-writing agents, and prompt calls.
+- Added named tool-policy constants for each caller family:
+  - `RESEARCH_DISALLOWED_TOOLS`
+  - `FILE_AGENT_DEFAULT_ALLOWED_TOOLS`
+  - `FILE_AGENT_DISALLOWED_TOOLS`
+  - `PROMPT_DEFAULT_ALLOWED_TOOLS`
+  - `PROMPT_DISALLOWED_TOOLS`
+- Updated `run_single_agent()`, `run_agent_with_files()`, and `run_claude_prompt()` to call the shared command builder while preserving their existing allowed/disallowed tool policies.
+- Updated brittle source-inspection tests to assert the command builder output directly, so the tests now verify behavior instead of depending on inline string placement.
+
+### Verification
+
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_agents.py::TestBuildClaudeCommand -q` failed before implementation because `_build_claude_command` did not exist.
+- RED reproduction: `.venv/bin/python3 -m pytest tests/test_agent_defang.py::TestResearchAgentTools::test_dispatch_cmd_denies_dangerous_tools -q` failed before implementation for the same missing import.
+- Command-builder tests: `.venv/bin/python3 -m pytest tests/test_agents.py::TestBuildClaudeCommand -q` - 2 passed.
+- Defang command-policy test: `.venv/bin/python3 -m pytest tests/test_agent_defang.py::TestResearchAgentTools::test_dispatch_cmd_denies_dangerous_tools -q` - 1 passed.
+- Caller command-shape group: `.venv/bin/python3 -m pytest tests/test_agents.py::TestRunSingleAgentSuccess tests/test_agents.py::TestRunClaudePromptSuccess tests/test_agents.py::TestRunClaudePromptLargePromptUsesStdin tests/test_orchestrator.py::TestRunAgentWithFiles::test_builds_correct_claude_command -q` - 4 passed.
+- Compile check: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_agent_defang.py tests/test_orchestrator.py` - passed.
+- Broad affected suites before the identity-test repair: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_agent_defang.py tests/test_orchestrator.py tests/test_core_llm.py tests/test_claude_cli.py -q` - 176 passed.
+- First full suite after the code change failed only in `tests/test_identity.py::test_skill_tool_blocked_in_run_single_agent` because that test inspected `run_single_agent()` source text; the test was updated to assert `_build_claude_command()` output.
+- Identity policy repair: `.venv/bin/python3 -m pytest tests/test_identity.py::test_skill_tool_blocked_in_run_single_agent -q` - 1 passed.
+- Broad affected suites after the identity-test repair: `.venv/bin/python3 -m pytest tests/test_agents.py tests/test_agent_defang.py tests/test_identity.py tests/test_orchestrator.py tests/test_core_llm.py tests/test_claude_cli.py -q` - 179 passed.
+- Compile check after identity-test repair: `python3 -m compileall orchestrator/agents.py tests/test_agents.py tests/test_agent_defang.py tests/test_identity.py tests/test_orchestrator.py` - passed.
+- Local live-safe smoke: exercised `run_single_agent()`, `run_agent_with_files()`, and `run_claude_prompt()` against a temporary fake `claude` executable in `/tmp`; output was `shared command builder smoke passed`.
+- Full suite: `.venv/bin/python3 -m pytest -q` - 1117 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt graph artifacts to 6320 nodes and 9624 edges from 390 files; `graph.html` skipped because the graph exceeds the 5000-node viz limit.
+- `graphify explain _build_claude_command` - resolved `orchestrator/agents.py` line 111 with incoming calls from `run_single_agent()`, `run_agent_with_files()`, `run_claude_prompt()`, and related tests.
+- `graphify path run_single_agent _build_claude_command` - found a direct one-hop path.
+- `graphify path run_agent_with_files _build_claude_command` - found a direct one-hop path.
+- `graphify path run_claude_prompt _build_claude_command` - found a direct one-hop path.
+- `graphify diagnose multigraph --json` - reported 6320 nodes, 9624 edges, and zero missing endpoints, dangling endpoints, self-loops, or duplicate edges.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: command construction now has direct tests for base flags, system prompt files, allowed tools, and explicit research dangerous-tool denial.
+  - Readability: duplicated CLI list assembly moved behind one small helper, and tool policies are named constants instead of repeated inline strings.
+  - Architecture: all Claude dispatch callers now share both the process runner and command-shape builder while keeping caller-specific policy choices local and explicit.
+  - Security: research and prompt dispatch still explicitly deny dangerous tools; the change makes those denials easier to audit.
+  - Performance: command construction is in-process list assembly only and does not change process counts, retry behavior, or timeout behavior.

@@ -16,13 +16,16 @@ import pytest
 
 from core.claude_cli import ClaudeProcessResult
 from orchestrator.agents import (
+    _build_claude_command,
     _parse_findings,
+    AGENT_ALLOWED_TOOLS,
     build_agent_prompt,
     run_single_agent,
     run_agent_with_files,
     run_claude_prompt,
     dispatch_research_agents,
     AgentResult,
+    RESEARCH_DISALLOWED_TOOLS,
 )
 
 
@@ -322,6 +325,46 @@ VALID_FINDINGS_JSON = json.dumps({
         }
     ]
 })
+
+
+class TestBuildClaudeCommand:
+    """Shared Claude command builder preserves each caller's CLI contract."""
+
+    def test_builds_base_command_with_system_prompt_and_tools(self):
+        cmd = _build_claude_command(
+            "test prompt",
+            model="sonnet",
+            max_turns=10,
+            system_prompt_file="agents/eic.md",
+            allowed_tools=["Read", "Write"],
+            disallowed_tools="Agent",
+        )
+
+        assert cmd == [
+            "claude", "-p", "test prompt",
+            "--model", "sonnet",
+            "--max-turns", "10",
+            "--output-format", "text",
+            "--append-system-prompt-file", "agents/eic.md",
+            "--allowedTools", "Read",
+            "--allowedTools", "Write",
+            "--disallowedTools", "Agent",
+        ]
+
+    def test_research_policy_flags_are_explicit(self):
+        cmd = _build_claude_command(
+            "research prompt",
+            model="opus",
+            max_turns=35,
+            allowed_tools=AGENT_ALLOWED_TOOLS,
+            disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
+        )
+
+        assert cmd[0:2] == ["claude", "-p"]
+        assert "WebSearch" in cmd
+        denied = cmd[cmd.index("--disallowedTools") + 1].split()
+        for tool in ("Bash", "Agent", "Write", "Edit", "Skill"):
+            assert tool in denied
 
 
 def _process_result(

@@ -1,6 +1,12 @@
 """Tests for identity file loading in agent prompts."""
 from pathlib import Path
-from orchestrator.agents import build_agent_prompt
+
+from orchestrator.agents import (
+    _build_claude_command,
+    AGENT_ALLOWED_TOOLS,
+    build_agent_prompt,
+    RESEARCH_DISALLOWED_TOOLS,
+)
 
 
 def test_identity_dir_overrides_soul_path(tmp_path):
@@ -54,10 +60,13 @@ def test_no_identity_dir_uses_soul_path(tmp_path):
 
 def test_skill_tool_blocked_in_run_single_agent():
     """Verify --disallowedTools Skill is in the command"""
-    # We can't easily test the full subprocess, but we can verify
-    # the function builds the right command by inspecting the code
-    import orchestrator.agents as agents
-    import inspect
-    source = inspect.getsource(agents.run_single_agent)
-    assert "disallowedTools" in source
-    assert "Skill" in source
+    cmd = _build_claude_command(
+        "research prompt",
+        model="opus",
+        max_turns=35,
+        allowed_tools=AGENT_ALLOWED_TOOLS,
+        disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
+    )
+    assert "--disallowedTools" in cmd
+    denied = cmd[cmd.index("--disallowedTools") + 1].split()
+    assert "Skill" in denied
