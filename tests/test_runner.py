@@ -673,6 +673,26 @@ class TestPhaseSynthesis:
             with pytest.raises(RuntimeError, match="Synthesis pass 2 failed"):
                 pipeline._phase_synthesis()
 
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_pass1_failure_raises_before_newsletter_write(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+
+        mock_claude.return_value = (
+            "Error: Connection closed mid-response.",
+            1,
+        )
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            with pytest.raises(RuntimeError, match="Synthesis pass 1 failed"):
+                pipeline._phase_synthesis()
+
+        assert mock_claude.call_count == 1
+        assert not (tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md").exists()
+
 
 class TestPhaseDeliver:
     """_phase_deliver: validates report, appends footer, sends newsletter."""

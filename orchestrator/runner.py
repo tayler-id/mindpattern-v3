@@ -771,8 +771,20 @@ class ResearchPipeline:
             f"output_len={len(pass1_output)}, duration={pass1_duration:.1f}s"
         )
         if exit_code != 0:
-            logger.warning("Synthesis pass 1 failed, using all findings for pass 2")
-            pass1_output = ""
+            output_preview = (pass1_output or "")[:200].replace("\n", "\\n")
+            logger.error(
+                "Synthesis pass 1 failed; refusing to write newsletter "
+                "without story selection: exit_code=%s, output_len=%s, "
+                "duration=%.1fs, output_preview='%s'",
+                exit_code,
+                len(pass1_output),
+                pass1_duration,
+                output_preview,
+            )
+            raise RuntimeError(
+                "Synthesis pass 1 failed - refusing to write newsletter "
+                "without selected Top 5 stories"
+            )
 
         # Pass 2: Newsletter writing (with retry logic)
         full_findings = []

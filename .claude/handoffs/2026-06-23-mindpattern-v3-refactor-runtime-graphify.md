@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: Final guardrails/verification slice staged on top of `5c20a5e docs: add agent workflow docs`; run `git log --oneline -23` for the exact latest commit hash after it lands.
+- Code/graph state: Newsletter quality guard slice staged on top of `d5d8e2c chore: ignore local runtime artifacts`; run `git log --oneline -24` for the exact latest commit hash after it lands.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has twenty-three save-point commits through the final guardrails/verification slice once the current staged slice lands:
+This refactor branch now has twenty-four save-point commits through the newsletter quality guard slice once the current staged slice lands:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -36,8 +36,9 @@ This refactor branch now has twenty-three save-point commits through the final g
 21. `ec52c3a docs: update v4 context principles`
 22. `5c20a5e docs: add agent workflow docs`
 23. latest `chore: ignore local runtime artifacts`
+24. latest fix: fail closed on newsletter selection failure
 
-This handoff was updated again after adding final ignore guardrails for local/runtime artifacts and running the final full branch verification. Use `git log --oneline -23` for the exact latest commit hashes.
+This handoff was updated again after the June 24 newsletter quality regression guard. Use `git log --oneline -24` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -64,6 +65,7 @@ The main completed work is:
 - Updated the V4 spec with context-engineering principles and moved the Pillow dependency bound to `>=11,<12`, matching the tested virtualenv runtime.
 - Added project-level Claude workflow docs/config: code-reviewer, test-engineer, security-auditor, slash-command docs, reusable checklists, and `docs/agents` guidance for domain vocabulary plus GitHub issue triage.
 - Added `.gitignore` guardrails for local Claude skill symlinks, `knowledge/state/`, generated knowledge pages, journal offsets, and local test-user data so future broad staging does not capture runtime/personal artifacts.
+- Added a newsletter quality guard after the June 24 regression: transient Claude `Connection closed mid-response` agent failures are retried, synthesis now fails closed if pass 1 cannot select the Top 5 stories, and Graphify excludes the untracked local Antigravity research draft.
 
 ## Verification Already Run
 
@@ -171,6 +173,14 @@ The main completed work is:
 - Final `graphify update .` reported no code-graph topology changes.
 - Final `graphify diagnose multigraph --json` still reports 6321 nodes, 9628 edges, and zero duplicate/missing/dangling/self-loop edges.
 - Final `graphify check-update .` exited cleanly with no output.
+- Newsletter quality guard RED tests reproduced both unsafe paths before the fix: connection-closed research agent failures were not retried, and synthesis pass 1 failure still allowed pass 2/report writing to continue.
+- Newsletter quality guard focused tests: `.venv/bin/python3 -m pytest tests/test_agents.py::TestClassifyAgentFailure::test_connection_closed_mid_response_is_retryable tests/test_agents.py::TestRunSingleAgentRetry::test_retries_connection_closed_then_recovers -q` -> `2 passed`.
+- Newsletter synthesis fail-closed test: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_pass1_failure_raises_before_newsletter_write -q` -> `1 passed`.
+- Newsletter quality guard affected agent group: `.venv/bin/python3 -m pytest tests/test_agents.py::TestClassifyAgentFailure tests/test_agents.py::TestRunSingleAgentRetry tests/test_agents.py::TestRunSingleAgentSuccess tests/test_agents.py::TestRunSingleAgentInvalidJson -q` -> `13 passed`.
+- Newsletter quality guard affected runner group: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseDeliver -q` -> `9 passed`.
+- Newsletter quality guard compile: `python3 -m compileall orchestrator/agents.py orchestrator/runner.py tests/test_agents.py tests/test_runner.py` -> passed.
+- Full suite after newsletter quality guard: `.venv/bin/python3 -m pytest tests/ -x -q` -> `1121 passed, 1 FastAPI/Starlette warning`.
+- Graphify after newsletter quality guard: `graphify update . --force` rebuilt artifacts to 6324 nodes, 9635 edges, and 412 communities from 390 files after excluding the untracked local Antigravity research draft; `graphify diagnose multigraph --json` and `graphify check-update .` were clean.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -186,7 +196,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6321 nodes and 9628 edges.
+  - `graphify update . --force` rebuilt clean artifacts from 390 files; current report shows 6324 nodes and 9635 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -228,9 +238,10 @@ The main completed work is:
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
   - 390 files
-  - 6321 nodes
-  - 9628 edges
-  - freshness marker `5043d1d1`
+  - 6324 nodes
+  - 9635 edges
+  - 412 communities
+  - freshness marker `d5d8e2c4`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -250,7 +261,7 @@ Tracked dirty files after the V4 spec/Pillow slice is committed should still mos
 Untracked notable directories/files after the final guardrails slice should be:
 
 - Handoffs: `.claude/handoffs/2026-05-07-114034-skills-cleanup-and-agentic-research.md` is stale/personal context from `main`; do not commit without explicit review.
-- Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, `tasks/`
+- Research/spec/docs: `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `docs/antigravity-sdk-research.md`, `v4/`, `research/`, `concepts/`, `tasks/`
 - Operational local config: `launchd/com.taylerramsay.daily-research.plist` contains absolute local paths; inspect before deciding whether to commit as a sample/config.
 - Empty/placeholder docs: `agents/projects-researcher/2026-03-04.md`, empty files under `concepts/` unless those drafts are later filled.
 
@@ -262,12 +273,14 @@ There is also a tracked-change recovery patch from earlier in the run:
 
 1. Re-check dirty status with `git status --short --untracked-files=normal`.
 2. Classify remaining changes into small commit slices. Do not stage broad directories like `data/` or `.claude/` without inspecting content.
-3. Remaining optional source/doc slices to inspect:
+3. Do not merge into `main` until the newsletter quality guard commit is on the branch and reviewed.
+4. Remaining optional source/doc slices to inspect:
    - `launchd/com.taylerramsay.daily-research.plist` if local scheduling config should be versioned.
-   - `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `v4/`, `research/`, `concepts/`, and `tasks/` if older research/spec drafts should be preserved in git.
+   - `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `docs/antigravity-sdk-research.md`, `v4/`, `research/`, `concepts/`, and `tasks/` if older research/spec drafts should be preserved in git.
    - X/Twitter query-search recovery: `twitter search` currently returns HTTP 404 even though auth and `user-posts` work.
-4. Treat `data/ramsay/mindpattern/**` and `data/social-drafts/**` as personal/generated output until the user explicitly says to commit them.
-5. After any code/doc slice:
+   - Source health recovery: install/verify `feedparser`, investigate HN/Reddit/Twitter zero-count preflight results, and add a delivery gate for source coverage/agent count before sending.
+5. Treat `data/ramsay/mindpattern/**` and `data/social-drafts/**` as personal/generated output until the user explicitly says to commit them.
+6. After any code/doc slice:
    - run targeted tests first
    - run `.venv/bin/python3 -m pytest tests/ -x -q` before commit if the slice touches shared behavior
    - update `refactor/mindpattern-v3(2026-06-23).md`

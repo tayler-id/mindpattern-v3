@@ -823,6 +823,13 @@ class TestClassifyAgentFailure:
     def test_server_error_5xx(self):
         assert classify_agent_failure(1, "API Error: 500 Internal server error", "") == "server_error"
 
+    def test_connection_closed_mid_response_is_retryable(self):
+        assert classify_agent_failure(
+            1,
+            "API Error: Connection closed mid-response. The response above may be incomplete.",
+            "",
+        ) == "server_error"
+
     def test_parse_error_on_clean_exit(self):
         # Clean exit, output just didn't parse — NOT transient, must not retry.
         assert classify_agent_failure(0, "rambling non-json text", "") == "parse_error"
@@ -876,6 +883,27 @@ class TestRunSingleAgentRetry:
         assert result.error is None
         assert mock_run_process.call_count == 2     # retried once
         sleeper.assert_called_once()           # backed off once between attempts
+
+    def test_retries_connection_closed_then_recovers(self, mock_run_process, mock_router):
+        self._router(mock_router)
+        mock_run_process.side_effect = [
+            _process_result(
+                stdout=(
+                    "API Error: Connection closed mid-response. "
+                    "The response above may be incomplete."
+                ),
+                returncode=1,
+            ),
+            _process_result(stdout=VALID_FINDINGS_JSON, returncode=0),
+        ]
+        sleeper = MagicMock()
+
+        result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
+
+        assert result.classification == "success"
+        assert len(result.findings) == 1
+        assert mock_run_process.call_count == 2
+        sleeper.assert_called_once()
 
     def test_does_not_retry_parse_error(self, mock_run_process, mock_router):
         self._router(mock_router)

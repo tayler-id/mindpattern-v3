@@ -791,3 +791,45 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: runtime state from the new knowledge hooks/compiler is now separated from source-controlled package code.
   - Security: generated personal knowledge output, local test-user data, and broken local skill symlinks are protected from accidental broad staging.
   - Performance: ignore-only change; no runtime code path changed.
+
+## Step 24 - Newsletter quality regression guard
+
+### Context
+
+- The branch is not merged into `main`; `d5d8e2c` was contained only by `refactor/mindpattern-v3-2026-06-23`.
+- The 2026-06-24 newsletter was delivered from this working tree and was low quality despite a high automatic eval score.
+- Pipeline evidence showed the unsafe path:
+  - `reddit-researcher` and `github-pulse-researcher` both returned `API Error: Connection closed mid-response...` and produced zero findings.
+  - Synthesis pass 1 exited non-zero after about 300 seconds with output length 18.
+  - The runner then fell back to `Use your judgment to select the Top 5` and sent pass 2 a large all-findings prompt anyway.
+- That soft fallback let a newsletter be written and delivered without the dedicated Top 5 selector succeeding.
+
+### Changes
+
+- Classified Claude CLI `Connection closed mid-response` / `response above may be incomplete` failures as retryable `server_error` outcomes for research agents.
+- Changed `_phase_synthesis()` to fail closed when synthesis pass 1 fails, refusing to write a newsletter without selected Top 5 stories.
+- Added regression tests for both failure modes.
+- Refreshed Graphify artifacts after the runtime/test changes.
+- Added a Graphify ignore for the untracked local `docs/antigravity-sdk-research.md` research draft so committed graph artifacts do not reference an uncommitted file.
+
+### Verification
+
+- RED tests reproduced both unsafe paths before the fix.
+- `.venv/bin/python3 -m pytest tests/test_agents.py::TestClassifyAgentFailure::test_connection_closed_mid_response_is_retryable tests/test_agents.py::TestRunSingleAgentRetry::test_retries_connection_closed_then_recovers -q` - 2 passed after the fix.
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_pass1_failure_raises_before_newsletter_write -q` - 1 passed after the fix.
+- `.venv/bin/python3 -m pytest tests/test_agents.py::TestClassifyAgentFailure tests/test_agents.py::TestRunSingleAgentRetry tests/test_agents.py::TestRunSingleAgentSuccess tests/test_agents.py::TestRunSingleAgentInvalidJson -q` - 13 passed.
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseDeliver -q` - 9 passed.
+- `python3 -m compileall orchestrator/agents.py orchestrator/runner.py tests/test_agents.py tests/test_runner.py` - passed.
+- `.venv/bin/python3 -m pytest tests/ -x -q` - 1121 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update . --force` - rebuilt artifacts to 6324 nodes, 9635 edges, and 412 communities after excluding the untracked local Antigravity draft.
+- `graphify diagnose multigraph --json` - reported zero missing endpoints, dangling endpoints, duplicate edges, and self-loops.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the pipeline can no longer deliver a newsletter when story selection fails, and transient Claude connection drops get retried before an agent is counted as zero findings.
+  - Readability: the new synthesis error names the exact safety invariant: no selected Top 5 means no newsletter write.
+  - Architecture: quality-critical selection remains a required upstream gate instead of being implicitly delegated to the long-form writer.
+  - Security: no user data, generated reports, credentials, local runtime state, or untracked research drafts are staged with this fix.
+  - Performance: retries only apply to transient connection/server failures, and fail-closed synthesis avoids spending pass-2 tokens on a known-bad run.

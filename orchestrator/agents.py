@@ -448,6 +448,8 @@ def classify_agent_failure(exit_code: int, stdout: str, stderr: str) -> str:
     if (
         "internal server error" in blob
         or "service unavailable" in blob
+        or "connection closed mid-response" in blob
+        or "response above may be incomplete" in blob
         or "api error: 500" in blob
         or "api error: 502" in blob
         or "api error: 503" in blob

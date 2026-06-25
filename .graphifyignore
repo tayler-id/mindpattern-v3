@@ -37,6 +37,9 @@ skills-lock.json
 reports/
 refactor/
 
+# Local research drafts not committed with the code graph
+docs/antigravity-sdk-research.md
+
 # Personal data, identity, donor samples — sensitive, not codebase knowledge
 data/
 
