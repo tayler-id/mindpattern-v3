@@ -658,8 +658,9 @@ class TestPhaseSynthesis:
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
-    def test_pass2_failure_raises(self, mock_claude, mock_prefs, mock_failures,
-                                   pipeline, tmp_path):
+    def test_pass2_failure_writes_deterministic_fallback(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
         self._seed_findings(pipeline.db, pipeline.date_str)
 
         mock_claude.side_effect = [
@@ -670,28 +671,68 @@ class TestPhaseSynthesis:
         ]
 
         with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
-            with pytest.raises(RuntimeError, match="Synthesis pass 2 failed"):
-                pipeline._phase_synthesis()
+            result = pipeline._phase_synthesis()
+
+        report_path = tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md"
+        report_text = report_path.read_text()
+
+        assert result["word_count"] > 0
+        assert mock_claude.call_count == 4
+        assert "Coverage note" in report_text
+        assert "Title 0" in report_text
+        assert "Source: [Source 0](https://example.com/0)" in report_text
 
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
-    def test_pass1_failure_raises_before_newsletter_write(
+    def test_pass1_retries_then_uses_successful_selection(
         self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
     ):
         self._seed_findings(pipeline.db, pipeline.date_str)
 
-        mock_claude.return_value = (
-            "Error: Connection closed mid-response.",
-            1,
-        )
+        mock_claude.side_effect = [
+            ("Error: Connection closed mid-response.", 1),
+            ("Selected stories after retry", 0),
+            ("# Newsletter\n\nHigh-grade retry recovered brief.\n" + ("word " * 3500), 0),
+        ]
 
         with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
-            with pytest.raises(RuntimeError, match="Synthesis pass 1 failed"):
-                pipeline._phase_synthesis()
+            result = pipeline._phase_synthesis()
 
-        assert mock_claude.call_count == 1
-        assert not (tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md").exists()
+        pass2_prompt = mock_claude.call_args_list[2].args[0]
+
+        assert result["word_count"] > 0
+        assert mock_claude.call_count == 3
+        assert "Selected stories after retry" in pass2_prompt
+        assert "FALLBACK STORY SELECTION" not in pass2_prompt
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_pass1_failure_uses_fallback_selection_and_writes_newsletter(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+
+        mock_claude.side_effect = [
+            ("Error: Connection closed mid-response.", 1),
+            ("Error: Connection closed mid-response again.", 1),
+            ("Error: Connection closed mid-response final.", 1),
+            ("# Newsletter\n\nFallback-written daily brief.\n" + ("word " * 3500), 0),
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            result = pipeline._phase_synthesis()
+
+        report_path = tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md"
+        pass2_prompt = mock_claude.call_args_list[3].args[0]
+
+        assert result["word_count"] > 0
+        assert mock_claude.call_count == 4
+        assert report_path.exists()
+        assert "FALLBACK STORY SELECTION" in pass2_prompt
+        assert "Title 0" in pass2_prompt
+        assert "Fallback-written daily brief" in report_path.read_text()
 
 
 class TestPhaseDeliver:

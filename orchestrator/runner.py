@@ -31,6 +31,14 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
+_IMPORTANCE_RANK = {
+    "critical": 4,
+    "high": 3,
+    "medium": 2,
+    "low": 1,
+}
+
+
 def _enabled_platforms(social_config: dict) -> list[str]:
     """Return the names of social platforms with enabled=true.
 
@@ -41,6 +49,137 @@ def _enabled_platforms(social_config: dict) -> list[str]:
     if isinstance(plats, dict):
         return [n for n, c in plats.items() if isinstance(c, dict) and c.get("enabled")]
     return list(plats)
+
+
+def _format_source(source_name: str | None, source_url: str | None) -> str:
+    """Return a markdown source reference."""
+    name = source_name or "unknown"
+    return f"[{name}]({source_url})" if source_url else name
+
+
+def _fallback_ranked_findings(findings: list[dict], *, limit: int = 5) -> list[dict]:
+    """Pick a deterministic, source-grounded fallback story set.
+
+    Prefer higher-importance findings while preserving agent diversity so one
+    noisy source cannot consume the whole daily brief.
+    """
+    ranked = sorted(
+        enumerate(findings),
+        key=lambda item: (
+            -_IMPORTANCE_RANK.get(str(item[1].get("importance", "")).lower(), 0),
+            str(item[1].get("agent") or ""),
+            str(item[1].get("title") or ""),
+            item[0],
+        ),
+    )
+    selected: list[tuple[int, dict]] = []
+    selected_ids: set[int] = set()
+    seen_agents: set[str] = set()
+
+    for original_idx, finding in ranked:
+        agent = str(finding.get("agent") or "")
+        if agent in seen_agents:
+            continue
+        selected.append((original_idx, finding))
+        selected_ids.add(original_idx)
+        seen_agents.add(agent)
+        if len(selected) >= limit:
+            break
+
+    if len(selected) < limit:
+        for original_idx, finding in ranked:
+            if original_idx in selected_ids:
+                continue
+            selected.append((original_idx, finding))
+            if len(selected) >= limit:
+                break
+
+    return [finding for _, finding in selected]
+
+
+def _build_fallback_story_selection(findings: list[dict], *, reason: str) -> str:
+    """Build an explicit story-selection block when the selector is unavailable."""
+    selected = _fallback_ranked_findings(findings)
+    lines = [
+        "FALLBACK STORY SELECTION",
+        f"Reason: {reason}",
+        (
+            "Use these exact stories as the main newsletter spine. Do not invent "
+            "claims. Use source links from the findings. Use the remaining findings "
+            "only for context or corroboration."
+        ),
+        "",
+    ]
+    for idx, finding in enumerate(selected, 1):
+        source = _format_source(finding.get("source_name"), finding.get("source_url"))
+        lines.extend([
+            f"{idx}. {finding.get('title', 'Untitled')}",
+            f"   Agent: {finding.get('agent', 'unknown')}",
+            f"   Importance: {finding.get('importance', 'medium')}",
+            f"   Source: {source}",
+            f"   Summary: {finding.get('summary', '')}",
+            "",
+        ])
+    return "\n".join(lines).strip()
+
+
+def _format_newsletter_date(date_str: str) -> str:
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    return date_obj.strftime("%B %-d, %Y")
+
+
+def _build_deterministic_newsletter(
+    *,
+    newsletter_title: str,
+    date_str: str,
+    findings: list[dict],
+    reason: str,
+) -> str:
+    """Last-resort daily newsletter when the writer model does not complete."""
+    selected = _fallback_ranked_findings(findings)
+    agents = sorted({str(f.get("agent") or "unknown") for f in findings})
+    lines = [
+        f"# {newsletter_title} - {_format_newsletter_date(date_str)}",
+        "",
+        (
+            "> Coverage note: Today's brief was generated from stored research "
+            f"findings after the writing agent did not complete ({reason}). "
+            "Each item below is source-grounded from the research database."
+        ),
+        "",
+        "## Top Stories",
+        "",
+    ]
+
+    for idx, finding in enumerate(selected, 1):
+        source = _format_source(finding.get("source_name"), finding.get("source_url"))
+        lines.extend([
+            f"### {idx}. {finding.get('title', 'Untitled')}",
+            "",
+            f"Source: {source}",
+            f"Agent: {finding.get('agent', 'unknown')}",
+            f"Importance: {finding.get('importance', 'medium')}",
+            "",
+            str(finding.get("summary") or "No summary available."),
+            "",
+        ])
+
+    lines.extend([
+        "## Source Coverage",
+        "",
+        f"- Findings available: {len(findings)}",
+        f"- Agents represented: {len(agents)}",
+        f"- Agent list: {', '.join(agents) if agents else 'none'}",
+        "",
+        "## Follow-Up",
+        "",
+        (
+            "Retry the full synthesis path after source and model health recover. "
+            "This fallback is intentionally conservative and avoids unsupported claims."
+        ),
+        "",
+    ])
+    return "\n".join(lines)
 
 
 class ResearchPipeline:
@@ -760,36 +899,69 @@ class ResearchPipeline:
             f"model={agent_dispatch.router.get_model('synthesis_pass1')}, "
             f"findings_count={len(summaries)}"
         )
-        pass1_start = time.monotonic()
-        pass1_output, exit_code = agent_dispatch.run_claude_prompt(
-            pass1_prompt, "synthesis_pass1",
-            system_prompt_file="agents/synthesis-selector.md",
-        )
-        pass1_duration = time.monotonic() - pass1_start
-        logger.info(
-            f"Synthesis pass 1 complete: exit_code={exit_code}, "
-            f"output_len={len(pass1_output)}, duration={pass1_duration:.1f}s"
-        )
-        if exit_code != 0:
+        pass1_output = ""
+        pass1_degraded = False
+        pass1_max_attempts = 3
+        for attempt in range(1, pass1_max_attempts + 1):
+            pass1_start = time.monotonic()
+            pass1_output, exit_code = agent_dispatch.run_claude_prompt(
+                pass1_prompt, "synthesis_pass1",
+                system_prompt_file="agents/synthesis-selector.md",
+            )
+            pass1_duration = time.monotonic() - pass1_start
+            output_len = len(pass1_output) if pass1_output else 0
+            logger.info(
+                f"Synthesis pass 1 attempt {attempt}/{pass1_max_attempts} complete: "
+                f"exit_code={exit_code}, output_len={output_len}, "
+                f"duration={pass1_duration:.1f}s"
+            )
+            if exit_code == 0 and pass1_output.strip():
+                break
+
             output_preview = (pass1_output or "")[:200].replace("\n", "\\n")
-            logger.error(
-                "Synthesis pass 1 failed; refusing to write newsletter "
-                "without story selection: exit_code=%s, output_len=%s, "
-                "duration=%.1fs, output_preview='%s'",
-                exit_code,
-                len(pass1_output),
-                pass1_duration,
-                output_preview,
+            logger.warning(
+                f"Synthesis pass 1 attempt {attempt}/{pass1_max_attempts} failed: "
+                f"exit_code={exit_code}, output_len={output_len}, "
+                f"duration={pass1_duration:.1f}s, "
+                f"output_preview='{output_preview}'"
             )
-            raise RuntimeError(
-                "Synthesis pass 1 failed - refusing to write newsletter "
-                "without selected Top 5 stories"
-            )
+            log_event(self.traces_conn, self.traces_run_id,
+                      "synthesis_pass1_retry",
+                      json.dumps({
+                          "attempt": attempt,
+                          "exit_code": exit_code,
+                          "output_len": output_len,
+                          "duration_s": round(pass1_duration, 1),
+                          "output_preview": output_preview,
+                      }))
+
+            if attempt == pass1_max_attempts:
+                pass1_degraded = True
+                reason = (
+                    f"synthesis pass 1 failed after {pass1_max_attempts} attempts; "
+                    f"last exit_code={exit_code}, output_len={output_len}"
+                )
+                pass1_output = _build_fallback_story_selection(
+                    today_findings,
+                    reason=reason,
+                )
+                logger.error(
+                    "Synthesis pass 1 exhausted; using deterministic fallback "
+                    "story selection instead of failing the daily newsletter"
+                )
+                log_event(self.traces_conn, self.traces_run_id,
+                          "synthesis_pass1_fallback",
+                          json.dumps({
+                              "attempts": pass1_max_attempts,
+                              "last_exit_code": exit_code,
+                              "last_output_len": output_len,
+                              "selected_count": min(5, len(today_findings)),
+                          }))
 
         # Pass 2: Newsletter writing (with retry logic)
         full_findings = []
         for f in today_findings:
-            source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or 'unknown'
+            source = _format_source(f.get("source_name"), f.get("source_url"))
             full_findings.append(
                 f"### [{f['agent']}] {f['title']} ({f['importance']})\n"
                 f"Source: {source}\n{f['summary']}\n"
@@ -814,12 +986,23 @@ class ResearchPipeline:
             if voice_file.exists():
                 voice_text = f"## Voice Guide\n{voice_file.read_text()}\n\n"
 
+        fallback_mode_text = ""
+        if pass1_degraded:
+            fallback_mode_text = (
+                "## Selection Recovery Mode\n"
+                "The dedicated story selector did not complete after retries. "
+                "A deterministic Top 5 fallback was created below. Use that "
+                "selection exactly for the main story spine, keep the writing "
+                "source-grounded, and do not pad weak claims.\n\n"
+            )
+
         pass2_prompt = (
             f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
             f"{soul_text}"
             f"{voice_text}"
             f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
-            f"## Story Selection\n{pass1_output or 'Use your judgment to select the Top 5.'}\n\n"
+            f"{fallback_mode_text}"
+            f"## Story Selection\n{pass1_output}\n\n"
             f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"{failure_text}"
@@ -880,11 +1063,30 @@ class ResearchPipeline:
                       }))
 
             if attempt == max_attempts:
-                raise RuntimeError(
-                    f"Synthesis pass 2 failed after {max_attempts} attempts — "
+                reason = (
+                    f"synthesis pass 2 failed after {max_attempts} attempts; "
                     f"last exit_code={exit_code}, output_len={output_len}, "
                     f"duration={attempt_duration:.1f}s"
                 )
+                self.newsletter_text = _build_deterministic_newsletter(
+                    newsletter_title=newsletter_title,
+                    date_str=self.date_str,
+                    findings=today_findings,
+                    reason=reason,
+                )
+                logger.error(
+                    "Synthesis pass 2 exhausted; wrote deterministic daily "
+                    "brief from stored findings instead of failing completely"
+                )
+                log_event(self.traces_conn, self.traces_run_id,
+                          "synthesis_pass2_fallback",
+                          json.dumps({
+                              "attempts": max_attempts,
+                              "last_exit_code": exit_code,
+                              "last_output_len": output_len,
+                              "reason": reason,
+                          }))
+                break
 
         # Save the report with timestamp so multiple runs per day work
         report_dir = PROJECT_ROOT / "reports" / self.user_id

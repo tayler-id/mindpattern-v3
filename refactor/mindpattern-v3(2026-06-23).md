@@ -833,3 +833,47 @@ Branch: `refactor/mindpattern-v3-2026-06-23`
   - Architecture: quality-critical selection remains a required upstream gate instead of being implicitly delegated to the long-form writer.
   - Security: no user data, generated reports, credentials, local runtime state, or untracked research drafts are staged with this fix.
   - Performance: retries only apply to transient connection/server failures, and fail-closed synthesis avoids spending pass-2 tokens on a known-bad run.
+
+## Step 25 - Daily newsletter retry and fallback correction
+
+### Context
+
+- The user clarified the product invariant: MindPattern must send a newsletter every day when there are usable findings.
+- Step 24's hard stop was too strict. It correctly identified that June 24's `Use your judgment` all-findings fallback was unsafe, but it replaced that with a complete synthesis failure.
+- Historical check:
+  - The `NewsletterEvaluator` quality score was introduced much earlier in `f7dd3f4` and was present on good days.
+  - June 22: pass 1 succeeded, pass 2 succeeded on attempt 1, 4483 logged words, eval overall 0.927.
+  - June 23: pass 1 succeeded, pass 2 succeeded on attempt 1; first send logged 4262 words / eval 0.827, later smoke wrote 6450 words / eval 0.865.
+  - June 24: pass 1 failed with exit 1/output length 18, old code used all findings for pass 2, and eval still scored 0.877 despite the weak newsletter.
+- Conclusion: the evaluator is telemetry, not a reliable send/no-send gate. The actionable failure was pass 1 story selection failing and falling back to unbounded writer judgment.
+
+### Changes
+
+- Replaced the Step 24 hard stop with three pass-1 story-selection attempts.
+- If all pass-1 attempts fail, build a deterministic fallback Top 5 selection from stored findings, ranked by importance with agent diversity.
+- Pass 2 now receives an explicit selection-recovery instruction instead of `Use your judgment to select the Top 5`.
+- If pass 2 fails after its three existing attempts, write a deterministic source-grounded daily brief from stored findings instead of failing completely.
+- Added trace events for pass-1 retries, pass-1 fallback, and pass-2 deterministic fallback.
+
+### Verification
+
+- RED tests first failed against the hard-stop behavior:
+  - pass 1 retry recovery still raised.
+  - pass 1 exhausted fallback still raised.
+  - pass 2 exhausted fallback still raised.
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_pass1_retries_then_uses_successful_selection tests/test_runner.py::TestPhaseSynthesis::test_pass1_failure_uses_fallback_selection_and_writes_newsletter tests/test_runner.py::TestPhaseSynthesis::test_pass2_failure_writes_deterministic_fallback -q` - 3 passed.
+- `python3 -m compileall orchestrator/runner.py tests/test_runner.py` - passed.
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseDeliver -q` - 10 passed.
+- `.venv/bin/python3 -m pytest tests/ -x -q` - 1122 passed, 1 FastAPI/Starlette deprecation warning.
+- `graphify update .` - rebuilt artifacts to 6334 nodes, 9653 edges, and 404 communities.
+- `graphify diagnose multigraph --json` - reported zero missing endpoints, dangling endpoints, duplicate edges, and self-loops.
+- `graphify check-update .` - clean.
+
+### Auto Review
+
+- Five-axis review:
+  - Correctness: the daily newsletter no longer fails completely while findings exist; the high-grade LLM path is retried before fallback.
+  - Readability: fallback helpers make source formatting, ranking, story selection, and deterministic brief generation explicit.
+  - Architecture: selection fallback stays deterministic and source-grounded instead of delegating critical story choice to the writer with all findings.
+  - Security: no personal/generated data is included; fallback content is limited to stored findings and source metadata.
+  - Performance: retry count is bounded, and deterministic fallback avoids extra model calls once the writer path is exhausted.

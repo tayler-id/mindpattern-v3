@@ -5,13 +5,13 @@
 - Created: 2026-06-23
 - Project: `/Users/taylerramsay/Projects/mindpattern-v3`
 - Branch: `refactor/mindpattern-v3-2026-06-23`
-- Code/graph state: Newsletter quality guard slice staged on top of `d5d8e2c chore: ignore local runtime artifacts`; run `git log --oneline -24` for the exact latest commit hash after it lands.
+- Code/graph state: Daily newsletter retry/fallback correction committed on top of `eb913fe fix: fail closed on newsletter selection failure`; use `git log --oneline -25` for exact commit hashes.
 - Progress log: `refactor/mindpattern-v3(2026-06-23).md`
 - User constraints: do not lose dirty changes; commit needed slices only; do not merge broken code; run live checks and auto review after significant steps.
 
 ## Current State Summary
 
-This refactor branch now has twenty-four save-point commits through the newsletter quality guard slice once the current staged slice lands:
+This refactor branch now has twenty-five save-point commits through the daily newsletter retry/fallback correction:
 
 1. `db8a740 refactor: tighten data path and sync boundaries`
 2. `2658c35 chore: restore worktree guardrails`
@@ -36,9 +36,10 @@ This refactor branch now has twenty-four save-point commits through the newslett
 21. `ec52c3a docs: update v4 context principles`
 22. `5c20a5e docs: add agent workflow docs`
 23. latest `chore: ignore local runtime artifacts`
-24. latest fix: fail closed on newsletter selection failure
+24. `eb913fe fix: fail closed on newsletter selection failure`
+25. `fix: preserve daily newsletter fallback`
 
-This handoff was updated again after the June 24 newsletter quality regression guard. Use `git log --oneline -24` for the exact latest commit hashes.
+This handoff was updated again after replacing the Step 24 hard stop with retry-first, fallback-last daily delivery. Use `git log --oneline -25` for the exact latest commit hashes.
 
 The main completed work is:
 
@@ -65,7 +66,7 @@ The main completed work is:
 - Updated the V4 spec with context-engineering principles and moved the Pillow dependency bound to `>=11,<12`, matching the tested virtualenv runtime.
 - Added project-level Claude workflow docs/config: code-reviewer, test-engineer, security-auditor, slash-command docs, reusable checklists, and `docs/agents` guidance for domain vocabulary plus GitHub issue triage.
 - Added `.gitignore` guardrails for local Claude skill symlinks, `knowledge/state/`, generated knowledge pages, journal offsets, and local test-user data so future broad staging does not capture runtime/personal artifacts.
-- Added a newsletter quality guard after the June 24 regression: transient Claude `Connection closed mid-response` agent failures are retried, synthesis now fails closed if pass 1 cannot select the Top 5 stories, and Graphify excludes the untracked local Antigravity research draft.
+- Added a newsletter quality guard after the June 24 regression: transient Claude `Connection closed mid-response` agent failures are retried, synthesis pass 1 now retries before deterministic fallback Top 5 selection, pass 2 falls back to a deterministic source-grounded daily brief after writer retries, and Graphify excludes the untracked local Antigravity research draft.
 
 ## Verification Already Run
 
@@ -181,6 +182,12 @@ The main completed work is:
 - Newsletter quality guard compile: `python3 -m compileall orchestrator/agents.py orchestrator/runner.py tests/test_agents.py tests/test_runner.py` -> passed.
 - Full suite after newsletter quality guard: `.venv/bin/python3 -m pytest tests/ -x -q` -> `1121 passed, 1 FastAPI/Starlette warning`.
 - Graphify after newsletter quality guard: `graphify update . --force` rebuilt artifacts to 6324 nodes, 9635 edges, and 412 communities from 390 files after excluding the untracked local Antigravity research draft; `graphify diagnose multigraph --json` and `graphify check-update .` were clean.
+- Daily newsletter fallback correction RED tests first failed against the Step 24 hard stop: pass 1 retry recovery still raised, pass 1 exhausted fallback still raised, and pass 2 exhausted fallback still raised.
+- Daily newsletter fallback focused tests: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_pass1_retries_then_uses_successful_selection tests/test_runner.py::TestPhaseSynthesis::test_pass1_failure_uses_fallback_selection_and_writes_newsletter tests/test_runner.py::TestPhaseSynthesis::test_pass2_failure_writes_deterministic_fallback -q` -> `3 passed`.
+- Daily newsletter fallback compile: `python3 -m compileall orchestrator/runner.py tests/test_runner.py` -> passed.
+- Daily newsletter fallback affected runner group: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseDeliver -q` -> `10 passed`.
+- Full suite after daily newsletter fallback correction: `.venv/bin/python3 -m pytest tests/ -x -q` -> `1122 passed, 1 FastAPI/Starlette warning`.
+- Graphify after daily newsletter fallback correction: `graphify update .` rebuilt artifacts to 6334 nodes, 9653 edges, and 404 communities; `graphify diagnose multigraph --json` and `graphify check-update .` were clean.
 - Real full pipeline smoke: `.venv/bin/python3 run.py --user ramsay --date 2026-06-23` -> exit `0`, `1211s`, `141 findings | 58 min | Quality: 0.86`, `35609772 bytes uploaded`, Fly restarted.
 - Newsletter delivery evidence:
   - Earlier run at `2026-06-23T11:31:12` sent the owner newsletter via Resend and wrote the ran-marker.
@@ -196,7 +203,7 @@ The main completed work is:
   - `twitter search "AI agents" -n 1 --json` still fails upstream with HTTP 404; query-based X search is installed but not healthy yet.
 - Graphify:
   - `uv tool list` showed `graphifyy v0.8.46` with `graphify` and `graphify-mcp`.
-  - `graphify update . --force` rebuilt clean artifacts from 390 files; current report shows 6324 nodes and 9635 edges.
+  - `graphify update .` rebuilt clean artifacts from 390 files; current report shows 6334 nodes and 9653 edges.
   - `graphify explain "LinkedInClient"` resolves `social/posting.py` with 54 connections.
   - `graphify path "Slack Approval Gateway" "LinkedInClient"` finds `gateway() -> ApprovalGateway <- pipeline.py -> LinkedInClient`.
   - `graphify explain create_text_embedding` resolves `memory/embeddings.py` with links to `_get_model()` and cache tests.
@@ -238,10 +245,10 @@ The main completed work is:
 - Current observed install state includes `graphifyy v0.8.46`, `agent-reach v1.5.0`, `twitter-cli v0.8.5`, and `yt-dlp v2026.6.9`.
 - `graphify-out/GRAPH_REPORT.md` currently reports:
   - 390 files
-  - 6324 nodes
-  - 9635 edges
-  - 412 communities
-  - freshness marker `d5d8e2c4`
+  - 6334 nodes
+  - 9653 edges
+  - 404 communities
+  - freshness marker `eb913fee`
 - The freshness marker points at the current HEAD used for graph generation. `refactor/`, `.claude/`, and `graphify-out/` are excluded from ingestion, so docs-only commits can still be the recorded build commit even when the graph content comes from source files.
 - `.graphifyignore` excludes `.claude/`, `.obsidian/`, `data/`, `reports/`, `refactor/`, `knowledge/state/`, DBs, env files, logs, and runtime caches.
 - `.gitignore` keeps `graphify-out/.graphify_python`, `graphify-out/cache/`, `graphify-out/cost.json`, generated HTML, and dated backups out of git.
@@ -278,7 +285,7 @@ There is also a tracked-change recovery patch from earlier in the run:
    - `launchd/com.taylerramsay.daily-research.plist` if local scheduling config should be versioned.
    - `SAAS-AGENT-TECH.md`, `SPEC.md`, `V4-SPEC.md`, `docs/antigravity-sdk-research.md`, `v4/`, `research/`, `concepts/`, and `tasks/` if older research/spec drafts should be preserved in git.
    - X/Twitter query-search recovery: `twitter search` currently returns HTTP 404 even though auth and `user-posts` work.
-   - Source health recovery: install/verify `feedparser`, investigate HN/Reddit/Twitter zero-count preflight results, and add a delivery gate for source coverage/agent count before sending.
+   - Source health recovery: install/verify `feedparser`, investigate HN/Reddit/Twitter zero-count preflight results, and add alerting/report metadata for source coverage. Do not make source-health checks block daily delivery unless there is a separate owner-only delivery path.
 5. Treat `data/ramsay/mindpattern/**` and `data/social-drafts/**` as personal/generated output until the user explicitly says to commit them.
 6. After any code/doc slice:
    - run targeted tests first
