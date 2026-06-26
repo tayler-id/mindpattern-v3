@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+import sys
 
 from . import TOOLS_DIR, make_entry, parse_ndjson
 
@@ -60,7 +61,7 @@ def fetch_with_diagnostics(
     min_points: int = 10,
 ) -> tuple[list[dict], dict]:
     cmd = [
-        "python3", str(TOOLS_DIR / "hn-fetch.py"),
+        sys.executable, str(TOOLS_DIR / "hn-fetch.py"),
         "--queries", queries,
         "--hours", str(hours),
         "--min-points", str(min_points),

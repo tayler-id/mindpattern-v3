@@ -697,6 +697,34 @@ Verification checkpoint:
 - Graphify artifacts are updated and `graphify check-update .` is clean.
 - The handoff links to this runbook and names the last verified commit.
 
+## Fix-First Done Table
+
+Keep the `Done` column in this table. Future agents should update the value in
+place instead of deleting the column or replacing it with prose.
+
+| # | Task | Done | Evidence / remaining work |
+|---|---|---|---|
+| 1 | Fix `#mp-skills` strict approval parsing | Yes | Fail-closed parser and Slack tests landed. |
+| 2 | Fix `#mp-tips` strict approval parsing | Yes | Same fail-closed parser and tests landed. |
+| 3 | Implement real Slack edit flow | Yes | Posts, skills, and tips re-preview edits and require second approval. |
+| 4 | Add manual-copy fallback for disabled platforms | Yes | Disabled platforms return `manual_only` draft output. |
+| 5 | Prove `#mp-posts` live draft workflow | Yes | Mocked draft workflow passes; live smoke still requires owner approval. |
+| 6 | Document Fly-only versus local Slack bot status | Yes | Handoff/runbook now distinguish Fly bot from old local launchd logs. |
+| 7 | Add Slack bot doctor/status command | Yes | Redacted doctor/status command implemented and tested. |
+| 8 | Make daily social phase draft-capable | Yes | Daily social runs draft-capable/manual-copy mode when APIs are disabled. |
+| 9 | Route daily social candidates to Slack approval/control | Yes | Draft path remains human-controlled; no background auto-posting added. |
+| 10 | Add source-health reporting to preflight | Yes | `source_health` and `source_health_summary` are emitted and tested. |
+| 11 | Repair RSS diagnostics | Yes | Per-feed diagnostics landed; no-outbound smoke returned RSS 152. |
+| 12 | Restore or explicitly disable Reddit backend | Blocked | Agent Reach now installed OpenCLI, but Chrome extension/login is still required before Reddit can be healthy. |
+| 13 | Repair Twitter/X query search | Partial | Diagnostics landed; local feed fallback is in progress, but stable cookie/OpenCLI auth is still required. |
+| 14 | Diagnose HN zero-source behavior | Yes | HN diagnostics and threshold context are visible. |
+| 15 | Add Exa and YouTube production health alerts | Yes | Diagnostics landed; no-outbound smoke returned Exa 25 and YouTube 15. |
+| 16 | Add newsletter quality floor with retry/escalation | Yes | Retryable fallback and degraded notice behavior are tested. |
+| 17 | Add duplicate story and duplicate angle control | Yes | URL/title/angle duplicate risk is checked before delivery. |
+| 18 | Add agent coverage floor | Yes | 8-of-13 degraded and 6-of-13 retryable behavior is tested. |
+| 19 | Add source balance weighting | Yes | Dominant-source cap and degraded single-source behavior are tested. |
+| 20 | Put critical runner tests back in CI and refresh Graphify | Yes | CI runner subset and Graphify refresh/check landed. |
+
 ## Task Checklist
 
 ### 1. Fix `#mp-skills` strict approval parsing
@@ -883,6 +911,37 @@ Run this only after local tests pass and the owner approves deploy/smoke.
    live posting unless the owner explicitly asks.
 7. Record the commit, Fly deploy result, channel names, and pass/fail notes in
    the handoff.
+
+## 2026-06-26 No-Outbound Smoke Evidence
+
+This was a real local pipeline smoke with `MP_DISABLE_OUTBOUND=1`, not a live
+send. It was intentionally stopped at the daily social approval wait.
+
+- Source-only smoke after fixes: RSS 152, HN 171, X/Twitter partial with feed
+  fallback 3, Reddit unavailable, Exa 2, YouTube 1.
+- Full networked no-outbound smoke run `research-2026-06-26-e3fff7`:
+  371 preflight items, 177 new, 194 already covered.
+- Full smoke source counts: GitHub 118, RSS 152, arXiv 30, Exa 25, YouTube 15,
+  HN 11, X/Twitter 20 partial via feed fallback, Reddit 0 unavailable.
+- Research: 13/13 agents completed, 181 raw findings, 52 cross-agent
+  duplicates removed, 91 findings stored.
+- Synthesis: local report written to `reports/ramsay/2026-06-26.md`, 5111 words
+  before degraded notice/footer and 5242 words after; evaluator overall 0.882.
+- Quality floor: degraded, not silent, for source dominance 0.41 over ceiling
+  0.35 and duplicate story risk 0.069 over ceiling 0.
+- Delivery: email send and subscriber broadcast were blocked by
+  `MP_DISABLE_OUTBOUND=1`.
+- Social caveat: the run reached the daily social path and posted a Slack topic
+  approval request to `#mindpattern-approvals` before being interrupted. That is
+  not the same as the intended `#mp-posts` / `#mp-skills` / `#mp-tips`
+  channel-first workflow.
+- Follow-up fixes from the smoke: `--skip-social` now sets `MP_SKIP_SOCIAL=1`,
+  `MP_SKIP_SOCIAL=1` skips social and engagement phases, `MP_DISABLE_OUTBOUND=1`
+  skips Slack approval/notification messages and Fly sync, approval failures
+  fail closed, interrupted runs are marked `interrupted`, and future research
+  agent results are mirrored into `traces.db.agent_runs`.
+- External blockers: Reddit still needs OpenCLI Chrome extension/login; X query
+  search still fails with HTTP 404 but feed fallback works when auth is usable.
 
 ## Proposed Quality Floor Defaults
 

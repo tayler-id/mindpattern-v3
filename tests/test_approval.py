@@ -460,6 +460,20 @@ class TestSlackApproval:
         mock_post.assert_called_once_with("xoxb-fake-token", "Test message", thread_ts=None)
         mock_poll.assert_called_once()
 
+    @patch.object(ApprovalGateway, "_slack_post")
+    @patch.object(ApprovalGateway, "_get_slack_token")
+    def test_outbound_disabled_skips_slack_approval(
+        self, mock_token, mock_post, gateway, monkeypatch
+    ):
+        """MP_DISABLE_OUTBOUND blocks Slack approval messages too."""
+        monkeypatch.setenv("MP_DISABLE_OUTBOUND", "1")
+
+        result = gateway._slack_approval("Test message", timeout_seconds=5)
+
+        assert result is None
+        mock_token.assert_not_called()
+        mock_post.assert_not_called()
+
     @patch.object(ApprovalGateway, "_get_slack_token", return_value=None)
     def test_no_slack_token_returns_none(self, mock_token, gateway):
         """Returns None when Slack token is not available."""

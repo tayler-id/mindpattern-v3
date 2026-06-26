@@ -4,6 +4,7 @@
 import logging
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from . import TOOLS_DIR, make_entry, parse_ndjson
@@ -58,7 +59,7 @@ def _summarize_diagnostics(feed_errors: list[dict]) -> str:
 def fetch_with_diagnostics(feeds_file: Path, hours: int = 48) -> tuple[list[dict], dict]:
     """Fetch RSS items and return entries plus source-health diagnostics."""
     cmd = [
-        "python3", str(TOOLS_DIR / "rss-fetch.py"),
+        sys.executable, str(TOOLS_DIR / "rss-fetch.py"),
         "--feeds-file", str(feeds_file),
         "--hours", str(hours),
     ]

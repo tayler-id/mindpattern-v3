@@ -19,6 +19,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+from core import receipts
+
 logger = logging.getLogger(__name__)
 
 # Slack config
@@ -55,6 +57,9 @@ class ApprovalGateway:
 
     def notify(self, message: str) -> None:
         """Post a notification to the approvals channel (no reply expected)."""
+        if not receipts.outbound_allowed():
+            logger.warning("Outbound disabled — skipping Slack notification")
+            return
         token = self._get_slack_token()
         if not token:
             logger.warning("No Slack token — skipping notification")
@@ -274,6 +279,10 @@ class ApprovalGateway:
         the parent message; Gate 2+ reply in that thread so the full
         conversation stays in one place.
         """
+        if not receipts.outbound_allowed():
+            logger.warning("Outbound disabled — skipping Slack approval request")
+            return None
+
         token = self._get_slack_token()
         if not token:
             logger.error("No Slack token in Keychain — cannot request approval")

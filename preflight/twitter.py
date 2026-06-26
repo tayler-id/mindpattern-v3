@@ -39,6 +39,13 @@ def _search_command(query: str, count: int) -> list[str] | None:
     return None
 
 
+def _feed_command(count: int) -> list[str] | None:
+    """Return a stable Twitter/X fallback command when query search breaks."""
+    if shutil.which("twitter"):
+        return ["twitter", "feed", "-n", str(count), "--json"]
+    return None
+
+
 def _extract_items(data) -> list[dict]:
     """Normalize supported CLI JSON shapes into tweet dictionaries."""
     if isinstance(data, list):
@@ -52,7 +59,7 @@ def _extract_items(data) -> list[dict]:
         logger.warning("twitter-cli search unavailable: %s", error.get("code", "unknown"))
         return []
 
-    items = data.get("items") or data.get("tweets") or []
+    items = data.get("items") or data.get("tweets") or data.get("data") or []
     return [item for item in items if isinstance(item, dict)]
 
 
@@ -82,9 +89,10 @@ def _metrics(raw: dict) -> dict:
 
 def _transform(raw: dict, query: str = "") -> dict:
     tweet_id = raw.get("id", "")
+    source_name = "x.com (feed fallback)" if query == "feed fallback" else f"x.com (query: {query})"
     return make_entry(
         source="twitter",
-        source_name=f"x.com (query: {query})",
+        source_name=source_name,
         title=raw.get("text", "")[:120],
         url=f"https://x.com/i/status/{tweet_id}",
         published=_published_at(raw),
@@ -98,6 +106,83 @@ def _stderr_snippet(stderr: str, limit: int = 300) -> str:
     return (stderr or "").strip().replace("\n", " ")[:limit]
 
 
+def _output_snippet(stdout: str, stderr: str, limit: int = 300) -> str:
+    """Prefer stderr, but include stdout JSON errors when CLIs print there."""
+    combined = " ".join(part for part in (_stderr_snippet(stderr), _stderr_snippet(stdout)) if part)
+    return combined[:limit]
+
+
+def _append_command_items(
+    *,
+    cmd: list[str],
+    query: str,
+    all_items: list[dict],
+    seen_ids: set,
+    failures: list[dict],
+    timeout: int = 30,
+) -> int:
+    """Run a Twitter command and append unique, non-retweet items."""
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if proc.returncode != 0:
+            snippet = _output_snippet(proc.stdout, proc.stderr)
+            logger.warning(f"Twitter/X command failed for '{query}': {snippet[:200]}")
+            failures.append({
+                "backend": cmd[0],
+                "query": query,
+                "exit_code": proc.returncode,
+                "stderr": snippet,
+            })
+            return 0
+
+        data = json.loads(proc.stdout)
+        added = 0
+        for item in _extract_items(data):
+            tid = item.get("id", "")
+            if tid in seen_ids:
+                continue
+            seen_ids.add(tid)
+            if item.get("isRetweet") or item.get("isReply"):
+                continue
+            all_items.append(_transform(item, query=query))
+            added += 1
+        return added
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Twitter/X command timed out for '{query}'")
+        failures.append({
+            "backend": cmd[0],
+            "query": query,
+            "exit_code": None,
+            "stderr": "timeout after 30s",
+        })
+    except json.JSONDecodeError:
+        logger.warning(f"Twitter/X command returned invalid JSON for '{query}'")
+        failures.append({
+            "backend": cmd[0],
+            "query": query,
+            "exit_code": 0,
+            "stderr": "invalid JSON",
+        })
+    except FileNotFoundError:
+        logger.error("Twitter/X CLI disappeared from PATH")
+        failures.append({
+            "backend": cmd[0],
+            "query": query,
+            "exit_code": None,
+            "stderr": "CLI disappeared from PATH",
+        })
+    except Exception as e:
+        logger.error(f"Twitter/X command failed for '{query}': {e}")
+        failures.append({
+            "backend": cmd[0],
+            "query": query,
+            "exit_code": None,
+            "stderr": str(e)[:300],
+        })
+    return 0
+
+
 def fetch_with_diagnostics(
     queries: list[str] | None = None,
     count: int = 10,
@@ -107,6 +192,7 @@ def fetch_with_diagnostics(
     all_items = []
     seen_ids = set()
     failures = []
+    fallbacks = []
 
     if not _search_command("", 1):
         logger.error("No Twitter/X search CLI found — install Agent Reach twitter channel")
@@ -133,62 +219,34 @@ def fetch_with_diagnostics(
             })
             continue
 
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if proc.returncode != 0:
-                snippet = _stderr_snippet(proc.stderr)
-                logger.warning(f"Twitter/X search failed for '{query}': {snippet[:200]}")
-                failures.append({
+        _append_command_items(
+            cmd=cmd,
+            query=query,
+            all_items=all_items,
+            seen_ids=seen_ids,
+            failures=failures,
+        )
+
+    if not all_items and failures:
+        feed_count = min(max(count * len(queries), count), 20)
+        cmd = _feed_command(feed_count)
+        if cmd:
+            before = len(all_items)
+            _append_command_items(
+                cmd=cmd,
+                query="feed fallback",
+                all_items=all_items,
+                seen_ids=seen_ids,
+                failures=failures,
+            )
+            added = len(all_items) - before
+            if added:
+                fallbacks.append({
                     "backend": cmd[0],
-                    "query": query,
-                    "exit_code": proc.returncode,
-                    "stderr": snippet,
+                    "mode": "feed",
+                    "count": added,
+                    "reason": "search failed",
                 })
-                continue
-
-            data = json.loads(proc.stdout)
-            for item in _extract_items(data):
-                tid = item.get("id", "")
-                if tid in seen_ids:
-                    continue
-                seen_ids.add(tid)
-                if item.get("isRetweet") or item.get("isReply"):
-                    continue
-                all_items.append(_transform(item, query=query))
-
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Twitter/X search timed out for '{query}'")
-            failures.append({
-                "backend": cmd[0],
-                "query": query,
-                "exit_code": None,
-                "stderr": "timeout after 30s",
-            })
-        except json.JSONDecodeError:
-            logger.warning(f"Twitter/X search returned invalid JSON for '{query}'")
-            failures.append({
-                "backend": cmd[0],
-                "query": query,
-                "exit_code": 0,
-                "stderr": "invalid JSON",
-            })
-        except FileNotFoundError:
-            logger.error("Twitter/X search CLI disappeared from PATH")
-            failures.append({
-                "backend": cmd[0],
-                "query": query,
-                "exit_code": None,
-                "stderr": "CLI disappeared from PATH",
-            })
-            break
-        except Exception as e:
-            logger.error(f"Twitter/X search failed for '{query}': {e}")
-            failures.append({
-                "backend": cmd[0],
-                "query": query,
-                "exit_code": None,
-                "stderr": str(e)[:300],
-            })
 
     if all_items and failures:
         status = "partial"
@@ -210,6 +268,7 @@ def fetch_with_diagnostics(
         "reason": reason,
         "queries": queries,
         "failures": failures,
+        "fallbacks": fallbacks,
     }
 
 

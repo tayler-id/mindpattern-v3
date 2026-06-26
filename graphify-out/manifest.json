@@ -665,8 +665,8 @@
     "semantic_hash": ""
   },
   "orchestrator/runner.py": {
-    "mtime": 1782506095.8949392,
-    "ast_hash": "c7d57928148c1c536b1843b69a10c560",
+    "mtime": 1782516724.7763288,
+    "ast_hash": "6b6c256474a1301654b6eba592172304",
     "semantic_hash": ""
   },
   "orchestrator/sync.py": {
@@ -720,18 +720,18 @@
     "semantic_hash": ""
   },
   "preflight/hn.py": {
-    "mtime": 1782504133.5245607,
-    "ast_hash": "4698a086494ec2355b74def307390d48",
+    "mtime": 1782514877.3142588,
+    "ast_hash": "f35ea9fc1d46bd853f34306798a7363b",
     "semantic_hash": ""
   },
   "preflight/reddit.py": {
-    "mtime": 1782504631.6399271,
-    "ast_hash": "b211dc08c09a71ea9b4471e38ad04ea3",
+    "mtime": 1782514883.274732,
+    "ast_hash": "f3a1901a5938a9a8c96f60ba8271181f",
     "semantic_hash": ""
   },
   "preflight/rss.py": {
-    "mtime": 1782503870.2823884,
-    "ast_hash": "cdd89bef50286354474e9537bd9a9ce1",
+    "mtime": 1782514872.0792377,
+    "ast_hash": "132523b8643f4f2a5e103b6331b81f5d",
     "semantic_hash": ""
   },
   "preflight/run_all.py": {
@@ -745,8 +745,8 @@
     "semantic_hash": ""
   },
   "preflight/twitter.py": {
-    "mtime": 1782504111.3773358,
-    "ast_hash": "360053061e0478c22492245e5f91cda1",
+    "mtime": 1782511985.6460502,
+    "ast_hash": "2cd5cd397b4fa53887bb5892e20f89f0",
     "semantic_hash": ""
   },
   "preflight/youtube.py": {
@@ -765,8 +765,8 @@
     "semantic_hash": ""
   },
   "run.py": {
-    "mtime": 1782492092.5010214,
-    "ast_hash": "009aaaab1db059ddf210c4912a9b1ee9",
+    "mtime": 1782516636.7447934,
+    "ast_hash": "b02490b278fee585b0fd093000a0ec5d",
     "semantic_hash": ""
   },
   "slack_bot/__init__.py": {
@@ -855,8 +855,8 @@
     "semantic_hash": ""
   },
   "social/approval.py": {
-    "mtime": 1781233362.5987775,
-    "ast_hash": "d27f0f45bf33310204e9a49e7ad9d5d9",
+    "mtime": 1782516624.3778787,
+    "ast_hash": "2565a2e47dcb12d4e1f9b5c827b251ca",
     "semantic_hash": ""
   },
   "social/art.py": {
@@ -880,8 +880,8 @@
     "semantic_hash": ""
   },
   "social/pipeline.py": {
-    "mtime": 1782503212.7741861,
-    "ast_hash": "68cc8f7394bd79e7079da50c0eae6732",
+    "mtime": 1782516632.232687,
+    "ast_hash": "224bec0de843ee3ccebd0561dad8164c",
     "semantic_hash": ""
   },
   "social/posting.py": {
@@ -985,8 +985,8 @@
     "semantic_hash": ""
   },
   "tests/test_approval.py": {
-    "mtime": 1781233680.3030975,
-    "ast_hash": "c4c6a608c6ae84954d3ba98146c23307",
+    "mtime": 1782516661.5176723,
+    "ast_hash": "5819b579efdff8eacf703c3d5b79bc84",
     "semantic_hash": ""
   },
   "tests/test_approval_parsing.py": {
@@ -1155,13 +1155,13 @@
     "semantic_hash": ""
   },
   "tests/test_preflight.py": {
-    "mtime": 1782504509.7285314,
-    "ast_hash": "bda49ffec367f4095339b2c4f8b0d7b1",
+    "mtime": 1782514914.4212613,
+    "ast_hash": "a66f3e9afcd2324794b289de47074a8c",
     "semantic_hash": ""
   },
   "tests/test_runner.py": {
-    "mtime": 1782506055.6158078,
-    "ast_hash": "a9a51f52bfd8dfa7e17bcbaded7c4688",
+    "mtime": 1782516733.862724,
+    "ast_hash": "e1f8d767426b8b24e399da3ce62f59e0",
     "semantic_hash": ""
   },
   "tests/test_session_capture.py": {
@@ -1180,8 +1180,8 @@
     "semantic_hash": ""
   },
   "tests/test_social.py": {
-    "mtime": 1782503142.0827014,
-    "ast_hash": "b2f4f32f0817f3f195a4f51512c4ec19",
+    "mtime": 1782516671.65963,
+    "ast_hash": "404345c05841c6983ab5093fbb2c1b5c",
     "semantic_hash": ""
   },
   "tests/test_sync.py": {
@@ -1240,8 +1240,8 @@
     "semantic_hash": ""
   },
   "tools/hn-fetch.py": {
-    "mtime": 1773521308.0,
-    "ast_hash": "e45952b476abd6baf9f1102eb499cfa8",
+    "mtime": 1782514732.656416,
+    "ast_hash": "c7ae2e18f9b0f60c156e8fcf61605194",
     "semantic_hash": ""
   },
   "tools/image-gen.py": {
@@ -2135,13 +2135,13 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-fix-first-recovery-implementation-plan.md": {
-    "mtime": 1782507032.6628594,
-    "ast_hash": "e1a38a4d77260f28d42e89ebcaf06a50",
+    "mtime": 1782516921.515231,
+    "ast_hash": "fcf5f7fc4ba1df6faa935115469766ed",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-fix-first-recovery-runbook.md": {
-    "mtime": 1782507028.4665515,
-    "ast_hash": "65585536c3f92472e56d0b0605222adf",
+    "mtime": 1782516911.9836633,
+    "ast_hash": "080320786a1f7cc84bad94a85faeff83",
     "semantic_hash": ""
   },
   "harness/knowledge/memory-embeddings.md": {

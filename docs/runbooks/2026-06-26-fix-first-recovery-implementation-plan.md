@@ -75,6 +75,39 @@ Newsletter quality floor inputs
             +-- Graphify freshness
 ```
 
+## Done Status Table
+
+Keep the `Done` column in this table. Future agents should update the value in
+place instead of deleting the column or replacing it with prose.
+
+| Task | Title | Done | Evidence / remaining work |
+|---|---|---|---|
+| 1 | Capture Baseline State | Yes | Dirty files and baseline tests were recorded. |
+| 2 | Shared Slack Approval Parser | Yes | Shared fail-closed parser landed. |
+| 3 | Strict `#mp-skills` and `#mp-tips` Approval | Yes | Skills and tips use the shared parser. |
+| 4 | Slack Draft Edit Helpers | Yes | Edit parsing helpers landed. |
+| 5 | `#mp-posts` Edit Flow | Yes | Edit, re-preview, and second approval flow landed. |
+| 6 | `#mp-skills` and `#mp-tips` Edit Flow | Yes | Same edit flow landed for skills and tips. |
+| 7 | Manual-Copy Fallback | Yes | Disabled platforms produce `manual_only` draft output. |
+| 8 | Slack Bot Doctor / Status | Yes | Redacted bot/channel status command landed. |
+| 9 | Platform Publish Modes | Yes | Live/manual/skipped/error modes are centralized. |
+| 10 | SocialPipeline Draft-Only Path | Yes | Draft-capable disabled platforms no longer hard skip. |
+| 11 | Runner Social Draft-Only Phase | Yes | Runner social phase uses draft-capable platform detection. |
+| 12 | Briefing Social Draft State | Yes | Briefing reports posted/manual/skipped/error/no-post states. |
+| 13 | Structured Source Health Contract | Yes | `source_health` and summary shape are tested. |
+| 14 | RSS Diagnostics | Yes | Per-feed diagnostics landed. |
+| 15 | Twitter/X and HN Diagnostics | Yes | Failure/empty diagnostics landed; X fallback/auth work continues separately. |
+| 16 | Reddit, Exa, and YouTube Availability | Yes | Backends report unavailable/failed/timeout instead of silent zero. |
+| 17 | Runner and Briefing Source Health | Yes | Source health is written to traces and shown in briefing status. |
+| 18 | Deterministic Quality Floor Helper | Yes | Pure helper and threshold tests landed. |
+| 19 | Duplicate Story and Angle Checks | Yes | Duplicate URL/title/angle risk tests landed. |
+| 20 | Agent Coverage Floor | Yes | Coverage degradation/retry tests landed. |
+| 21 | Source Balance Weighting | Yes | Dominant-source cap tests landed. |
+| 22 | Quality Floor Synthesis Integration | Yes | Retryable fallback and degraded notice landed. |
+| 23 | Put Critical Runner Tests Back in CI | Yes | Critical runner subset added to GitHub Actions. |
+| 24 | Refresh Graphify and Handoff Evidence | Yes | Graphify update/check and handoff evidence landed. |
+| 25 | Owner-Approved Production Smoke | Deferred | Explicitly deferred until owner approves deploy/live smoke/full run. |
+
 ## Task List
 
 ### Phase 0: Baseline
@@ -86,17 +119,17 @@ any behavior changes. This creates a known starting point and protects unrelated
 dirty work.
 
 **Acceptance criteria:**
-- [ ] Dirty files are listed and classified as docs-only, user work, or planned
+- [x] Dirty files are listed and classified as docs-only, user work, or planned
       implementation work.
-- [ ] Focused Slack/social, preflight/newsletter, and runner test baselines are
+- [x] Focused Slack/social, preflight/newsletter, and runner test baselines are
       recorded in the handoff or runbook.
-- [ ] No live Slack post, email send, Fly deploy, or full pipeline run occurs.
+- [x] No live Slack post, email send, Fly deploy, or full pipeline run occurs.
 
 **Verification:**
-- [ ] Run `git status --short --branch`.
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`.
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_evaluator.py tests/test_dedup_resurfacing.py tests/test_newsletter.py -q`.
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_runner.py -q`.
+- [x] Run `git status --short --branch`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_evaluator.py tests/test_dedup_resurfacing.py tests/test_newsletter.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_runner.py -q`.
 
 **Dependencies:** None
 
@@ -108,8 +141,8 @@ dirty work.
 
 ### Checkpoint: Baseline
 
-- [ ] Owner can see exactly what is dirty and what is planned.
-- [ ] Any failing baseline tests are recorded as pre-existing or blocking.
+- [x] Owner can see exactly what is dirty and what is planned.
+- [x] Any failing baseline tests are recorded as pre-existing or blocking.
 
 ### Phase 1: Slack Safety Foundation
 
@@ -119,15 +152,15 @@ dirty work.
 Slack bot helper so all content channels interpret approval the same way.
 
 **Acceptance criteria:**
-- [ ] `all`, `yes`, `go`, `post`, `approve`, exact platform names, and platform
+- [x] `all`, `yes`, `go`, `post`, `approve`, exact platform names, and platform
       lists approve only the intended platforms.
-- [ ] `skip`, `wait`, `hold on`, `skip linkedin`, and pasted prose approve
+- [x] `skip`, `wait`, `hold on`, `skip linkedin`, and pasted prose approve
       nothing.
-- [ ] `#mp-posts` behavior remains equivalent to the current strict parser.
+- [x] `#mp-posts` behavior remains equivalent to the current strict parser.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
-- [ ] Add direct unit tests for the shared parser.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
+- [x] Add direct unit tests for the shared parser.
 
 **Dependencies:** Task 1
 
@@ -144,14 +177,14 @@ Slack bot helper so all content channels interpret approval the same way.
 and tips handlers with the shared fail-closed parser.
 
 **Acceptance criteria:**
-- [ ] Unclear replies post nothing in both channels.
-- [ ] Exact `bluesky`, `linkedin`, and `all` approvals still work.
-- [ ] The bot replies with "skipped/nothing posted" instead of silently doing
+- [x] Unclear replies post nothing in both channels.
+- [x] Exact `bluesky`, `linkedin`, and `all` approvals still work.
+- [x] The bot replies with "skipped/nothing posted" instead of silently doing
       the wrong thing.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
-- [ ] Add tests for unclear, skip-one, single-platform, and all-platform
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
+- [x] Add tests for unclear, skip-one, single-platform, and all-platform
       replies for both handlers.
 
 **Dependencies:** Task 2
@@ -169,14 +202,14 @@ and tips handlers with the shared fail-closed parser.
 draft replacements without posting. This is the foundation for a real edit loop.
 
 **Acceptance criteria:**
-- [ ] `edit bluesky: ...` and `edit linkedin: ...` update only the named
+- [x] `edit bluesky: ...` and `edit linkedin: ...` update only the named
       platform draft.
-- [ ] A replacement draft is re-previewed and cannot be treated as approval.
-- [ ] Unknown platform edits and empty edits are rejected with a clear message.
+- [x] A replacement draft is re-previewed and cannot be treated as approval.
+- [x] Unknown platform edits and empty edits are rejected with a clear message.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
-- [ ] Add unit tests for edit parsing and draft replacement.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
+- [x] Add unit tests for edit parsing and draft replacement.
 
 **Dependencies:** Task 2
 
@@ -192,13 +225,13 @@ draft replacements without posting. This is the foundation for a real edit loop.
 the draft, shows a new preview, and waits for explicit approval again.
 
 **Acceptance criteria:**
-- [ ] First edit reply never posts.
-- [ ] Re-preview includes updated copy and char counts.
-- [ ] Posting only happens after the second reply is explicit approval.
+- [x] First edit reply never posts.
+- [x] Re-preview includes updated copy and char counts.
+- [x] Posting only happens after the second reply is explicit approval.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py -q`.
-- [ ] Add mocked thread tests for edit then approve, edit then skip, and unclear
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py -q`.
+- [x] Add mocked thread tests for edit then approve, edit then skip, and unclear
       reply after edit.
 
 **Dependencies:** Task 4
@@ -215,13 +248,13 @@ the draft, shows a new preview, and waits for explicit approval again.
 as `#mp-posts`.
 
 **Acceptance criteria:**
-- [ ] Skills and tips support platform-specific edit commands.
-- [ ] Edited drafts re-preview and require second approval.
-- [ ] Freeform unclear text is not treated as approval.
+- [x] Skills and tips support platform-specific edit commands.
+- [x] Edited drafts re-preview and require second approval.
+- [x] Freeform unclear text is not treated as approval.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
-- [ ] Add mocked tests for edit then approve in both handlers.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
+- [x] Add mocked tests for edit then approve in both handlers.
 
 **Dependencies:** Tasks 3, 4
 
@@ -239,15 +272,15 @@ platform is disabled, instead of attempting a live client or making the channel
 feel broken.
 
 **Acceptance criteria:**
-- [ ] Disabled platform returns `manual_only` or equivalent status with final
+- [x] Disabled platform returns `manual_only` or equivalent status with final
       copy.
-- [ ] Enabled platform still uses the posting client after approval.
-- [ ] Missing credentials or disabled config never gets reported as a successful
+- [x] Enabled platform still uses the posting client after approval.
+- [x] Missing credentials or disabled config never gets reported as a successful
       live post.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_posting.py -q`.
-- [ ] Add tests for disabled LinkedIn and disabled Bluesky.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_posting.py -q`.
+- [x] Add tests for disabled LinkedIn and disabled Bluesky.
 
 **Dependencies:** Tasks 2, 3
 
@@ -267,15 +300,16 @@ handler registration, channel config, owner config, heartbeat age, and recent
 errors without printing secrets.
 
 **Acceptance criteria:**
-- [ ] `status` or `doctor` reports registered handler names and configured
+- [x] `status` or `doctor` reports registered handler names and configured
       channel count.
-- [ ] The output indicates owner ID configured/unconfigured without exposing
+- [x] The output indicates owner ID configured/unconfigured without exposing
       token values.
-- [ ] Missing channel IDs and skipped handlers are visible.
+- [x] Missing channel IDs and skipped handlers are visible.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
-- [ ] After deploy approval, live smoke `status` in `#mp-briefing`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`.
+- [ ] Deferred until owner approves deploy/live Slack smoke: `status` in
+      `#mp-briefing`.
 
 **Dependencies:** Task 1
 
@@ -289,10 +323,10 @@ errors without printing secrets.
 
 ### Checkpoint: Slack Safety
 
-- [ ] `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` passes.
-- [ ] No handler has default-to-all approval behavior.
-- [ ] Manual-copy fallback works with disabled platform config.
-- [ ] Owner approves before any Fly deploy or live Slack smoke.
+- [x] `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` passes.
+- [x] No handler has default-to-all approval behavior.
+- [x] Manual-copy fallback works with disabled platform config.
+- [x] Owner approves before any Fly deploy or live Slack smoke.
 
 ### Phase 2: Daily Social Draft Mode
 
@@ -302,15 +336,15 @@ errors without printing secrets.
 manual-only, disabled, and unknown platform states.
 
 **Acceptance criteria:**
-- [ ] A platform with `enabled: true` is live-capable.
-- [ ] A platform with valid writer config but `enabled: false` can still be
+- [x] A platform with `enabled: true` is live-capable.
+- [x] A platform with valid writer config but `enabled: false` can still be
       draft/manual-only.
-- [ ] The result shape clearly separates `posted`, `manual_only`, `skipped`,
+- [x] The result shape clearly separates `posted`, `manual_only`, `skipped`,
       and `error`.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_social.py tests/test_posting.py -q`.
-- [ ] Add unit tests for platform mode resolution.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_social.py tests/test_posting.py -q`.
+- [x] Add unit tests for platform mode resolution.
 
 **Dependencies:** Task 7
 
@@ -328,14 +362,14 @@ brief, and write drafts for manual-only platforms without initializing live
 posting clients.
 
 **Acceptance criteria:**
-- [ ] With no live-enabled platforms but draft-capable platforms present,
+- [x] With no live-enabled platforms but draft-capable platforms present,
       pipeline returns drafts/manual-copy state instead of `No enabled platforms`.
-- [ ] Posting clients are not initialized or called in draft-only mode.
-- [ ] Topic/brief/draft errors still return structured errors.
+- [x] Posting clients are not initialized or called in draft-only mode.
+- [x] Topic/brief/draft errors still return structured errors.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q`.
-- [ ] Add tests with both platforms disabled and mocked writer output.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q`.
+- [x] Add tests with both platforms disabled and mocked writer output.
 
 **Dependencies:** Task 9
 
@@ -353,14 +387,14 @@ to the draft-only path when platforms are disabled but draft generation is
 allowed.
 
 **Acceptance criteria:**
-- [ ] `_phase_social` no longer returns `reason: no platforms enabled` when
+- [x] `_phase_social` no longer returns `reason: no platforms enabled` when
       draft-only mode is available.
-- [ ] Result records draft/manual/posted/skipped status.
-- [ ] Signals are only stored as posted when a live post actually succeeds.
+- [x] Result records draft/manual/posted/skipped status.
+- [x] Signals are only stored as posted when a live post actually succeeds.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_runner.py -q`.
-- [ ] Add or update runner tests for disabled platforms and draft-only result.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_runner.py -q`.
+- [x] Add or update runner tests for disabled platforms and draft-only result.
 
 **Dependencies:** Task 10
 
@@ -376,14 +410,14 @@ allowed.
 manual-only, awaiting approval, skipped, or errored.
 
 **Acceptance criteria:**
-- [ ] Briefing distinguishes "No posts" from "Draft/manual-only created".
-- [ ] The status output includes the social skipped/degraded reason when no
+- [x] Briefing distinguishes "No posts" from "Draft/manual-only created".
+- [x] The status output includes the social skipped/degraded reason when no
       draft was created.
-- [ ] No Slack token or sensitive copy is printed in logs/tests.
+- [x] No Slack token or sensitive copy is printed in logs/tests.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_runner.py -q`.
-- [ ] Add briefing tests with social result variants.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_runner.py -q`.
+- [x] Add briefing tests with social result variants.
 
 **Dependencies:** Tasks 8, 11
 
@@ -396,9 +430,9 @@ manual-only, awaiting approval, skipped, or errored.
 
 ### Checkpoint: Daily Social
 
-- [ ] Disabled platform config produces drafts/manual-copy, not a dead skip.
-- [ ] No live post can occur without enabled platform plus explicit approval.
-- [ ] Handoff records whether live Fly smoke was run or deferred.
+- [x] Disabled platform config produces drafts/manual-copy, not a dead skip.
+- [x] No live post can occur without enabled platform plus explicit approval.
+- [x] Handoff records whether live Fly smoke was run or deferred.
 
 ### Phase 3: Source Health
 
@@ -409,13 +443,13 @@ fetches while preserving existing `items`, `source_counts`, and `assignments`
 return keys.
 
 **Acceptance criteria:**
-- [ ] Each source records `status`, `count`, `duration_ms`, and `reason`.
-- [ ] Exceptions are classified as failed with reason, not just zero items.
-- [ ] Healthy empty results are distinguishable from failed empty results.
+- [x] Each source records `status`, `count`, `duration_ms`, and `reason`.
+- [x] Exceptions are classified as failed with reason, not just zero items.
+- [x] Healthy empty results are distinguishable from failed empty results.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
-- [ ] Add tests for success, healthy-empty, exception, timeout, and missing CLI.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
+- [x] Add tests for success, healthy-empty, exception, timeout, and missing CLI.
 
 **Dependencies:** Task 1
 
@@ -431,13 +465,13 @@ return keys.
 so zero RSS days identify the bad feed or dependency.
 
 **Acceptance criteria:**
-- [ ] Bad feed URL is named in source health.
-- [ ] Missing or malformed feed data does not hide healthy feeds.
-- [ ] RSS zero count reports either healthy-empty or specific failure reasons.
+- [x] Bad feed URL is named in source health.
+- [x] Missing or malformed feed data does not hide healthy feeds.
+- [x] RSS zero count reports either healthy-empty or specific failure reasons.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
-- [ ] Add tests for bad feed, empty feed, and normal feed.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
+- [x] Add tests for bad feed, empty feed, and normal feed.
 
 **Dependencies:** Task 13
 
@@ -454,13 +488,14 @@ so zero RSS days identify the bad feed or dependency.
 diagnosable from source health rather than silent count zero.
 
 **Acceptance criteria:**
-- [ ] Twitter CLI failures include backend, exit code, and safe stderr snippet.
-- [ ] Supported Twitter JSON shapes still parse.
-- [ ] HN logs/query diagnostics explain zero results or API failures.
+- [x] Twitter CLI failures include backend, exit code, and safe stderr snippet.
+- [x] Supported Twitter JSON shapes still parse.
+- [x] HN logs/query diagnostics explain zero results or API failures.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
-- [ ] Live smoke later: `twitter search "AI agents" -n 1 --json`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
+- [ ] Blocked/deferred live smoke: `twitter search "AI agents" -n 1 --json`
+      still needs stable cookie/OpenCLI auth.
 
 **Dependencies:** Task 13
 
@@ -479,13 +514,14 @@ unavailable, or failed so the pipeline stops treating backend-off as normal
 empty research.
 
 **Acceptance criteria:**
-- [ ] Reddit backend-off is reported as unavailable unless configured.
-- [ ] Exa and YouTube tool errors/timeouts surface in source health.
-- [ ] Expected healthy-source count can exclude explicitly unavailable sources.
+- [x] Reddit backend-off is reported as unavailable unless configured.
+- [x] Exa and YouTube tool errors/timeouts surface in source health.
+- [x] Expected healthy-source count can exclude explicitly unavailable sources.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
-- [ ] Live smoke later: `agent-reach doctor --json`, `yt-dlp --version`,
+- [x] Run `.venv/bin/python3 -m pytest tests/test_preflight.py -q`.
+- [ ] Deferred production/source smoke: `agent-reach doctor --json`,
+      `yt-dlp --version`,
       `mcporter list exa --status`.
 
 **Dependencies:** Task 13
@@ -505,13 +541,13 @@ empty research.
 briefing so degraded inputs are visible before the newsletter is judged.
 
 **Acceptance criteria:**
-- [ ] `preflight_complete` trace includes source health summary.
-- [ ] `#mp-briefing status` includes major source failures or unavailable
+- [x] `preflight_complete` trace includes source health summary.
+- [x] `#mp-briefing status` includes major source failures or unavailable
       sources.
-- [ ] Existing source count consumers remain compatible.
+- [x] Existing source count consumers remain compatible.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_slack_bot.py tests/test_preflight.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_slack_bot.py tests/test_preflight.py -q`.
 
 **Dependencies:** Tasks 13, 14, 15, 16
 
@@ -525,9 +561,9 @@ briefing so degraded inputs are visible before the newsletter is judged.
 
 ### Checkpoint: Source Health
 
-- [ ] Source zero counts have reasons.
-- [ ] Major source failures can be seen before synthesis.
-- [ ] Local sandbox network failures are not recorded as production proof.
+- [x] Source zero counts have reasons.
+- [x] Major source failures can be seen before synthesis.
+- [x] Local sandbox network failures are not recorded as production proof.
 
 ### Phase 4: Newsletter Quality Recovery
 
@@ -538,13 +574,13 @@ agent coverage, finding volume, unique URL ratio, duplicate risk, and source
 balance without changing send behavior yet.
 
 **Acceptance criteria:**
-- [ ] Helper returns `pass`, `degraded`, or `fail_retryable` with reasons.
-- [ ] Thresholds are configurable constants and documented in the runbook.
-- [ ] No newsletter send behavior changes in this task.
+- [x] Helper returns `pass`, `degraded`, or `fail_retryable` with reasons.
+- [x] Thresholds are configurable constants and documented in the runbook.
+- [x] No newsletter send behavior changes in this task.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_evaluator.py tests/test_runner.py -q`.
-- [ ] Add tests for good, degraded, and retryable-bad synthetic runs.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_evaluator.py tests/test_runner.py -q`.
+- [x] Add tests for good, degraded, and retryable-bad synthetic runs.
 
 **Dependencies:** Task 17
 
@@ -561,13 +597,13 @@ balance without changing send behavior yet.
 URLs, near-title overlap, and semantic angle similarity against recent issues.
 
 **Acceptance criteria:**
-- [ ] Repeated URLs across recent issues are flagged unless they have a new
+- [x] Repeated URLs across recent issues are flagged unless they have a new
       source date or explicit new angle.
-- [ ] Known repeated adjacent-day stories fail duplicate-angle checks.
-- [ ] Distinct related stories are not over-blocked.
+- [x] Known repeated adjacent-day stories fail duplicate-angle checks.
+- [x] Distinct related stories are not over-blocked.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py tests/test_evaluator.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py tests/test_evaluator.py -q`.
 
 **Dependencies:** Task 18
 
@@ -585,14 +621,14 @@ URLs, near-title overlap, and semantic angle similarity against recent issues.
 or too many agents return zero findings.
 
 **Acceptance criteria:**
-- [ ] A 6-of-13 or 8-of-13 contributing-agent run is marked degraded/retryable
+- [x] A 6-of-13 or 8-of-13 contributing-agent run is marked degraded/retryable
       according to thresholds.
-- [ ] Zero-finding agents are named in the quality reasons.
-- [ ] The run result distinguishes degraded research from normal low-volume
+- [x] Zero-finding agents are named in the quality reasons.
+- [x] The run result distinguishes degraded research from normal low-volume
       days.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_agents.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_agents.py -q`.
 
 **Dependencies:** Task 18
 
@@ -610,14 +646,14 @@ or too many agents return zero findings.
 candidate set when other healthy source classes exist.
 
 **Acceptance criteria:**
-- [ ] Selected newsletter candidates cap single-source dominance by configured
+- [x] Selected newsletter candidates cap single-source dominance by configured
       threshold.
-- [ ] Underrepresented healthy source classes receive a boost.
-- [ ] If only one source is healthy, the run is marked degraded instead of
+- [x] Underrepresented healthy source classes receive a boost.
+- [x] If only one source is healthy, the run is marked degraded instead of
       fabricating diversity.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_runner.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_runner.py -q`.
 
 **Dependencies:** Tasks 17, 18
 
@@ -636,13 +672,13 @@ before delivery. The newsletter should still ship daily unless the owner
 chooses a hard approval gate.
 
 **Acceptance criteria:**
-- [ ] Retryable bad synthesis triggers a bounded retry or source-grounded
+- [x] Retryable bad synthesis triggers a bounded retry or source-grounded
       fallback before delivery.
-- [ ] Degraded issue sends with visible Slack/trace incident summary.
-- [ ] Delivery receipts are preserved; retries do not double-send.
+- [x] Degraded issue sends with visible Slack/trace incident summary.
+- [x] Delivery receipts are preserved; retries do not double-send.
 
 **Verification:**
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_newsletter.py tests/test_newsletter_receipts.py -q`.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_newsletter.py tests/test_newsletter_receipts.py -q`.
 
 **Dependencies:** Tasks 18, 19, 20, 21
 
@@ -657,9 +693,9 @@ chooses a hard approval gate.
 
 ### Checkpoint: Newsletter Recovery
 
-- [ ] Weak inputs cannot silently produce a weak newsletter.
-- [ ] Degraded send path is visible in logs/traces/Slack.
-- [ ] Daily newsletter contract remains intact.
+- [x] Weak inputs cannot silently produce a weak newsletter.
+- [x] Degraded send path is visible in logs/traces/Slack.
+- [x] Daily newsletter contract remains intact.
 
 ### Phase 5: Workflow Guardrails and Production Proof
 
@@ -728,6 +764,17 @@ explicitly asks.
 **Status:** Explicitly deferred. The recovery goal forbids Fly deploy, full
 daily pipeline runs, and live Slack/social smoke without owner approval.
 
+**2026-06-26 no-outbound smoke evidence:** A real local smoke was run with
+`MP_DISABLE_OUTBOUND=1` and then interrupted at the daily social approval wait.
+It did not send email or post to live social platforms. It produced 371
+preflight items, 177 new items, 13/13 completed research agents, 181 raw
+findings, 91 stored findings after dedup/storage filters, and a local newsletter
+at `reports/ramsay/2026-06-26.md` with evaluator overall 0.882. The quality
+floor marked the issue degraded for source dominance and duplicate risk, which
+is visible rather than silent. This smoke exposed two safety gaps that were
+fixed after the run: `--skip-social` was not wired, and `MP_DISABLE_OUTBOUND=1`
+did not block Slack approval messages or Fly sync.
+
 **Acceptance criteria:**
 - [ ] Fly `/healthz` is ok after deploy.
 - [ ] `#mp-posts`, `#mp-skills`, `#mp-tips`, and `#mp-briefing` respond from
@@ -753,7 +800,8 @@ daily pipeline runs, and live Slack/social smoke without owner approval.
 - [x] All fix-first rows are fixed, intentionally disabled with alert, or
       blocked by a named external dependency.
 - [x] Focused and full relevant tests pass.
-- [x] Owner-approved Fly smoke is recorded or explicitly deferred.
+- [x] Owner-approved Fly smoke is recorded or explicitly deferred; no-outbound
+      local smoke evidence is recorded separately.
 - [x] Repo is clean except for intentional committed work.
 
 ## Parallelization Opportunities

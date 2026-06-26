@@ -583,6 +583,8 @@ class TestPhaseResearch:
             agent_name=agent_name,
             findings=findings or [],
             error=error,
+            raw_output=json.dumps({"findings": findings or []}),
+            duration_ms=123,
         )
 
     @patch("orchestrator.runner.memory.log_agent_run")
@@ -608,6 +610,15 @@ class TestPhaseResearch:
         assert result["findings_stored"] == 1
         mock_store.assert_called_once()
         mock_source.assert_called_once()
+        row = pipeline.traces_conn.execute(
+            "SELECT agent_name, status, latency_ms, output "
+            "FROM agent_runs WHERE pipeline_run_id = ?",
+            (pipeline.traces_run_id,),
+        ).fetchone()
+        assert row["agent_name"] == "test-agent"
+        assert row["status"] == "completed"
+        assert row["latency_ms"] == 123
+        assert "Finding 1" in row["output"]
 
     @patch("orchestrator.runner.memory.log_agent_run")
     @patch("orchestrator.runner.memory.store_finding")
@@ -1555,6 +1566,36 @@ class TestDryRunPhases:
         assert result == {"dry_run": True, "skipped": True, "phase": "sync"}
         mock_sync.assert_not_called()
 
+    def test_skip_social_env_skips_social_and_engagement(self, pipeline, monkeypatch):
+        monkeypatch.setenv("MP_SKIP_SOCIAL", "1")
+
+        social = pipeline._get_phase_handler(Phase.SOCIAL)()
+        engagement = pipeline._get_phase_handler(Phase.ENGAGEMENT)()
+
+        assert social == {
+            "skipped": True,
+            "phase": "social",
+            "reason": "MP_SKIP_SOCIAL=1",
+        }
+        assert engagement == {
+            "skipped": True,
+            "phase": "engagement",
+            "reason": "MP_SKIP_SOCIAL=1",
+        }
+
+    def test_outbound_disabled_skips_sync(self, pipeline, monkeypatch):
+        monkeypatch.setenv("MP_DISABLE_OUTBOUND", "1")
+
+        with patch("orchestrator.sync.sync_to_fly") as mock_sync:
+            result = pipeline._get_phase_handler(Phase.SYNC)()
+
+        assert result == {
+            "skipped": True,
+            "phase": "sync",
+            "reason": "MP_DISABLE_OUTBOUND=1",
+        }
+        mock_sync.assert_not_called()
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 3. Pipeline.run() — full pipeline execution
@@ -1645,6 +1686,35 @@ class TestPipelineRun:
 
         assert exit_code == 0
         assert len(pipeline.pipeline.warnings) >= 1
+
+    def test_keyboard_interrupt_marks_pipeline_interrupted(self, pipeline):
+        """Ctrl-C should not leave traces.db pipeline_runs stuck as running."""
+        def mock_handler(phase):
+            def _handler():
+                if phase == Phase.TREND_SCAN:
+                    raise KeyboardInterrupt()
+                return {}
+            return _handler
+
+        with (
+            patch.object(pipeline, "_get_phase_handler", side_effect=mock_handler),
+            patch.object(pipeline.checkpoint, "find_resumable_run", return_value=None),
+        ):
+            with pytest.raises(KeyboardInterrupt):
+                pipeline.run()
+
+        row = pipeline.traces_conn.execute(
+            "SELECT status, error FROM pipeline_runs WHERE id = ?",
+            (pipeline.traces_run_id,),
+        ).fetchone()
+        event = pipeline.traces_conn.execute(
+            "SELECT event_type FROM events WHERE pipeline_run_id = ? "
+            "AND event_type = 'pipeline_interrupted'",
+            (pipeline.traces_run_id,),
+        ).fetchone()
+        assert row["status"] == "interrupted"
+        assert row["error"] == "KeyboardInterrupt"
+        assert event["event_type"] == "pipeline_interrupted"
 
 
 # ═══════════════════════════════════════════════════════════════════════

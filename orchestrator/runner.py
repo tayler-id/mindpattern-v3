@@ -7,6 +7,7 @@ or a Python-only step. The LLM never decides what phase comes next.
 import json
 import logging
 import os
+import sqlite3
 import sys
 import time
 from datetime import datetime
@@ -22,6 +23,8 @@ from .prompt_tracker import PromptTracker
 from .traces_db import (
     get_db as get_traces_db,
     create_pipeline_run,
+    create_agent_run,
+    complete_agent_run,
     complete_pipeline_run,
     log_event,
 )
@@ -481,84 +484,92 @@ class ResearchPipeline:
 
         start_idx = PHASE_ORDER.index(start_phase) if start_phase in PHASE_ORDER else 0
 
-        for phase in PHASE_ORDER[start_idx:]:
-            if phase in {Phase.COMPLETED, Phase.FAILED}:
-                break
+        try:
+            for phase in PHASE_ORDER[start_idx:]:
+                if phase in {Phase.COMPLETED, Phase.FAILED}:
+                    break
 
-            phase_start = time.monotonic()
-            monitor_phase_id = None
+                phase_start = time.monotonic()
+                monitor_phase_id = None
 
-            try:
-                # Skip transition if we're already at this phase (e.g. INIT at start)
-                if self.pipeline.current_phase != phase:
-                    self.pipeline.transition(phase)
-                logger.info(f"Phase: {phase.value}")
-
-                # Log phase start to traces.db
-                log_event(self.traces_conn, self.traces_run_id,
-                          f"phase_{phase.value}_start", "{}")
-
-                # Track phase in PipelineMonitor
                 try:
-                    monitor_phase_id = self.monitor.start_phase(
-                        self.pipeline.run_id, phase.value)
-                except Exception as e:
-                    logger.warning(f"Monitor start_phase failed: {e}")
+                    # Skip transition if we're already at this phase (e.g. INIT at start)
+                    if self.pipeline.current_phase != phase:
+                        self.pipeline.transition(phase)
+                    logger.info(f"Phase: {phase.value}")
 
-                handler = self._get_phase_handler(phase)
-                if handler:
-                    result = handler()
-                    self.pipeline.complete_phase(phase, result)
-                    self.checkpoint.save(self.pipeline.run_id, phase, result,
-                                        user_id=self.user_id)
-                else:
-                    logger.warning(f"No handler for phase {phase.value}, skipping")
-                    self.pipeline.complete_phase(phase)
-                    self.checkpoint.save(self.pipeline.run_id, phase,
-                                        user_id=self.user_id)
-                    result = {}
+                    # Log phase start to traces.db
+                    log_event(self.traces_conn, self.traces_run_id,
+                              f"phase_{phase.value}_start", "{}")
 
-                # Log phase completion
-                duration_ms = int((time.monotonic() - phase_start) * 1000)
-                log_event(self.traces_conn, self.traces_run_id,
-                          f"phase_{phase.value}_complete",
-                          json.dumps({"duration_ms": duration_ms, "result": str(result)[:500]}))
-
-                # End phase tracking in PipelineMonitor
-                if monitor_phase_id is not None:
+                    # Track phase in PipelineMonitor
                     try:
-                        self.monitor.end_phase(monitor_phase_id, "completed")
+                        monitor_phase_id = self.monitor.start_phase(
+                            self.pipeline.run_id, phase.value)
                     except Exception as e:
-                        logger.warning(f"Monitor end_phase failed: {e}")
+                        logger.warning(f"Monitor start_phase failed: {e}")
 
-            except Exception as e:
-                error_msg = f"{phase.value}: {e}"
-                duration_ms = int((time.monotonic() - phase_start) * 1000)
-                logger.error(error_msg, exc_info=True)
+                    handler = self._get_phase_handler(phase)
+                    if handler:
+                        result = handler()
+                        self.pipeline.complete_phase(phase, result)
+                        self.checkpoint.save(self.pipeline.run_id, phase, result,
+                                            user_id=self.user_id)
+                    else:
+                        logger.warning(f"No handler for phase {phase.value}, skipping")
+                        self.pipeline.complete_phase(phase)
+                        self.checkpoint.save(self.pipeline.run_id, phase,
+                                            user_id=self.user_id)
+                        result = {}
 
-                log_event(self.traces_conn, self.traces_run_id,
-                          f"phase_{phase.value}_failed",
-                          json.dumps({"error": str(e)[:500], "duration_ms": duration_ms}))
+                    # Log phase completion
+                    duration_ms = int((time.monotonic() - phase_start) * 1000)
+                    log_event(self.traces_conn, self.traces_run_id,
+                              f"phase_{phase.value}_complete",
+                              json.dumps({"duration_ms": duration_ms, "result": str(result)[:500]}))
 
-                # End phase tracking as failed in PipelineMonitor
-                if monitor_phase_id is not None:
-                    try:
-                        self.monitor.end_phase(
-                            monitor_phase_id, "failed", error=str(e)[:500])
-                    except Exception as me:
-                        logger.warning(f"Monitor end_phase (failed) failed: {me}")
+                    # End phase tracking in PipelineMonitor
+                    if monitor_phase_id is not None:
+                        try:
+                            self.monitor.end_phase(monitor_phase_id, "completed")
+                        except Exception as e:
+                            logger.warning(f"Monitor end_phase failed: {e}")
 
-                if phase in CRITICAL_PHASES:
-                    self.pipeline.fail(error_msg)
-                    complete_pipeline_run(self.traces_conn, self.traces_run_id,
-                                         status="failed", error=error_msg)
-                    self._send_alert(f"CRITICAL: {error_msg}")
-                    return 1
-                else:
-                    self.pipeline.fail_phase(phase, str(e))
-                    logger.warning(f"Non-critical phase {phase.value} failed, continuing")
-                    self.checkpoint.save(self.pipeline.run_id, phase, {"error": str(e)},
-                                        user_id=self.user_id)
+                except Exception as e:
+                    error_msg = f"{phase.value}: {e}"
+                    duration_ms = int((time.monotonic() - phase_start) * 1000)
+                    logger.error(error_msg, exc_info=True)
+
+                    log_event(self.traces_conn, self.traces_run_id,
+                              f"phase_{phase.value}_failed",
+                              json.dumps({"error": str(e)[:500], "duration_ms": duration_ms}))
+
+                    # End phase tracking as failed in PipelineMonitor
+                    if monitor_phase_id is not None:
+                        try:
+                            self.monitor.end_phase(
+                                monitor_phase_id, "failed", error=str(e)[:500])
+                        except Exception as me:
+                            logger.warning(f"Monitor end_phase (failed) failed: {me}")
+
+                    if phase in CRITICAL_PHASES:
+                        self.pipeline.fail(error_msg)
+                        complete_pipeline_run(self.traces_conn, self.traces_run_id,
+                                             status="failed", error=error_msg)
+                        self._send_alert(f"CRITICAL: {error_msg}")
+                        return 1
+                    else:
+                        self.pipeline.fail_phase(phase, str(e))
+                        logger.warning(f"Non-critical phase {phase.value} failed, continuing")
+                        self.checkpoint.save(self.pipeline.run_id, phase, {"error": str(e)},
+                                            user_id=self.user_id)
+        except KeyboardInterrupt:
+            logger.warning("Pipeline interrupted by user")
+            log_event(self.traces_conn, self.traces_run_id,
+                      "pipeline_interrupted", "{}")
+            complete_pipeline_run(self.traces_conn, self.traces_run_id,
+                                  status="interrupted", error="KeyboardInterrupt")
+            raise
 
         # Mark completed
         self.pipeline.transition(Phase.COMPLETED)
@@ -586,15 +597,66 @@ class ResearchPipeline:
         logger.info(f"Pipeline {self.pipeline.run_id} completed")
         return 0
 
+    def _record_agent_trace(self, result) -> None:
+        """Mirror one research agent result into traces.db agent_runs."""
+        agent_name = getattr(result, "agent_name", "unknown-agent")
+        findings = getattr(result, "findings", []) or []
+        agent_run_id = f"{self.traces_run_id}/{agent_name}"
+        try:
+            create_agent_run(
+                self.traces_conn,
+                self.traces_run_id,
+                agent_name,
+            )
+        except sqlite3.IntegrityError:
+            pass
+        except Exception as e:
+            logger.warning(
+                f"Trace create_agent_run failed for {agent_name}: {e}"
+            )
+            return
+
+        error = getattr(result, "error", None)
+        status = "failed" if error and not findings else "completed"
+        output = getattr(result, "raw_output", "")
+        if not output:
+            output = json.dumps({
+                "findings_count": len(findings),
+                "classification": getattr(result, "classification", None),
+                "exit_code": getattr(result, "exit_code", None),
+            })
+        try:
+            complete_agent_run(
+                self.traces_conn,
+                agent_run_id,
+                status=status,
+                output=output,
+                error=error,
+                latency_ms=getattr(result, "duration_ms", None),
+            )
+        except Exception as e:
+            logger.warning(
+                f"Trace complete_agent_run failed for {agent_name}: {e}"
+            )
+
     def _get_phase_handler(self, phase: Phase):
         """Map phases to their handler methods."""
         if phase in {Phase.COMPLETED, Phase.FAILED}:
             return None
 
+        if (
+            os.environ.get("MP_SKIP_SOCIAL") == "1"
+            and phase in {Phase.SOCIAL, Phase.ENGAGEMENT}
+        ):
+            return lambda phase=phase: self._phase_skip_social(phase)
+
         if getattr(self, "dry_run", False):
             if phase == Phase.SYNTHESIS:
                 return self._phase_synthesis_dry_run
             return lambda phase=phase: self._phase_dry_run_skip(phase)
+
+        if os.environ.get("MP_DISABLE_OUTBOUND") == "1" and phase == Phase.SYNC:
+            return lambda phase=phase: self._phase_outbound_disabled_skip(phase)
 
         return {
             Phase.INIT: self._phase_init,
@@ -616,6 +678,24 @@ class ResearchPipeline:
         """Skip a phase that would fetch, mutate, send, or deploy in dry-run."""
         logger.info("DRY RUN: skipping %s phase", phase.value)
         return {"dry_run": True, "skipped": True, "phase": phase.value}
+
+    def _phase_skip_social(self, phase: Phase) -> dict:
+        """Skip social/engagement when the runner is told to stay newsletter-only."""
+        logger.info("MP_SKIP_SOCIAL=1: skipping %s phase", phase.value)
+        return {
+            "skipped": True,
+            "phase": phase.value,
+            "reason": "MP_SKIP_SOCIAL=1",
+        }
+
+    def _phase_outbound_disabled_skip(self, phase: Phase) -> dict:
+        """Skip phases that would perform external sync while outbound is disabled."""
+        logger.info("MP_DISABLE_OUTBOUND=1: skipping %s phase", phase.value)
+        return {
+            "skipped": True,
+            "phase": phase.value,
+            "reason": "MP_DISABLE_OUTBOUND=1",
+        }
 
     def _phase_synthesis_dry_run(self) -> dict:
         """Write a local placeholder report without touching the real daily report."""
@@ -1005,6 +1085,7 @@ class ResearchPipeline:
                 self.db, result.agent_name, self.date_str,
                 findings_count=len(result.findings),
             )
+            self._record_agent_trace(result)
 
             # Record per-agent metrics in PipelineMonitor
             try:

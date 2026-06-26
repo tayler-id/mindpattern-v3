@@ -141,6 +141,8 @@ def main():
     if args.dry_run:
         os.environ["MP_DISABLE_OUTBOUND"] = "1"
         os.environ["MP_DRY_RUN"] = "1"
+    if args.skip_social:
+        os.environ["MP_SKIP_SOCIAL"] = "1"
 
     date_str = args.date or datetime.now().strftime("%Y-%m-%d")
     setup_logging(date_str)

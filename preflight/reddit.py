@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+import sys
 from datetime import datetime, timezone
 
 from . import TOOLS_DIR, make_entry, parse_ndjson
@@ -70,7 +71,7 @@ def fetch_with_diagnostics(
     min_score: int = 50,
 ) -> tuple[list[dict], dict]:
     cmd = [
-        "python3", str(TOOLS_DIR / "reddit-fetch.py"),
+        sys.executable, str(TOOLS_DIR / "reddit-fetch.py"),
         "--subreddits", subreddits or DEFAULT_SUBREDDITS,
         "--min-score", str(min_score),
     ]

@@ -1030,6 +1030,33 @@ class TestSocialPipeline:
         assert result["posts"] == result["manual_copy"]
         assert set(write_drafts_mock.call_args.kwargs["platforms"]) == {"bluesky", "linkedin"}
 
+    def test_run_topic_approval_failure_fails_closed(self, mock_keychain):
+        """Gate 1 approval failures must not auto-approve social work."""
+        config = {
+            "platforms": {
+                "bluesky": {"enabled": False, "max_chars": 300},
+            },
+            "gate_timeout_seconds": 5,
+            "writers": {},
+            "eic": {},
+        }
+        mock_db = MagicMock()
+        mock_approval = MagicMock()
+        mock_approval.request_topic_approval.side_effect = RuntimeError("slack down")
+
+        with patch("social.pipeline.ApprovalGateway", return_value=mock_approval), \
+             patch("social.pipeline.select_topic", return_value={"anchor": "AI agents"}), \
+             patch("social.pipeline.create_brief") as create_brief:
+            from social.pipeline import SocialPipeline
+
+            pipeline = SocialPipeline(user_id="test", config=config, db=mock_db)
+            result = pipeline.run(skip_art=True)
+
+        assert result["kill_day"] is True
+        assert result["gate1_outcome"] == "approval_failed"
+        assert "topic approval failed" in result["error"]
+        create_brief.assert_not_called()
+
     def test_run_draft_only_writer_error_is_structured(self, mock_keychain):
         """Draft-only mode should surface writer errors, not platform skips."""
         config = {

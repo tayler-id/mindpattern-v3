@@ -1,6 +1,9 @@
 """Tests for preflight module — all source scripts + orchestration."""
+import importlib.util
 import json
 import subprocess
+import sys
+import urllib.error
 from pathlib import Path
 
 from preflight import make_entry, parse_ndjson, TOOLS_DIR
@@ -32,6 +35,14 @@ def test_make_entry_truncates_content_preview():
 
 def test_tools_dir_exists():
     assert TOOLS_DIR.exists()
+
+
+def _load_tool_module(filename: str, module_name: str):
+    spec = importlib.util.spec_from_file_location(module_name, TOOLS_DIR / filename)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_parse_ndjson():
@@ -76,6 +87,7 @@ def test_rss_fetch_with_diagnostics_normal_feed(monkeypatch, tmp_path):
     feeds_file.write_text("[]")
 
     def fake_run(cmd, **kwargs):
+        assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(
             cmd,
             0,
@@ -106,6 +118,7 @@ def test_rss_fetch_with_diagnostics_empty_feed(monkeypatch, tmp_path):
     feeds_file.write_text("[]")
 
     def fake_run(cmd, **kwargs):
+        assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(rss.subprocess, "run", fake_run)
@@ -135,6 +148,7 @@ def test_rss_fetch_with_diagnostics_names_bad_feed(monkeypatch, tmp_path):
     ])
 
     def fake_run(cmd, **kwargs):
+        assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(
             cmd,
             1,
@@ -198,6 +212,7 @@ def test_hn_fetch_with_diagnostics_empty(monkeypatch):
     import preflight.hn as hn
 
     def fake_run(cmd, **kwargs):
+        assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(hn.subprocess, "run", fake_run)
@@ -225,6 +240,7 @@ def test_hn_fetch_with_diagnostics_failure(monkeypatch):
     })
 
     def fake_run(cmd, **kwargs):
+        assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(cmd, 2, stdout="", stderr=stderr)
 
     monkeypatch.setattr(hn.subprocess, "run", fake_run)
@@ -235,6 +251,60 @@ def test_hn_fetch_with_diagnostics_failure(monkeypatch):
     assert diagnostics["status"] == "failed"
     assert "All 2 queries failed" in diagnostics["reason"]
     assert diagnostics["errors"][0]["context"] == "https://hn.algolia.com/api/v1/search"
+
+
+def test_hn_tool_retries_without_numeric_filters(monkeypatch):
+    hn_tool = _load_tool_module("hn-fetch.py", "hn_fetch_tool_test")
+    calls = []
+
+    def fake_fetch(url, **kwargs):
+        calls.append(url)
+        if "numericFilters=" in url:
+            raise urllib.error.HTTPError(url, 400, "Bad Request", None, None)
+        return json.dumps({
+            "hits": [
+                {
+                    "objectID": "fresh-high",
+                    "title": "Show HN: AI agent launch",
+                    "url": "https://example.com/high",
+                    "points": 42,
+                    "num_comments": 9,
+                    "created_at_i": 4102444800,
+                    "created_at": "2100-01-01T00:00:00Z",
+                    "author": "builder",
+                },
+                {
+                    "objectID": "fresh-low",
+                    "title": "Low score story",
+                    "url": "https://example.com/low",
+                    "points": 2,
+                    "num_comments": 0,
+                    "created_at_i": 4102444800,
+                    "created_at": "2100-01-01T00:00:00Z",
+                    "author": "builder",
+                },
+                {
+                    "objectID": "old-high",
+                    "title": "Old high score story",
+                    "url": "https://example.com/old",
+                    "points": 99,
+                    "num_comments": 1,
+                    "created_at_i": 1,
+                    "created_at": "1970-01-01T00:00:01Z",
+                    "author": "builder",
+                },
+            ],
+        }).encode("utf-8")
+
+    monkeypatch.setattr(hn_tool, "_fetch_with_retry", fake_fetch)
+
+    results, had_error = hn_tool.fetch_query("AI", hours=24, min_points=10)
+
+    assert had_error is False
+    assert len(calls) == 2
+    assert "numericFilters=" in calls[0]
+    assert "numericFilters=" not in calls[1]
+    assert [item["title"] for item in results] == ["Show HN: AI agent launch"]
 
 
 # ── Reddit tests ──────────────────────────────────────────────────
@@ -257,6 +327,7 @@ def test_reddit_fetch_with_diagnostics_unavailable(monkeypatch):
     })
 
     def fake_run(cmd, **kwargs):
+        assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(cmd, 2, stdout="", stderr=stderr)
 
     monkeypatch.setattr(reddit.subprocess, "run", fake_run)
@@ -387,6 +458,7 @@ def test_twitter_fetch_with_diagnostics_cli_failure(monkeypatch):
         )
 
     monkeypatch.setattr(twitter, "_search_command", fake_command)
+    monkeypatch.setattr(twitter, "_feed_command", lambda count: None)
     monkeypatch.setattr(twitter.subprocess, "run", fake_run)
 
     items, diagnostics = twitter.fetch_with_diagnostics(queries=["AI agents"], count=1)
@@ -397,6 +469,62 @@ def test_twitter_fetch_with_diagnostics_cli_failure(monkeypatch):
     assert diagnostics["failures"][0]["backend"] == "twitter"
     assert diagnostics["failures"][0]["exit_code"] == 4
     assert "cookie extraction failed" in diagnostics["failures"][0]["stderr"]
+
+
+def test_twitter_fetch_falls_back_to_feed_when_search_fails(monkeypatch):
+    import preflight.twitter as twitter
+
+    calls = []
+
+    def fake_search_command(query, count):
+        return ["twitter", "search", query, "-n", str(count), "--json"]
+
+    def fake_feed_command(count):
+        return ["twitter", "feed", "-n", str(count), "--json"]
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[1] == "search":
+            return subprocess.CompletedProcess(
+                cmd,
+                1,
+                stdout=json.dumps({"ok": False, "error": {"code": "not_found"}}),
+                stderr="Twitter API error 404",
+            )
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({
+                "ok": True,
+                "data": [
+                    {
+                        "id": "feed123",
+                        "text": "A useful AI agent launch from the timeline",
+                        "createdAtISO": "2026-06-26T18:53:07+00:00",
+                        "metrics": {"likes": 100, "retweets": 7, "views": 1234},
+                    }
+                ],
+            }),
+            stderr="",
+        )
+
+    monkeypatch.setattr(twitter, "_search_command", fake_search_command)
+    monkeypatch.setattr(twitter, "_feed_command", fake_feed_command)
+    monkeypatch.setattr(twitter.subprocess, "run", fake_run)
+
+    items, diagnostics = twitter.fetch_with_diagnostics(queries=["AI agents"], count=1)
+
+    assert calls == [
+        ["twitter", "search", "AI agents", "-n", "1", "--json"],
+        ["twitter", "feed", "-n", "1", "--json"],
+    ]
+    assert len(items) == 1
+    assert items[0]["url"] == "https://x.com/i/status/feed123"
+    assert items[0]["source_name"] == "x.com (feed fallback)"
+    assert diagnostics["status"] == "partial"
+    assert diagnostics["fallbacks"][0]["backend"] == "twitter"
+    assert diagnostics["fallbacks"][0]["mode"] == "feed"
+    assert diagnostics["failures"][0]["backend"] == "twitter"
 
 
 def test_twitter_fetch_with_diagnostics_success_shape(monkeypatch):

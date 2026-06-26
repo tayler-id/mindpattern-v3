@@ -258,8 +258,11 @@ class SocialPipeline:
                 logger.info(f"Gate 1: {action}")
                 result["gate1_outcome"] = action
         except Exception as e:
-            # If approval system fails, auto-approve (don't block the pipeline)
-            logger.warning(f"Gate 1 failed (auto-approving): {e}")
+            logger.warning(f"Gate 1 failed closed: {e}")
+            result["kill_day"] = True
+            result["gate1_outcome"] = "approval_failed"
+            result["error"] = f"topic approval failed: {e}"
+            return result
 
         # ── Step 2: Creative brief (Sonnet) ───────────────────────────
         logger.info("Step 2: Creative brief")
