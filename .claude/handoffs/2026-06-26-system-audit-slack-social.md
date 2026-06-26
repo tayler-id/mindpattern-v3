@@ -258,6 +258,13 @@ Goal execution baseline on 2026-06-26:
     -> 67 passed in 0.03s.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
     -> 229 passed in 3.24s.
+- Task 6 complete: wired the same edit flow into `#mp-skills` and `#mp-tips`.
+  Edits now update one platform draft, re-preview, and still require a separate
+  explicit approval. Invalid edits return an error and keep waiting.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 73 passed in 0.04s.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
+    -> 235 passed in 3.27s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

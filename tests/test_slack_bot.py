@@ -475,3 +475,114 @@ class TestPostsEditFlow:
             for call in client.chat_postMessage.call_args_list
         ]
         assert any("unknown platform" in message.lower() for message in messages)
+
+
+class TestSkillsTipsEditFlow:
+    """#mp-skills and #mp-tips must support safe draft edits."""
+
+    @staticmethod
+    def _handler(handler_class, channel_id):
+        client = MagicMock()
+        handler = handler_class(
+            client=client,
+            channel_id=channel_id,
+            owner_user_id="U_OWNER",
+        )
+        handler._create_drafts = MagicMock(return_value={
+            "bluesky": "Old bluesky",
+            "linkedin": "Old linkedin",
+        })
+        handler.react = MagicMock()
+        handler.wait_for_reply = MagicMock()
+        handler._post = MagicMock(return_value={
+            "bluesky": {"success": True, "url": "https://bsky.app/post/1"},
+        })
+        return handler, client
+
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_edit_repreviews_and_requires_second_approval(self, handler_class, channel_id):
+        handler, client = self._handler(handler_class, channel_id)
+        handler.wait_for_reply.side_effect = [
+            "edit bluesky: New bluesky",
+            "bluesky",
+        ]
+
+        handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        handler._post.assert_called_once_with(
+            {"bluesky": "New bluesky", "linkedin": "Old linkedin"},
+            ["bluesky"],
+        )
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("Updated bluesky draft" in message for message in messages)
+        assert any("New bluesky" in message for message in messages)
+
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_edit_then_skip_posts_nothing(self, handler_class, channel_id):
+        handler, client = self._handler(handler_class, channel_id)
+        handler.wait_for_reply.side_effect = [
+            "edit linkedin: New linkedin",
+            "skip",
+        ]
+
+        handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        handler._post.assert_not_called()
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("New linkedin" in message for message in messages)
+
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_bad_edit_replies_with_error_and_waits_again(self, handler_class, channel_id):
+        handler, client = self._handler(handler_class, channel_id)
+        handler.wait_for_reply.side_effect = [
+            "edit mastodon: New copy",
+            "skip",
+        ]
+
+        handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        handler._post.assert_not_called()
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("unknown platform" in message.lower() for message in messages)

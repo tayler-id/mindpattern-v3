@@ -300,6 +300,18 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 67 passed in 0.03s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 229 passed in 3.24s.
 
+### 2026-06-26 Task 6 `#mp-skills` and `#mp-tips` Edit Flow
+
+Wired the same draft edit loop into `#mp-skills` and `#mp-tips`. Platform
+edits now update only the named draft, re-preview updated copy, and require a
+second explicit approval. Invalid edit commands return an error and keep
+waiting. `skip` or unclear text after an edit posts nothing.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 73 passed in 0.04s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 235 passed in 3.27s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

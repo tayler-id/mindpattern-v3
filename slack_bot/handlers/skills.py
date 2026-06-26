@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from slack_bot.approval import parse_platform_approval
+from slack_bot.drafts import apply_draft_edit, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -58,33 +59,39 @@ class SkillsHandler(BaseHandler):
             self.reply("Couldn't create drafts from that. Try a more specific skill tip.", thread_ts=ts)
             return
 
-        # Show drafts for approval
-        lines = ["Here are your drafts:\n"]
-        for platform, draft in drafts.items():
-            lines.append(f"*{platform.title()}* ({len(draft)} chars):")
-            lines.append(f"```{draft}```")
-            lines.append("")
-        lines.append("Reply *ALL* to post both, *BLUESKY* or *LINKEDIN* for one, *SKIP* to cancel.")
-        lines.append("Or paste edited text to replace a draft.")
-        self.reply("\n".join(lines), thread_ts=ts)
-
-        # Wait for approval
-        reply_text = self.wait_for_reply(ts)
-        if not reply_text:
-            self.reply("No response — cancelled.", thread_ts=ts)
-            return
-
-        reply_lower = reply_text.lower().strip()
-        if reply_lower in ("skip", "no", "cancel", "n"):
-            self.reply("Skipped.", thread_ts=ts)
-            return
-
-        # Determine which platforms
         platforms = list(drafts.keys())
-        approved = parse_platform_approval(reply_text, platforms)
-        if not approved:
-            self.reply("Skipped. Nothing posted.", thread_ts=ts)
-            return
+        self.reply(self._format_drafts(drafts), thread_ts=ts)
+
+        # Wait for approval. Edit replies revise drafts and require a new
+        # explicit approval reply before any posting can happen.
+        while True:
+            reply_text = self.wait_for_reply(ts)
+            if not reply_text:
+                self.reply("No response — cancelled.", thread_ts=ts)
+                return
+
+            edit, edit_error = parse_draft_edit(reply_text, platforms)
+            if edit_error:
+                self.reply(edit_error, thread_ts=ts)
+                continue
+
+            if edit:
+                try:
+                    drafts = apply_draft_edit(drafts, edit)
+                except KeyError as e:
+                    self.reply(str(e), thread_ts=ts)
+                    continue
+                self.reply(
+                    f"Updated {edit.platform} draft.\n\n{self._format_drafts(drafts)}",
+                    thread_ts=ts,
+                )
+                continue
+
+            approved = parse_platform_approval(reply_text, platforms)
+            if not approved:
+                self.reply("Skipped. Nothing posted.", thread_ts=ts)
+                return
+            break
 
         # Post
         self.reply(f"Posting to: {', '.join(approved)}...", thread_ts=ts)
@@ -97,6 +104,17 @@ class SkillsHandler(BaseHandler):
             else:
                 result_lines.append(f"{platform} failed: {result.get('error', 'unknown')}")
         self.reply("\n".join(result_lines), thread_ts=ts)
+
+    def _format_drafts(self, drafts: dict[str, str]) -> str:
+        """Format Slack draft previews."""
+        lines = ["Here are your drafts:\n"]
+        for platform, draft in drafts.items():
+            lines.append(f"*{platform.title()}* ({len(draft)} chars):")
+            lines.append(f"```{draft}```")
+            lines.append("")
+        lines.append("Reply *ALL* to post both, *BLUESKY* or *LINKEDIN* for one, *SKIP* to cancel.")
+        lines.append("Or reply `edit bluesky: ...` or `edit linkedin: ...` to replace a draft.")
+        return "\n".join(lines)
 
     def _load_identity(self) -> str:
         """Load voice.md for humanizer."""
