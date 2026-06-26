@@ -219,6 +219,24 @@ Required smoke sequence:
 These are not feature ideas. They are existing paths that are disabled, broken,
 unsafe, or not proven healthy enough to rely on.
 
+Implementation runbook/spec: `docs/runbooks/2026-06-26-fix-first-recovery-runbook.md`.
+Task breakdown plan: `docs/runbooks/2026-06-26-fix-first-recovery-implementation-plan.md`.
+
+Goal execution baseline on 2026-06-26:
+
+- Dirty files were docs-only: this handoff plus the two runbook files.
+- Slack/social safety baseline:
+  `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
+  -> 172 passed in 3.27s.
+- Preflight/newsletter baseline:
+  `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_evaluator.py tests/test_dedup_resurfacing.py tests/test_newsletter.py -q`
+  -> 66 passed in 88.43s.
+- Runner baseline:
+  `.venv/bin/python3 -m pytest tests/test_runner.py -q`
+  -> 61 passed in 0.61s.
+- No live Slack post, email send, Fly deploy, full pipeline run, schema change,
+  or dependency change was performed.
+
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|
 | Daily social phase | Pipeline should create social candidates or an approval flow. | It skips social entirely. | `linkedin.enabled=false` and `bluesky.enabled=false`; runner exits with `Social: no platforms enabled`. | Separate "format draft" from "post live"; do not skip Slack draft creation just because posting APIs are off. |
