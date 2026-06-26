@@ -566,8 +566,8 @@ Verification:
 ### 2026-06-26 Task 24 Graphify Refresh
 
 Refreshed Graphify after the Task 23 commit and before final handoff. Graphify
-reported `6674` nodes, `10330` edges, and `407` communities, with
-`GRAPH_REPORT.md` built from commit `3059d101`. `graphify check-update .`
+reported `6674` nodes, `10330` edges, and `409` communities, with
+`GRAPH_REPORT.md` built from commit `77ba2277`. `graphify check-update .`
 exited cleanly.
 
 Note: committing generated Graphify artifacts creates a new commit after the

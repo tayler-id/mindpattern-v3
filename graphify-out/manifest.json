@@ -2135,13 +2135,13 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-fix-first-recovery-implementation-plan.md": {
-    "mtime": 1782506905.5605803,
-    "ast_hash": "a266eb55e93a28d3c8c7e2c821443de3",
+    "mtime": 1782507032.6628594,
+    "ast_hash": "e1a38a4d77260f28d42e89ebcaf06a50",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-fix-first-recovery-runbook.md": {
-    "mtime": 1782506850.0728917,
-    "ast_hash": "4c23ffe6f91beb425c1276029586b010",
+    "mtime": 1782507028.4665515,
+    "ast_hash": "65585536c3f92472e56d0b0605222adf",
     "semantic_hash": ""
   },
   "harness/knowledge/memory-embeddings.md": {

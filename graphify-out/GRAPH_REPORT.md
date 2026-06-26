@@ -1,16 +1,16 @@
 # Graph Report - mindpattern-v3  (2026-06-26)
 
 ## Corpus Check
-- 394 files · ~401,991 words
+- 394 files · ~402,009 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6674 nodes · 10330 edges · 407 communities (384 shown, 23 thin omitted)
+- 6674 nodes · 10330 edges · 409 communities (386 shown, 23 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 562 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `3059d101`
+- Built from commit: `77ba2277`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -303,6 +303,7 @@
 - [[_COMMUNITY_Community 286|Community 286]]
 - [[_COMMUNITY_Community 287|Community 287]]
 - [[_COMMUNITY_Community 288|Community 288]]
+- [[_COMMUNITY_Community 289|Community 289]]
 - [[_COMMUNITY_Community 290|Community 290]]
 - [[_COMMUNITY_Community 291|Community 291]]
 - [[_COMMUNITY_Community 292|Community 292]]
@@ -314,10 +315,13 @@
 - [[_COMMUNITY_Community 298|Community 298]]
 - [[_COMMUNITY_Community 299|Community 299]]
 - [[_COMMUNITY_Community 300|Community 300]]
+- [[_COMMUNITY_Community 301|Community 301]]
+- [[_COMMUNITY_Community 302|Community 302]]
 - [[_COMMUNITY_Community 303|Community 303]]
 - [[_COMMUNITY_Community 304|Community 304]]
 - [[_COMMUNITY_Community 305|Community 305]]
 - [[_COMMUNITY_Community 306|Community 306]]
+- [[_COMMUNITY_Community 307|Community 307]]
 - [[_COMMUNITY_Community 308|Community 308]]
 - [[_COMMUNITY_Community 309|Community 309]]
 - [[_COMMUNITY_Community 310|Community 310]]
@@ -341,6 +345,7 @@
 - [[_COMMUNITY_Community 328|Community 328]]
 - [[_COMMUNITY_Community 329|Community 329]]
 - [[_COMMUNITY_Community 330|Community 330]]
+- [[_COMMUNITY_Community 331|Community 331]]
 - [[_COMMUNITY_Community 332|Community 332]]
 - [[_COMMUNITY_Community 335|Community 335]]
 - [[_COMMUNITY_Community 336|Community 336]]
@@ -384,7 +389,6 @@
 - [[_COMMUNITY_Community 376|Community 376]]
 - [[_COMMUNITY_Community 377|Community 377]]
 - [[_COMMUNITY_Community 379|Community 379]]
-- [[_COMMUNITY_Community 380|Community 380]]
 - [[_COMMUNITY_Community 381|Community 381]]
 - [[_COMMUNITY_Community 382|Community 382]]
 - [[_COMMUNITY_Community 383|Community 383]]
@@ -407,9 +411,7 @@
 - [[_COMMUNITY_Community 407|Community 407]]
 - [[_COMMUNITY_Community 414|Community 414]]
 - [[_COMMUNITY_Community 415|Community 415]]
-- [[_COMMUNITY_Community 416|Community 416]]
 - [[_COMMUNITY_Community 418|Community 418]]
-- [[_COMMUNITY_Community 419|Community 419]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Phase` - 72 edges
@@ -438,7 +440,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (407 total, 23 thin omitted)
+## Communities (409 total, 23 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
@@ -510,7 +512,7 @@ Nodes (23): extract_session_data(), format_session_page(), infer_session_title()
 
 ### Community 17 - "Community 17"
 Cohesion: 0.12
-Nodes (17): 2.2 Content Prioritization & Ranking, 2.3 Quality Evaluation (LLM-as-Judge), 2.7 Content Quality Research, AgentDropoutV2 — Cascading Error Prevention, Black-Box Reliability Certification, Braintrust LLM Evaluation CI/CD, Codified Context Infrastructure, Longer CoT Negatively Correlated with Accuracy (+9 more)
+Nodes (16): 2.1 Multi-Document Synthesis & Deduplication, 2.2 Content Prioritization & Ranking, 2.3 Quality Evaluation (LLM-as-Judge), Black-Box Reliability Certification, Braintrust LLM Evaluation CI/CD, Context Mode MCP — 98% Context Reduction, Coverage Manifest Before Synthesis, NeMo Evaluator LLM-as-Judge Pipeline (+8 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.07
@@ -697,8 +699,8 @@ Cohesion: 0.14
 Nodes (19): close(), DATA_DIR, DB_PATH, DRAFTS_DIR, fetch(), getDashboardState(), htmlPath, LogEvent (+11 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.09
-Nodes (23): 4.10 Error Handling & Recovery, 4.11 Filesystem Context Patterns, 4.1 Vector Database & Semantic Search, 4.3 Token Cost Reduction, 4.9 Knowledge Graphs, AgentDropoutV2 — Cascading Error Prevention, AGENTS.md / SKILL.md as Cross-Tool Standard, Agents of Chaos: 16 Real-World Failures (+15 more)
+Cohesion: 0.10
+Nodes (21): 12-Metric Reliability Framework, 4.10 Error Handling & Recovery, 4.11 Filesystem Context Patterns, 4.4 Model Routing, 4.7 Monitoring & Observability, 4.9 Knowledge Graphs, AgentDropoutV2 — Cascading Error Prevention, AGENTS.md / SKILL.md as Cross-Tool Standard (+13 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.10
@@ -797,8 +799,8 @@ Cohesion: 0.16
 Nodes (17): atomic_write(), extract_agent_log(), format_agent_log(), _format_tool_call(), main(), parse_transcript(), Truncate text to max_len, adding ellipsis if needed., Format a single tool call as a readable line. (+9 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.10
-Nodes (18): Agent Roster, agents/research-agents, Connected To, Last Modified By Harness, Skill File Structure, Depends On, Key Functions, Known Fragile Points (+10 more)
+Cohesion: 0.29
+Nodes (7): Depends On, Key Functions, Known Fragile Points, Last Modified By Harness, orchestrator/prompt_tracker.py, Scans Directories, What It Does
 
 ### Community 91 - "Community 91"
 Cohesion: 0.11
@@ -1541,7 +1543,7 @@ Cohesion: 0.29
 Nodes (7): Architecture Note, Depends On, Key Functions, Known Fragile Points, Last Modified By Harness, orchestrator/agents.py, What It Does
 
 ### Community 281 - "Community 281"
-Cohesion: 0.29
+Cohesion: 0.25
 Nodes (7): Agent Patterns, External API Patterns, Harness, Last Updated, Migration, Pipeline, What Fails
 
 ### Community 282 - "Community 282"
@@ -1563,6 +1565,10 @@ Nodes (7): 3. Intercom Fin, Action types, Build path, Deployment pattern, Escala
 ### Community 286 - "Community 286"
 Cohesion: 0.29
 Nodes (7): 4. Zendesk Resolution Platform, Architecture — five components, Build path, Escalation — strategies and flows, Grounding, Tool layer — Action Builder, What the platform does NOT do
+
+### Community 289 - "Community 289"
+Cohesion: 0.29
+Nodes (7): 4.3 Token Cost Reduction, Chain-of-Draft — 70-90% Token Reduction, Context Mode MCP — 98% Reduction, Progressive MCP Tool Discovery — 32K+ Token Savings, Prompt Caching — 78.5% Cost Savings, rtk — 60-90% CLI Output Compression, Sub-Agent Compression — 90.2% Performance Improvement
 
 ### Community 290 - "Community 290"
 Cohesion: 0.29
@@ -1608,6 +1614,14 @@ Nodes (6): 1.6 Agent Memory & Cross-Run Persistence, EchoVault — Persistent Lo
 Cohesion: 0.22
 Nodes (5): _slugify() converts strings to filesystem-safe slugs., _slugify() strips special characters., _topic_from_agent() extracts topic name from agent name., _domain_from_url() extracts domain from URL., TestSlugGeneration
 
+### Community 301 - "Community 301"
+Cohesion: 0.33
+Nodes (6): 2.7 Content Quality Research, AgentDropoutV2 — Cascading Error Prevention, Codified Context Infrastructure, Longer CoT Negatively Correlated with Accuracy, Promptfoo — LLM Red Teaming, Search More, Think Less
+
+### Community 302 - "Community 302"
+Cohesion: 0.33
+Nodes (6): Depends On, Key Functions, Known Fragile Points, Last Modified By Harness, orchestrator/analyzer.py, What It Does
+
 ### Community 303 - "Community 303"
 Cohesion: 0.33
 Nodes (6): 4.6 Orchestration Architecture, AgentSkillOS: Ecosystem-Scale Skill Orchestration, Deterministic State Machines (McKinsey), Hook-Driven State Machines, Pipeline Checkpointing (Microsoft Agent Framework), TAPE: Adaptive Planning
@@ -1623,6 +1637,10 @@ Nodes (5): 1. Memory (OpenAI, Anthropic, Google, Meta, Zep, Mem0, Letta, Glean),
 ### Community 306 - "Community 306"
 Cohesion: 0.33
 Nodes (6): 4.2 Agent Memory Systems, claude-mem — Progressive Disclosure Memory (32.5K stars), Codified Context Infrastructure, DeepSeek "Engram" Conditional Memory, EchoVault — MCP Memory Server, Hindsight — Biomimetic Memory
+
+### Community 307 - "Community 307"
+Cohesion: 0.40
+Nodes (5): 4.1 Vector Database & Semantic Search, alibaba/zvec — "The SQLite of Vector Databases", LEANN — 97% Storage Savings, OpenViking — L0/L1/L2 Tiered Loading (ByteDance), PageIndex — Vectorless RAG (98.7% Accuracy)
 
 ### Community 308 - "Community 308"
 Cohesion: 0.14
@@ -1715,6 +1733,10 @@ Nodes (5): Evidence, Key Insights, Related Concepts, Summary, {{ title }}
 ### Community 330 - "Community 330"
 Cohesion: 0.33
 Nodes (5): From Concept, {{ from_title }} <-> {{ to_title }}, Relationship, Shared Evidence, To Concept
+
+### Community 331 - "Community 331"
+Cohesion: 0.40
+Nodes (5): Agent Roster, agents/research-agents, Connected To, Last Modified By Harness, Skill File Structure
 
 ### Community 336 - "Community 336"
 Cohesion: 0.33
@@ -1872,10 +1894,6 @@ Nodes (3): Test helper methods: _keychain_lookup, _send_alert, close., If no pho
 Cohesion: 0.33
 Nodes (6): 1.2 Search & Information Retrieval, GraphRAG Hybrid Retrieval, LEANN — Vectorless RAG with 97% Storage Savings, PageIndex — Vectorless RAG (98.7% Accuracy), Search More, Think Less (SMTL), tobi/qmd — On-Device Search Engine with MCP
 
-### Community 380 - "Community 380"
-Cohesion: 0.33
-Nodes (6): 4.4 Model Routing, LiteLLM Multi-Provider Routing, Perplexity Computer: 19-Model Orchestration, Qwen 3.5 at $0.40/M (10-17x Cheaper), Self-Healing Router — 93% Fewer LLM Calls, Sonnet 4.6 at 1/5th Opus Price
-
 ### Community 381 - "Community 381"
 Cohesion: 0.33
 Nodes (6): 1.8 Specific Agent Source Gaps, GitHub Query Bug Fix, Reddit API Integration, Three-Pass Query Methodology for HN, Twitter/X Monitoring, YouTube Data API
@@ -1916,17 +1934,9 @@ Nodes (3): Tests for run-launchd.sh scheduling guardrails., The wrapper must ret
 Cohesion: 0.27
 Nodes (10): fetch(), fetch_with_diagnostics(), _parse_stderr_diagnostics(), Fetch RSS items and return as preflight entries., Transform rss-fetch.py output item to preflight entry., Parse structured rss-fetch stderr lines, preserving raw fallback., Return a compact reason string naming bad feeds/URLs when possible., Fetch RSS items and return entries plus source-health diagnostics. (+2 more)
 
-### Community 416 - "Community 416"
-Cohesion: 0.40
-Nodes (5): 2.1 Multi-Document Synthesis & Deduplication, Context Mode MCP — 98% Context Reduction, Coverage Manifest Before Synthesis, PageIndex — Vectorless RAG via Hierarchical Tree Indexing, Sub-Agent Compression Pattern
-
 ### Community 418 - "Community 418"
 Cohesion: 0.50
 Nodes (4): _count_diff_lines(), main(), PostToolUse hook: enforce knowledge graph integrity after edits.  Runs after eve, Count changed lines in code vs knowledge files from git diff.      Returns (code
-
-### Community 419 - "Community 419"
-Cohesion: 0.50
-Nodes (4): 12-Metric Reliability Framework, 4.7 Monitoring & Observability, OpenTelemetry Instrumentation, Rudel Session Analytics
 
 ## Knowledge Gaps
 - **1652 isolated node(s):** `PROJECT_DIR`, `DATA_DIR`, `REPORTS_DIR`, `DRAFTS_DIR`, `DB_PATH` (+1647 more)

@@ -16,7 +16,7 @@ deploy/smoke was not run in this recovery pass without owner approval.
 - HEAD when inspected: `44329ba03d07ce3495d61277711b1fa8a283613e`
 - Worktree was clean before this handoff file was added.
 - `graphify-out/GRAPH_REPORT.md` was refreshed on 2026-06-26 after Task 23:
-  6674 nodes, 10330 edges, 407 communities, built from `3059d101`.
+  6674 nodes, 10330 edges, 409 communities, built from `77ba2277`.
 
 ## Recovery Implementation Status
 

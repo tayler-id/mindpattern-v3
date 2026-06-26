@@ -703,7 +703,7 @@ verification evidence for the next agent.
 
 **Verification:**
 - [x] Run `graphify update .`.
-  Result: rebuilt 6674 nodes, 10330 edges, and 407 communities.
+  Result: rebuilt 6674 nodes, 10330 edges, and 409 communities.
 - [x] Run `graphify check-update .`.
   Result: exit 0.
 - [x] Run `git status --short --branch`.
@@ -724,6 +724,9 @@ verification evidence for the next agent.
 **Description:** After tests and deploy approval, deploy and prove the high-risk
 paths from Slack/Fly without approving a live platform post unless the owner
 explicitly asks.
+
+**Status:** Explicitly deferred. The recovery goal forbids Fly deploy, full
+daily pipeline runs, and live Slack/social smoke without owner approval.
 
 **Acceptance criteria:**
 - [ ] Fly `/healthz` is ok after deploy.
@@ -747,11 +750,11 @@ explicitly asks.
 
 ### Checkpoint: Complete
 
-- [ ] All fix-first rows are fixed, intentionally disabled with alert, or
+- [x] All fix-first rows are fixed, intentionally disabled with alert, or
       blocked by a named external dependency.
-- [ ] Focused and full relevant tests pass.
-- [ ] Owner-approved Fly smoke is recorded or explicitly deferred.
-- [ ] Repo is clean except for intentional committed work.
+- [x] Focused and full relevant tests pass.
+- [x] Owner-approved Fly smoke is recorded or explicitly deferred.
+- [x] Repo is clean except for intentional committed work.
 
 ## Parallelization Opportunities
 
