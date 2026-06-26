@@ -81,20 +81,29 @@ Interpretation:
   from macOS Keychain only, while Fly secrets expose `SLACK_BOT_TOKEN`. If the
   daily approval path ever runs on Fly, it should use env fallback too.
 
-Safe fix path:
+Corrected desired fix path:
 
-1. Decide which platform should resume first, preferably Bluesky before LinkedIn.
-2. Enable exactly one platform in both local `social-config.json` and Fly
-   `/data/social-config.json`.
-3. Set a finite social approval timeout instead of `null`.
-4. Add env fallback to `ApprovalGateway._get_slack_token()`.
-5. Run a dry social smoke that proves Slack approval prompt creation without
-   posting.
-6. Run one approved live social post and verify:
-   - Slack approval message appears in `#mindpattern-approvals`.
-   - `social_posts` gets a posted row.
-   - platform URL is captured.
-   - Fly dashboard/health remain ok.
+1. Keep the product direction Slack-bot-first, not background auto-post-first.
+2. Treat the separate Slack channels as the publishing surface:
+   - `#mp-posts`: URL/idea -> full social pipeline -> drafts -> owner approval.
+   - `#mp-skills`: raw skill tip -> "Skill of the Day!" platform drafts.
+   - `#mp-tips`: raw tip -> "Tayler'd Tip!" platform drafts.
+   - `#mp-engagement`: search/reply sniper -> approved replies.
+   - `#mp-approvals`: daily pipeline approval gates.
+   - `#mp-briefing`: run status and morning digest.
+   - `#mp-harness`: harness/developer operations.
+3. Separate "platform can publish after Slack approval" from "pipeline should
+   auto-create and auto-post." The former is needed; the latter is not wanted.
+4. Enable platform credentials only so approved Slack-channel drafts can post.
+5. Keep every outward post behind an explicit owner reply in the Slack thread.
+6. Fix handler approval semantics before turning posting back on: `posts` is
+   strict, but `skills` and `tips` currently default unclear replies to all
+   platforms.
+7. Add manual-copy fallback when a platform is disabled, so the bot still
+   formats excellent posts without sending them.
+8. Verify by dropping one controlled test message in each Slack content channel
+   and confirming it produces drafts, waits for owner approval, and only posts
+   after an explicit approval reply.
 
 ## Newsletter / Research Quality Evidence
 
@@ -170,23 +179,59 @@ Quality risks:
 
 ## Top Next Actions
 
-1. Re-enable social posting intentionally, one platform at a time, with Slack
-   approval verification and receipt checks.
-2. Fix source-channel observability and alerts so RSS/HN/Reddit/Twitter zeros
+1. Make the Slack bot channel workflow the primary social product path, not the
+   daily pipeline auto-post path.
+2. Fix approval parsing consistency in `#mp-skills` and `#mp-tips` so unclear
+   replies never default to posting.
+3. Add manual-copy fallback for disabled platforms, so formatting still works
+   even when API posting is off.
+4. Fix source-channel observability and alerts so RSS/HN/Reddit/Twitter zeros
    are visible before the newsletter is written.
-3. Add a newsletter quality floor that retries or escalates when source count,
+5. Add a newsletter quality floor that retries or escalates when source count,
    agent count, unique URLs, or duplicate angles fall below thresholds.
-4. Move `tests/test_runner.py` back into CI or split it so the critical runner
-   suite runs reliably.
-5. Make Slack/social runtime config visible in the dashboard: bot heartbeat,
-   enabled platforms, approval token source, last social post, and last skip
-   reason.
+
+## 30 Prioritized Recommendations
+
+| # | Title | Type | Problem | Proposed change / why it matters | Files/systems | Benefit | Effort / Risk | Verification |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Slack-bot-first social workflow | Existing behavior | The audit over-framed social as daily auto-posting. | Make Slack channels the primary creation and approval UX; daily pipeline may suggest candidates, but user controls posts. | `slack_bot/handlers/*`, `social/pipeline.py` | Matches intended workflow and prevents surprise posts. | M / Med | One test draft per channel waits for owner approval before posting. |
+| 2 | Separate draft generation from publishing | Reliability | Platform `enabled=false` currently blocks social work entirely in the daily path. | Add a "format-only" mode that always creates Slack drafts and only posts when an explicit approval plus enabled credential exists. | `social-config.json`, `slack_bot/handlers/posts.py`, `social/posting.py` | Bot remains useful even when APIs are off. | M / Med | Disabled platform returns formatted manual-copy draft, not a hard skip. |
+| 3 | Fix `#mp-skills` unclear approval default | Safety | `skills.py` defaults unclear replies to all platforms. | Reuse the strict parser from `posts.py`; unclear text should not post. | `slack_bot/handlers/skills.py`, tests | Prevents accidental posting. | S / Low | Reply "wait" or pasted edit posts nothing. |
+| 4 | Fix `#mp-tips` unclear approval default | Safety | `tips.py` also defaults unclear replies to all platforms. | Same strict approval parser and tests. | `slack_bot/handlers/tips.py`, tests | Prevents accidental posting. | S / Low | Reply "hold on" or "skip linkedin" posts nothing. |
+| 5 | Implement real Slack edit flow | Existing behavior | Handlers say "paste edited text" but do not reliably replace drafts. | Let owner reply `edit bluesky: ...` or paste a replacement, then show a new preview and require approval. | `slack_bot/handlers/base.py`, `posts.py`, `skills.py`, `tips.py` | Turns Slack into an actual editor, not just approve/skip. | M / Med | Pasted edit updates draft and requires second approval. |
+| 6 | Channel-specific post templates | New feature | `#mp-posts`, `#mp-skills`, and `#mp-tips` have similar code but different brand formats. | Extract templates for general post, Skill of the Day, Tayler'd Tip, launch note, contrarian take. | `slack_bot/handlers`, `agents/*.md` | Faster, more consistent content. | M / Low | Snapshot tests for each channel format. |
+| 7 | Slack preview cards | New feature | Drafts are plain code blocks with limited metadata. | Show platform, char count, sources, policy warnings, expected action buttons/text. | `slack_bot/handlers/*` | Easier review from phone. | M / Low | Preview includes source URLs and limits. |
+| 8 | Pending draft queue | New feature | If owner misses approval, work disappears after timeout. | Store drafts as pending with channel/thread/status and allow `status`, `approve`, `skip`, `revise` later. | `memory.db`, `slack_bot`, dashboard | No lost social work. | M / Med | Timeout draft can be resumed next day. |
+| 9 | Social content calendar | New feature | There is no planning view of pending/posted ideas. | Add dashboard/Slack view for draft queue, posted history, channel source, and next recommended post. | dashboard, `social_posts` | Better cadence and planning. | L / Med | Calendar shows pending and published posts. |
+| 10 | Daily newsletter-to-Slack idea picker | New feature | Newsletter stories are not automatically turned into Slack draft candidates. | After newsletter send, post top 3 social angles to `#mp-posts` or `#mp-briefing` for user selection. | `orchestrator/runner.py`, `slack_bot/handlers/briefing.py` | Converts research into posts without auto-posting. | M / Med | Briefing thread has 3 candidate post buttons/replies. |
+| 11 | `#mp-briefing` richer run report | Existing behavior | Briefing only shows basic counts. | Include source counts, agent count, quality score, newsletter sent, social skipped reason, bot health. | `slack_bot/handlers/briefing.py` | One place to see daily health. | S / Low | `status` returns source/quality/social details. |
+| 12 | Bot self-test command | Reliability | It is hard to know which Slack channels are wired. | Add `status`/`doctor` command showing registered handlers, owner ID, token source, heartbeat. | `slack_bot/registry.py`, `bot.py` | Faster incident diagnosis. | S / Low | Bot reports all configured channels. |
+| 13 | Platform manual-copy fallback | Reliability | Disabled API posting can make social feel broken. | If platform disabled, output final copy with "manual post" instructions instead of trying API. | `social/posting.py`, handlers | Keeps workflow moving safely. | S / Low | Disabled LinkedIn returns copy block. |
+| 14 | Approval buttons or structured commands | New feature | Free-text approval is fragile. | Add Slack Block Kit buttons or strict commands (`approve bluesky`, `revise linkedin`, `skip`). | Slack bot handlers | Fewer accidental actions. | L / Med | Button click updates draft status. |
+| 15 | Source-health preflight gate | Newsletter quality | RSS/HN/Reddit/Twitter were repeatedly zero. | Fail open to newsletter only with visible warning/retry; do not silently degrade. | `preflight/run_all.py`, `runner.py` | Prevents weak-input newsletters. | M / Med | Zero major sources creates alert before synthesis. |
+| 16 | RSS feed health repair | Existing behavior | Logs showed RSS failed from missing `feedparser`; smoke later still returned 0. | Lock dependency and add per-feed health report. | `requirements.txt`, `tools/rss-fetch.py` | Restores high-quality recurring sources. | S / Low | RSS returns items or names bad feeds. |
+| 17 | Reddit authenticated backend | Source quality | `agent-reach doctor` says Reddit backend is off. | Install/configure a real Reddit backend or mark Reddit unavailable with alert. | Agent Reach/OpenCLI config, `preflight/reddit.py` | Restores community signal. | M / Med | Reddit preflight >0 or explicit unavailable alert. |
+| 18 | Twitter search repair | Source quality | `twitter status` works but `twitter search` failed. | Fix cookie/search path or use another Agent Reach backend for query search. | `preflight/twitter.py`, agent-reach config | Restores X trend signal. | M / Med | Query `AI agents` returns entries. |
+| 19 | HN zero-source diagnosis | Source quality | HN returned 0 in recent logs and smoke. | Lower/adjust thresholds, inspect API query terms, add per-query diagnostics. | `preflight/hn.py` | Restores builder/startup discovery. | S / Low | HN preflight returns nonzero or explains zero. |
+| 20 | Newsletter quality floor | Newsletter quality | Low source/agent counts still send. | Require minimum source diversity, agent coverage, unique URLs, and no duplicate angles; otherwise retry/escalate. | `orchestrator/evaluator.py`, `runner.py` | Protects daily quality. | M / Med | Bad synthetic run does not silently send. |
+| 21 | Duplicate angle detector | Newsletter quality | Exact title duplicates were absent, but repeated angles/URLs remain possible. | Score semantic story overlap across current and previous 3 issues. | `orchestrator/evaluator.py`, embeddings | Less repeated content. | M / Low | Known repeated stories are flagged. |
+| 22 | Story freshness audit | Newsletter quality | Old or repeated stories can resurface. | Add per-story source date, first-seen date, and "why now" checks. | `runner.py`, `newsletter.py` | More timely newsletter. | M / Low | Old story without new angle is rejected. |
+| 23 | Agent coverage floor | Research quality | Recent days had 6-8 agents storing findings versus desired 13. | Retry failed/zero agents or label issue as degraded before synthesis. | `orchestrator/agents.py`, `runner.py` | Broader coverage and fewer bland issues. | M / Med | Zero-agent run retries or warns loudly. |
+| 24 | Source balance weighting | Research quality | arXiv dominated recent stored findings. | Cap single-source dominance and boost underrepresented source classes. | `preflight/run_all.py`, synthesis prompt | More varied newsletter. | M / Med | Top source cannot dominate issue. |
+| 25 | Newsletter-to-social memory link | New feature | Social posts are not tightly connected back to newsletter stories. | Store which newsletter story generated each Slack draft/post. | `social_posts`, `reports`, handlers | Better learning and dedup. | M / Low | Social row links to newsletter section/story. |
+| 26 | Feedback from Slack reactions | New feature | User preference learning mostly depends on email replies/manual feedback. | Let Slack reactions on stories/drafts feed preferences. | Slack bot, `memory/feedback.py` | Faster personalization. | M / Low | Reaction updates preference record. |
+| 27 | Best-story archive | New feature | High-grade findings are buried in daily issues. | Maintain searchable "best stories/angles" vault with source, date, why it mattered. | memory/vault/dashboard | Better reuse without repeats. | M / Low | Dashboard/search returns top prior angles. |
+| 28 | Ops incident timeline | Reliability | Incidents require manual log/DB reconstruction. | Auto-build daily timeline: launch, sources, agents, send, sync, Slack/social state. | `traces.db`, dashboard, briefing | Faster debugging. | M / Low | One command shows run timeline. |
+| 29 | Put runner tests back in CI | Developer workflow | CI ignores `tests/test_runner.py`. | Split or stabilize runner tests and include critical subsets in GitHub Actions. | `.github/workflows/test.yml`, tests | Catches pipeline regressions before merge. | M / Med | CI runs runner phase tests. |
+| 30 | Keep Graphify current | Developer workflow | Graph report is stale vs HEAD. | Run/update graph after code changes and surface staleness in handoffs. | `graphify-out/`, hooks | Better architecture navigation for agents. | S / Low | Graph report commit matches HEAD. |
 
 ## Do Not Do Yet
 
 - Do not refactor `orchestrator/runner.py` before the Slack/social config issue
   and source-health issues are fixed.
-- Do not enable both LinkedIn and Bluesky at once.
+- Do not turn daily social into background auto-posting. Use Slack bot channels
+  as the primary human-controlled publishing surface.
+- Do not enable both LinkedIn and Bluesky at once for live API posting.
 - Do not rely on local sandbox source-smoke failures as proof of production
   network failure.
 - Do not remove approval gates to force posting.
