@@ -30,6 +30,10 @@ QUALITY_FLOOR_THRESHOLDS = {
     "retryable_min_unique_url_ratio": 0.65,
     "max_single_source_ratio": 0.35,
     "retryable_max_single_source_ratio": 0.60,
+    "max_duplicate_story_risk": 0.0,
+    "retryable_max_duplicate_story_risk": 0.20,
+    "near_title_similarity": 0.70,
+    "angle_similarity": 0.48,
 }
 
 
@@ -37,6 +41,7 @@ def assess_quality_floor(
     eval_scores: dict | None,
     *,
     findings: list[dict] | None = None,
+    recent_findings: list[dict] | None = None,
     preflight_data: dict | None = None,
     thresholds: dict | None = None,
 ) -> dict:
@@ -48,9 +53,16 @@ def assess_quality_floor(
     thresholds = {**QUALITY_FLOOR_THRESHOLDS, **(thresholds or {})}
     eval_scores = eval_scores or {}
     findings = findings or []
+    recent_findings = recent_findings or []
     preflight_data = preflight_data or {}
 
+    duplicate_story_risk = detect_duplicate_story_risk(
+        findings,
+        recent_findings,
+        thresholds=thresholds,
+    )
     metrics = _quality_floor_metrics(eval_scores, findings, preflight_data)
+    metrics["duplicate_story_risk"] = duplicate_story_risk["risk"]
     degraded_reasons: list[str] = []
     retryable_reasons: list[str] = []
 
@@ -103,6 +115,7 @@ def assess_quality_floor(
     flag("responsive_source_ratio", "responsive source ratio", thresholds["min_responsive_source_ratio"], thresholds["retryable_min_responsive_source_ratio"])
     flag("unique_url_ratio", "unique URL ratio", thresholds["min_unique_url_ratio"], thresholds["retryable_min_unique_url_ratio"])
     flag_max_ratio("single_source_ratio", "single-source dominance", thresholds["max_single_source_ratio"], thresholds["retryable_max_single_source_ratio"])
+    flag_max_ratio("duplicate_story_risk", "duplicate story risk", thresholds["max_duplicate_story_risk"], thresholds["retryable_max_duplicate_story_risk"])
 
     status = "pass"
     if retryable_reasons:
@@ -118,6 +131,77 @@ def assess_quality_floor(
         "reasons": retryable_reasons + degraded_reasons,
         "metrics": metrics,
         "thresholds": thresholds,
+        "duplicate_story_risk": duplicate_story_risk,
+    }
+
+
+def detect_duplicate_story_risk(
+    current_findings: list[dict],
+    recent_findings: list[dict] | None = None,
+    *,
+    thresholds: dict | None = None,
+) -> dict:
+    """Detect repeated URLs, near-title repeats, and repeated story angles."""
+    thresholds = {**QUALITY_FLOOR_THRESHOLDS, **(thresholds or {})}
+    recent_findings = recent_findings or []
+    repeated_urls = []
+    near_titles = []
+    repeated_angles = []
+    flagged_current: set[int] = set()
+    checks = 0
+
+    recent_by_url: dict[str, list[dict]] = {}
+    for recent in recent_findings:
+        url = _canonical_url(_field(recent, "source_url", "") or _field(recent, "url", ""))
+        if url:
+            recent_by_url.setdefault(url, []).append(recent)
+
+    for idx, current in enumerate(current_findings):
+        if _has_explicit_new_angle(current):
+            continue
+
+        current_url = _canonical_url(
+            _field(current, "source_url", "") or _field(current, "url", "")
+        )
+        for recent in recent_by_url.get(current_url, []):
+            if _source_dates_differ(current, recent):
+                continue
+            repeated_urls.append(_duplicate_detail(current, recent, "url", 1.0))
+            flagged_current.add(idx)
+            break
+
+        current_title_words = set(_story_words(_field(current, "title", "")))
+        current_angle_words = set(_story_words(_story_text(current)))
+
+        for recent in recent_findings:
+            checks += 1
+            if _has_explicit_new_angle(recent):
+                continue
+
+            recent_title_words = set(_story_words(_field(recent, "title", "")))
+            title_similarity = _jaccard(current_title_words, recent_title_words)
+            if title_similarity >= thresholds["near_title_similarity"]:
+                near_titles.append(_duplicate_detail(current, recent, "near_title", title_similarity))
+                flagged_current.add(idx)
+                break
+
+            recent_angle_words = set(_story_words(_story_text(recent)))
+            angle_similarity = _jaccard(current_angle_words, recent_angle_words)
+            if angle_similarity >= thresholds["angle_similarity"]:
+                repeated_angles.append(_duplicate_detail(current, recent, "angle", angle_similarity))
+                flagged_current.add(idx)
+                break
+
+    count = len(flagged_current)
+    risk = count / len(current_findings) if current_findings else 0.0
+    return {
+        "risk": round(risk, 3),
+        "duplicate_count": count,
+        "current_count": len(current_findings),
+        "checks": checks,
+        "repeated_urls": repeated_urls,
+        "near_titles": near_titles,
+        "repeated_angles": repeated_angles,
     }
 
 
@@ -496,6 +580,93 @@ def _source_counts_for_floor(findings: list[dict], preflight_data: dict) -> dict
         )
         counts[str(source)] += 1
     return dict(counts)
+
+
+def _canonical_url(url: str | None) -> str:
+    if not url:
+        return ""
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parsed = urlsplit(str(url).strip())
+    except ValueError:
+        return str(url).strip().lower()
+
+    path = parsed.path.rstrip("/")
+    return urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        path,
+        "",
+        "",
+    ))
+
+
+def _source_dates_differ(current: dict, recent: dict) -> bool:
+    current_date = _field(current, "source_date") or _date_from_text(
+        _field(current, "source_url", "") or _field(current, "url", "")
+    )
+    recent_date = _field(recent, "source_date") or _date_from_text(
+        _field(recent, "source_url", "") or _field(recent, "url", "")
+    )
+    return bool(current_date and recent_date and current_date != recent_date)
+
+
+def _date_from_text(text: str | None) -> str | None:
+    if not text:
+        return None
+    match = re.search(r"(20\d{2})[-/](\d{2})[-/](\d{2})", str(text))
+    if not match:
+        return None
+    return "-".join(match.groups())
+
+
+def _has_explicit_new_angle(finding: dict) -> bool:
+    for key in ("new_angle", "follow_up_angle", "why_now"):
+        value = _field(finding, key)
+        if isinstance(value, bool) and value:
+            return True
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def _story_text(finding: dict) -> str:
+    return " ".join([
+        str(_field(finding, "title", "") or ""),
+        str(_field(finding, "summary", "") or ""),
+        str(_field(finding, "content_preview", "") or ""),
+    ])
+
+
+def _story_words(text: str) -> list[str]:
+    return [_light_stem(word) for word in _extract_significant_words(text)]
+
+
+def _light_stem(word: str) -> str:
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith("s"):
+        return word[:-1]
+    return word
+
+
+def _jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _duplicate_detail(current: dict, recent: dict, kind: str, similarity: float) -> dict:
+    return {
+        "kind": kind,
+        "current_title": _field(current, "title", ""),
+        "recent_title": _field(recent, "title", ""),
+        "current_url": _canonical_url(_field(current, "source_url", "") or _field(current, "url", "")),
+        "recent_url": _canonical_url(_field(recent, "source_url", "") or _field(recent, "url", "")),
+        "recent_date": _field(recent, "run_date", ""),
+        "similarity": round(similarity, 3),
+    }
 
 
 # ── Private helpers ──────────────────────────────────────────────────────

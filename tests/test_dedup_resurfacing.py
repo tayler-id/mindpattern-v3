@@ -68,3 +68,25 @@ class TestStoreGateBehavior:
         assert "source_date_from_url" in research
         assert "days=180" in research
         assert "days=10," not in research
+
+
+class TestNewsletterDuplicateAngleGate:
+    def test_repeated_adjacent_day_story_fails_duplicate_angle_check(self):
+        from orchestrator.evaluator import detect_duplicate_story_risk
+
+        current = [{
+            "title": "OpenAI agent SDK automates developer workflows",
+            "summary": "The SDK coordinates tool calls, coding agents, and workflow steps for developers.",
+            "source_url": "https://fresh.example/openai-agent-sdk-followup",
+        }]
+        recent = [{
+            "title": "OpenAI launches agent SDK for workflow automation",
+            "summary": "The launch coordinates tool calls, coding agents, and developer workflow steps.",
+            "source_url": "https://old.example/openai-agent-sdk",
+            "run_date": "2026-06-25",
+        }]
+
+        risk = detect_duplicate_story_risk(current, recent)
+
+        assert risk["duplicate_count"] == 1
+        assert risk["repeated_angles"]

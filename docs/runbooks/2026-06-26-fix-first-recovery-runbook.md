@@ -480,6 +480,21 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_evaluator.py::test_assess_quality_floor_passes_good_synthetic_run tests/test_evaluator.py::test_assess_quality_floor_marks_degraded_synthetic_run tests/test_evaluator.py::test_assess_quality_floor_marks_retryable_bad_synthetic_run -q` -> 3 passed in 0.01s.
 - `.venv/bin/python3 -m pytest tests/test_evaluator.py tests/test_runner.py -q` -> 72 passed in 0.48s.
 
+### 2026-06-26 Task 19 Duplicate Story and Angle Checks
+
+Added `detect_duplicate_story_risk()` and wired its risk metric into
+`assess_quality_floor()` without changing delivery behavior. The detector
+flags canonical repeated URLs, near-title repeats, and repeated story angles
+against recent findings. Exact URL repeats ignore tracking query strings and
+can be bypassed only when a finding carries an explicit new-angle/follow-up
+field or a different source date is detectable. The quality floor now includes
+`duplicate_story_risk` with default ceiling `0.0` and retryable ceiling `0.20`.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py::TestNewsletterDuplicateAngleGate::test_repeated_adjacent_day_story_fails_duplicate_angle_check tests/test_evaluator.py::test_duplicate_story_risk_flags_repeated_url tests/test_evaluator.py::test_quality_floor_flags_repeated_adjacent_day_angle tests/test_evaluator.py::test_duplicate_story_risk_does_not_overblock_related_story -q` -> 4 passed in 0.06s.
+- `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py tests/test_evaluator.py -q` -> 25 passed in 0.07s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

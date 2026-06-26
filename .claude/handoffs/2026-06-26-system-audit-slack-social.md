@@ -368,6 +368,16 @@ Goal execution baseline on 2026-06-26:
     -> 3 passed in 0.01s.
   - `.venv/bin/python3 -m pytest tests/test_evaluator.py tests/test_runner.py -q`
     -> 72 passed in 0.48s.
+- Task 19 complete: `detect_duplicate_story_risk()` now flags repeated
+  canonical URLs, near-title repeats, and repeated story angles against recent
+  findings. The quality-floor helper includes `duplicate_story_risk` with
+  default ceiling `0.0` and retryable ceiling `0.20`. Exact URL repeats ignore
+  tracking query strings and can be bypassed only by explicit new-angle/follow-
+  up metadata or a detectably different source date.
+  - `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py::TestNewsletterDuplicateAngleGate::test_repeated_adjacent_day_story_fails_duplicate_angle_check tests/test_evaluator.py::test_duplicate_story_risk_flags_repeated_url tests/test_evaluator.py::test_quality_floor_flags_repeated_adjacent_day_angle tests/test_evaluator.py::test_duplicate_story_risk_does_not_overblock_related_story -q`
+    -> 4 passed in 0.06s.
+  - `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py tests/test_evaluator.py -q`
+    -> 25 passed in 0.07s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

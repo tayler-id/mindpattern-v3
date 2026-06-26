@@ -2,7 +2,11 @@
 
 from unittest.mock import MagicMock
 
-from orchestrator.evaluator import NewsletterEvaluator, assess_quality_floor
+from orchestrator.evaluator import (
+    NewsletterEvaluator,
+    assess_quality_floor,
+    detect_duplicate_story_risk,
+)
 
 
 def _make_evaluator():
@@ -200,3 +204,77 @@ def test_assess_quality_floor_marks_retryable_bad_synthetic_run():
     assert result["retryable"] is True
     assert any("finding volume" in reason for reason in result["reasons"])
     assert any("unique URL ratio" in reason for reason in result["reasons"])
+
+
+def test_duplicate_story_risk_flags_repeated_url():
+    current = [{
+        "title": "OpenAI ships agent workflow SDK",
+        "summary": "Developers can orchestrate multi-step coding agents.",
+        "source_url": "https://example.com/openai-agent-sdk?utm=feed",
+        "source_name": "Example",
+    }]
+    recent = [{
+        "title": "OpenAI ships agent workflow SDK",
+        "summary": "Developers can orchestrate multi-step coding agents.",
+        "source_url": "https://example.com/openai-agent-sdk",
+        "source_name": "Example",
+    }]
+
+    risk = detect_duplicate_story_risk(current, recent)
+
+    assert risk["duplicate_count"] == 1
+    assert risk["repeated_urls"][0]["current_title"] == "OpenAI ships agent workflow SDK"
+
+
+def test_quality_floor_flags_repeated_adjacent_day_angle():
+    current = _synthetic_findings(count=80, agents=13, sources=5)
+    current[0] = {
+        "agent": "agent-0",
+        "title": "OpenAI agent SDK automates developer workflows",
+        "summary": "The SDK coordinates tool calls, coding agents, and workflow steps for developers.",
+        "source_url": "https://fresh.example/openai-agent-sdk-followup",
+        "source_name": "Fresh Source",
+    }
+    recent = [{
+        "agent": "agent-1",
+        "title": "OpenAI launches agent SDK for workflow automation",
+        "summary": "The launch coordinates tool calls, coding agents, and developer workflow steps.",
+        "source_url": "https://old.example/openai-agent-sdk",
+        "source_name": "Old Source",
+        "run_date": "2026-06-25",
+    }]
+
+    result = assess_quality_floor(
+        {"overall": 0.86, "coverage": 0.9, "dedup": 0.95, "sources": 0.9},
+        findings=current,
+        recent_findings=recent,
+        preflight_data={
+            "source_counts": {"rss": 20, "hn": 20, "reddit": 15, "twitter": 10, "exa": 10},
+            "source_health_summary": {
+                "expected_source_count": 8,
+                "responsive_source_count": 8,
+            },
+        },
+    )
+
+    assert result["status"] == "degraded"
+    assert any("duplicate story risk" in reason for reason in result["reasons"])
+    assert result["duplicate_story_risk"]["repeated_angles"]
+
+
+def test_duplicate_story_risk_does_not_overblock_related_story():
+    current = [{
+        "title": "Anthropic cuts Claude batch API pricing",
+        "summary": "The new price tier changes cost planning for long-running document analysis jobs.",
+        "source_url": "https://example.com/claude-batch-pricing",
+    }]
+    recent = [{
+        "title": "OpenAI releases agent SDK for workflow automation",
+        "summary": "The launch coordinates tool calls, coding agents, and developer workflow steps.",
+        "source_url": "https://example.com/openai-agent-sdk",
+    }]
+
+    risk = detect_duplicate_story_risk(current, recent)
+
+    assert risk["duplicate_count"] == 0
+    assert risk["risk"] == 0.0
