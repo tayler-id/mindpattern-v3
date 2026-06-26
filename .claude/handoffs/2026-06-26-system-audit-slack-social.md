@@ -105,6 +105,34 @@ Corrected desired fix path:
    and confirming it produces drafts, waits for owner approval, and only posts
    after an explicit approval reply.
 
+## Fix-First Table: Existing Things That Are Broken or Not Proven Working
+
+These are not feature ideas. They are existing paths that are disabled, broken,
+unsafe, or not proven healthy enough to rely on.
+
+| Area | What should happen | What is happening | Why it is not working | Fix needed |
+|---|---|---|---|---|
+| Daily social phase | Pipeline should create social candidates or an approval flow. | It skips social entirely. | `linkedin.enabled=false` and `bluesky.enabled=false`; runner exits with `Social: no platforms enabled`. | Separate "format draft" from "post live"; do not skip Slack draft creation just because posting APIs are off. |
+| Slack approval for daily social | Daily pipeline should post approval requests to Slack. | It never reaches approval. | Social phase exits before `ApprovalGateway` runs. | Let pipeline send candidates to Slack bot/channel without auto-posting. |
+| `#mp-posts` live posting | URL/idea should become platform drafts, then wait for approval. | Bot exists, but live posting depends on platform config/secrets. | Platform clients still need enabled config to publish. | Add manual-copy fallback when a platform is disabled; only post after explicit approval. |
+| `#mp-skills` approval | It should only post after clear owner approval. | Unclear replies can default to all platforms. | Handler falls back to `approved = platforms` if reply is not understood. | Use strict parser: unclear reply means no post. |
+| `#mp-tips` approval | It should only post after clear owner approval. | Unclear replies can default to all platforms. | Handler also defaults unclear replies to all platforms. | Use strict parser: unclear reply means no post. |
+| Slack edit flow | User should paste edits and have the draft updated. | UI text says edits are allowed, but approval parsing does not really apply edits. | "Paste edited text" is advertised but not implemented as a real draft-revision state. | Add `edit bluesky: ...`, re-preview, then require approval again. |
+| Slack bot local visibility | Logs should show current bot activity. | Local `reports/slack-bot.log` stopped around 2026-06-08. | Local launchd Slack bot services are not registered; production bot runs on Fly now. | Decide Fly-only bot vs reinstall local bot; add clear docs/status. |
+| Slack channel health | Each channel should be testable. | Fly bot heartbeat is alive, but handler-by-handler behavior was not proven. | `/healthz` proves bot heartbeat, not that every channel command works. | Add bot `doctor`/`status` command that checks registered channels. |
+| RSS preflight | RSS should produce source items. | Logs show RSS returned 0 for recent runs. | Earlier logs said `feedparser` was missing; later smoke still returned 0. | Add per-feed diagnostics; confirm feeds and dependency in real run environment. |
+| Reddit preflight | Reddit should produce community signal. | Reddit returns 0 / Agent Reach says Reddit backend is off. | No authenticated Reddit backend configured. | Install/configure Reddit backend or remove it from expected source count. |
+| Twitter/X preflight | Twitter search should produce trend items. | Auth works, search fails. | `twitter search` failed with HTTP 404 / cookie extraction issue. | Fix query-search backend or switch Agent Reach backend. |
+| HN preflight | HN should produce builder/startup items. | HN returned 0. | Query, threshold, or API path is likely too strict or failing silently. | Add per-query diagnostics and adjust thresholds. |
+| Exa preflight | Exa should contribute semantic web search. | It recovered in logs, but local sandbox smoke failed DNS. | Local sandbox cannot prove production health; prior logs had timeouts. | Add production source-health report, not only local checks. |
+| YouTube preflight | YouTube should fetch videos. | It recovered in logs, but local sandbox smoke failed DNS. | Sandbox network failure; not enough production proof. | Add daily YouTube source-count alert. |
+| Newsletter quality floor | Bad input days should retry or escalate. | Newsletter still sends on weak-source days. | Delivery is gated more strongly than content quality. | Add pre-send floor: minimum agents, sources, unique URLs, and duplicate-angle score. |
+| Duplicate story control | Same story should not repeat across days. | Exact duplicate titles were not found, but repeated URLs/angles remain possible. | Current dedupe catches some title/embedding duplicates, not "same angle again" well enough. | Add semantic cross-issue duplicate detector. |
+| Agent coverage | Usually 13 agents should contribute. | Recent days had 6-8 contributing agents. | Some agents failed, timed out, or stored zero findings. | Retry zero agents or mark issue degraded before synthesis. |
+| Source balance | Newsletter should not be dominated by one source. | arXiv dominated recent findings. | Source weighting lets one source overfill the issue. | Cap source dominance and boost underrepresented source classes. |
+| CI coverage | Critical runner behavior should be tested in CI. | `tests/test_runner.py` is ignored in GitHub Actions. | Main pipeline tests are excluded. | Split/stabilize runner tests and put critical subset back in CI. |
+| Graphify freshness | Architecture graph should match HEAD. | Graph report is stale. | Built from old commit `eb913fee`. | Run/update Graphify after code changes. |
+
 ## Newsletter / Research Quality Evidence
 
 Recent stored findings dropped versus early June:
