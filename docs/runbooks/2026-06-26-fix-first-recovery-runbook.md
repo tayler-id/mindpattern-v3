@@ -495,6 +495,21 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py::TestNewsletterDuplicateAngleGate::test_repeated_adjacent_day_story_fails_duplicate_angle_check tests/test_evaluator.py::test_duplicate_story_risk_flags_repeated_url tests/test_evaluator.py::test_quality_floor_flags_repeated_adjacent_day_angle tests/test_evaluator.py::test_duplicate_story_risk_does_not_overblock_related_story -q` -> 4 passed in 0.06s.
 - `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py tests/test_evaluator.py -q` -> 25 passed in 0.07s.
 
+### 2026-06-26 Task 20 Agent Coverage Floor
+
+Added `_assess_agent_coverage()` in the runner and wired it into
+`_phase_research()` before cross-agent dedup mutates result lists. The research
+phase now returns `research_degraded` and an `agent_coverage` block with
+contributing-agent count, zero-finding agents, failed agents, status, retryable
+flag, and reasons. Degraded coverage is logged to the `research_agent_coverage`
+trace event. An 8-of-13 contributing-agent run is degraded; a 6-of-13 run is
+`fail_retryable`; zero-finding and failed agents are named in the reasons.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseResearch::test_research_marks_8_of_13_agents_degraded tests/test_runner.py::TestPhaseResearch::test_research_marks_6_of_13_agents_retryable -q` -> 2 passed in 0.23s.
+- `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_agents.py -q` -> 102 passed in 0.59s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

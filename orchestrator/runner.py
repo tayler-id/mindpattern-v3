@@ -91,6 +91,58 @@ def _source_health_for_trace(preflight_data: dict) -> dict:
     return trace_health
 
 
+def _assess_agent_coverage(agent_results: list) -> dict:
+    """Summarize research agent coverage before storage/dedup side effects."""
+    target = max(13, len(agent_results))
+    min_agents = min(11, target)
+    retryable_min_agents = min(8, target)
+    contributing = [
+        result.agent_name for result in agent_results
+        if len(result.findings) > 0
+    ]
+    failed = [
+        result.agent_name for result in agent_results
+        if result.error and not result.findings
+    ]
+    zero_finding = [
+        result.agent_name for result in agent_results
+        if not result.error and not result.findings
+    ]
+
+    contributing_count = len(contributing)
+    reasons = []
+    status = "pass"
+    if contributing_count < retryable_min_agents:
+        status = "fail_retryable"
+        reasons.append(
+            f"agent coverage {contributing_count}/{target} below retryable floor "
+            f"{retryable_min_agents}"
+        )
+    elif contributing_count < min_agents:
+        status = "degraded"
+        reasons.append(
+            f"agent coverage {contributing_count}/{target} below floor "
+            f"{min_agents}"
+        )
+
+    if zero_finding:
+        reasons.append(f"zero-finding agents: {', '.join(zero_finding)}")
+    if failed:
+        reasons.append(f"failed agents: {', '.join(failed)}")
+
+    return {
+        "status": status,
+        "degraded": status != "pass",
+        "retryable": status == "fail_retryable",
+        "target_agents": target,
+        "total_agents": len(agent_results),
+        "contributing_agents": contributing_count,
+        "zero_finding_agents": zero_finding,
+        "failed_agents": failed,
+        "reasons": reasons,
+    }
+
+
 def _fallback_ranked_findings(findings: list[dict], *, limit: int = 5) -> list[dict]:
     """Pick a deterministic, source-grounded fallback story set.
 
@@ -712,6 +764,17 @@ class ResearchPipeline:
             preflight_data=preflight_data,
         )
 
+        agent_coverage = _assess_agent_coverage(self.agent_results)
+        self.research_quality = {"agent_coverage": agent_coverage}
+        if agent_coverage["degraded"]:
+            logger.warning(
+                "Research agent coverage degraded: %s",
+                "; ".join(agent_coverage["reasons"]),
+            )
+            log_event(self.traces_conn, self.traces_run_id,
+                      "research_agent_coverage",
+                      json.dumps(agent_coverage))
+
         # Sources older than this (by URL-embedded date) are resurfaced
         # content, not today's news.
         from datetime import timedelta as _td
@@ -858,6 +921,8 @@ class ResearchPipeline:
             "agents_dispatched": len(self.agent_results),
             "agents_succeeded": successful,
             "findings_stored": total_stored,
+            "research_degraded": agent_coverage["degraded"],
+            "agent_coverage": agent_coverage,
         }
 
     def _phase_synthesis(self) -> dict:

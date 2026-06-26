@@ -378,6 +378,16 @@ Goal execution baseline on 2026-06-26:
     -> 4 passed in 0.06s.
   - `.venv/bin/python3 -m pytest tests/test_dedup_resurfacing.py tests/test_evaluator.py -q`
     -> 25 passed in 0.07s.
+- Task 20 complete: `_phase_research()` now assesses agent coverage before
+  cross-agent dedup mutates finding lists. It returns `research_degraded` and
+  an `agent_coverage` block with status, retryable flag, contributing count,
+  zero-finding agents, failed agents, and reasons. Degraded coverage is logged
+  as `research_agent_coverage`. 8-of-13 contributing agents is degraded;
+  6-of-13 is `fail_retryable`; zero/failed agents are named.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseResearch::test_research_marks_8_of_13_agents_degraded tests/test_runner.py::TestPhaseResearch::test_research_marks_6_of_13_agents_retryable -q`
+    -> 2 passed in 0.23s.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_agents.py -q`
+    -> 102 passed in 0.59s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

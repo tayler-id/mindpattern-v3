@@ -645,6 +645,84 @@ class TestPhaseResearch:
         with pytest.raises(RuntimeError, match="Zero findings stored"):
             pipeline._phase_research()
 
+    @patch("orchestrator.runner.memory.log_agent_run")
+    @patch("orchestrator.runner.memory.store_source")
+    @patch("orchestrator.runner.memory.store_finding")
+    @patch("orchestrator.runner.memory.search_findings", return_value=[])
+    @patch("orchestrator.runner.memory.get_signal_context", return_value="")
+    @patch("orchestrator.runner.memory.get_context", return_value="")
+    @patch("orchestrator.runner.agent_dispatch.dispatch_research_agents")
+    def test_research_marks_8_of_13_agents_degraded(
+        self, mock_dispatch, mock_ctx, mock_signal, mock_search,
+        mock_store, mock_source, mock_log, pipeline
+    ):
+        contributor = {
+            "title": "Useful finding",
+            "summary": "Useful source-grounded summary",
+            "importance": "medium",
+            "source_url": "https://example.com/useful",
+            "source_name": "Example",
+        }
+        results = [
+            self._make_agent_result(agent_name=f"agent-{idx}", findings=[contributor])
+            for idx in range(8)
+        ]
+        results.extend(
+            self._make_agent_result(agent_name=f"zero-{idx}", findings=[])
+            for idx in range(3)
+        )
+        results.extend(
+            self._make_agent_result(agent_name=f"failed-{idx}", findings=[], error="timeout")
+            for idx in range(2)
+        )
+        mock_dispatch.return_value = results
+
+        result = pipeline._phase_research()
+
+        assert result["research_degraded"] is True
+        assert result["agent_coverage"]["status"] == "degraded"
+        assert result["agent_coverage"]["contributing_agents"] == 8
+        assert result["agent_coverage"]["zero_finding_agents"] == ["zero-0", "zero-1", "zero-2"]
+        assert result["agent_coverage"]["failed_agents"] == ["failed-0", "failed-1"]
+        assert any("zero-finding agents: zero-0, zero-1, zero-2" in reason
+                   for reason in result["agent_coverage"]["reasons"])
+
+    @patch("orchestrator.runner.memory.log_agent_run")
+    @patch("orchestrator.runner.memory.store_source")
+    @patch("orchestrator.runner.memory.store_finding")
+    @patch("orchestrator.runner.memory.search_findings", return_value=[])
+    @patch("orchestrator.runner.memory.get_signal_context", return_value="")
+    @patch("orchestrator.runner.memory.get_context", return_value="")
+    @patch("orchestrator.runner.agent_dispatch.dispatch_research_agents")
+    def test_research_marks_6_of_13_agents_retryable(
+        self, mock_dispatch, mock_ctx, mock_signal, mock_search,
+        mock_store, mock_source, mock_log, pipeline
+    ):
+        contributor = {
+            "title": "Useful finding",
+            "summary": "Useful source-grounded summary",
+            "importance": "medium",
+            "source_url": "https://example.com/useful",
+            "source_name": "Example",
+        }
+        results = [
+            self._make_agent_result(agent_name=f"agent-{idx}", findings=[contributor])
+            for idx in range(6)
+        ]
+        results.extend(
+            self._make_agent_result(agent_name=f"zero-{idx}", findings=[])
+            for idx in range(7)
+        )
+        mock_dispatch.return_value = results
+
+        result = pipeline._phase_research()
+
+        assert result["research_degraded"] is True
+        assert result["agent_coverage"]["status"] == "fail_retryable"
+        assert result["agent_coverage"]["retryable"] is True
+        assert any("agent coverage 6/13 below retryable floor 8" in reason
+                   for reason in result["agent_coverage"]["reasons"])
+
 
 class TestPhaseSynthesis:
     """_phase_synthesis: two-pass synthesis and newsletter evaluation."""
