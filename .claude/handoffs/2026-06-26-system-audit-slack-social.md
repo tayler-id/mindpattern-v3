@@ -150,8 +150,12 @@ Live Slack check on 2026-06-26:
     first Claude call worked on Fly. The concrete failure boundary was the Fly
     image packaging: deployed code imports `core`, but the Dockerfile did not
     copy `core/` into `/app`.
-  - Fix applied in working tree: add `COPY core/ core/` to `Dockerfile` and
+  - Fix committed as `a847ddf`: add `COPY core/ core/` to `Dockerfile` and
     add `tests/test_fly_dockerfile.py` to guard the packaging dependency.
+  - Fix deployed to Fly on 2026-06-26. Verification:
+    `https://mindpattern.fly.dev/healthz` returned ok, all 7 Slack handlers
+    registered, Socket Mode connected, and SSH import check showed
+    `/app/core/__init__.py`.
 - Slack API check from the deployed bot token shows:
   - `#mp-posts` = `C0ANEDEDJD7`, bot member, user member, public, not archived.
   - `#mp-skills` = `C0AP3CCL4G5`, bot member, user member, public, not archived.
