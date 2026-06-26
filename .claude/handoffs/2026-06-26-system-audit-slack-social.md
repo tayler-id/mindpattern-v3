@@ -388,6 +388,16 @@ Goal execution baseline on 2026-06-26:
     -> 2 passed in 0.23s.
   - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_agents.py -q`
     -> 102 passed in 0.59s.
+- Task 21 complete: synthesis pass 1 now uses `_balance_story_candidates()`.
+  The story-selection candidate pool caps dominant source classes using the
+  `0.35` source ceiling and orders smaller source classes first; pass 2 still
+  receives the full findings list for context. If only one source class is
+  healthy, source balance is marked degraded and `source_balance_degraded` is
+  written to traces instead of fabricating diversity.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_source_balance_caps_single_source_candidate_dominance tests/test_runner.py::TestPhaseSynthesis::test_source_balance_marks_single_healthy_source_degraded -q`
+    -> 2 passed in 0.08s.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_runner.py -q`
+    -> 113 passed in 88.88s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

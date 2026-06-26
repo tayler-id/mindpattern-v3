@@ -510,6 +510,20 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseResearch::test_research_marks_8_of_13_agents_degraded tests/test_runner.py::TestPhaseResearch::test_research_marks_6_of_13_agents_retryable -q` -> 2 passed in 0.23s.
 - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_agents.py -q` -> 102 passed in 0.59s.
 
+### 2026-06-26 Task 21 Source Balance Weighting
+
+Added `_balance_story_candidates()` and wired it into synthesis pass 1. The
+story-selection candidate pool now caps a dominant source class using the
+`0.35` single-source ceiling and orders smaller source classes first, while the
+full findings list still goes to the writer for context. If only one source
+class is healthy, the run is marked source-balance degraded instead of
+fabricating diversity, and a `source_balance_degraded` trace event is written.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_source_balance_caps_single_source_candidate_dominance tests/test_runner.py::TestPhaseSynthesis::test_source_balance_marks_single_healthy_source_degraded -q` -> 2 passed in 0.08s.
+- `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_runner.py -q` -> 113 passed in 88.88s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

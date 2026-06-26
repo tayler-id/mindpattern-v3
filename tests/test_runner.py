@@ -856,6 +856,64 @@ class TestPhaseSynthesis:
         assert "Title 0" in pass2_prompt
         assert "Fallback-written daily brief" in report_path.read_text()
 
+    def test_source_balance_caps_single_source_candidate_dominance(self):
+        from collections import Counter
+        from orchestrator.runner import _balance_story_candidates
+
+        findings = [
+            {
+                "title": f"Arxiv {idx}",
+                "summary": "Paper summary",
+                "source_name": "arXiv",
+                "source_url": f"https://arxiv.org/abs/{idx}",
+            }
+            for idx in range(80)
+        ]
+        for source_name, url_base in [
+            ("Hacker News", "https://news.ycombinator.com/item?id="),
+            ("RSS", "https://rss.example/story-"),
+            ("YouTube", "https://youtube.example/watch?v="),
+        ]:
+            findings.extend(
+                {
+                    "title": f"{source_name} {idx}",
+                    "summary": "Builder summary",
+                    "source_name": source_name,
+                    "source_url": f"{url_base}{idx}",
+                }
+                for idx in range(10)
+            )
+
+        balanced, summary = _balance_story_candidates(findings, {
+            "source_health_summary": {"responsive_source_count": 2},
+        })
+        counts = Counter(f["source_name"] for f in balanced)
+
+        assert summary["status"] == "pass"
+        assert counts["arXiv"] / len(balanced) <= 0.35
+        assert balanced[0]["source_name"] == "Hacker News"
+
+    def test_source_balance_marks_single_healthy_source_degraded(self):
+        from orchestrator.runner import _balance_story_candidates
+
+        findings = [
+            {
+                "title": f"Arxiv {idx}",
+                "summary": "Paper summary",
+                "source_name": "arXiv",
+                "source_url": f"https://arxiv.org/abs/{idx}",
+            }
+            for idx in range(20)
+        ]
+
+        balanced, summary = _balance_story_candidates(findings, {
+            "source_health_summary": {"responsive_source_count": 1},
+        })
+
+        assert balanced == findings
+        assert summary["status"] == "degraded"
+        assert any("only one healthy source" in reason for reason in summary["reasons"])
+
 
 class TestPhaseDeliver:
     """_phase_deliver: validates report, appends footer, sends newsletter."""

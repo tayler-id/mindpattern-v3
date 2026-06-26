@@ -143,6 +143,124 @@ def _assess_agent_coverage(agent_results: list) -> dict:
     }
 
 
+def _balance_story_candidates(
+    findings: list[dict],
+    preflight_data: dict | None = None,
+    *,
+    max_source_ratio: float = 0.35,
+) -> tuple[list[dict], dict]:
+    """Return a source-balanced story-selection candidate pool."""
+    preflight_data = preflight_data or {}
+    if not findings:
+        return [], {
+            "status": "pass",
+            "original_count": 0,
+            "candidate_count": 0,
+            "max_source_ratio": 0.0,
+            "reasons": [],
+        }
+
+    groups: dict[str, list[dict]] = {}
+    labels: dict[str, str] = {}
+    for finding in findings:
+        key, label = _source_balance_key(finding)
+        groups.setdefault(key, []).append(finding)
+        labels.setdefault(key, label)
+
+    source_health_summary = preflight_data.get("source_health_summary") or {}
+    responsive_source_count = source_health_summary.get("responsive_source_count")
+    source_class_count = len(groups)
+    if responsive_source_count == 1 or source_class_count <= 1:
+        reason = "only one healthy source class; source balance not fabricated"
+        return findings, {
+            "status": "degraded",
+            "original_count": len(findings),
+            "candidate_count": len(findings),
+            "source_counts": {labels[k]: len(v) for k, v in groups.items()},
+            "candidate_source_counts": {labels[k]: len(v) for k, v in groups.items()},
+            "max_source_ratio": 1.0,
+            "dropped_by_source": {},
+            "reasons": [reason],
+        }
+
+    original_total = len(findings)
+    capped: dict[str, list[dict]] = {}
+    dropped_by_source = {}
+    for key, items in groups.items():
+        other_count = original_total - len(items)
+        if other_count <= 0:
+            keep_count = len(items)
+        else:
+            keep_count = int((max_source_ratio * other_count) / (1 - max_source_ratio))
+            keep_count = max(1, keep_count)
+        keep_count = min(len(items), keep_count)
+        capped[key] = items[:keep_count]
+        if keep_count < len(items):
+            dropped_by_source[labels[key]] = len(items) - keep_count
+
+    ordered_keys = sorted(capped, key=lambda k: (len(groups[k]), labels[k]))
+    balanced: list[dict] = []
+    index = 0
+    while True:
+        added = False
+        for key in ordered_keys:
+            if index < len(capped[key]):
+                balanced.append(capped[key][index])
+                added = True
+        if not added:
+            break
+        index += 1
+
+    candidate_counts = {labels[k]: len(v) for k, v in capped.items() if v}
+    candidate_total = sum(candidate_counts.values())
+    max_ratio = (
+        max(candidate_counts.values()) / candidate_total
+        if candidate_total else 0.0
+    )
+    status = "pass" if max_ratio <= max_source_ratio or candidate_total == 0 else "degraded"
+    reasons = []
+    if status == "degraded":
+        reasons.append(
+            f"single-source dominance {max_ratio:.3g} above ceiling {max_source_ratio:.3g}"
+        )
+
+    return balanced, {
+        "status": status,
+        "original_count": original_total,
+        "candidate_count": len(balanced),
+        "source_counts": {labels[k]: len(v) for k, v in groups.items()},
+        "candidate_source_counts": candidate_counts,
+        "max_source_ratio": round(max_ratio, 3),
+        "dropped_by_source": dropped_by_source,
+        "reasons": reasons,
+    }
+
+
+def _source_balance_key(finding: dict) -> tuple[str, str]:
+    raw = (
+        _row_get(finding, "source")
+        or _row_get(finding, "source_name")
+        or _row_get(finding, "source_url")
+        or "unknown"
+    )
+    label = str(raw).strip() or "unknown"
+    lowered = label.lower()
+    if "arxiv" in lowered:
+        return "arxiv", "arXiv"
+    if "hacker news" in lowered or "ycombinator" in lowered:
+        return "hn", "Hacker News"
+    return lowered, label
+
+
+def _row_get(row, key: str, default=None):
+    if hasattr(row, "get"):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 def _fallback_ranked_findings(findings: list[dict], *, limit: int = 5) -> list[dict]:
     """Pick a deterministic, source-grounded fallback story set.
 
@@ -971,9 +1089,23 @@ class ResearchPipeline:
         if sanitized_count:
             logger.info(f"Sanitized {sanitized_count} security research findings for synthesis")
 
+        story_findings, source_balance = _balance_story_candidates(
+            today_findings,
+            self.preflight_data,
+        )
+        self.source_balance = source_balance
+        if source_balance.get("status") != "pass":
+            logger.warning(
+                "Source balance degraded: %s",
+                "; ".join(source_balance.get("reasons", [])),
+            )
+            log_event(self.traces_conn, self.traces_run_id,
+                      "source_balance_degraded",
+                      json.dumps(source_balance))
+
         # Build summaries for pass 1 — full text, not truncated (we have 1M context)
         summaries = []
-        for f in today_findings:
+        for f in story_findings:
             source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or ''
             summaries.append(
                 f"[{f['agent']}] ({f['importance']}) {f['title']}\n"
@@ -995,7 +1127,7 @@ class ResearchPipeline:
 
         # Pass 1: Story selection
         pass1_prompt = (
-            f"Select exactly 5 stories from these {len(summaries)} findings for today's newsletter.\n\n"
+            f"Select exactly 5 stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
@@ -1050,7 +1182,7 @@ class ResearchPipeline:
                     f"last exit_code={exit_code}, output_len={output_len}"
                 )
                 pass1_output = _build_fallback_story_selection(
-                    today_findings,
+                    story_findings,
                     reason=reason,
                 )
                 logger.error(
@@ -1248,7 +1380,7 @@ class ResearchPipeline:
 
         self.newsletter_eval = eval_scores
         return {"word_count": word_count, "report_path": str(report_path),
-                "eval_scores": eval_scores}
+                "eval_scores": eval_scores, "source_balance": source_balance}
 
     def _phase_deliver(self) -> dict:
         """Phase 5: Deliver (Python only). Convert to HTML, send via Resend."""
