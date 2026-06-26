@@ -101,6 +101,9 @@ class SkillsHandler(BaseHandler):
         for platform, result in results.items():
             if result.get("success"):
                 result_lines.append(f"Posted to {platform}: {result.get('url', '')}")
+            elif result.get("manual_only"):
+                result_lines.append(f"{platform} manual copy: {result.get('error', '')}")
+                result_lines.append(f"```{result.get('content', '')}```")
             else:
                 result_lines.append(f"{platform} failed: {result.get('error', 'unknown')}")
         self.reply("\n".join(result_lines), thread_ts=ts)
@@ -195,7 +198,7 @@ class SkillsHandler(BaseHandler):
 
     def _post(self, drafts: dict, platforms: list[str]) -> dict:
         """Post to approved platforms."""
-        from social.posting import BlueskyClient, LinkedInClient
+        from social.posting import BlueskyClient, LinkedInClient, manual_copy_result
 
         config = self._load_social_config()
         results = {}
@@ -204,15 +207,32 @@ class SkillsHandler(BaseHandler):
             draft = drafts.get(platform)
             if not draft:
                 continue
+            platform_cfg = config.get("platforms", {}).get(platform, {})
+            if not platform_cfg.get("enabled"):
+                results[platform] = manual_copy_result(
+                    platform,
+                    draft,
+                    f"{platform} is disabled; use manual copy.",
+                )
+                continue
             try:
                 if platform == "bluesky":
-                    client = BlueskyClient(config["platforms"]["bluesky"])
+                    client = BlueskyClient(platform_cfg)
                     result = client.post(draft)
-                    results[platform] = {"success": True, "url": result.get("url", "")}
                 elif platform == "linkedin":
-                    client = LinkedInClient(config["platforms"]["linkedin"])
+                    client = LinkedInClient(platform_cfg)
                     result = client.post(draft)
+                else:
+                    results[platform] = {"success": False, "error": f"Unknown platform: {platform}"}
+                    continue
+
+                if result.get("success"):
                     results[platform] = {"success": True, "url": result.get("url", "")}
+                else:
+                    results[platform] = {
+                        "success": False,
+                        "error": result.get("error", "unknown error"),
+                    }
             except Exception as e:
                 logger.error(f"Failed to post to {platform}: {e}")
                 results[platform] = {"success": False, "error": str(e)}

@@ -190,6 +190,22 @@ def _bot_jitter(min_seconds: float = 0.5, max_seconds: float = 2.0) -> None:
     time.sleep(random.uniform(min_seconds, max_seconds))
 
 
+def manual_copy_result(
+    platform: str,
+    content: str,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Return a non-posted result that still gives the owner usable copy."""
+    return {
+        "success": False,
+        "manual_only": True,
+        "status": "manual_only",
+        "platform": platform,
+        "content": content,
+        "error": reason or f"{platform} is disabled; use manual copy.",
+    }
+
+
 # ── X (Twitter) Client ───────────────────────────────────────────────────
 
 

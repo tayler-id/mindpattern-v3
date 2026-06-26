@@ -312,6 +312,18 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 73 passed in 0.04s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 235 passed in 3.27s.
 
+### 2026-06-26 Task 7 Manual-Copy Fallback
+
+Added a structured `manual_only` posting result and wired it into `#mp-posts`,
+`#mp-skills`, and `#mp-tips`. Disabled platforms now return the final draft as
+manual copy without initializing live API clients. Client failures in skills
+and tips are no longer reported as successful posts.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 79 passed in 0.19s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_posting.py -q` -> 132 passed in 0.18s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

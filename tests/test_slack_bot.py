@@ -586,3 +586,154 @@ class TestSkillsTipsEditFlow:
             for call in client.chat_postMessage.call_args_list
         ]
         assert any("unknown platform" in message.lower() for message in messages)
+
+
+class TestDisabledPlatformManualCopy:
+    """Disabled platforms should return copyable drafts, not live-post attempts."""
+
+    disabled_config = {
+        "platforms": {
+            "bluesky": {"enabled": False, "max_chars": 300},
+            "linkedin": {"enabled": False, "max_chars": 3000},
+        }
+    }
+
+    def test_posts_disabled_platforms_return_manual_copy_and_skip_clients(self):
+        from slack_bot.handlers.posts import PostsHandler
+
+        handler = PostsHandler(
+            client=MagicMock(),
+            channel_id="C_POSTS",
+            owner_user_id="U_OWNER",
+        )
+        handler._load_social_config = MagicMock(return_value=self.disabled_config)
+
+        with patch("social.posting.BlueskyClient") as bluesky_client:
+            with patch("social.posting.LinkedInClient") as linkedin_client:
+                results = handler._post_to_platforms(
+                    {"bluesky": "Bluesky copy", "linkedin": "LinkedIn copy"},
+                    ["bluesky", "linkedin"],
+                )
+
+        assert results["bluesky"]["manual_only"] is True
+        assert results["bluesky"]["success"] is False
+        assert results["bluesky"]["content"] == "Bluesky copy"
+        assert results["linkedin"]["manual_only"] is True
+        assert results["linkedin"]["success"] is False
+        assert results["linkedin"]["content"] == "LinkedIn copy"
+        bluesky_client.assert_not_called()
+        linkedin_client.assert_not_called()
+
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_skills_tips_disabled_platforms_return_manual_copy_and_skip_clients(
+        self, handler_class, channel_id
+    ):
+        handler = handler_class(
+            client=MagicMock(),
+            channel_id=channel_id,
+            owner_user_id="U_OWNER",
+        )
+        handler._load_social_config = MagicMock(return_value=self.disabled_config)
+
+        with patch("social.posting.BlueskyClient") as bluesky_client:
+            with patch("social.posting.LinkedInClient") as linkedin_client:
+                results = handler._post(
+                    {"bluesky": "Bluesky copy", "linkedin": "LinkedIn copy"},
+                    ["bluesky", "linkedin"],
+                )
+
+        assert results["bluesky"]["manual_only"] is True
+        assert results["bluesky"]["success"] is False
+        assert results["bluesky"]["content"] == "Bluesky copy"
+        assert results["linkedin"]["manual_only"] is True
+        assert results["linkedin"]["success"] is False
+        assert results["linkedin"]["content"] == "LinkedIn copy"
+        bluesky_client.assert_not_called()
+        linkedin_client.assert_not_called()
+
+    def test_posts_manual_copy_result_is_reported_as_copy_block(self):
+        from slack_bot.handlers.posts import PostsHandler
+
+        client = MagicMock()
+        handler = PostsHandler(
+            client=client,
+            channel_id="C_POSTS",
+            owner_user_id="U_OWNER",
+        )
+        handler._run_social_pipeline = MagicMock(return_value=(
+            {"bluesky": "Bluesky copy"},
+            {},
+        ))
+        handler.wait_for_reply = MagicMock(return_value="bluesky")
+        handler._post_to_platforms = MagicMock(return_value={
+            "bluesky": {
+                "success": False,
+                "manual_only": True,
+                "content": "Bluesky copy",
+                "error": "bluesky is disabled",
+            }
+        })
+
+        handler._run_and_approve({"anchor": "topic"}, "123.456")
+
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("manual copy" in message.lower() for message in messages)
+        assert any("Bluesky copy" in message for message in messages)
+        assert not any(":x: bluesky" in message for message in messages)
+
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_skills_tips_manual_copy_result_is_reported_as_copy_block(
+        self, handler_class, channel_id
+    ):
+        client = MagicMock()
+        handler = handler_class(
+            client=client,
+            channel_id=channel_id,
+            owner_user_id="U_OWNER",
+        )
+        handler._create_drafts = MagicMock(return_value={"bluesky": "Bluesky copy"})
+        handler.react = MagicMock()
+        handler.wait_for_reply = MagicMock(return_value="bluesky")
+        handler._post = MagicMock(return_value={
+            "bluesky": {
+                "success": False,
+                "manual_only": True,
+                "content": "Bluesky copy",
+                "error": "bluesky is disabled",
+            }
+        })
+
+        handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("manual copy" in message.lower() for message in messages)
+        assert any("Bluesky copy" in message for message in messages)
+        assert not any(":x: bluesky" in message.lower() for message in messages)

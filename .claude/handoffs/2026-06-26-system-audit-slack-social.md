@@ -265,6 +265,13 @@ Goal execution baseline on 2026-06-26:
     -> 73 passed in 0.04s.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
     -> 235 passed in 3.27s.
+- Task 7 complete: disabled platforms now return structured manual-copy
+  results in `#mp-posts`, `#mp-skills`, and `#mp-tips` without initializing
+  live API clients. Skills/tips no longer mark client failures as successful.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 79 passed in 0.19s.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_posting.py -q`
+    -> 132 passed in 0.18s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

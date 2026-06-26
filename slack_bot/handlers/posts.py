@@ -184,6 +184,9 @@ class PostsHandler(BaseHandler):
         for platform, result in results.items():
             if result.get("success"):
                 result_lines.append(f":white_check_mark: {platform}: {result.get('url', 'posted')}")
+            elif result.get("manual_only"):
+                result_lines.append(f":memo: {platform} manual copy: {result.get('error', '')}")
+                result_lines.append(f"```{result.get('content', '')}```")
             else:
                 result_lines.append(f":x: {platform}: {result.get('error', 'unknown')}")
 
@@ -321,7 +324,7 @@ class PostsHandler(BaseHandler):
 
     def _post_to_platforms(self, drafts: dict, platforms: list[str]) -> dict:
         """Post drafts to approved platforms. Returns {platform: result}."""
-        from social.posting import BlueskyClient, LinkedInClient
+        from social.posting import BlueskyClient, LinkedInClient, manual_copy_result
 
         config = self._load_social_config()
         results = {}
@@ -331,9 +334,17 @@ class PostsHandler(BaseHandler):
                 results[platform] = {"success": False, "error": "No draft for this platform"}
                 continue
 
+            platform_cfg = config.get("platforms", {}).get(platform, {})
+            if not platform_cfg.get("enabled"):
+                results[platform] = manual_copy_result(
+                    platform,
+                    draft,
+                    f"{platform} is disabled; use manual copy.",
+                )
+                continue
+
             # Enforce platform hard limits before calling the API — the writer/policy
             # engine should catch this, but we refuse to send a doomed request.
-            platform_cfg = config.get("platforms", {}).get(platform, {})
             if platform == "bluesky":
                 limit = platform_cfg.get("max_chars", 300)
             elif platform == "linkedin":
