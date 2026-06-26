@@ -59,6 +59,7 @@
 - Pushed current local `main` to a safety branch:
   - `origin/recovered/main-2026-06-26`
 - Pushed organized candidate/archive branches:
+  - `origin/archive/origin-main-pre-rewrite-2026-06-26`
   - `origin/candidate/cascade-model-routing-2026-04-01`
   - `origin/candidate/prompt-compression-llmlingua-2026-04-01`
   - `origin/archive/animated-gif-pipeline-2026-04-03`
@@ -68,18 +69,17 @@
 
 ## Important Remaining Decision
 
-`origin/main` is still not updated to local `main`.
+`origin/main` was updated to local `main` with `--force-with-lease` after the recovered branch was confirmed safe.
 
-Reason: local `main` and `origin/main` have no merge base. Updating GitHub's default branch to the local recovered `main` requires a history rewrite, likely:
+Reason: local `main` and the prior `origin/main` had no merge base, so updating GitHub's default branch required a history rewrite:
 
 ```bash
 git push --force-with-lease origin main:main
 ```
 
-Do not run that casually. Current recovered work is safe on GitHub at `origin/recovered/main-2026-06-26`, so there is no data-loss urgency. The next agent should get explicit user approval before rewriting `origin/main`.
+The prior remote main tip (`b202400`, "Merge pull request #23 from tayler-id/feat/smart-trend-scan") is preserved locally and remotely as `archive/origin-main-pre-rewrite-2026-06-26`.
 
 ## Known Follow-Ups
-- Decide whether to force-with-lease update `origin/main` from local `main`.
 - Decide whether candidate branches should be merged, kept, or deleted:
   - cascade model routing
   - LLMLingua prompt compression
