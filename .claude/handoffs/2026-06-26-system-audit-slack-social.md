@@ -218,7 +218,45 @@ Quality risks:
 5. Add a newsletter quality floor that retries or escalates when source count,
    agent count, unique URLs, or duplicate angles fall below thresholds.
 
-## 30 Prioritized Recommendations
+## 30 Pure New Feature Ideas
+
+These are new product/platform ideas, not repairs. They assume the broken
+source, newsletter quality, and Slack approval paths are stabilized first.
+
+| # | New feature | What it adds | Why it matters | Likely systems | Effort / Risk | Success signal |
+|---|---|---|---|---|---|---|
+| 1 | Slack Editorial Desk | A dedicated Slack command that shows today's best story candidates with approve, save, revise, and reject actions. | Turns Slack into the daily control room instead of a log feed. | `slack_bot`, `memory.db`, `reports` | M / Med | User can choose newsletter/social angles from Slack in one thread. |
+| 2 | Topic Watchlists | User-defined topics like "agent security", "AI IDEs", "MCP", or "SaaS disruption" with custom depth and priority. | Lets the system intentionally track what matters instead of only reacting to feeds. | `memory`, `preflight`, dashboard | M / Low | Watchlist topics appear with coverage and freshness scores. |
+| 3 | Trend Radar Dashboard | Visual map of rising topics, sources, companies, people, and tools over 7/30/90 days. | Makes research direction visible and helps spot momentum before it becomes obvious. | dashboard, embeddings, `run_quality` | L / Med | Dashboard shows trend clusters and velocity. |
+| 4 | Opportunity Brief Generator | Converts research into "what to build / sell / write / test next" briefs. | Moves beyond newsletter summarization into actionable strategy. | `orchestrator`, memory, dashboard | M / Med | Each issue can produce 3-5 opportunity briefs. |
+| 5 | Personal AI Research Assistant Chat | Ask questions over findings, newsletters, source archive, and vault memory. | Turns the archive into an interactive product instead of static history. | dashboard, embeddings, reports | L / Med | User can ask "what did we learn about MCP security this month?" |
+| 6 | Story Lifecycle Tracker | Tracks a story from first signal to follow-up coverage, newsletter inclusion, social draft, and user feedback. | Prevents repeated stale coverage while preserving valuable follow-ups. | memory, reports, social | M / Med | Each major story has first-seen, used-in, and follow-up history. |
+| 7 | Audience Feedback Portal | Lightweight page where readers can rate stories, request more/less, and submit topic requests. | Creates structured reader feedback instead of relying only on email replies. | dashboard, feedback tables | M / Low | Feedback records flow into preferences. |
+| 8 | Reader Segment Editions | Generate optional editions for builder, founder, investor, or security-reader emphasis. | Lets one research run serve multiple audiences without diluting the main issue. | newsletter synthesis, preferences | L / Med | Same findings produce multiple distinct issue variants. |
+| 9 | Weekly Strategy Memo | A Friday memo that synthesizes the week's patterns, not just daily stories. | Adds higher-level value and avoids daily-only short-termism. | reports, synthesis, memory | M / Low | Weekly memo cites the week's strongest evidence. |
+| 10 | "Why This Matters" Cards | For each major story, generate a concise card: what happened, why now, who cares, what to do. | Makes content easier to reuse in Slack, social, and dashboard. | newsletter, dashboard, social | M / Low | Cards generated for top stories every day. |
+| 11 | Source Trust Ledger | Tracks source reliability, freshness, uniqueness, and historical usefulness. | Helps the system prefer strong sources and explain why weak ones were downgraded. | preflight, memory, dashboard | M / Low | Top sources have trust/novelty scores. |
+| 12 | Company/Product Tracker | Follow specific companies, repos, products, and standards over time. | Useful for recurring intelligence on important players. | preflight, memory graph | M / Low | Dashboard shows timeline per company/product. |
+| 13 | GitHub Project Radar | Dedicated view for fast-rising repos, maintainers, funding, releases, and adoption signals. | Converts GitHub data into a real discovery product. | preflight GitHub, dashboard | M / Low | Radar highlights new projects before mainstream coverage. |
+| 14 | MCP/Agent Tool Registry | Searchable registry of tools, MCP servers, CLIs, install commands, health, and use cases. | Builds on the platform's existing agent-tool focus and makes it reusable. | dashboard, memory, agent-reach | M / Med | User can search "best YouTube transcript tools" and get vetted options. |
+| 15 | Build Recipe Generator | Converts "Skill of the Day" style findings into step-by-step implementation recipes. | Makes the newsletter directly useful to builders. | skill-finder, newsletter, dashboard | M / Low | Recipes include steps, prerequisites, and source links. |
+| 16 | Experiment Backlog | Auto-generates product/code experiments from research and stores them as candidate tickets. | Bridges research into actual building work. | harness, memory, dashboard | M / Med | Findings can create ranked experiment cards. |
+| 17 | Narrative Arc Builder | Tracks multi-day arcs like "AI IDEs consolidate" or "agent governance becomes a category." | Produces deeper analysis than isolated daily items. | memory graph, synthesis | L / Med | Issues can include recurring arcs with evidence trails. |
+| 18 | Social Angle Lab | For any story, generate multiple social angles: contrarian, builder lesson, market take, tactical tip. | Gives the Slack bot richer choices without auto-posting. | Slack bot, social writers | M / Low | `#mp-posts` can ask for angle variants. |
+| 19 | Content Swipe File | Saves strongest hooks, openers, titles, analogies, and post formats from past successful content. | Improves voice and speed over time. | memory, social, dashboard | M / Low | Bot can reuse proven structures without copying old content. |
+| 20 | Audio Morning Briefing | Generate a short spoken briefing from the daily issue or top research. | Adds a useful consumption mode for mornings. | newsletter, TTS provider, dashboard | M / Med | User can play a 3-5 minute briefing. |
+| 21 | Short-Form Video Script Mode | Converts a selected story into a 30-60 second video script and shot list. | Expands content output beyond newsletter and text social. | Slack bot, social writers | M / Low | Slack returns script, caption, and B-roll notes. |
+| 22 | Newsletter Section A/B Lab | Test alternate section ordering, titles, or framing against user/reader feedback. | Lets quality improve from evidence, not taste alone. | newsletter, feedback, evaluator | L / Med | Version metrics show which framing performs better. |
+| 23 | Personal Knowledge Graph Explorer | Browse entities, topics, sources, and story relationships from the vault/database. | Makes the accumulated research legible. | memory graph, dashboard | L / Med | User can navigate from topic to stories to sources. |
+| 24 | "Ask Follow-Up" Research Button | From a newsletter story or Slack draft, trigger a deeper follow-up research run. | Lets human curiosity steer the next layer of research. | Slack bot, orchestrator agents | M / Med | One Slack command launches scoped follow-up and returns findings. |
+| 25 | Competitive Landscape Maps | For a topic, produce a market map of companies, tools, categories, and open-source projects. | Useful for strategy and product opportunity discovery. | preflight, synthesis, dashboard | L / Med | Topic page shows category map with sources. |
+| 26 | Decision Journal | Track editorial/product decisions made from the research and whether they paid off. | Closes the loop between insight and action. | vault, dashboard, memory | M / Low | Decisions link to source evidence and later outcomes. |
+| 27 | Public Collections | Curated public pages like "Best AI agent tools this month" or "MCP security brief." | Turns private research into shareable assets. | dashboard, reports | M / Med | Collection page can be published from selected findings. |
+| 28 | Sponsor/Partner Match Finder | Finds companies/tools that match newsletter themes and audience. | Creates monetization/business-development options without changing editorial flow. | research agents, dashboard | M / Med | Weekly list of relevant sponsor/partner leads. |
+| 29 | Personal Engagement CRM | Track people engaged with on Bluesky/LinkedIn, conversation history, follow-ups, and outcomes. | Makes engagement strategic instead of one-off replies. | social engagement, memory, dashboard | M / Med | Contact timeline shows replies, topics, and next actions. |
+| 30 | Research API / Webhooks | Expose selected findings, cards, and briefs to other tools through API/webhooks. | Lets MindPattern become infrastructure for other workflows. | FastAPI dashboard, auth, memory | L / High | Authenticated endpoint returns current findings/cards. |
+
+## Mixed Repair and Improvement Backlog
 
 | # | Title | Type | Problem | Proposed change / why it matters | Files/systems | Benefit | Effort / Risk | Verification |
 |---|---|---|---|---|---|---|---|---|
