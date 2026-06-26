@@ -134,6 +134,48 @@ Evidence from history:
   - `/app/data` is symlinked to `/data`, so repo-relative data paths resolve to
     the Fly volume.
 
+Live Slack check on 2026-06-26:
+
+- User sent a live test in `#mp-posts`.
+  - Fly logs show the event reached the bot:
+    `Event received: type=message, channel=C0ANEDEDJD7, user=U0AM88ZGK8A`.
+  - The bot replied and started `PostsHandler`:
+    `[mp-posts] Creative Director: generating brief`.
+  - The handler progressed to:
+    `[mp-posts] Brief generated` and `[mp-posts] Running writers`.
+  - Writer stage then failed for both platforms:
+    `Writer failed for bluesky: No module named 'core'` and
+    `Writer failed for linkedin: No module named 'core'`.
+  - This proves Socket Mode, owner filtering, `#mp-posts` routing, and the
+    first Claude call worked on Fly. The concrete failure boundary was the Fly
+    image packaging: deployed code imports `core`, but the Dockerfile did not
+    copy `core/` into `/app`.
+  - Fix applied in working tree: add `COPY core/ core/` to `Dockerfile` and
+    add `tests/test_fly_dockerfile.py` to guard the packaging dependency.
+- Slack API check from the deployed bot token shows:
+  - `#mp-posts` = `C0ANEDEDJD7`, bot member, user member, public, not archived.
+  - `#mp-skills` = `C0AP3CCL4G5`, bot member, user member, public, not archived.
+  - `#mp-tips` = `C0APYE9HBK3`, bot member, user member, public, not archived.
+  - `#mp-briefing` and `#mp-engagement` also show bot/user membership.
+- Recent Slack history metadata, without message bodies:
+  - Latest `#mp-skills` owner message: 2026-05-12 09:36:58 EDT.
+  - Latest `#mp-tips` owner message: 2026-05-12 09:15:07 EDT.
+  - Latest `#mp-posts` owner message: 2026-06-26 14:08:36 EDT.
+- Interpretation for `#mp-skills` / `#mp-tips`:
+  - They are not deleted, private, archived, or missing from the deployed bot
+    config.
+  - The bot and owner are still members of both channels.
+  - No current-day user message has landed in those channels according to Slack
+    history. The next useful test is a live `help` message in each channel while
+    tailing Fly logs.
+  - Current code makes `#mp-skills` and `#mp-tips` reactive channels: a user
+    pastes a skill/tip, then the bot creates drafts and waits for approval. The
+    audit has not found a daily scheduled path that automatically creates Skill
+    of the Day or Tayler'd Tip drafts.
+  - The Slack app manifest only includes public-channel scopes/events
+    (`channels:*`, `message.channels`). If these channels are ever converted to
+    private channels, the current bot will not receive their messages.
+
 Interpretation:
 
 - The regression is probably not "bot process dead" or "channels missing".

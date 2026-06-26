@@ -25,6 +25,7 @@ COPY slack_bot/ slack_bot/
 COPY dashboard/ dashboard/
 COPY orchestrator/ orchestrator/
 COPY social/ social/
+COPY core/ core/
 COPY memory/ memory/
 COPY policies/ policies/
 COPY agents/ agents/
