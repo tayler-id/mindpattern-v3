@@ -351,6 +351,21 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_posting.py -q` -> 58 passed in 0.12s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 81 passed in 0.10s.
 
+### 2026-06-26 Task 10 SocialPipeline Draft-Only Path
+
+Updated `SocialPipeline` to target draft-capable platforms, not only live
+clients. With all platforms configured as `enabled: false`, the pipeline now
+selects a topic, creates a brief, writes/reviews/humanizes/expedites drafts,
+requests approval, and returns `manual_copy` results without initializing or
+calling live posting clients. Writer errors in draft-only mode now surface as
+structured `Writing: ...` errors instead of the old `No enabled platforms`
+early exit.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_social.py -q` -> 46 passed in 0.11s.
+- `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q` -> 107 passed in 0.63s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

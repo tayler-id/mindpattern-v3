@@ -290,6 +290,15 @@ Goal execution baseline on 2026-06-26:
     -> 58 passed in 0.12s.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
     -> 81 passed in 0.10s.
+- Task 10 complete: `SocialPipeline` now targets draft-capable platforms, so
+  all-disabled platform config can still select a topic, create a brief, write
+  drafts, request approval, and return `manual_copy` results without
+  initializing live API clients. Draft-only writer failures are structured
+  `Writing: ...` errors, not early platform skips.
+  - `.venv/bin/python3 -m pytest tests/test_social.py -q`
+    -> 46 passed in 0.11s.
+  - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q`
+    -> 107 passed in 0.63s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

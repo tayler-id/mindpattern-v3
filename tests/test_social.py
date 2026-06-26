@@ -982,6 +982,84 @@ class TestSocialPipeline:
 
         assert result["kill_day"] is True
 
+    def test_run_disabled_platforms_returns_manual_copy_without_clients(self, mock_keychain):
+        """Disabled but draft-capable platforms should still produce copy."""
+        config = {
+            "platforms": {
+                "bluesky": {"enabled": False, "max_chars": 300},
+                "linkedin": {"enabled": False, "max_chars": 3000},
+            },
+            "gate_timeout_seconds": 5,
+            "writers": {},
+            "eic": {},
+        }
+        mock_db = MagicMock()
+        mock_approval = MagicMock()
+        mock_approval.request_topic_approval.return_value = {"action": "go"}
+        mock_approval.request_draft_approval.return_value = {"action": "all"}
+
+        with patch("social.pipeline.PolicyEngine") as MockPE, \
+             patch("social.pipeline.ApprovalGateway", return_value=mock_approval), \
+             patch("social.pipeline.BlueskyClient") as bluesky_client, \
+             patch("social.pipeline.LinkedInClient") as linkedin_client, \
+             patch("social.pipeline.select_topic", return_value={"anchor": "AI agents"}), \
+             patch("social.pipeline.create_brief", return_value={"angle": "test"}), \
+             patch("social.pipeline.write_drafts", return_value={
+                 "bluesky": "Bluesky draft",
+                 "linkedin": "LinkedIn draft",
+             }) as write_drafts_mock, \
+             patch("social.pipeline.review_draft", return_value={"verdict": "PASS"}), \
+             patch("social.pipeline._humanize", side_effect=lambda text, _platform, _db: text), \
+             patch("social.pipeline.expedite", return_value={"verdict": "PASS"}):
+            mock_policy = MagicMock()
+            mock_policy.validate_social_post.return_value = []
+            MockPE.load_social.return_value = mock_policy
+
+            from social.pipeline import SocialPipeline
+
+            pipeline = SocialPipeline(user_id="test", config=config, db=mock_db)
+            result = pipeline.run(skip_art=True)
+
+        bluesky_client.assert_not_called()
+        linkedin_client.assert_not_called()
+        assert "No enabled platforms found" not in result["errors"]
+        assert result["publish_mode"] == "manual_only"
+        assert result["platforms_posted"] == []
+        assert {p["platform"] for p in result["manual_copy"]} == {"bluesky", "linkedin"}
+        assert all(p["status"] == "manual_only" for p in result["manual_copy"])
+        assert result["posts"] == result["manual_copy"]
+        assert set(write_drafts_mock.call_args.kwargs["platforms"]) == {"bluesky", "linkedin"}
+
+    def test_run_draft_only_writer_error_is_structured(self, mock_keychain):
+        """Draft-only mode should surface writer errors, not platform skips."""
+        config = {
+            "platforms": {
+                "bluesky": {"enabled": False, "max_chars": 300},
+            },
+            "gate_timeout_seconds": 5,
+            "writers": {},
+            "eic": {},
+        }
+        mock_db = MagicMock()
+        mock_approval = MagicMock()
+        mock_approval.request_topic_approval.return_value = {"action": "go"}
+
+        with patch("social.pipeline.PolicyEngine") as MockPE, \
+             patch("social.pipeline.ApprovalGateway", return_value=mock_approval), \
+             patch("social.pipeline.select_topic", return_value={"anchor": "AI agents"}), \
+             patch("social.pipeline.create_brief", return_value={"angle": "test"}), \
+             patch("social.pipeline.write_drafts", side_effect=RuntimeError("writer died")):
+            MockPE.load_social.return_value = MagicMock()
+
+            from social.pipeline import SocialPipeline
+
+            pipeline = SocialPipeline(user_id="test", config=config, db=mock_db)
+            result = pipeline.run(skip_art=True)
+
+        assert result["publish_mode"] == "manual_only"
+        assert "No enabled platforms found" not in result["errors"]
+        assert any("Writing: writer died" in error for error in result["errors"])
+
 
 # ────────────────────────────────────────────────────────────────────────
 # social/engagement.py — EngagementPipeline

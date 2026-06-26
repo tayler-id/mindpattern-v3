@@ -25,7 +25,14 @@ from social.art import create_art
 from social.eic import select_topic, create_brief
 from social.writers import write_drafts, _humanize
 from social.critics import review_draft, deterministic_validate, expedite
-from social.posting import BlueskyClient, LinkedInClient
+from social.posting import (
+    BlueskyClient,
+    LinkedInClient,
+    manual_copy_result,
+    resolve_platform_publish_mode,
+    skipped_result,
+    error_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +81,33 @@ class SocialPipeline:
             enabled = [p for p in enabled if p in filter_list]
         return enabled
 
+    def _draft_capable_platforms(self, filter_list: list[str] | None = None) -> list[str]:
+        """Get platform names that can produce drafts/manual copy."""
+        platform_names = list(self.config.get("platforms", {}))
+        if filter_list:
+            platform_names = [p for p in platform_names if p in filter_list]
+        return [
+            p for p in platform_names
+            if resolve_platform_publish_mode(p, self.config).get("can_draft")
+        ]
+
+    def _publish_mode_for(self, live_platforms: list[str], draft_platforms: list[str]) -> str:
+        """Summarize the current run's publishing mode."""
+        if live_platforms and set(live_platforms) == set(draft_platforms):
+            return "live"
+        if live_platforms:
+            return "mixed"
+        if draft_platforms:
+            return "manual_only"
+        return "none"
+
+    @staticmethod
+    def _draft_text(draft) -> str:
+        """Return text content from either a raw string or writer result dict."""
+        if isinstance(draft, dict):
+            return draft.get("content", draft.get("text", str(draft)))
+        return draft
+
     def run(self, *, skip_art: bool = True, platforms: list[str] = None) -> dict:
         """Execute the full social pipeline.
 
@@ -114,35 +148,47 @@ class SocialPipeline:
             "expeditor_verdict": "unknown",
             "pending_deferred": [],
             "pending_posted": [],
+            "publish_mode": "unknown",
+            "live_platforms": [],
+            "draft_platforms": [],
+            "manual_copy": [],
         }
-        target_platforms = self._enabled_platforms(platforms)
+        live_platforms = self._enabled_platforms(platforms)
+        target_platforms = self._draft_capable_platforms(platforms)
+        result["live_platforms"] = live_platforms
+        result["draft_platforms"] = target_platforms
+        result["publish_mode"] = self._publish_mode_for(live_platforms, target_platforms)
 
         if not target_platforms:
-            result["errors"].append("No enabled platforms found")
+            result["errors"].append("No draft-capable platforms found")
             return result
 
         # ── Step 0a: Post any pending (deferred) posts first ──────────
-        logger.info("Step 0a: Checking for pending deferred posts")
-        pending_posted = self._post_pending(target_platforms)
-        if pending_posted:
-            result["pending_posted"] = pending_posted
-            result["platforms_posted"].extend(
-                [p["platform"] for p in pending_posted if not p.get("error")]
-            )
-            result["posts"].extend(pending_posted)
+        if live_platforms:
+            logger.info("Step 0a: Checking for pending deferred posts")
+            pending_posted = self._post_pending(live_platforms)
+            if pending_posted:
+                result["pending_posted"] = pending_posted
+                result["platforms_posted"].extend(
+                    [p["platform"] for p in pending_posted if not p.get("error")]
+                )
+                result["posts"].extend(pending_posted)
+        else:
+            logger.info("Step 0a: Skipping pending posts in manual-only mode")
 
         # ── Step 0b: Early rate limit check ───────────────────────────
         # Check rate limits BEFORE burning LLM calls on topic/brief/writing.
         # Remove platforms that have already hit their daily post limit.
         rate_limited = []
-        for platform in list(target_platforms):
+        for platform in list(live_platforms):
             rate_error = self.policy.validate_post_rate_limit(platform, self.db)
             if rate_error:
                 logger.info(
                     f"Early rate limit: skipping {platform} — {rate_error}"
                 )
                 rate_limited.append(platform)
-                target_platforms.remove(platform)
+                if platform in target_platforms:
+                    target_platforms.remove(platform)
                 result["skipped_platforms"].append(platform)
 
         if not target_platforms:
@@ -480,6 +526,35 @@ class SocialPipeline:
 
         if not drafts:
             logger.info("No platforms approved after filtering")
+            return result
+
+        approved_drafts = dict(drafts)
+        live_drafts = {}
+        for platform, draft in drafts.items():
+            mode = resolve_platform_publish_mode(platform, self.config)
+            if mode["mode"] == "live":
+                live_drafts[platform] = draft
+            elif mode["mode"] == "manual_only":
+                manual = manual_copy_result(
+                    platform,
+                    self._draft_text(draft),
+                    mode["reason"],
+                )
+                result["manual_copy"].append(manual)
+                result["posts"].append(manual)
+            elif mode["mode"] == "disabled":
+                skipped = skipped_result(platform, mode["reason"])
+                result["skipped_platforms"].append(platform)
+                result["posts"].append(skipped)
+            else:
+                err = error_result(platform, mode["reason"])
+                result["errors"].append(err["error"])
+                result["posts"].append(err)
+
+        drafts = live_drafts
+        if not drafts:
+            logger.info("No live platforms approved; returning manual-copy results")
+            self._log_feedback(approved_drafts, approval_response)
             return result
 
         # ── Step 10: Post with jitter (or defer to posting window) ────
@@ -925,4 +1000,3 @@ class SocialPipeline:
                     logger.warning(
                         f"Failed to store correction for {platform}: {e}"
                     )
-
