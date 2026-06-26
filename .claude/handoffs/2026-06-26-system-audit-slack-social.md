@@ -307,6 +307,13 @@ Goal execution baseline on 2026-06-26:
     -> 62 passed in 0.48s.
   - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q`
     -> 108 passed in 0.53s.
+- Task 12 complete: `#mp-briefing` pipeline summaries now distinguish posted,
+  manual-copy draft, skipped, error, kill-day, and no-post social states. Manual
+  summaries include platform/status only, not draft bodies.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 84 passed in 0.10s.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_runner.py -q`
+    -> 146 passed in 0.52s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

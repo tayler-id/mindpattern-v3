@@ -378,6 +378,17 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_runner.py -q` -> 62 passed in 0.48s.
 - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q` -> 108 passed in 0.53s.
 
+### 2026-06-26 Task 12 Briefing Social Draft State
+
+Updated `#mp-briefing` pipeline summaries to distinguish live posted,
+manual-copy draft, skipped, error, kill-day, and no-post states. Manual-copy
+summaries include only platform names and status, not draft bodies.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 84 passed in 0.10s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_runner.py -q` -> 146 passed in 0.52s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

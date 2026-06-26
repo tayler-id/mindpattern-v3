@@ -822,3 +822,67 @@ class TestSlackBotDoctorStatus:
         assert "U_OWNER" not in text
         assert "bot-sensitive-value" not in lower
         assert "app-sensitive-value" not in lower
+
+
+class TestBriefingSocialState:
+    """Briefing summaries should distinguish social states safely."""
+
+    @staticmethod
+    def _handler():
+        from slack_bot.handlers.briefing import BriefingHandler
+
+        client = MagicMock()
+        handler = BriefingHandler(
+            client=client,
+            channel_id="C_BRIEFING",
+            owner_user_id="U_OWNER",
+        )
+        return handler, client
+
+    def test_pipeline_summary_reports_manual_copy_without_content(self):
+        handler, client = self._handler()
+
+        handler.post_pipeline_summary({
+            "findings_count": 12,
+            "newsletter_generated": True,
+            "social": {
+                "publish_mode": "manual_only",
+                "manual_copy": [
+                    {
+                        "platform": "bluesky",
+                        "status": "manual_only",
+                        "content": "Do not leak this draft copy",
+                    }
+                ],
+            },
+        })
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "Social: Manual-copy drafts for bluesky" in text
+        assert "No posts" not in text
+        assert "Do not leak this draft copy" not in text
+
+    def test_pipeline_summary_reports_skipped_reason(self):
+        handler, client = self._handler()
+
+        handler.post_pipeline_summary({
+            "social": {
+                "skipped": True,
+                "reason": "no draft-capable platforms",
+            },
+        })
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "Social: Skipped - no draft-capable platforms" in text
+
+    def test_pipeline_summary_reports_social_error(self):
+        handler, client = self._handler()
+
+        handler.post_pipeline_summary({
+            "social": {
+                "errors": ["Writing: writer died"],
+            },
+        })
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "Social: Error - Writing: writer died" in text

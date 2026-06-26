@@ -77,6 +77,40 @@ class BriefingHandler(BaseHandler):
         state = "stale" if heartbeat.is_stale() else "fresh"
         return f"{state} ({age}s old)"
 
+    def _format_social_state(self, social: dict) -> str | None:
+        """Format social status without including draft/post bodies."""
+        if not social:
+            return None
+
+        platforms_posted = social.get("platforms_posted") or []
+        if platforms_posted:
+            return f"Social: Posted to {', '.join(platforms_posted)}"
+
+        manual_copy = social.get("manual_copy") or [
+            p for p in social.get("posts", [])
+            if p.get("manual_only") or p.get("status") == "manual_only"
+        ]
+        if manual_copy:
+            platforms = list(dict.fromkeys(
+                p.get("platform", "unknown") for p in manual_copy
+            ))
+            return f"Social: Manual-copy drafts for {', '.join(platforms)}"
+
+        if social.get("skipped"):
+            return f"Social: Skipped - {social.get('reason', 'unknown reason')}"
+
+        errors = social.get("errors") or []
+        if errors:
+            return f"Social: Error - {errors[0]}"
+
+        if social.get("kill_day"):
+            return "Social: Kill day"
+
+        if social.get("publish_mode") == "manual_only":
+            return "Social: Manual-only, no approved drafts"
+
+        return "Social: No posts"
+
     def _post_status(self, ts: str, date_str: str | None = None) -> None:
         """Query pipeline data and post a status summary."""
         if not date_str:
@@ -162,9 +196,9 @@ class BriefingHandler(BaseHandler):
             lines.append("Newsletter: Sent")
 
         social = results.get("social", {})
-        platforms = social.get("platforms_posted", [])
-        if platforms:
-            lines.append(f"Social: Posted to {', '.join(platforms)}")
+        social_line = self._format_social_state(social)
+        if social_line:
+            lines.append(social_line)
 
         verdict = social.get("expeditor_verdict", "")
         if verdict:
