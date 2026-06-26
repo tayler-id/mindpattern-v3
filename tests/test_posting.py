@@ -20,7 +20,16 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 import requests
 
-from social.posting import LinkedInClient, BlueskyClient, compress_image
+from social.posting import (
+    BlueskyClient,
+    LinkedInClient,
+    compress_image,
+    error_result,
+    manual_copy_result,
+    post_success_result,
+    resolve_platform_publish_mode,
+    skipped_result,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -73,6 +82,73 @@ def bluesky_client(bluesky_config):
 
 
 # ── LinkedIn Tests ────────────────────────────────────────────────────────
+
+
+class TestPlatformPublishModes:
+    """Platform publish modes should separate live, manual, disabled, unknown."""
+
+    def test_enabled_platform_is_live_capable(self):
+        config = {"platforms": {"bluesky": {"enabled": True, "max_chars": 300}}}
+
+        mode = resolve_platform_publish_mode("bluesky", config)
+
+        assert mode["mode"] == "live"
+        assert mode["can_post"] is True
+        assert mode["can_draft"] is True
+        assert mode["result_status"] == "posted"
+
+    def test_configured_disabled_platform_is_manual_only_by_default(self):
+        config = {"platforms": {"linkedin": {"enabled": False, "max_chars": 3000}}}
+
+        mode = resolve_platform_publish_mode("linkedin", config)
+
+        assert mode["mode"] == "manual_only"
+        assert mode["can_post"] is False
+        assert mode["can_draft"] is True
+        assert mode["result_status"] == "manual_only"
+
+    def test_explicit_draft_disabled_platform_is_skipped(self):
+        config = {
+            "platforms": {
+                "linkedin": {
+                    "enabled": False,
+                    "draft_enabled": False,
+                    "max_chars": 3000,
+                }
+            }
+        }
+
+        mode = resolve_platform_publish_mode("linkedin", config)
+
+        assert mode["mode"] == "disabled"
+        assert mode["can_post"] is False
+        assert mode["can_draft"] is False
+        assert mode["result_status"] == "skipped"
+
+    def test_unknown_platform_is_error(self):
+        config = {"platforms": {"bluesky": {"enabled": True}}}
+
+        mode = resolve_platform_publish_mode("mastodon", config)
+
+        assert mode["mode"] == "unknown"
+        assert mode["can_post"] is False
+        assert mode["can_draft"] is False
+        assert mode["result_status"] == "error"
+
+    def test_result_shapes_have_distinct_statuses(self):
+        posted = post_success_result("bluesky", url="https://bsky.app/post/1")
+        manual = manual_copy_result("linkedin", "copy")
+        skipped = skipped_result("linkedin", "draft disabled")
+        error = error_result("mastodon", "unknown platform")
+
+        assert posted["success"] is True
+        assert posted["status"] == "posted"
+        assert manual["success"] is False
+        assert manual["status"] == "manual_only"
+        assert skipped["success"] is False
+        assert skipped["status"] == "skipped"
+        assert error["success"] is False
+        assert error["status"] == "error"
 
 
 def test_post_to_linkedin_success(linkedin_client):

@@ -281,6 +281,15 @@ Goal execution baseline on 2026-06-26:
     -> 81 passed in 0.11s.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
     -> 243 passed in 3.23s.
+- Task 9 complete: centralized platform publish modes in `social.posting`.
+  `enabled: true` is live, configured `enabled: false` is `manual_only` by
+  default, explicit `draft_enabled: false` is `skipped`, and unknown/missing
+  platforms are `error`. Slack post/skills/tips handlers now use the same mode
+  helper and canonical result statuses.
+  - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_posting.py -q`
+    -> 58 passed in 0.12s.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 81 passed in 0.10s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

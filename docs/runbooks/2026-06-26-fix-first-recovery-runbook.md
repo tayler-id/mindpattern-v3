@@ -337,6 +337,20 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 81 passed in 0.11s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 243 passed in 3.23s.
 
+### 2026-06-26 Task 9 Platform Publish Modes
+
+Centralized platform publish-mode resolution in `social.posting`. Platforms
+with `enabled: true` are live-capable, configured platforms with
+`enabled: false` remain `manual_only` by default, explicit
+`draft_enabled: false` becomes `skipped`, and unknown/missing platforms become
+`error`. Slack post/skills/tips handlers now use the same mode helper and
+canonical result statuses.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_social.py tests/test_posting.py -q` -> 58 passed in 0.12s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 81 passed in 0.10s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

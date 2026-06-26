@@ -104,6 +104,8 @@ class SkillsHandler(BaseHandler):
             elif result.get("manual_only"):
                 result_lines.append(f"{platform} manual copy: {result.get('error', '')}")
                 result_lines.append(f"```{result.get('content', '')}```")
+            elif result.get("status") == "skipped":
+                result_lines.append(f"{platform} skipped: {result.get('error', '')}")
             else:
                 result_lines.append(f"{platform} failed: {result.get('error', 'unknown')}")
         self.reply("\n".join(result_lines), thread_ts=ts)
@@ -198,7 +200,15 @@ class SkillsHandler(BaseHandler):
 
     def _post(self, drafts: dict, platforms: list[str]) -> dict:
         """Post to approved platforms."""
-        from social.posting import BlueskyClient, LinkedInClient, manual_copy_result
+        from social.posting import (
+            BlueskyClient,
+            LinkedInClient,
+            error_result,
+            manual_copy_result,
+            post_success_result,
+            resolve_platform_publish_mode,
+            skipped_result,
+        )
 
         config = self._load_social_config()
         results = {}
@@ -207,13 +217,20 @@ class SkillsHandler(BaseHandler):
             draft = drafts.get(platform)
             if not draft:
                 continue
+            mode = resolve_platform_publish_mode(platform, config)
             platform_cfg = config.get("platforms", {}).get(platform, {})
-            if not platform_cfg.get("enabled"):
+            if mode["mode"] == "manual_only":
                 results[platform] = manual_copy_result(
                     platform,
                     draft,
-                    f"{platform} is disabled; use manual copy.",
+                    mode["reason"],
                 )
+                continue
+            if mode["mode"] == "disabled":
+                results[platform] = skipped_result(platform, mode["reason"])
+                continue
+            if mode["mode"] == "unknown":
+                results[platform] = error_result(platform, mode["reason"])
                 continue
             try:
                 if platform == "bluesky":
@@ -227,7 +244,10 @@ class SkillsHandler(BaseHandler):
                     continue
 
                 if result.get("success"):
-                    results[platform] = {"success": True, "url": result.get("url", "")}
+                    results[platform] = post_success_result(
+                        platform,
+                        url=result.get("url", ""),
+                    )
                 else:
                     results[platform] = {
                         "success": False,

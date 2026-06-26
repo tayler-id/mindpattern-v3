@@ -187,6 +187,8 @@ class PostsHandler(BaseHandler):
             elif result.get("manual_only"):
                 result_lines.append(f":memo: {platform} manual copy: {result.get('error', '')}")
                 result_lines.append(f"```{result.get('content', '')}```")
+            elif result.get("status") == "skipped":
+                result_lines.append(f":fast_forward: {platform} skipped: {result.get('error', '')}")
             else:
                 result_lines.append(f":x: {platform}: {result.get('error', 'unknown')}")
 
@@ -324,7 +326,15 @@ class PostsHandler(BaseHandler):
 
     def _post_to_platforms(self, drafts: dict, platforms: list[str]) -> dict:
         """Post drafts to approved platforms. Returns {platform: result}."""
-        from social.posting import BlueskyClient, LinkedInClient, manual_copy_result
+        from social.posting import (
+            BlueskyClient,
+            LinkedInClient,
+            error_result,
+            manual_copy_result,
+            post_success_result,
+            resolve_platform_publish_mode,
+            skipped_result,
+        )
 
         config = self._load_social_config()
         results = {}
@@ -334,13 +344,20 @@ class PostsHandler(BaseHandler):
                 results[platform] = {"success": False, "error": "No draft for this platform"}
                 continue
 
+            mode = resolve_platform_publish_mode(platform, config)
             platform_cfg = config.get("platforms", {}).get(platform, {})
-            if not platform_cfg.get("enabled"):
+            if mode["mode"] == "manual_only":
                 results[platform] = manual_copy_result(
                     platform,
                     draft,
-                    f"{platform} is disabled; use manual copy.",
+                    mode["reason"],
                 )
+                continue
+            if mode["mode"] == "disabled":
+                results[platform] = skipped_result(platform, mode["reason"])
+                continue
+            if mode["mode"] == "unknown":
+                results[platform] = error_result(platform, mode["reason"])
                 continue
 
             # Enforce platform hard limits before calling the API — the writer/policy
@@ -370,11 +387,11 @@ class PostsHandler(BaseHandler):
 
                 # Pass the client's success flag straight through — do not claim success on failure.
                 if post_result.get("success"):
-                    results[platform] = {
-                        "success": True,
-                        "url": post_result.get("url", ""),
-                        "uri": post_result.get("uri", ""),
-                    }
+                    results[platform] = post_success_result(
+                        platform,
+                        url=post_result.get("url", ""),
+                        uri=post_result.get("uri", ""),
+                    )
                     # Journal the phone post so the Mac pipeline's dedup,
                     # rate caps, and receipts see it (M0 task 15).
                     try:

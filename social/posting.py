@@ -27,6 +27,8 @@ from requests_oauthlib import OAuth1
 
 log = logging.getLogger(__name__)
 
+SUPPORTED_PUBLISH_PLATFORMS = frozenset({"bluesky", "linkedin", "x"})
+
 
 # ── Shared helpers ───────────────────────────────────────────────────────
 
@@ -203,6 +205,103 @@ def manual_copy_result(
         "platform": platform,
         "content": content,
         "error": reason or f"{platform} is disabled; use manual copy.",
+    }
+
+
+def post_success_result(
+    platform: str,
+    *,
+    url: str = "",
+    id: str = "",
+    uri: str = "",
+) -> dict[str, Any]:
+    """Return the canonical result shape for a successful live post."""
+    return {
+        "success": True,
+        "status": "posted",
+        "platform": platform,
+        "url": url,
+        "id": id,
+        "uri": uri,
+    }
+
+
+def skipped_result(platform: str, reason: str) -> dict[str, Any]:
+    """Return the canonical result shape for an intentional skip."""
+    return {
+        "success": False,
+        "status": "skipped",
+        "skipped": True,
+        "platform": platform,
+        "error": reason,
+    }
+
+
+def error_result(platform: str, error: str) -> dict[str, Any]:
+    """Return the canonical result shape for an error."""
+    return {
+        "success": False,
+        "status": "error",
+        "platform": platform,
+        "error": error,
+    }
+
+
+def resolve_platform_publish_mode(platform: str, config: dict) -> dict[str, Any]:
+    """Resolve whether a platform can post live, draft manually, or should skip.
+
+    `enabled: false` remains draft-capable by default so disabled API posting
+    does not kill Slack/manual-copy workflows. Set `draft_enabled: false` to
+    intentionally suppress drafts for a configured platform.
+    """
+    if platform not in SUPPORTED_PUBLISH_PLATFORMS:
+        return {
+            "platform": platform,
+            "mode": "unknown",
+            "can_post": False,
+            "can_draft": False,
+            "result_status": "error",
+            "reason": f"Unknown platform: {platform}",
+        }
+
+    platform_cfg = config.get("platforms", {}).get(platform)
+    if platform_cfg is None:
+        return {
+            "platform": platform,
+            "mode": "unknown",
+            "can_post": False,
+            "can_draft": False,
+            "result_status": "error",
+            "reason": f"No config for platform: {platform}",
+        }
+
+    if platform_cfg.get("enabled"):
+        return {
+            "platform": platform,
+            "mode": "live",
+            "can_post": True,
+            "can_draft": True,
+            "result_status": "posted",
+            "reason": "",
+        }
+
+    if platform_cfg.get("draft_enabled", True):
+        return {
+            "platform": platform,
+            "mode": "manual_only",
+            "can_post": False,
+            "can_draft": True,
+            "result_status": "manual_only",
+            "reason": f"{platform} is disabled; use manual copy.",
+        }
+
+    return {
+        "platform": platform,
+        "mode": "disabled",
+        "can_post": False,
+        "can_draft": False,
+        "result_status": "skipped",
+        "reason": f"{platform} drafts are disabled.",
     }
 
 
