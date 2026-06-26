@@ -86,22 +86,31 @@ def linkedin_config():
 class TestKeychainGet:
     """Tests for keychain_get()."""
 
-    def test_missing_key_raises(self):
-        """keychain_get raises RuntimeError when key is not found."""
+    def test_macos_missing_key_raises(self):
+        """On macOS, keychain_get raises RuntimeError when key is not found."""
         fake_result = subprocess.CompletedProcess(
             args=[], returncode=44, stdout="", stderr="not found"
         )
-        with patch("social.posting.subprocess.run", return_value=fake_result):
-            with pytest.raises(RuntimeError, match="Could not read"):
-                keychain_get("nonexistent-key")
+        with patch("social.posting.sys.platform", "darwin"):
+            with patch("social.posting.subprocess.run", return_value=fake_result):
+                with pytest.raises(RuntimeError, match="Could not read"):
+                    keychain_get("nonexistent-key")
 
-    def test_success_returns_stripped(self):
-        """keychain_get returns stripped stdout on success."""
+    def test_macos_success_returns_stripped(self):
+        """On macOS, keychain_get returns stripped Keychain stdout on success."""
         fake_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="  my-secret-value  \n", stderr=""
         )
-        with patch("social.posting.subprocess.run", return_value=fake_result):
-            assert keychain_get("some-key") == "my-secret-value"
+        with patch("social.posting.sys.platform", "darwin"):
+            with patch("social.posting.subprocess.run", return_value=fake_result):
+                assert keychain_get("some-key") == "my-secret-value"
+
+    def test_non_macos_missing_key_raises_env_error(self):
+        """On Fly/Linux, missing env-backed secrets fail with an env-specific error."""
+        with patch("social.posting.sys.platform", "linux"):
+            with patch.dict("social.posting.os.environ", {}, clear=True):
+                with pytest.raises(RuntimeError, match="expected env var NONEXISTENT_KEY"):
+                    keychain_get("nonexistent-key")
 
     def test_non_macos_reads_matching_env_var(self):
         """On Fly/Linux, secrets come from env vars instead of macOS Keychain."""
