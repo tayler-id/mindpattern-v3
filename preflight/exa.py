@@ -55,10 +55,30 @@ def _parse_mcporter_output(text: str) -> list[dict]:
     return results
 
 
-def fetch(queries: list[str] | None = None, num_results: int = 5) -> list[dict]:
+def _stderr_snippet(stderr: str, limit: int = 300) -> str:
+    return (stderr or "").strip().replace("\n", " ")[:limit]
+
+
+def _summarize_failures(failures: list[dict]) -> str:
+    if not failures:
+        return ""
+    first = failures[0]
+    exit_code = first.get("exit_code")
+    query = first.get("query", "")
+    stderr = first.get("stderr", "")
+    if exit_code is None:
+        return f"mcporter {stderr} for {query}".strip()
+    return f"mcporter exit {exit_code} for {query}: {stderr}".strip()
+
+
+def fetch_with_diagnostics(
+    queries: list[str] | None = None,
+    num_results: int = 5,
+) -> tuple[list[dict], dict]:
     queries = queries or DEFAULT_QUERIES
     all_items = []
     seen_urls = set()
+    failures = []
 
     for query in queries:
         cmd = [
@@ -68,7 +88,14 @@ def fetch(queries: list[str] | None = None, num_results: int = 5) -> list[dict]:
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if proc.returncode != 0:
-                logger.warning(f"mcporter exa failed for '{query}': {proc.stderr[:200]}")
+                snippet = _stderr_snippet(proc.stderr)
+                logger.warning(f"mcporter exa failed for '{query}': {snippet[:200]}")
+                failures.append({
+                    "backend": "mcporter",
+                    "query": query,
+                    "exit_code": proc.returncode,
+                    "stderr": snippet,
+                })
                 continue
 
             results = _parse_mcporter_output(proc.stdout)
@@ -87,10 +114,59 @@ def fetch(queries: list[str] | None = None, num_results: int = 5) -> list[dict]:
 
         except subprocess.TimeoutExpired:
             logger.warning(f"mcporter timed out for '{query}'")
+            failures.append({
+                "backend": "mcporter",
+                "query": query,
+                "exit_code": None,
+                "stderr": "timeout after 30s",
+            })
         except FileNotFoundError:
             logger.error("mcporter not found")
-            return []
+            return [], {
+                "status": "unavailable",
+                "reason": "mcporter not found",
+                "queries": queries,
+                "failures": [{
+                    "backend": "mcporter",
+                    "query": query,
+                    "exit_code": None,
+                    "stderr": "mcporter not found",
+                }],
+            }
         except Exception as e:
             logger.error(f"mcporter failed for '{query}': {e}")
+            failures.append({
+                "backend": "mcporter",
+                "query": query,
+                "exit_code": None,
+                "stderr": str(e)[:300],
+            })
 
-    return all_items
+    if all_items and failures:
+        status = "partial"
+        reason = _summarize_failures(failures)
+    elif all_items:
+        status = "ok"
+        reason = ""
+    elif failures:
+        timeout_count = sum(1 for failure in failures if "timeout" in failure.get("stderr", ""))
+        status = "timeout" if timeout_count == len(failures) else "failed"
+        reason = _summarize_failures(failures)
+    else:
+        status = "empty"
+        reason = f"no Exa items for queries: {', '.join(queries)}"
+
+    return all_items, {
+        "status": status,
+        "reason": reason,
+        "queries": queries,
+        "failures": failures,
+    }
+
+
+def fetch(queries: list[str] | None = None, num_results: int = 5) -> list[dict]:
+    items, _diagnostics = fetch_with_diagnostics(
+        queries=queries,
+        num_results=num_results,
+    )
+    return items

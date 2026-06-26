@@ -426,6 +426,20 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_preflight.py::test_hn_fetch_with_diagnostics_empty tests/test_preflight.py::test_hn_fetch_with_diagnostics_failure tests/test_preflight.py::test_twitter_fetch_with_diagnostics_cli_failure tests/test_preflight.py::test_twitter_fetch_with_diagnostics_success_shape -q` -> 4 passed in 0.01s.
 - `.venv/bin/python3 -m pytest tests/test_preflight.py -q` -> 40 passed in 88.42s.
 
+### 2026-06-26 Task 16 Reddit, Exa, and YouTube Availability
+
+Added diagnostic fetchers for Reddit, Exa, and YouTube and wired `run_all()` to
+use them. Backend/tool-off states now report `unavailable` instead of looking
+like normal empty research. Runtime failures and timeouts report `failed` or
+`timeout` with safe backend/query/channel context. `run_all()` now also returns
+`source_health_summary`, which excludes unavailable optional sources from the
+expected-source denominator while keeping configured failures visible as
+degraded sources.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_preflight.py -q` -> 46 passed in 88.37s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

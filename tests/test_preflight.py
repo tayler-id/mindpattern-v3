@@ -248,6 +248,27 @@ def test_reddit_transform():
     assert entry["metrics"]["score"] == 550
 
 
+def test_reddit_fetch_with_diagnostics_unavailable(monkeypatch):
+    import preflight.reddit as reddit
+
+    stderr = json.dumps({
+        "error": "All 10 subreddits failed",
+        "tool": "reddit-fetch",
+    })
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 2, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(reddit.subprocess, "run", fake_run)
+
+    items, diagnostics = reddit.fetch_with_diagnostics(subreddits="MachineLearning")
+
+    assert items == []
+    assert diagnostics["status"] == "unavailable"
+    assert "All 10 subreddits failed" in diagnostics["reason"]
+    assert diagnostics["errors"][0]["tool"] == "reddit-fetch"
+
+
 # ── Twitter tests ─────────────────────────────────────────────────
 
 def test_twitter_transform():
@@ -429,6 +450,44 @@ def test_exa_parse_multiple_results():
     assert len(results) == 2
 
 
+def test_exa_fetch_with_diagnostics_missing_mcporter(monkeypatch):
+    import preflight.exa as exa
+
+    def fake_run(cmd, **kwargs):
+        raise FileNotFoundError("mcporter")
+
+    monkeypatch.setattr(exa.subprocess, "run", fake_run)
+
+    items, diagnostics = exa.fetch_with_diagnostics(queries=["AI agents"], num_results=1)
+
+    assert items == []
+    assert diagnostics["status"] == "unavailable"
+    assert "mcporter not found" in diagnostics["reason"]
+    assert diagnostics["failures"][0]["backend"] == "mcporter"
+
+
+def test_exa_fetch_with_diagnostics_surfaces_tool_error(monkeypatch):
+    import preflight.exa as exa
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            3,
+            stdout="",
+            stderr="exa MCP server not configured",
+        )
+
+    monkeypatch.setattr(exa.subprocess, "run", fake_run)
+
+    items, diagnostics = exa.fetch_with_diagnostics(queries=["AI agents"], num_results=1)
+
+    assert items == []
+    assert diagnostics["status"] == "failed"
+    assert "mcporter exit 3" in diagnostics["reason"]
+    assert diagnostics["failures"][0]["query"] == "AI agents"
+    assert "not configured" in diagnostics["failures"][0]["stderr"]
+
+
 # ── YouTube tests ─────────────────────────────────────────────────
 
 def test_youtube_transform():
@@ -439,6 +498,44 @@ def test_youtube_transform():
     assert entry["source_name"] == "AI Explained"
     assert entry["metrics"]["views"] == 50000
     assert "youtube.com" in entry["url"]
+
+
+def test_youtube_fetch_with_diagnostics_missing_ytdlp(monkeypatch):
+    import preflight.youtube as youtube
+
+    def fake_run(cmd, **kwargs):
+        raise FileNotFoundError("yt-dlp")
+
+    monkeypatch.setattr(youtube.subprocess, "run", fake_run)
+
+    items, diagnostics = youtube.fetch_with_diagnostics(
+        channels={"AI Explained": "https://youtube.example/channel"},
+        max_per_channel=1,
+    )
+
+    assert items == []
+    assert diagnostics["status"] == "unavailable"
+    assert "yt-dlp not found" in diagnostics["reason"]
+    assert diagnostics["failures"][0]["channel"] == "AI Explained"
+
+
+def test_youtube_fetch_with_diagnostics_timeout(monkeypatch):
+    import preflight.youtube as youtube
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, timeout=30)
+
+    monkeypatch.setattr(youtube.subprocess, "run", fake_run)
+
+    items, diagnostics = youtube.fetch_with_diagnostics(
+        channels={"AI Explained": "https://youtube.example/channel"},
+        max_per_channel=1,
+    )
+
+    assert items == []
+    assert diagnostics["status"] == "timeout"
+    assert "timed out" in diagnostics["reason"]
+    assert diagnostics["failures"][0]["channel"] == "AI Explained"
 
 
 # ── run_all tests ─────────────────────────────────────────────────
@@ -569,6 +666,21 @@ def test_source_health_merges_rss_diagnostics():
     assert health["count"] == 1
     assert health["reason"] == "Bad Feed failed"
     assert health["feed_errors"][0]["context"] == "https://bad.example/feed"
+
+
+def test_source_health_summary_excludes_unavailable_sources():
+    from preflight.run_all import summarize_source_health
+
+    summary = summarize_source_health({
+        "rss": {"status": "ok", "count": 4},
+        "reddit": {"status": "unavailable", "count": 0},
+        "exa": {"status": "missing", "count": 0},
+        "youtube": {"status": "timeout", "count": 0},
+    })
+
+    assert summary["expected_source_count"] == 2
+    assert summary["unavailable_sources"] == ["reddit", "exa"]
+    assert summary["degraded_sources"] == ["youtube"]
 
 
 # ── Integration smoke test ────────────────────────────────────────

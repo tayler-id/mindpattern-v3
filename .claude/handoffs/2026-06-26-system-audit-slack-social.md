@@ -338,6 +338,15 @@ Goal execution baseline on 2026-06-26:
     -> 4 passed in 0.01s.
   - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
     -> 40 passed in 88.42s.
+- Task 16 complete: Reddit, Exa, and YouTube now expose diagnostic fetchers and
+  `run_all()` uses them. Reddit backend-off/all-failed states report
+  `unavailable`; missing `mcporter` or `yt-dlp` reports `unavailable`; runtime
+  tool errors and timeouts report `failed` or `timeout` with safe
+  backend/query/channel context. `run_all()` now returns
+  `source_health_summary`, excluding unavailable optional sources from the
+  expected-source denominator while keeping configured failures visible.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
+    -> 46 passed in 88.37s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

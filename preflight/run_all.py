@@ -33,6 +33,9 @@ RSS_ROUTING = {
 DEDUP_SIMILARITY_THRESHOLD = 0.80
 DEDUP_LOOKBACK_DAYS = 10
 DEDUP_DECAY_RATE = 0.25
+UNAVAILABLE_SOURCE_STATUSES = {"missing", "unavailable"}
+DEGRADED_SOURCE_STATUSES = {"failed", "timeout"}
+RESPONSIVE_SOURCE_STATUSES = {"ok", "partial", "empty"}
 
 
 def _dedup_annotate(
@@ -244,6 +247,39 @@ def _run_source_with_health(source_name: str, fetch_fn) -> tuple[list[dict], dic
         }
 
 
+def summarize_source_health(source_health: dict[str, dict]) -> dict:
+    """Summarize source health while excluding unavailable optional sources.
+
+    `unavailable` means the backend/tool is not configured, so it should not
+    count against the expected healthy-source denominator. `failed` and
+    `timeout` mean a configured source degraded the run.
+    """
+    unavailable_sources = []
+    degraded_sources = []
+    responsive_sources = []
+    expected_sources = []
+
+    for source_name, health in source_health.items():
+        status = health.get("status", "failed")
+        if status in UNAVAILABLE_SOURCE_STATUSES:
+            unavailable_sources.append(source_name)
+            continue
+
+        expected_sources.append(source_name)
+        if status in RESPONSIVE_SOURCE_STATUSES:
+            responsive_sources.append(source_name)
+        elif status in DEGRADED_SOURCE_STATUSES:
+            degraded_sources.append(source_name)
+
+    return {
+        "source_count": len(source_health),
+        "expected_source_count": len(expected_sources),
+        "responsive_source_count": len(responsive_sources),
+        "unavailable_sources": unavailable_sources,
+        "degraded_sources": degraded_sources,
+    }
+
+
 def run_all(
     date_str: str,
     db=None,
@@ -266,10 +302,10 @@ def run_all(
         "arxiv": lambda: arxiv.fetch(),
         "github": lambda: github.fetch(),
         "hn": lambda: hn.fetch_with_diagnostics(),
-        "reddit": lambda: reddit.fetch(),
+        "reddit": lambda: reddit.fetch_with_diagnostics(),
         "twitter": lambda: twitter.fetch_with_diagnostics(),
-        "exa": lambda: exa.fetch(),
-        "youtube": lambda: youtube.fetch(),
+        "exa": lambda: exa.fetch_with_diagnostics(),
+        "youtube": lambda: youtube.fetch_with_diagnostics(),
     }
 
     all_items: list[dict] = []
@@ -331,5 +367,6 @@ def run_all(
         "covered_count": len(covered_items),
         "source_counts": source_counts,
         "source_health": source_health,
+        "source_health_summary": summarize_source_health(source_health),
         "duration_ms": duration_ms,
     }
