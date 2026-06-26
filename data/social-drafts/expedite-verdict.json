@@ -1,20 +1,15 @@
 {
   "verdict": "PASS",
-  "quality_score": 8.2,
-  "feedback": "Clean package. No kill switch violations. LinkedIn leads with a personal pattern recognition hook, weaves the Azure post-mortem and executive departures into a single thread, and lands on a practical infrastructure question — no neat bow. Bluesky is native: lowercase, punchy, first-person credibility established in two sentences. Builder detail present in LinkedIn ('I use Claude Code, not OpenAI's tools'). Cross-platform claims are consistent. Art is missing but not auto-fail. Both drafts are above threshold.",
+  "feedback": "Brief is marked skip (no editorial anchor today), but the Bluesky draft is a self-contained personal experience post that stands on its own. Clean voice — fragments, contractions, specific numbers, no banned words or phrases. Single insight ('less bad code, not less code') is well-executed with the setup/subversion/payoff structure. No kill switches triggered. Composite 8.83, above 7.0 threshold.",
   "platform_verdicts": {
-    "bluesky": "PASS",
-    "linkedin": "PASS"
+    "bluesky": "PASS"
   },
   "scores": {
-    "voice_match": 8,
-    "framing_authenticity": 8,
+    "voice_match": 9,
+    "framing_authenticity": 9,
     "platform_genre_fit": 9,
-    "epistemic_calibration": 8,
-    "structural_variation": 8,
+    "epistemic_calibration": 9,
+    "structural_variation": 9,
     "rhetorical_framework": 8
-  },
-  "cross_platform": "consistent",
-  "kill_switches": "none triggered",
-  "art_note": "No editorial art provided. Not an automatic fail — noted for completeness."
+  }
 }

@@ -1,26 +1,9 @@
 {
   "verdict": "APPROVED",
-  "feedback": "Strong post. Personal anchor (FinTech/Synchrony) lands the pattern recognition before the news. The structural fragments ('Configs that nobody owns. Crashes that get blamed instead of investigated.') read exactly right. Closing question is genuinely specific and earns its place.",
+  "feedback": "Strong post. The interactive/unattended framing is clean and specific. 'The subsidy was invisible until it wasn't.' earns its place. Personal qualifier on Claude Code usage is correct. Closing question is genuine and specific — not engagement-bait. Kill switches all clear.",
   "scores": {
-    "voice_authenticity": 9,
+    "voice_authenticity": 8,
     "platform_fit": 8,
-    "engagement_potential": 9
-  },
-  "rubric_scores": {
-    "voice_match": 9,
-    "framing_authenticity": 9,
-    "platform_genre_fit": 8,
-    "epistemic_calibration": 8,
-    "structural_variation": 9,
-    "rhetorical_framework": 8
-  },
-  "kill_switches": "pass",
-  "dimension_notes": {
-    "voice": "pass — multiple fragments, 7+ first-person references, zero banned words, strong sentence variation, no em dashes",
-    "framing": "pass — reaction to one specific event cluster, genuine personal moment from FinTech career",
-    "platform": "pass — ~1523 chars (slightly over 1500 sweet spot, well under 2000 ceiling), hook works in first 210, specific closing question",
-    "epistemic": "pass — no hedges, assertive takes backed by specific sourced claims (HN score, IPO valuation, departure count)",
-    "structure": "pass — asymmetric paragraphs, fragments break monotony, no neat-bow closing",
-    "framework": "pass — Nut-graf structure: personal pattern recognition → news facts → analysis → personal stakes → question. Facts precede opinion throughout."
+    "engagement_potential": 8
   }
 }

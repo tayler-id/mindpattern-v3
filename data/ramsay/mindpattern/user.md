@@ -12,7 +12,7 @@ Senior full-stack engineer, York County PA. 15+ years shipping production softwa
 
 ## Current Stack
 
-Python (Django, FastAPI), TypeScript, React/Next.js, PostgreSQL, Neo4j, Redis, Claude Code daily. Previously Kotlin (Spring Boot).
+Python (Django, FastAPI), TypeScript, React/Next.js, PostgreSQL, Neo4j, Redis, Claude Code daily in personal projects. Previously Kotlin (Spring Boot).
 
 ## Projects
 
@@ -28,7 +28,7 @@ Before that: Pavone Marketing, Glatfelter Paper, Menasha Packaging, Quad/Graphic
 
 ## Interests
 
-AI agents, developer tools, agentic coding, vibe coding. Uses Claude Code every day. Builds with AI, not just about AI. Thinks the bottleneck isn't writing code anymore — it's orchestrating AI. Human taste is the scarce resource.
+AI agents, developer tools, agentic coding, vibe coding. Uses Claude Code every day in personal projects. Builds with AI, not just about AI. Thinks the bottleneck isn't writing code anymore — it's orchestrating AI. Human taste is the scarce resource.
 
 ## Communication Preferences
 
@@ -39,15 +39,23 @@ AI agents, developer tools, agentic coding, vibe coding. Uses Claude Code every 
 
 ## Observed Patterns
 
-AI labor displacement and engineering hiring signal stories consistently approved and elevated. User actively curates compound topics via Gate 1 'custom' injections — adds counter-narrative or confirming data points to build richer thesis (Run 15: FRED job growth counter-narrative; Run 16: Snowflake 70-person tech writing elimination added to Salesforce/Karpathy compound). Runs 17, 18, 19, and 20: straight approves — custom injection is selective, not automatic. Triggers for compound-narrative assembly; clean single-thesis or multi-actor convergence topics pass without augmentation. Gate 1 custom behavior is deliberate editorial curation for compound stories; straight approval for topics where thesis triangulates on its own.
+AI labor displacement and engineering hiring signal stories consistently approved and elevated. User actively curates compound topics via Gate 1 'custom' injections — adds counter-narrative or confirming data points to build richer thesis. Runs 17–23: straight approves — custom injection is selective, not automatic; clean single-thesis or multi-actor convergence topics pass without augmentation. Gate 1 custom behavior is deliberate editorial curation for compound stories; straight approval for topics where thesis triangulates on its own.
 
-Three-actor convergence pattern confirmed as a distinct clean-approve structure: when multiple independent named actors publish the same signal in the same 24-hour window, the topic passes without custom injection (Run 18: Senator Warner + Meta + Anthropic all publishing on AI labor in the same day).
+Three-actor convergence: confirmed clean-approve (Run 18: Senator Warner + Meta + Anthropic publishing on AI labor same day).
 
-Dual first-ever parallel moves by competing companies: approved without custom injection (Run 19: Anthropic + OpenAI both making their first-ever acquisitions in the same week with contrasting strategic directions). Contrast-framing is a strong thesis structure.
+Dual first-ever parallel moves by competing companies: confirmed clean-approve (Run 19: Anthropic + OpenAI first-ever acquisitions same week with contrasting directions). Contrast-framing is a strong thesis structure.
 
-Internal organizational crisis + independent insider corroboration: confirmed clean-approve structure (Run 20: OpenAI triple executive departure + 1,200-point HN post-mortem from former Azure Core engineer + Microsoft strategic divorce). Multiple named departures from a single organization, corroborated by an outsider's public documentation of the same dysfunction, passes without augmentation. IPO-context framing with specific valuation figures ($852B) consistently approved.
+Internal organizational crisis + independent insider corroboration: confirmed clean-approve (Run 20: OpenAI triple executive departure + 1,200-point HN post-mortem + Microsoft strategic divorce). IPO-context framing with specific valuation figures consistently approved.
 
-Four consecutive straight approves (Runs 17–20): user is in a phase where well-triangulated single-organization or dual-actor topics pass cleanly. Government/geopolitics AI power plays are approved topics — named actors, specific power-structure thesis, no custom injection needed.
+Enterprise market displacement + platform pricing convergence: confirmed clean-approve (Run 21: Redpoint CIO survey 141 CIOs/$765B capex + three platforms converging on per-outcome pricing). Survey-grounded thesis with specific per-unit numbers passes at Gate 1.
+
+Financial crisis + leadership exclusion + market illiquidity + policy pivot: confirmed clean-approve at 8.65 (Run 22: WSJ OpenAI financials, CFO exclusion from investor meetings, $600M illiquid secondary shares, 13-page Altman policy blueprint).
+
+Investigative journalism convergence + secondary market signal: confirmed clean-approve at 9.0 (Run 23: Farrow/Marantz New Yorker 70-page board document + $2B buyer demand redirecting to Anthropic). Multi-source, named actors, cross-publication corroboration.
+
+Gate 2 two consecutive rejections (Runs 21/22) resolved Run 23 — high topic quality (9.0) appears the differentiator. Expeditor PASS/no-posts pattern (Runs 17/21/22) also resolved Run 23.
+
+IPO S-1 + security transparency + talent signal compound: Gate 1 custom/all at 9.0 (Run 72: Anthropic S-1 $965B valuation + AWS credentials exfiltration 24/25 internal red team + $200M Gates Foundation + 72 sales vs 67 research roles). User augmented all components — most intensive Gate 1 curation since Run 22. Pattern: when a high-profile IPO filing coincides with a candid security disclosure, the transparency framing is the thesis spine. User consistently elevates stories where the company's own honesty about failure is the lead, not the failure itself.
 ## Builder Transparency & Kill Switches
 
 Builder transparency is a STRENGTH. Mentioning specific infrastructure as a practitioner ("I run 12 agents every morning", "my pipeline caught this", "I built a cron job for this") is the top-performing content pattern. The audience connects with a builder sharing their actual setup.

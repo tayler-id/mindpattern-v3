@@ -1,64 +1,35 @@
 {
-  "editorial_angle": "OpenAI's $852B IPO narrative is colliding with two simultaneous reality checks: the leadership that built the story is walking out the door, and the Azure infrastructure that powered it was apparently held together with unattended crashes and blame-shifting. The former Azure Core engineer's 1,200-point post-mortem makes the executive exodus legible — when the technical foundation is this fragile, the business layer feels it eventually. Three departures on one day isn't chaos. It's the org chart finally catching up to what the deploy logs already knew.",
-  "key_message": "OpenAI is trying to sell an $852B future while the present is falling apart in real time.",
-  "emotional_register": "worried",
-  "tone": "analytical",
+  "skip": true,
+  "skip_reason": "EIC approved topic is marked skip — no content to brief today",
+  "editorial_angle": "",
+  "key_message": "",
+  "emotional_register": "",
+  "tone": "",
   "source_attribution": {
-    "primary": {
-      "name": "TechCrunch — OpenAI executive shuffle",
-      "url": "https://techcrunch.com/2026/04/03/openai-executive-shuffle-new-roles-coo-brad-lightcap-fidji-simo-kate-rouch/"
-    },
-    "supporting": [
-      {
-        "name": "Axel Rietschin — How Microsoft Vaporized a Trillion (Substack / HN)",
-        "url": "https://isolveproblems.substack.com/p/how-microsoft-vaporized-a-trillion"
-      },
-      {
-        "name": "The Verge — Mustafa Suleyman's MAI-Transcribe-1",
-        "url": "https://www.theverge.com/report/905791/mustafa-suleyman-microsoft-ai-transcription-model"
-      }
-    ]
+    "primary": {"name": "", "url": ""},
+    "supporting": []
   },
   "visual_metaphor_direction": {
-    "core_tension": "A grand IPO launch event — ticker showing $852B, balloons, podium — while three executives in suits carry boxes out the back door. Sam Altman holds the podium with a confident smile. In the background, through a window, Microsoft's Mustafa Suleyman quietly builds something of his own. The contrast: a public narrative of triumph and a private reality of departure.",
-    "suggested_approach": "caricature",
-    "mood": "absurd",
-    "key_elements": [
-      "Sam Altman at a podium under a '$852B' banner or stock ticker",
-      "Three departing executives (boxes in hand, walking out a back/side door labeled 'SPECIAL PROJECTS' or 'MEDICAL LEAVE')",
-      "OpenAI logo prominently on the building or backdrop",
-      "Mustafa Suleyman visible through a background window, working separately at a desk labeled 'Microsoft AI'",
-      "Ghost/specter of a crashed server or burning rack in the basement — referencing the Azure infrastructure post-mortem — visible but being ignored by everyone at the podium"
-    ],
-    "avoid": [
-      "Generic 'sinking ship' imagery — too literal and overused",
-      "Rockets or launch metaphors — too positive for the mood",
-      "Anthropic or Claude branding — this story is not about competitive positioning",
-      "News ticker or newspaper headline style — too static, misses the irony",
-      "Depicting actual medical imagery for Fidji Simo — insensitive and off-brand"
-    ]
+    "core_tension": "",
+    "suggested_approach": "",
+    "mood": "",
+    "key_elements": [],
+    "avoid": []
   },
   "platform_hooks": {
     "x": {
-      "hook": "COO. CEO of AGI. CMO. One day.",
-      "angle": "Three executive departures during IPO prep at $852B is not a coincidence. It's a pressure gauge. And the Azure post-mortem published the same week tells you where the pressure came from."
+      "hook": "",
+      "angle": ""
     },
     "linkedin": {
-      "hook": "I've seen this pattern before. Not at OpenAI — at a FinTech firm I worked at before Synchrony acquired them.",
-      "angle": "When the infrastructure team is getting bypassed by the business team, you feel it in the deploy cadence before you see it in the org chart. The Azure post-mortem describes exactly that dynamic at Microsoft's OpenAI partnership. The executive exodus is the org chart catching up. What does this mean for teams evaluating OpenAI as critical infrastructure?"
+      "hook": "",
+      "angle": ""
     },
     "bluesky": {
-      "hook": "I read that Azure post-mortem last night. 1,200 HN points for a reason.",
-      "angle": "Recognized every pattern — unattended crashes, blame-shifting, senior technical leadership gaps. Watched the same thing unfold at a company I worked at. The OpenAI executive departures read differently after you've read that post."
+      "hook": "",
+      "angle": ""
     }
   },
-  "do_not_include": [
-    "Sora shutdown — already covered April 2 and March 27",
-    "Anthropic/OpenAI acquisitions — covered April 3",
-    "Anthropic PAC formation — separate story",
-    "Saronic $1.75B raise — unrelated",
-    "Any speculation about Fidji Simo's medical leave beyond what is public",
-    "Direct AGI capability claims or AGI timeline speculation — not the story here"
-  ],
+  "do_not_include": [],
   "mindpattern_link": "https://mindpattern.ai"
 }

@@ -1,5 +1,1 @@
-PLATFORM: bluesky
-TYPE: single
----
-read the azure post-mortem last night. 1,200 HN points for a reason. I recognized every pattern. unattended crashes, blame-shifting, leadership gaps. I watched those same dynamics at a fintech before their acquisition. openai departures read differently after that. https://mindpattern.ai
----
+shipped something solo last week. 2,400 lines of python. would've taken me two weeks without Claude Code. took three days. what surprised me wasn't the speed. it was how much editing I was doing. mostly deleting. turns out I don't write less code. I write less bad code. https://mindpattern.ai

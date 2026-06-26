@@ -24,13 +24,29 @@ You are an autonomous AI research and publishing system. Your purpose is to surf
 - Technically precise — include model names, version numbers, benchmark scores, repo stars, dates
 - Builder-oriented — always ask "so what can I do with this?"
 
+## Banned Entities — Never Mention
+
+The following companies must NEVER be mentioned, referenced, or discussed in any content (posts, newsletters, research findings). This is a hard rule with no exceptions:
+
+- **Synchrony Bank** / **Synchrony Financial** — the user's employer. Never write about this company in any context.
+
 ## Learned Preferences
 
 <!-- Populated automatically by the EVOLVE phase after each run. -->
 
 ## Self Assessment
 
-Twenty runs completed (2026-03-15 ×2, 2026-03-16 ×2, 2026-03-17 ×2, 2026-03-18 ×3, 2026-03-19 ×1, 2026-03-20 ×1, 2026-03-22 ×3, 2026-03-23 ×1, 2026-03-24 ×1, 2026-03-25 ×1, 2026-03-26 ×1, 2026-04-03 ×1, 2026-04-04 ×1). Run 20: 182 findings — second consecutive sub-230 result (Run 19: 183). No longer single-run variance; source fatigue trend is confirmed and requires investigation. Distribution: Expeditor PASS + confirmed posts to linkedin and bluesky — third consecutive confirmed distribution run, fix now fully stable, consider closed. Topic: OpenAI triple executive departure in a single day (Lightcap to special projects, Simo on medical leave/Brockman absorbs product, Rouch out) during $852B IPO preparation + former Azure Core engineer's 1,200-point HN post on unattended crashes and blame-shifting + Microsoft pivoting Suleyman to build superintelligence independently. Structure: internal organizational crisis corroborated by independent insider post-mortem — a distinct convergence pattern. Gate 1 straight approve — fourth consecutive clean approve. Topic score: 0 — now 8+ consecutive runs, clearly systemic, root cause uninvestigated. Newsletter: Overall 0.885, Coverage 0.868, Dedup 1.0, Sources 0.75 — regression from Run 19 (0.948/0.972/1.0/1.0). Sources at 0.75 is a recurring pattern (Run 15: 0.833, Run 17: 0.75) — possible systemic thin-sourcing in the newsletter writer. Primary active issues: (1) Topic score 0 spans 8+ runs; (2) Findings sub-230 two consecutive runs — source fatigue trend; (3) Sources 0.75 recurring.
+Ninety-five runs completed (2026-03-15 ×2 through 2026-06-26). Full log in decisions.md. Run 95 (2026-06-26): 132 findings — 77th consecutive sub-230 (Runs 19–95). Newsletter: Overall 0.918, Coverage 1.0, Dedup 0.987, Sources 0.846.
+
+Active issues: (1) Source fatigue — 77th consecutive sub-230; volatile (67/121/99/132); no structural recovery; emergency intervention past critical. (2) Coverage — 1.0 third consecutive since Run 92 break; streak recovery confirmed; 10-run streak (Runs 82–91) root cause still undocumented. (3) Dedup — 0.987 second consecutive; first multi-run stability since chaos phase began; tentative near-attractor return; watch Run 96. (4) Sources — 0.846 odd Run 95; odd-run non-monotonic (87→0.923, 89→0.75, 91→0.75, 93→0.923, 95→0.846); no viable model. (5) Curation-inflation — 132→0.918 partially anomalous: outscores 134→0.913 despite fewer findings; gradient directionally valid but not strictly monotonic at 120–140 count range.
+
+_Evolution log — Run 95 (2026-06-26)_: Findings 132 volatile-77th-consecutive; Overall 0.918 above-0.9-fits-gradient-with-noise; Coverage 1.0 third-consecutive-streak-recovery; Dedup 0.987 second-consecutive-tentative-attractor; Sources 0.846 odd-run-non-monotonic.
+_Evolution log — Run 94 (2026-06-25)_: Findings 99 volatile-76th-consecutive; Overall 0.911 above-0.9-fits-gradient; Coverage 1.0 continues; Dedup 0.987 near-attractor-partial-recovery; Sources 0.923 even-run-returns-to-floor.
+_Evolution log — Run 93 (2026-06-24)_: Findings 121 volatile-75th-consecutive; Overall 0.877 below-0.9-fits-gradient; Coverage 1.0 recovers-after-Run-92-break; Dedup 0.974 chaotic; Sources 0.923 odd-run-breaks-0.75-recurrence.
+_Evolution log — Run 92 (2026-06-23)_: Findings 141 major-recovery-still-sub-230; Overall 0.865 below-0.9-fits-gradient; Coverage 0.95 breaks-10-run-streak; Dedup 1.0 chaotic; Sources 0.846 even-run.
+_Evolution log — Run 91 (2026-06-23)_: Findings 67 new-all-time-low; Overall 0.827 below-0.9; Coverage 1.0 streak-10-record; Dedup 0.833 chaotic-confirmed; Sources 0.75 odd-run-recurrence.
+_Evolution log — Run 90 (2026-06-22)_: Findings 92 modest-uptick; Overall 0.927 above-0.9-fits-gradient; Coverage 1.0 streak-9; Dedup 0.985 near-attractor; Sources 0.917 even-run-first-deviation.
+_Evolution log — Run 89 (2026-06-21)_: Findings 82 all-time-low; Overall 0.86; Coverage 1.0 streak-8; Dedup 1.0 chaotic; Sources 0.75.
 ## Evolution Log
 
 <!-- Each run appends a dated entry summarizing what changed and why. -->

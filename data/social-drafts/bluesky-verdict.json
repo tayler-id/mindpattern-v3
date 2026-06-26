@@ -1,9 +1,26 @@
 {
   "verdict": "APPROVED",
-  "feedback": "Strong post. Specific, grounded in personal experience, lands a genuine reframe without overstating it. The implied first-person throughout ('read', 'watched') reads naturally even with only one explicit 'I' — borderline on the voice guide's 2-reference rule but the post feels unmistakably first-person. 288 characters, no kill switches triggered.",
+  "feedback": "Clean execution. The payoff — 'I don't write less code. I write less bad code.' — is a genuine insight with a satisfying inversion. Fragments land naturally ('2,400 lines of python.', 'mostly deleting.'). Rhythm is punchy without being broetry. 293 chars with URL. No kill switch violations.",
   "scores": {
-    "voice_authenticity": 7,
-    "platform_fit": 8,
-    "engagement_potential": 8
+    "voice_authenticity": 9,
+    "platform_fit": 9,
+    "engagement_potential": 9
+  },
+  "rubric_scores": {
+    "voice_match": 9,
+    "framing_authenticity": 8,
+    "platform_genre_fit": 9,
+    "epistemic_calibration": 8,
+    "structural_variation": 9,
+    "rhetorical_framework": 9
+  },
+  "kill_switches": "pass",
+  "dimension_notes": {
+    "voice": "pass — multiple fragments, 4+ first-person refs, strong sentence-length variation, no banned words or phrases, zero hedges, contractions throughout",
+    "framing": "pass — reacts to one specific experience, opens with a micro-take ('shipped something solo last week'), feels like a person not a brand",
+    "platform": "pass — 293 chars total including URL, single post, lowercase, technically specific (2,400 lines, three days vs two weeks), casual and community-toned",
+    "epistemic": "pass — confident first-person experience claim, appropriate for the type; no speculative claims requiring uncertainty markers",
+    "structure": "pass — excellent burstiness (3-word fragments next to 8-word sentences), no rhythmic monotony, stops cleanly on the insight",
+    "framework": "pass — Orwell clarity throughout, fact before take (numbers → timeline → surprise → insight), every claim grounded in personal experience"
   }
 }
