@@ -351,7 +351,7 @@ class TestBuildClaudeCommand:
             "--disallowedTools", "Agent",
         ]
 
-    def test_research_policy_flags_are_explicit(self):
+    def test_research_command_has_no_tool_fence(self):
         cmd = _build_claude_command(
             "research prompt",
             model="opus",
@@ -361,10 +361,8 @@ class TestBuildClaudeCommand:
         )
 
         assert cmd[0:2] == ["claude", "-p"]
-        assert "WebSearch" in cmd
-        denied = cmd[cmd.index("--disallowedTools") + 1].split()
-        for tool in ("Bash", "Agent", "Write", "Edit", "Skill"):
-            assert tool in denied
+        assert "--allowedTools" not in cmd
+        assert "--disallowedTools" not in cmd
 
 
 def _process_result(
@@ -749,10 +747,10 @@ class TestDispatchResearchAgentsPartialFailure:
         assert "crashed" in bad[0].error.lower()
 
 
-class TestBuildAgentPromptToolBoundary:
-    """Research prompts must match the tool boundary enforced by run_single_agent."""
+class TestBuildAgentPromptResearchBreadth:
+    """Research prompts must preserve the rich source and subagent workflow."""
 
-    def test_preflight_exploration_uses_only_allowed_direct_tools(self, tmp_path):
+    def test_preflight_exploration_allows_source_tools_and_subagents(self, tmp_path):
         soul_path = tmp_path / "SOUL.md"
         soul_path.write_text("Soul")
         skill_path = tmp_path / "agent.md"
@@ -777,23 +775,20 @@ class TestBuildAgentPromptToolBoundary:
         )
 
         assert "## Phase 2: Explore Beyond Preflight" in prompt
-        for tool in ("WebSearch", "WebFetch", "Read", "Glob", "Grep"):
-            assert tool in prompt
-
-        banned_prompt_fragments = (
+        expected_prompt_fragments = (
             "mcporter call",
             "curl -s",
             "xreach search",
             "yt-dlp",
             "Subagent Delegation",
             "Agent tool",
-            "Spawn subagents",
+            "Spawn subagents for parallel verification",
         )
-        for fragment in banned_prompt_fragments:
-            assert fragment not in prompt
+        for fragment in expected_prompt_fragments:
+            assert fragment in prompt
 
-        assert "Do not use shell commands" in prompt
-        assert "Do not spawn subagents" in prompt
+        assert "Do not use shell commands" not in prompt
+        assert "Do not spawn subagents" not in prompt
 
 
 # ═══════════════════════════════════════════════════════════════════════

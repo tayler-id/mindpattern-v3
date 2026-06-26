@@ -95,13 +95,11 @@ def _agent_env(agent_name: str) -> dict[str, str]:
     env["MINDPATTERN_VAULT"] = str(vault)
     return env
 
-# Tools each research agent is allowed to use. Research agents ingest
-# scraped web content — an injected instruction must never reach a shell
-# or spawn subagents, so Bash and Agent are NOT in this list (audit C6).
-AGENT_ALLOWED_TOOLS = [
-    "WebSearch", "WebFetch", "Read", "Glob", "Grep",
-]
-RESEARCH_DISALLOWED_TOOLS = "Skill Bash Agent Write Edit"
+# Research agents need the full Claude Code research surface. Do not pass
+# allowed/disallowed tool fences here; the newsletter depends on Exa/Jina/X/
+# YouTube-style shell tools and subagents for breadth and verification.
+AGENT_ALLOWED_TOOLS = None
+RESEARCH_DISALLOWED_TOOLS = None
 FILE_AGENT_DEFAULT_ALLOWED_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
 FILE_AGENT_DISALLOWED_TOOLS = "Agent"
 PROMPT_DEFAULT_ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
@@ -292,19 +290,18 @@ Select ALL qualifying new items as findings (minimum 15, target 18-20). For each
 ## Phase 2: Explore Beyond Preflight
 
 The preflight data covers known sources. Now find what it MISSED.
-Use only these allowed direct research tools to discover 3-5 additional findings:
+Use these tools to discover 3-5 additional findings:
 
-- WebSearch for discovery across the public web
-- WebFetch for deep reads of known URLs
-- Read, Glob, and Grep only for local repository or vault context
+- Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
+- Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
+- Twitter search: xreach search "query" --count 10 --json
+- YouTube transcripts: yt-dlp --dump-json "URL"
+- WebSearch (last resort): only if Exa doesn't cover it
 
 Look for:
 - Stories that broke in the last 6 hours (too recent for RSS/feeds)
 - Primary sources not in our feed list
 - Reactions and follow-ups to stories in the preflight data
-
-Do not use shell commands, external CLIs, or network commands.
-Do not spawn subagents; do the verification directly with the allowed tools.
 
 Target: 20-25 total findings (15-20 from Phase 1 + 3-5 from Phase 2).
 
@@ -401,10 +398,11 @@ When evaluating a story's importance, consider:
 - Is this a genuine development or marketing hype?
 - Could this be old news resurfacing? Check the actual publication date, not when it was shared.
 
-### Tool Boundary
-Use only the direct tools allowed for this research subprocess: WebSearch,
-WebFetch, Read, Glob, and Grep. Do not use shell commands, external CLIs,
-write/edit tools, or subagents.
+### Subagent Delegation
+For high-signal stories that need deep investigation, spawn a subagent:
+- Use the Agent tool to delegate deep reads of long documents
+- Spawn subagents for parallel verification across multiple sources
+- Do NOT spawn subagents for simple searches — use WebSearch directly
 
 ### Self-Critique Gate (MANDATORY — do this BEFORE outputting JSON)
 Review EVERY finding against these checks before including it:
@@ -557,8 +555,6 @@ def run_single_agent(
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
-    # Belt and suspenders: deny the dangerous tools explicitly too —
-    # allowed-tools alone is not reliably enforced in every harness path.
     cmd = _build_claude_command(
         prompt,
         model=model,
