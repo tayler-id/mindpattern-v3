@@ -105,6 +105,60 @@ Corrected desired fix path:
    and confirming it produces drafts, waits for owner approval, and only posts
    after an explicit approval reply.
 
+## Slack Regression Context: Local Bot -> Fly Bot
+
+User clarification: the Slack bot/channel workflow was working at one point,
+then the system was updated to run the bot on Fly so posts could be created
+from the phone, and the workflow stopped working after that move.
+
+Evidence from history:
+
+- Original Slack bot handoff (`2026-03-21`) says the bot was designed as a
+  local Socket Mode daemon running on the Mac with macOS Keychain credentials.
+- Follow-up handoff (`2026-03-22`) says `com.taylerramsay.slack-bot` was
+  running locally via launchd, connected via Socket Mode, with channels:
+  `#mp-posts`, `#mp-engagement`, `#mindpattern-approvals`, `#mp-briefing`.
+- M0 plan explicitly changed the architecture so the Fly app could support
+  phone-post workflow:
+  - `a7767e5` container hardening: `start.sh` runs dashboard + Slack bot.
+  - `ca3fbfc` bot hardening: executor dispatch + heartbeat -> `/healthz`.
+  - `00ef198` Fly -> Mac journal: phone posts should reach local `memory.db`.
+- Current local launchd Slack bot services are not registered, so the local
+  daemon path is no longer active.
+- Current Fly state during this audit:
+  - `/healthz` says bot is alive.
+  - Fly `SLACK_CHANNEL_CONFIG` resolves all 7 handlers: posts, skills, tips,
+    engagement, approvals, briefing, harness.
+  - Running Fly bot process has `/root/.local/bin` in PATH and
+    `CLAUDE_CODE_OAUTH_TOKEN` present.
+  - `/app/data` is symlinked to `/data`, so repo-relative data paths resolve to
+    the Fly volume.
+
+Interpretation:
+
+- The regression is probably not "bot process dead" or "channels missing".
+- More likely failure boundary: a Slack event from the phone reaches, or fails
+  to reach, the handler after the local -> Fly move. `/healthz` does not prove
+  event delivery, handler dispatch, draft generation, approval polling, or
+  platform posting.
+- The next proof needs to be a live handler smoke, not another heartbeat check.
+
+Required smoke sequence:
+
+1. In Slack from the phone, send `help` to `#mp-posts`.
+   - If no reply: investigate Slack event subscription, bot invite, channel ID,
+     owner ID filtering, or Socket Mode event delivery.
+2. Send `status` to `#mp-briefing`.
+   - If no reply: handler dispatch or owner filtering is broken.
+3. Send `help` to `#mp-skills` and `#mp-tips`.
+   - If help works but drafting fails: generation path is broken.
+4. Tail Fly logs while sending the messages.
+   - Look for `Event received`, handler errors, Claude CLI errors, missing file
+     errors, or posting-client errors.
+5. Only after help/status work, test a non-live draft generation path.
+   - Do not approve a live platform post until the draft, edit, and approval
+     loop are proven.
+
 ## Fix-First Table: Existing Things That Are Broken or Not Proven Working
 
 These are not feature ideas. They are existing paths that are disabled, broken,
