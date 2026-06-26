@@ -322,6 +322,14 @@ Goal execution baseline on 2026-06-26:
     -> 5 passed in 0.01s.
   - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
     -> 32 passed in 88.34s.
+- Task 14 complete: RSS now exposes `fetch_with_diagnostics()` and `run_all()`
+  merges RSS diagnostics into `source_health`. Normal, empty, partial, timeout,
+  and failed states are represented; partial failures include `feed_errors`
+  with bad feed context while preserving healthy feed items.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py::test_rss_fetch_with_diagnostics_normal_feed tests/test_preflight.py::test_rss_fetch_with_diagnostics_empty_feed tests/test_preflight.py::test_rss_fetch_with_diagnostics_names_bad_feed tests/test_preflight.py::test_source_health_merges_rss_diagnostics -q`
+    -> 4 passed in 0.01s.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
+    -> 36 passed in 88.45s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

@@ -402,6 +402,18 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_preflight.py::test_source_health_success tests/test_preflight.py::test_source_health_empty tests/test_preflight.py::test_source_health_exception tests/test_preflight.py::test_source_health_timeout tests/test_preflight.py::test_source_health_missing_cli -q` -> 5 passed in 0.01s.
 - `.venv/bin/python3 -m pytest tests/test_preflight.py -q` -> 32 passed in 88.34s.
 
+### 2026-06-26 Task 14 RSS Diagnostics
+
+Added `preflight.rss.fetch_with_diagnostics()` and wired `run_all()` to merge
+RSS diagnostics into `source_health`. RSS now reports normal, empty, partial,
+timeout, and failed states; partial failures include structured `feed_errors`
+with bad feed context while preserving healthy feed items.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_preflight.py::test_rss_fetch_with_diagnostics_normal_feed tests/test_preflight.py::test_rss_fetch_with_diagnostics_empty_feed tests/test_preflight.py::test_rss_fetch_with_diagnostics_names_bad_feed tests/test_preflight.py::test_source_health_merges_rss_diagnostics -q` -> 4 passed in 0.01s.
+- `.venv/bin/python3 -m pytest tests/test_preflight.py -q` -> 36 passed in 88.45s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

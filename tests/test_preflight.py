@@ -69,6 +69,94 @@ def test_rss_transform_missing_fields():
     assert entry["published"] == ""
 
 
+def test_rss_fetch_with_diagnostics_normal_feed(monkeypatch, tmp_path):
+    import preflight.rss as rss
+
+    feeds_file = tmp_path / "feeds.json"
+    feeds_file.write_text("[]")
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({
+                "source": "Good Feed",
+                "title": "Post",
+                "url": "https://example.com/post",
+                "summary": "Summary",
+            }) + "\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(rss.subprocess, "run", fake_run)
+
+    items, diagnostics = rss.fetch_with_diagnostics(feeds_file)
+
+    assert len(items) == 1
+    assert items[0]["source_name"] == "Good Feed"
+    assert diagnostics["status"] == "ok"
+    assert diagnostics["reason"] == ""
+    assert diagnostics["feed_errors"] == []
+
+
+def test_rss_fetch_with_diagnostics_empty_feed(monkeypatch, tmp_path):
+    import preflight.rss as rss
+
+    feeds_file = tmp_path / "feeds.json"
+    feeds_file.write_text("[]")
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(rss.subprocess, "run", fake_run)
+
+    items, diagnostics = rss.fetch_with_diagnostics(feeds_file)
+
+    assert items == []
+    assert diagnostics["status"] == "empty"
+    assert diagnostics["reason"] == "no items"
+
+
+def test_rss_fetch_with_diagnostics_names_bad_feed(monkeypatch, tmp_path):
+    import preflight.rss as rss
+
+    feeds_file = tmp_path / "feeds.json"
+    feeds_file.write_text("[]")
+    stderr = "\n".join([
+        json.dumps({
+            "error": "Warning for feed 'Bad Feed': broken XML",
+            "tool": "rss-fetch",
+            "context": "https://bad.example/feed",
+        }),
+        json.dumps({
+            "error": "1/2 feeds failed",
+            "tool": "rss-fetch",
+        }),
+    ])
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            1,
+            stdout=json.dumps({
+                "source": "Good Feed",
+                "title": "Good Post",
+                "url": "https://example.com/good",
+                "summary": "Summary",
+            }) + "\n",
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(rss.subprocess, "run", fake_run)
+
+    items, diagnostics = rss.fetch_with_diagnostics(feeds_file)
+
+    assert len(items) == 1
+    assert diagnostics["status"] == "partial"
+    assert "Bad Feed" in diagnostics["reason"]
+    assert diagnostics["feed_errors"][0]["context"] == "https://bad.example/feed"
+
+
 # ── arXiv tests ───────────────────────────────────────────────────
 
 def test_arxiv_transform():
@@ -358,6 +446,27 @@ def test_source_health_missing_cli():
     assert health["status"] == "missing"
     assert health["count"] == 0
     assert "twitter" in health["reason"]
+
+
+def test_source_health_merges_rss_diagnostics():
+    from preflight.run_all import _run_source_with_health
+
+    items = [make_entry(source="rss", source_name="Good Feed", title="Post", url="u")]
+
+    def fetch():
+        return items, {
+            "status": "partial",
+            "reason": "Bad Feed failed",
+            "feed_errors": [{"context": "https://bad.example/feed"}],
+        }
+
+    fetched, health = _run_source_with_health("rss", fetch)
+
+    assert fetched == items
+    assert health["status"] == "partial"
+    assert health["count"] == 1
+    assert health["reason"] == "Bad Feed failed"
+    assert health["feed_errors"][0]["context"] == "https://bad.example/feed"
 
 
 # ── Integration smoke test ────────────────────────────────────────

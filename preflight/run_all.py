@@ -211,16 +211,29 @@ def _run_source_with_health(source_name: str, fetch_fn) -> tuple[list[dict], dic
     """Run one source and return `(items, health)` without raising."""
     start = time.monotonic()
     try:
-        items = fetch_fn() or []
+        result = fetch_fn()
+        extra_health = {}
+        if isinstance(result, tuple) and len(result) == 2:
+            items, extra_health = result
+            extra_health = extra_health or {}
+        else:
+            items = result
+        items = items or []
         duration_ms = int((time.monotonic() - start) * 1000)
-        status = "ok" if items else "empty"
-        reason = "" if items else "no items"
-        return items, {
+        status = extra_health.get("status") or ("ok" if items else "empty")
+        reason = extra_health.get("reason")
+        if reason is None:
+            reason = "" if items else "no items"
+        health = {
             "status": status,
             "count": len(items),
             "duration_ms": duration_ms,
             "reason": reason,
         }
+        for key, value in extra_health.items():
+            if key not in health:
+                health[key] = value
+        return items, health
     except Exception as e:
         duration_ms = int((time.monotonic() - start) * 1000)
         return [], {
@@ -249,7 +262,7 @@ def run_all(
     from . import rss, arxiv, github, hn, reddit, twitter, exa, youtube
 
     tasks = {
-        "rss": lambda: rss.fetch(feeds_file=feeds_file),
+        "rss": lambda: rss.fetch_with_diagnostics(feeds_file=feeds_file),
         "arxiv": lambda: arxiv.fetch(),
         "github": lambda: github.fetch(),
         "hn": lambda: hn.fetch(),
