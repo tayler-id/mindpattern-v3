@@ -314,6 +314,14 @@ Goal execution baseline on 2026-06-26:
     -> 84 passed in 0.10s.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_runner.py -q`
     -> 146 passed in 0.52s.
+- Task 13 complete: `preflight.run_all()` now returns `source_health` while
+  preserving `items`, `assignments`, and `source_counts`. Each source records
+  `status`, `count`, `duration_ms`, and `reason`; success, empty, exception,
+  timeout, and missing-tool states are classified.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py::test_source_health_success tests/test_preflight.py::test_source_health_empty tests/test_preflight.py::test_source_health_exception tests/test_preflight.py::test_source_health_timeout tests/test_preflight.py::test_source_health_missing_cli -q`
+    -> 5 passed in 0.01s.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
+    -> 32 passed in 88.34s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

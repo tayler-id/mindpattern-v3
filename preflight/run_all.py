@@ -2,6 +2,7 @@
 """Orchestrate all preflight sources, dedup-annotate, assign to agents."""
 
 import logging
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -197,6 +198,39 @@ def _assign_to_agents(items: list[dict]) -> dict[str, list[dict]]:
     return assignments
 
 
+def _source_error_status(exc: Exception) -> str:
+    """Classify source fetch errors for health reporting."""
+    if isinstance(exc, (TimeoutError, subprocess.TimeoutExpired)):
+        return "timeout"
+    if isinstance(exc, FileNotFoundError):
+        return "missing"
+    return "failed"
+
+
+def _run_source_with_health(source_name: str, fetch_fn) -> tuple[list[dict], dict]:
+    """Run one source and return `(items, health)` without raising."""
+    start = time.monotonic()
+    try:
+        items = fetch_fn() or []
+        duration_ms = int((time.monotonic() - start) * 1000)
+        status = "ok" if items else "empty"
+        reason = "" if items else "no items"
+        return items, {
+            "status": status,
+            "count": len(items),
+            "duration_ms": duration_ms,
+            "reason": reason,
+        }
+    except Exception as e:
+        duration_ms = int((time.monotonic() - start) * 1000)
+        return [], {
+            "status": _source_error_status(e),
+            "count": 0,
+            "duration_ms": duration_ms,
+            "reason": f"{type(e).__name__}: {e}",
+        }
+
+
 def run_all(
     date_str: str,
     db=None,
@@ -227,20 +261,36 @@ def run_all(
 
     all_items: list[dict] = []
     source_counts: dict[str, int] = {}
+    source_health: dict[str, dict] = {}
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(fn): name for name, fn in tasks.items()}
+        futures = {
+            pool.submit(_run_source_with_health, name, fn): name
+            for name, fn in tasks.items()
+        }
 
         for future in as_completed(futures):
             source_name = futures[future]
             try:
-                items = future.result()
+                items, health = future.result()
                 all_items.extend(items)
-                source_counts[source_name] = len(items)
-                logger.info(f"Preflight {source_name}: {len(items)} items")
+                source_counts[source_name] = health["count"]
+                source_health[source_name] = health
+                logger.info(
+                    f"Preflight {source_name}: {health['count']} items "
+                    f"status={health['status']} reason={health['reason']}"
+                )
             except Exception as e:
+                # _run_source_with_health should catch source exceptions; keep a
+                # final guard for executor-level failures.
                 logger.error(f"Preflight {source_name} failed: {e}")
                 source_counts[source_name] = 0
+                source_health[source_name] = {
+                    "status": "failed",
+                    "count": 0,
+                    "duration_ms": 0,
+                    "reason": f"{type(e).__name__}: {e}",
+                }
 
     logger.info(f"Preflight total: {len(all_items)} raw items from {len(source_counts)} sources")
 
@@ -267,5 +317,6 @@ def run_all(
         "new_count": len(new_items),
         "covered_count": len(covered_items),
         "source_counts": source_counts,
+        "source_health": source_health,
         "duration_ms": duration_ms,
     }

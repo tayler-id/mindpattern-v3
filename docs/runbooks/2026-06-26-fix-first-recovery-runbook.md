@@ -389,6 +389,19 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 84 passed in 0.10s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_runner.py -q` -> 146 passed in 0.52s.
 
+### 2026-06-26 Task 13 Structured Source Health
+
+Added per-source `source_health` output to `preflight.run_all()` while
+preserving existing `items`, `assignments`, and `source_counts` keys. Each
+source records `status`, `count`, `duration_ms`, and `reason`. Success,
+healthy-empty, exception, timeout, and missing-tool failures are classified
+without throwing away the rest of the preflight result.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_preflight.py::test_source_health_success tests/test_preflight.py::test_source_health_empty tests/test_preflight.py::test_source_health_exception tests/test_preflight.py::test_source_health_timeout tests/test_preflight.py::test_source_health_missing_cli -q` -> 5 passed in 0.01s.
+- `.venv/bin/python3 -m pytest tests/test_preflight.py -q` -> 32 passed in 88.34s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

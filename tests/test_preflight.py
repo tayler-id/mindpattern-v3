@@ -294,6 +294,72 @@ def test_assign_to_agents():
     assert "hn-researcher" in assignments
 
 
+def test_source_health_success():
+    from preflight.run_all import _run_source_with_health
+
+    items = [make_entry(source="rss", source_name="Feed", title="Post", url="u")]
+    fetched, health = _run_source_with_health("rss", lambda: items)
+
+    assert fetched == items
+    assert health["status"] == "ok"
+    assert health["count"] == 1
+    assert health["duration_ms"] >= 0
+    assert health["reason"] == ""
+
+
+def test_source_health_empty():
+    from preflight.run_all import _run_source_with_health
+
+    fetched, health = _run_source_with_health("hn", lambda: [])
+
+    assert fetched == []
+    assert health["status"] == "empty"
+    assert health["count"] == 0
+    assert health["reason"] == "no items"
+
+
+def test_source_health_exception():
+    from preflight.run_all import _run_source_with_health
+
+    def fail():
+        raise RuntimeError("backend failed")
+
+    fetched, health = _run_source_with_health("reddit", fail)
+
+    assert fetched == []
+    assert health["status"] == "failed"
+    assert health["count"] == 0
+    assert "backend failed" in health["reason"]
+
+
+def test_source_health_timeout():
+    from preflight.run_all import _run_source_with_health
+
+    def fail():
+        raise TimeoutError("rss-fetch timed out")
+
+    fetched, health = _run_source_with_health("rss", fail)
+
+    assert fetched == []
+    assert health["status"] == "timeout"
+    assert health["count"] == 0
+    assert "timed out" in health["reason"]
+
+
+def test_source_health_missing_cli():
+    from preflight.run_all import _run_source_with_health
+
+    def fail():
+        raise FileNotFoundError("twitter")
+
+    fetched, health = _run_source_with_health("twitter", fail)
+
+    assert fetched == []
+    assert health["status"] == "missing"
+    assert health["count"] == 0
+    assert "twitter" in health["reason"]
+
+
 # ── Integration smoke test ────────────────────────────────────────
 
 def test_preflight_run_all_smoke():
@@ -306,8 +372,10 @@ def test_preflight_run_all_smoke():
     assert "total_items" in result
     assert "assignments" in result
     assert "source_counts" in result
+    assert "source_health" in result
     assert result["total_items"] >= 0
     assert isinstance(result["assignments"], dict)
+    assert isinstance(result["source_health"], dict)
 
 
 # ── Dedup decay tests ────────────────────────────────────────────
