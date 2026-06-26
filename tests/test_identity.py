@@ -58,8 +58,8 @@ def test_no_identity_dir_uses_soul_path(tmp_path):
     assert "Fallback Soul" in prompt
 
 
-def test_skill_tool_blocked_in_run_single_agent():
-    """Verify --disallowedTools Skill is in the command"""
+def test_research_agent_command_does_not_add_default_tool_fences():
+    """Research agents need the full Claude Code research surface."""
     cmd = _build_claude_command(
         "research prompt",
         model="opus",
@@ -67,6 +67,5 @@ def test_skill_tool_blocked_in_run_single_agent():
         allowed_tools=AGENT_ALLOWED_TOOLS,
         disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
     )
-    assert "--disallowedTools" in cmd
-    denied = cmd[cmd.index("--disallowedTools") + 1].split()
-    assert "Skill" in denied
+    assert "--allowedTools" not in cmd
+    assert "--disallowedTools" not in cmd

@@ -2,10 +2,12 @@
 
 ## Scope
 
-Audit-only pass requested by Tayler. The task was to understand MindPattern v3
-as it works today, diagnose why Slack/social posting has not worked for weeks,
-and prepare prioritized recommendations. No production behavior or application
-code was changed in this pass.
+This handoff started as an audit-only pass requested by Tayler: understand
+MindPattern v3 as it works today, diagnose why Slack/social posting has not
+worked for weeks, and prepare prioritized recommendations.
+
+It now also tracks the 2026-06-26 fix-first recovery implementation. Production
+deploy/smoke was not run in this recovery pass without owner approval.
 
 ## Current Repo State
 
@@ -14,6 +16,40 @@ code was changed in this pass.
 - HEAD when inspected: `44329ba03d07ce3495d61277711b1fa8a283613e`
 - Worktree was clean before this handoff file was added.
 - `graphify-out/GRAPH_REPORT.md` exists but is stale: built from `eb913fee`.
+
+## Recovery Implementation Status
+
+Fix-first tasks completed locally through Task 23:
+
+- Slack posts, skills, and tips now use fail-closed approval parsing.
+- Slack draft edit flow now re-previews edited copy and requires a second
+  explicit approval before any live post.
+- Disabled social platforms now return manual-copy draft output instead of
+  making the daily social phase disappear.
+- `#mp-briefing` now has redacted bot doctor/status visibility plus source,
+  social, and quality-floor status.
+- Preflight now emits structured per-source health for RSS, HN, Twitter/X,
+  Reddit, Exa, and YouTube, including unavailable/failed/timeout states.
+- Newsletter synthesis now has a tested quality floor, duplicate story/angle
+  risk checks, agent coverage floor, and source-balance candidate selection.
+- GitHub Actions now runs a deterministic critical subset of
+  `tests/test_runner.py` instead of excluding runner behavior entirely.
+- Obsolete defang tests were updated to preserve the restored research-agent
+  contract: no default Claude tool allow/deny fences for daily research agents.
+
+Latest Task 23 verification:
+
+- `.venv/bin/python3 -m pytest tests/test_agent_defang.py tests/test_identity.py::test_research_agent_command_does_not_add_default_tool_fences -q` -> 8 passed in 0.11s.
+- `.venv/bin/python3 -m pytest -q --tb=short tests/test_runner.py::TestPhaseTrendScan tests/test_runner.py::TestPhaseResearch tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseSocial` -> 23 passed in 0.40s.
+- `.venv/bin/python3 -m pytest tests/test_runner.py -q` -> 69 passed in 0.58s.
+- `.venv/bin/python3 -m pytest tests/ -q --tb=short --ignore=tests/test_cors.py --ignore=tests/test_engagement_linkedin.py --ignore=tests/test_memory_cli.py --ignore=tests/test_runner.py -k "not test_blocked_when_at_limit and not test_get_model_research_agent"` -> 1154 passed, 3 deselected, 1 warning in 93.93s.
+
+Remaining before final handoff:
+
+- Refresh Graphify and record the result.
+- Record final commit/status evidence.
+- Production Fly deploy, live Slack channel smoke, and full daily pipeline run
+  remain deferred until Tayler explicitly approves them.
 
 ## System Map
 

@@ -670,13 +670,17 @@ skip behavior, source-health propagation, and quality floors are checked before
 merge.
 
 **Acceptance criteria:**
-- [ ] CI no longer ignores all of `tests/test_runner.py`.
-- [ ] The selected runner subset is deterministic and offline.
-- [ ] Local CI-equivalent command passes.
+- [x] CI no longer ignores all of `tests/test_runner.py`.
+- [x] The selected runner subset is deterministic and offline.
+- [x] Local CI-equivalent command passes.
 
 **Verification:**
-- [ ] Run the updated CI-equivalent pytest command locally.
-- [ ] Run `.venv/bin/python3 -m pytest tests/test_runner.py -q` locally.
+- [x] Run the updated CI-equivalent pytest command locally.
+  `.venv/bin/python3 -m pytest tests/ -q --tb=short --ignore=tests/test_cors.py --ignore=tests/test_engagement_linkedin.py --ignore=tests/test_memory_cli.py --ignore=tests/test_runner.py -k "not test_blocked_when_at_limit and not test_get_model_research_agent"` -> 1154 passed, 3 deselected, 1 warning in 93.93s.
+- [x] Run `.venv/bin/python3 -m pytest tests/test_runner.py -q` locally.
+  Result: 69 passed in 0.58s.
+- [x] Run the selected CI runner subset locally.
+  `.venv/bin/python3 -m pytest -q --tb=short tests/test_runner.py::TestPhaseTrendScan tests/test_runner.py::TestPhaseResearch tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseSocial` -> 23 passed in 0.40s.
 
 **Dependencies:** Tasks 11, 17, 22
 

@@ -39,3 +39,13 @@ jobs:
             -k "not test_blocked_when_at_limit and not test_get_model_research_agent"
         env:
           PYTHONPATH: .
+
+      - name: Run critical runner phase tests
+        run: |
+          python -m pytest -q --tb=short \
+            tests/test_runner.py::TestPhaseTrendScan \
+            tests/test_runner.py::TestPhaseResearch \
+            tests/test_runner.py::TestPhaseSynthesis \
+            tests/test_runner.py::TestPhaseSocial
+        env:
+          PYTHONPATH: .

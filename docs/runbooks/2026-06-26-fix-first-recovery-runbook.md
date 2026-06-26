@@ -542,6 +542,27 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_retryable_quality_floor_uses_deterministic_fallback tests/test_runner.py::TestPhaseSynthesis::test_degraded_quality_floor_adds_visible_notice tests/test_slack_bot.py::TestBriefingSocialState::test_status_reports_source_health_from_latest_trace -q` -> 3 passed in 0.17s.
 - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_newsletter.py tests/test_newsletter_receipts.py tests/test_slack_bot.py -q` -> 184 passed in 0.81s.
 
+### 2026-06-26 Task 23 Critical Runner CI Coverage
+
+Added a GitHub Actions step that runs the deterministic critical runner phase
+classes from `tests/test_runner.py`: trend scan, research, synthesis, and
+social. The broad CI-equivalent test command remains in place, while the
+runner subset is no longer fully excluded from CI.
+
+While verifying the workflow, obsolete defang tests were updated to match the
+restored research-agent contract: daily newsletter research agents intentionally
+run without default Claude tool allow/deny fences so Agent Reach, shell-backed
+source tools, and subagents remain available. The lower-level command builder
+still preserves explicit fences for other task types, and the harness-specific
+WebFetch guard remains tested separately.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_agent_defang.py tests/test_identity.py::test_research_agent_command_does_not_add_default_tool_fences -q` -> 8 passed in 0.11s.
+- `.venv/bin/python3 -m pytest -q --tb=short tests/test_runner.py::TestPhaseTrendScan tests/test_runner.py::TestPhaseResearch tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseSocial` -> 23 passed in 0.40s.
+- `.venv/bin/python3 -m pytest tests/test_runner.py -q` -> 69 passed in 0.58s.
+- `.venv/bin/python3 -m pytest tests/ -q --tb=short --ignore=tests/test_cors.py --ignore=tests/test_engagement_linkedin.py --ignore=tests/test_memory_cli.py --ignore=tests/test_runner.py -k "not test_blocked_when_at_limit and not test_get_model_research_agent"` -> 1154 passed, 3 deselected, 1 warning in 93.93s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

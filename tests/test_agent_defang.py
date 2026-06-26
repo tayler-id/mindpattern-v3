@@ -1,8 +1,9 @@
-"""M0 Task 14 — de-fang research agents (audit C6).
+"""Research-agent tool policy and dry-run kill-switch tests.
 
-Research agents ingest scraped web content; an injected instruction must
-never reach a shell, spawn subagents, or write files. --dry-run must force
-the outbound kill switch.
+Daily newsletter research agents intentionally run without default Claude tool
+allow/deny fences. Source breadth depends on shell-backed tools, Agent Reach,
+and subagents. Harness research keeps its own narrower guard because harness
+agents run with repo-write access.
 """
 
 import re
@@ -18,21 +19,11 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 
 class TestResearchAgentTools:
-    def test_no_shell_or_subagents_in_allowlist(self):
-        assert "Bash" not in AGENT_ALLOWED_TOOLS
-        assert "Agent" not in AGENT_ALLOWED_TOOLS
+    def test_research_agents_have_unfenced_tool_policy(self):
+        assert AGENT_ALLOWED_TOOLS is None
+        assert RESEARCH_DISALLOWED_TOOLS is None
 
-    def test_no_write_tools_in_allowlist(self):
-        assert "Write" not in AGENT_ALLOWED_TOOLS
-        assert "Edit" not in AGENT_ALLOWED_TOOLS
-
-    def test_research_tools_still_present(self):
-        for tool in ("WebSearch", "WebFetch", "Read", "Glob", "Grep"):
-            assert tool in AGENT_ALLOWED_TOOLS
-
-    def test_dispatch_cmd_denies_dangerous_tools(self):
-        """The built claude command must explicitly disallow Bash/Agent —
-        allowed-tools alone is not reliably enforced."""
+    def test_research_cmd_omits_tool_fences_by_default(self):
         cmd = _build_claude_command(
             "research prompt",
             model="opus",
@@ -40,9 +31,21 @@ class TestResearchAgentTools:
             allowed_tools=AGENT_ALLOWED_TOOLS,
             disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
         )
-        denied = cmd[cmd.index("--disallowedTools") + 1].split()
-        for tool in ("Bash", "Agent", "Write", "Edit", "Skill"):
-            assert tool in denied
+        assert "--allowedTools" not in cmd
+        assert "--disallowedTools" not in cmd
+
+    def test_dispatch_cmd_preserves_explicit_tool_fences(self):
+        cmd = _build_claude_command(
+            "prompt",
+            model="sonnet",
+            max_turns=10,
+            allowed_tools=["Read", "Glob"],
+            disallowed_tools="Agent,Write",
+        )
+        assert cmd.count("--allowedTools") == 2
+        assert cmd[cmd.index("--allowedTools") + 1] == "Read"
+        assert cmd[cmd.index("--allowedTools", cmd.index("--allowedTools") + 1) + 1] == "Glob"
+        assert cmd[cmd.index("--disallowedTools") + 1] == "Agent,Write"
 
 
 class TestHarnessResearchAgent:
