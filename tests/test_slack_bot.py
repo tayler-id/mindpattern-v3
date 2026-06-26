@@ -322,3 +322,79 @@ class TestSkillsTipsStrictApproval:
             {"bluesky": "Bluesky draft", "linkedin": "LinkedIn draft"},
             expected,
         )
+
+
+class TestDraftEditHelpers:
+    """Draft edits are revisions, not approvals."""
+
+    platforms = ["bluesky", "linkedin"]
+
+    def test_parse_platform_edit(self):
+        from slack_bot.drafts import parse_draft_edit
+
+        edit, error = parse_draft_edit(
+            "edit bluesky: New bluesky copy",
+            self.platforms,
+        )
+
+        assert error is None
+        assert edit is not None
+        assert edit.platform == "bluesky"
+        assert edit.content == "New bluesky copy"
+
+    def test_parse_edit_is_case_insensitive(self):
+        from slack_bot.drafts import parse_draft_edit
+
+        edit, error = parse_draft_edit(
+            "EDIT LINKEDIN: New LinkedIn copy",
+            self.platforms,
+        )
+
+        assert error is None
+        assert edit is not None
+        assert edit.platform == "linkedin"
+        assert edit.content == "New LinkedIn copy"
+
+    def test_unknown_platform_edit_returns_error(self):
+        from slack_bot.drafts import parse_draft_edit
+
+        edit, error = parse_draft_edit(
+            "edit mastodon: New copy",
+            self.platforms,
+        )
+
+        assert edit is None
+        assert "unknown platform" in error.lower()
+
+    def test_empty_edit_returns_error(self):
+        from slack_bot.drafts import parse_draft_edit
+
+        edit, error = parse_draft_edit("edit bluesky:", self.platforms)
+
+        assert edit is None
+        assert "replacement" in error.lower()
+
+    def test_non_edit_reply_returns_no_decision(self):
+        from slack_bot.drafts import parse_draft_edit
+
+        edit, error = parse_draft_edit("go", self.platforms)
+
+        assert edit is None
+        assert error is None
+
+    def test_apply_draft_edit_copies_and_updates_one_platform(self):
+        from slack_bot.drafts import DraftEdit, apply_draft_edit
+
+        drafts = {"bluesky": "Old bluesky", "linkedin": "Old linkedin"}
+        updated = apply_draft_edit(
+            drafts,
+            DraftEdit(platform="bluesky", content="New bluesky"),
+        )
+
+        assert updated == {"bluesky": "New bluesky", "linkedin": "Old linkedin"}
+        assert drafts == {"bluesky": "Old bluesky", "linkedin": "Old linkedin"}
+
+    def test_edit_command_is_not_approval(self):
+        from slack_bot.approval import parse_platform_approval
+
+        assert parse_platform_approval("edit bluesky: New copy", self.platforms) == []

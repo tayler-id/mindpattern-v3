@@ -279,6 +279,16 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 57 passed in 0.03s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 219 passed in 3.25s.
 
+### 2026-06-26 Task 4 Draft Edit Helpers
+
+Added pure draft edit helpers for `edit platform: replacement` replies. Edit
+commands parse separately from approval and `parse_platform_approval()` treats
+edit commands as no approval.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 64 passed in 0.03s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

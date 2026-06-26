@@ -248,6 +248,10 @@ Goal execution baseline on 2026-06-26:
     -> 57 passed in 0.03s.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
     -> 219 passed in 3.25s.
+- Task 4 complete: added `slack_bot.drafts` helpers for `edit platform:
+  replacement` replies. Edit commands are parsed as revisions, not approvals.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 64 passed in 0.03s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|
