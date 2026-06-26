@@ -524,6 +524,24 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_source_balance_caps_single_source_candidate_dominance tests/test_runner.py::TestPhaseSynthesis::test_source_balance_marks_single_healthy_source_degraded -q` -> 2 passed in 0.08s.
 - `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_runner.py -q` -> 113 passed in 88.88s.
 
+### 2026-06-26 Task 22 Quality Floor Synthesis Integration
+
+Integrated `assess_quality_floor()` into `_phase_synthesis()` after
+newsletter evaluation and before delivery can read the report. Retryable
+quality-floor failures replace the weak draft with the deterministic,
+source-grounded fallback report and write `newsletter_quality_floor_retryable`
+to traces. Degraded-but-usable drafts are preserved but get a visible
+`Degraded issue notice` at the top of the report and write
+`newsletter_quality_floor_degraded` to traces. The synthesis result now returns
+`quality_floor`, `quality_fallback`, and `degraded`; `#mp-briefing status`
+surfaces the latest quality-floor incident from traces. Delivery receipt logic
+remains unchanged.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_retryable_quality_floor_uses_deterministic_fallback tests/test_runner.py::TestPhaseSynthesis::test_degraded_quality_floor_adds_visible_notice tests/test_slack_bot.py::TestBriefingSocialState::test_status_reports_source_health_from_latest_trace -q` -> 3 passed in 0.17s.
+- `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_newsletter.py tests/test_newsletter_receipts.py tests/test_slack_bot.py -q` -> 184 passed in 0.81s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

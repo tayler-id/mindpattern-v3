@@ -176,6 +176,48 @@ class BriefingHandler(BaseHandler):
 
         return lines
 
+    def _latest_quality_floor_state(self, date_str: str) -> dict | None:
+        """Load the latest newsletter quality-floor trace for the requested day."""
+        traces_path = PROJECT_ROOT / "data" / "ramsay" / "traces.db"
+        if not traces_path.exists():
+            return None
+
+        try:
+            conn = sqlite3.connect(str(traces_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT payload FROM events WHERE event_type IN (?, ?) "
+                "ORDER BY id DESC LIMIT 20",
+                ("newsletter_quality_floor_retryable", "newsletter_quality_floor_degraded"),
+            ).fetchall()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to read quality floor from traces: {e}")
+            return None
+
+        for row in rows:
+            try:
+                payload = json.loads(row["payload"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            payload_date = payload.get("run_date")
+            if payload_date and payload_date != date_str:
+                continue
+            if payload.get("status") and payload.get("status") != "pass":
+                return payload
+
+        return None
+
+    def _format_quality_floor_state(self, state: dict | None) -> list[str]:
+        """Format newsletter quality-floor state without detailed payloads."""
+        if not state:
+            return []
+        status = state.get("status", "degraded")
+        reasons = state.get("reasons") or []
+        reason = reasons[0] if reasons else "review required"
+        return [f"Quality: {status} - {reason}"]
+
     def _post_status(self, ts: str, date_str: str | None = None) -> None:
         """Query pipeline data and post a status summary."""
         if not date_str:
@@ -234,6 +276,11 @@ class BriefingHandler(BaseHandler):
                     self._latest_source_health_state(date_str)
                 )
             )
+            lines.extend(
+                self._format_quality_floor_state(
+                    self._latest_quality_floor_state(date_str)
+                )
+            )
 
             if engagement_count > 0:
                 lines.append(f"Engagement: {engagement_count} interactions")
@@ -275,6 +322,7 @@ class BriefingHandler(BaseHandler):
             "summary": results.get("source_health_summary") or {},
             "health": results.get("source_health") or {},
         }))
+        lines.extend(self._format_quality_floor_state(results.get("quality_floor")))
 
         verdict = social.get("expeditor_verdict", "")
         if verdict:

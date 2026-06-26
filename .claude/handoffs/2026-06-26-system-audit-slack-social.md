@@ -398,6 +398,19 @@ Goal execution baseline on 2026-06-26:
     -> 2 passed in 0.08s.
   - `.venv/bin/python3 -m pytest tests/test_preflight.py tests/test_runner.py -q`
     -> 113 passed in 88.88s.
+- Task 22 complete: `_phase_synthesis()` now applies `assess_quality_floor()`
+  after newsletter evaluation and before delivery can read the report.
+  Retryable failures rewrite the report with the deterministic source-grounded
+  fallback and log `newsletter_quality_floor_retryable`; degraded-but-usable
+  drafts get a visible `Degraded issue notice` and log
+  `newsletter_quality_floor_degraded`. The synthesis result includes
+  `quality_floor`, `quality_fallback`, and `degraded`; `#mp-briefing status`
+  surfaces the latest quality-floor incident from traces. Delivery receipt
+  logic was not changed.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_retryable_quality_floor_uses_deterministic_fallback tests/test_runner.py::TestPhaseSynthesis::test_degraded_quality_floor_adds_visible_notice tests/test_slack_bot.py::TestBriefingSocialState::test_status_reports_source_health_from_latest_trace -q`
+    -> 3 passed in 0.17s.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_newsletter.py tests/test_newsletter_receipts.py tests/test_slack_bot.py -q`
+    -> 184 passed in 0.81s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

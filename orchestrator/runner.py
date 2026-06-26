@@ -15,7 +15,7 @@ from pathlib import Path
 import memory
 from . import agents as agent_dispatch
 from .checkpoint import Checkpoint
-from .evaluator import NewsletterEvaluator
+from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
@@ -384,6 +384,29 @@ def _build_deterministic_newsletter(
         "",
     ])
     return "\n".join(lines)
+
+
+def _recent_findings_for_quality(db, date_str: str, days: int = 3) -> list[dict]:
+    from datetime import timedelta as _td
+
+    cutoff = (datetime.strptime(date_str, "%Y-%m-%d") - _td(days=days)).strftime("%Y-%m-%d")
+    rows = db.execute(
+        "SELECT agent, title, summary, importance, source_url, source_name, run_date "
+        "FROM findings WHERE run_date >= ? AND run_date < ?",
+        (cutoff, date_str),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _quality_floor_notice(quality_floor: dict) -> str:
+    reasons = "; ".join((quality_floor.get("reasons") or [])[:4])
+    if not reasons:
+        reasons = quality_floor.get("status", "degraded")
+    return (
+        "> Degraded issue notice: quality floor "
+        f"{quality_floor.get('status', 'degraded')} ({reasons}). "
+        "This issue was generated from available stored findings and should be reviewed."
+    )
 
 
 class ResearchPipeline:
@@ -1369,6 +1392,75 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Newsletter evaluation failed (non-critical): {e}")
 
+        quality_floor = {
+            "status": "pass",
+            "passed": True,
+            "degraded": False,
+            "retryable": False,
+            "reasons": [],
+            "metrics": {},
+        }
+        quality_fallback = False
+        try:
+            recent_findings = _recent_findings_for_quality(self.db, self.date_str)
+            quality_floor = assess_quality_floor(
+                eval_scores,
+                findings=today_findings,
+                recent_findings=recent_findings,
+                preflight_data=self.preflight_data or {},
+            )
+            quality_floor["run_date"] = self.date_str
+
+            if source_balance.get("status") != "pass":
+                quality_floor["status"] = (
+                    "fail_retryable"
+                    if quality_floor.get("retryable")
+                    else "degraded"
+                )
+                quality_floor["passed"] = False
+                quality_floor["degraded"] = True
+                quality_floor.setdefault("reasons", []).extend(
+                    f"source balance: {reason}"
+                    for reason in source_balance.get("reasons", [])
+                )
+
+            if quality_floor["status"] == "fail_retryable":
+                reason = "; ".join(quality_floor.get("reasons", [])[:5])
+                self.newsletter_text = _build_deterministic_newsletter(
+                    newsletter_title=newsletter_title,
+                    date_str=self.date_str,
+                    findings=today_findings,
+                    reason=f"quality floor fail_retryable: {reason}",
+                )
+                quality_fallback = True
+                report_path.write_text(self.newsletter_text)
+                word_count = len(self.newsletter_text.split())
+                log_event(self.traces_conn, self.traces_run_id,
+                          "newsletter_quality_floor_retryable",
+                          json.dumps(quality_floor))
+                logger.error(
+                    "Newsletter quality floor retryable failure; wrote "
+                    "deterministic fallback before delivery: %s",
+                    reason,
+                )
+            elif quality_floor["status"] == "degraded":
+                self.newsletter_text = (
+                    _quality_floor_notice(quality_floor)
+                    + "\n\n"
+                    + self.newsletter_text
+                )
+                report_path.write_text(self.newsletter_text)
+                word_count = len(self.newsletter_text.split())
+                log_event(self.traces_conn, self.traces_run_id,
+                          "newsletter_quality_floor_degraded",
+                          json.dumps(quality_floor))
+                logger.warning(
+                    "Newsletter quality floor degraded; notice added: %s",
+                    "; ".join(quality_floor.get("reasons", [])[:5]),
+                )
+        except Exception as e:
+            logger.warning(f"Newsletter quality floor failed (non-critical): {e}")
+
         # Gate: warn if quality is below threshold (don't block, but log loudly)
         overall = eval_scores.get("overall", 1.0)
         if overall < 0.6:
@@ -1380,7 +1472,10 @@ class ResearchPipeline:
 
         self.newsletter_eval = eval_scores
         return {"word_count": word_count, "report_path": str(report_path),
-                "eval_scores": eval_scores, "source_balance": source_balance}
+                "eval_scores": eval_scores, "source_balance": source_balance,
+                "quality_floor": quality_floor,
+                "quality_fallback": quality_fallback,
+                "degraded": quality_floor.get("degraded", False)}
 
     def _phase_deliver(self) -> dict:
         """Phase 5: Deliver (Python only). Convert to HTML, send via Resend."""

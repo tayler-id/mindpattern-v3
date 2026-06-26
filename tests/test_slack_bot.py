@@ -929,6 +929,18 @@ class TestBriefingSocialState:
                 }),
             ),
         )
+        traces.execute(
+            "INSERT INTO events (pipeline_run_id, event_type, payload) VALUES (?, ?, ?)",
+            (
+                "run-1",
+                "newsletter_quality_floor_degraded",
+                json.dumps({
+                    "run_date": "2026-06-26",
+                    "status": "degraded",
+                    "reasons": ["coverage score 0.55 below floor 0.6"],
+                }),
+            ),
+        )
         traces.commit()
         traces.close()
 
@@ -939,4 +951,5 @@ class TestBriefingSocialState:
         assert "Sources: 1/2 responsive" in text
         assert "Unavailable: reddit" in text
         assert "Degraded: youtube (timeout)" in text
+        assert "Quality: degraded - coverage score 0.55 below floor 0.6" in text
         assert "backend off" not in text

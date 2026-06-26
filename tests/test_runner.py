@@ -727,14 +727,14 @@ class TestPhaseResearch:
 class TestPhaseSynthesis:
     """_phase_synthesis: two-pass synthesis and newsletter evaluation."""
 
-    def _seed_findings(self, db, date_str, count=3):
+    def _seed_findings(self, db, date_str, count=80):
         for i in range(count):
             db.execute(
                 "INSERT INTO findings (run_date, agent, title, summary, importance, source_url, source_name) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (date_str, f"agent-{i}", f"Title {i}", f"Summary {i}",
+                (date_str, f"agent-{i % 13}", f"Title {i}", f"Summary {i}",
                  "high" if i == 0 else "medium",
-                 f"https://example.com/{i}", f"Source {i}"),
+                 f"https://example.com/{i}", f"Source {i % 6}"),
             )
         db.commit()
 
@@ -854,7 +854,67 @@ class TestPhaseSynthesis:
         assert report_path.exists()
         assert "FALLBACK STORY SELECTION" in pass2_prompt
         assert "Title 0" in pass2_prompt
-        assert "Fallback-written daily brief" in report_path.read_text()
+        assert result["quality_floor"]["status"] == "fail_retryable"
+        assert result["quality_fallback"] is True
+        assert "Coverage note" in report_path.read_text()
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_retryable_quality_floor_uses_deterministic_fallback(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str, count=25)
+
+        mock_claude.side_effect = [
+            ("Selected stories", 0),
+            ("# Newsletter\n\nWeak first draft that should not ship silently.", 0),
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            result = pipeline._phase_synthesis()
+
+        report_path = tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md"
+        report_text = report_path.read_text()
+
+        assert result["quality_floor"]["status"] == "fail_retryable"
+        assert result["quality_fallback"] is True
+        assert "Coverage note" in report_text
+        assert "Weak first draft" not in report_text
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_degraded_quality_floor_adds_visible_notice(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str, count=75)
+
+        mock_claude.side_effect = [
+            ("Selected stories", 0),
+            ("# Newsletter\n\nUseful but degraded draft.\n" + ("word " * 3500), 0),
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            with patch("orchestrator.runner.NewsletterEvaluator") as mock_eval_cls:
+                mock_evaluator = MagicMock()
+                mock_evaluator.evaluate.return_value = {
+                    "overall": 0.7,
+                    "coverage": 0.55,
+                    "dedup": 0.95,
+                    "sources": 0.9,
+                }
+                mock_eval_cls.return_value = mock_evaluator
+
+                result = pipeline._phase_synthesis()
+
+        report_path = tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md"
+        report_text = report_path.read_text()
+
+        assert result["quality_floor"]["status"] == "degraded"
+        assert result["quality_fallback"] is False
+        assert report_text.startswith("> Degraded issue notice:")
+        assert "Useful but degraded draft." in report_text
 
     def test_source_balance_caps_single_source_candidate_dominance(self):
         from collections import Counter
