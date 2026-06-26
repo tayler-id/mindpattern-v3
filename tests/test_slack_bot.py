@@ -398,3 +398,80 @@ class TestDraftEditHelpers:
         from slack_bot.approval import parse_platform_approval
 
         assert parse_platform_approval("edit bluesky: New copy", self.platforms) == []
+
+
+class TestPostsEditFlow:
+    """#mp-posts edits must re-preview before any posting can happen."""
+
+    @staticmethod
+    def _handler():
+        from slack_bot.handlers.posts import PostsHandler
+
+        client = MagicMock()
+        handler = PostsHandler(
+            client=client,
+            channel_id="C_POSTS",
+            owner_user_id="U_OWNER",
+        )
+        handler._run_social_pipeline = MagicMock(return_value=(
+            {"bluesky": "Old bluesky", "linkedin": "Old linkedin"},
+            {},
+        ))
+        handler._format_drafts = MagicMock(
+            side_effect=lambda drafts, _errors: (
+                f"preview bluesky={drafts['bluesky']} linkedin={drafts['linkedin']}"
+            )
+        )
+        handler.wait_for_reply = MagicMock()
+        handler._post_to_platforms = MagicMock(return_value={
+            "bluesky": {"success": True, "url": "https://bsky.app/post/1"},
+        })
+        return handler, client
+
+    def test_edit_repreviews_and_requires_second_approval(self):
+        handler, client = self._handler()
+        handler.wait_for_reply.side_effect = [
+            "edit bluesky: New bluesky",
+            "bluesky",
+        ]
+
+        handler._run_and_approve({"anchor": "topic"}, "123.456")
+
+        assert handler._format_drafts.call_count == 2
+        handler._post_to_platforms.assert_called_once_with(
+            {"bluesky": "New bluesky", "linkedin": "Old linkedin"},
+            ["bluesky"],
+        )
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("New bluesky" in message for message in messages)
+
+    def test_edit_then_skip_posts_nothing(self):
+        handler, _client = self._handler()
+        handler.wait_for_reply.side_effect = [
+            "edit linkedin: New linkedin",
+            "skip",
+        ]
+
+        handler._run_and_approve({"anchor": "topic"}, "123.456")
+
+        assert handler._format_drafts.call_count == 2
+        handler._post_to_platforms.assert_not_called()
+
+    def test_bad_edit_replies_with_error_and_waits_again(self):
+        handler, client = self._handler()
+        handler.wait_for_reply.side_effect = [
+            "edit mastodon: New copy",
+            "skip",
+        ]
+
+        handler._run_and_approve({"anchor": "topic"}, "123.456")
+
+        handler._post_to_platforms.assert_not_called()
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("unknown platform" in message.lower() for message in messages)

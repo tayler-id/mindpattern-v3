@@ -252,6 +252,12 @@ Goal execution baseline on 2026-06-26:
   replacement` replies. Edit commands are parsed as revisions, not approvals.
   - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
     -> 64 passed in 0.03s.
+- Task 5 complete: wired `#mp-posts` edit flow. `edit platform: replacement`
+  now re-previews and requires a second explicit approval before posting.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 67 passed in 0.03s.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
+    -> 229 passed in 3.24s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

@@ -289,6 +289,17 @@ Verification:
 
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 64 passed in 0.03s.
 
+### 2026-06-26 Task 5 `#mp-posts` Edit Flow
+
+Wired draft edit helpers into `#mp-posts`. An `edit platform: replacement`
+reply updates that draft, re-previews it, and waits for a second explicit
+approval before posting. Invalid edit commands return an error and wait again.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 67 passed in 0.03s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 229 passed in 3.24s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

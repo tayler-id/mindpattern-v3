@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from slack_bot.approval import parse_platform_approval
+from slack_bot.drafts import apply_draft_edit, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -135,20 +136,44 @@ class PostsHandler(BaseHandler):
                 thread_ts=ts,
             )
 
+        policy_errors = policy_errors or {}
+
         # Post drafts for approval
         draft_msg = self._format_drafts(drafts, policy_errors)
         self.reply(draft_msg, thread_ts=ts)
 
-        # Wait for approval
-        reply_text = self.wait_for_reply(ts)
-        if not reply_text:
-            self.reply("No response — cancelling.", thread_ts=ts)
-            return
+        # Wait for approval. Edit replies are revisions, not approvals: apply
+        # the edit, re-preview, then wait for a second explicit approval.
+        while True:
+            reply_text = self.wait_for_reply(ts)
+            if not reply_text:
+                self.reply("No response — cancelling.", thread_ts=ts)
+                return
 
-        approved_platforms = self._parse_approval(reply_text, list(drafts.keys()))
-        if not approved_platforms:
-            self.reply("Skipped. Nothing posted.", thread_ts=ts)
-            return
+            edit, edit_error = parse_draft_edit(reply_text, list(drafts.keys()))
+            if edit_error:
+                self.reply(edit_error, thread_ts=ts)
+                continue
+
+            if edit:
+                try:
+                    drafts = apply_draft_edit(drafts, edit)
+                except KeyError as e:
+                    self.reply(str(e), thread_ts=ts)
+                    continue
+                policy_errors[edit.platform] = []
+                self.reply(
+                    f"Updated {edit.platform} draft.\n\n"
+                    f"{self._format_drafts(drafts, policy_errors)}",
+                    thread_ts=ts,
+                )
+                continue
+
+            approved_platforms = self._parse_approval(reply_text, list(drafts.keys()))
+            if not approved_platforms:
+                self.reply("Skipped. Nothing posted.", thread_ts=ts)
+                return
+            break
 
         # Post to platforms
         self.reply(f"Posting to: {', '.join(approved_platforms)}...", thread_ts=ts)
