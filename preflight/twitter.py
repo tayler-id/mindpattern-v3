@@ -93,24 +93,57 @@ def _transform(raw: dict, query: str = "") -> dict:
     )
 
 
-def fetch(queries: list[str] | None = None, count: int = 10) -> list[dict]:
+def _stderr_snippet(stderr: str, limit: int = 300) -> str:
+    """Return a safe one-line stderr snippet."""
+    return (stderr or "").strip().replace("\n", " ")[:limit]
+
+
+def fetch_with_diagnostics(
+    queries: list[str] | None = None,
+    count: int = 10,
+) -> tuple[list[dict], dict]:
+    """Fetch Twitter/X items plus backend/query diagnostics."""
     queries = queries or DEFAULT_QUERIES
     all_items = []
     seen_ids = set()
+    failures = []
 
     if not _search_command("", 1):
         logger.error("No Twitter/X search CLI found — install Agent Reach twitter channel")
-        return []
+        return [], {
+            "status": "missing",
+            "reason": "No Twitter/X search CLI found",
+            "queries": queries,
+            "failures": [{
+                "backend": "none",
+                "query": "",
+                "exit_code": None,
+                "stderr": "install Agent Reach twitter channel",
+            }],
+        }
 
     for query in queries:
         cmd = _search_command(query, count)
         if cmd is None:
-            return []
+            failures.append({
+                "backend": "none",
+                "query": query,
+                "exit_code": None,
+                "stderr": "No Twitter/X search CLI found",
+            })
+            continue
 
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if proc.returncode != 0:
-                logger.warning(f"Twitter/X search failed for '{query}': {proc.stderr[:200]}")
+                snippet = _stderr_snippet(proc.stderr)
+                logger.warning(f"Twitter/X search failed for '{query}': {snippet[:200]}")
+                failures.append({
+                    "backend": cmd[0],
+                    "query": query,
+                    "exit_code": proc.returncode,
+                    "stderr": snippet,
+                })
                 continue
 
             data = json.loads(proc.stdout)
@@ -125,12 +158,61 @@ def fetch(queries: list[str] | None = None, count: int = 10) -> list[dict]:
 
         except subprocess.TimeoutExpired:
             logger.warning(f"Twitter/X search timed out for '{query}'")
+            failures.append({
+                "backend": cmd[0],
+                "query": query,
+                "exit_code": None,
+                "stderr": "timeout after 30s",
+            })
         except json.JSONDecodeError:
             logger.warning(f"Twitter/X search returned invalid JSON for '{query}'")
+            failures.append({
+                "backend": cmd[0],
+                "query": query,
+                "exit_code": 0,
+                "stderr": "invalid JSON",
+            })
         except FileNotFoundError:
             logger.error("Twitter/X search CLI disappeared from PATH")
-            return []
+            failures.append({
+                "backend": cmd[0],
+                "query": query,
+                "exit_code": None,
+                "stderr": "CLI disappeared from PATH",
+            })
+            break
         except Exception as e:
             logger.error(f"Twitter/X search failed for '{query}': {e}")
+            failures.append({
+                "backend": cmd[0],
+                "query": query,
+                "exit_code": None,
+                "stderr": str(e)[:300],
+            })
 
-    return all_items
+    if all_items and failures:
+        status = "partial"
+        first = failures[0]
+        reason = f"{first['backend']} exit {first['exit_code']} for {first['query']}: {first['stderr']}"
+    elif all_items:
+        status = "ok"
+        reason = ""
+    elif failures:
+        status = "failed"
+        first = failures[0]
+        reason = f"{first['backend']} exit {first['exit_code']} for {first['query']}: {first['stderr']}"
+    else:
+        status = "empty"
+        reason = f"no items for queries: {', '.join(queries)}"
+
+    return all_items, {
+        "status": status,
+        "reason": reason,
+        "queries": queries,
+        "failures": failures,
+    }
+
+
+def fetch(queries: list[str] | None = None, count: int = 10) -> list[dict]:
+    items, _diagnostics = fetch_with_diagnostics(queries=queries, count=count)
+    return items

@@ -330,6 +330,14 @@ Goal execution baseline on 2026-06-26:
     -> 4 passed in 0.01s.
   - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
     -> 36 passed in 88.45s.
+- Task 15 complete: Twitter/X and HN now expose diagnostic fetchers and
+  `run_all()` merges them into `source_health`. Twitter/X failures include
+  backend, query, exit code, and safe stderr snippet. HN empty/failure states
+  include query thresholds and structured stderr context.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py::test_hn_fetch_with_diagnostics_empty tests/test_preflight.py::test_hn_fetch_with_diagnostics_failure tests/test_preflight.py::test_twitter_fetch_with_diagnostics_cli_failure tests/test_preflight.py::test_twitter_fetch_with_diagnostics_success_shape -q`
+    -> 4 passed in 0.01s.
+  - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
+    -> 40 passed in 88.42s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

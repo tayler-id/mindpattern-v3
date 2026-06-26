@@ -265,9 +265,9 @@ def run_all(
         "rss": lambda: rss.fetch_with_diagnostics(feeds_file=feeds_file),
         "arxiv": lambda: arxiv.fetch(),
         "github": lambda: github.fetch(),
-        "hn": lambda: hn.fetch(),
+        "hn": lambda: hn.fetch_with_diagnostics(),
         "reddit": lambda: reddit.fetch(),
-        "twitter": lambda: twitter.fetch(),
+        "twitter": lambda: twitter.fetch_with_diagnostics(),
         "exa": lambda: exa.fetch(),
         "youtube": lambda: youtube.fetch(),
     }

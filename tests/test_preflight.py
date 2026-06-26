@@ -194,6 +194,49 @@ def test_hn_transform():
     assert "450 points" in entry["content_preview"]
 
 
+def test_hn_fetch_with_diagnostics_empty(monkeypatch):
+    import preflight.hn as hn
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(hn.subprocess, "run", fake_run)
+
+    items, diagnostics = hn.fetch_with_diagnostics(
+        queries="AI,LLM",
+        hours=24,
+        min_points=100,
+    )
+
+    assert items == []
+    assert diagnostics["status"] == "empty"
+    assert "AI,LLM" in diagnostics["reason"]
+    assert diagnostics["queries"] == "AI,LLM"
+    assert diagnostics["min_points"] == 100
+
+
+def test_hn_fetch_with_diagnostics_failure(monkeypatch):
+    import preflight.hn as hn
+
+    stderr = json.dumps({
+        "error": "All 2 queries failed",
+        "tool": "hn-fetch",
+        "context": "https://hn.algolia.com/api/v1/search",
+    })
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 2, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(hn.subprocess, "run", fake_run)
+
+    items, diagnostics = hn.fetch_with_diagnostics(queries="AI,LLM")
+
+    assert items == []
+    assert diagnostics["status"] == "failed"
+    assert "All 2 queries failed" in diagnostics["reason"]
+    assert diagnostics["errors"][0]["context"] == "https://hn.algolia.com/api/v1/search"
+
+
 # ── Reddit tests ──────────────────────────────────────────────────
 
 def test_reddit_transform():
@@ -306,6 +349,65 @@ def test_twitter_fetch_prefers_xreach(monkeypatch):
     assert calls == [["xreach", "search", "AI agents", "--count", "2", "--json"]]
     assert entries[0]["url"] == "https://x.com/i/status/legacy123"
     assert entries[0]["metrics"] == {"likes": 7, "retweets": 2, "views": 900}
+
+
+def test_twitter_fetch_with_diagnostics_cli_failure(monkeypatch):
+    import preflight.twitter as twitter
+
+    def fake_command(query, count):
+        return ["twitter", "search", query, "-n", str(count), "--json"]
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            4,
+            stdout="",
+            stderr="cookie extraction failed in subprocess mode",
+        )
+
+    monkeypatch.setattr(twitter, "_search_command", fake_command)
+    monkeypatch.setattr(twitter.subprocess, "run", fake_run)
+
+    items, diagnostics = twitter.fetch_with_diagnostics(queries=["AI agents"], count=1)
+
+    assert items == []
+    assert diagnostics["status"] == "failed"
+    assert "twitter exit 4" in diagnostics["reason"]
+    assert diagnostics["failures"][0]["backend"] == "twitter"
+    assert diagnostics["failures"][0]["exit_code"] == 4
+    assert "cookie extraction failed" in diagnostics["failures"][0]["stderr"]
+
+
+def test_twitter_fetch_with_diagnostics_success_shape(monkeypatch):
+    import preflight.twitter as twitter
+
+    def fake_command(query, count):
+        return ["twitter", "search", query, "-n", str(count), "--json"]
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps([
+                {
+                    "id": "123456",
+                    "text": "AI agents are the future of software...",
+                    "createdAtISO": "2026-03-16T10:00:00Z",
+                    "metrics": {"likes": 500, "retweets": 100, "views": 50000},
+                }
+            ]),
+            stderr="",
+        )
+
+    monkeypatch.setattr(twitter, "_search_command", fake_command)
+    monkeypatch.setattr(twitter.subprocess, "run", fake_run)
+
+    items, diagnostics = twitter.fetch_with_diagnostics(queries=["AI agents"], count=1)
+
+    assert len(items) == 1
+    assert items[0]["url"] == "https://x.com/i/status/123456"
+    assert diagnostics["status"] == "ok"
+    assert diagnostics["failures"] == []
 
 
 # ── Exa tests ─────────────────────────────────────────────────────
