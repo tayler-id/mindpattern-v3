@@ -51,6 +51,28 @@ def _enabled_platforms(social_config: dict) -> list[str]:
     return list(plats)
 
 
+def _draft_capable_platforms(social_config: dict) -> list[str]:
+    """Return platforms that can at least produce manual-copy drafts."""
+    from social.posting import resolve_platform_publish_mode
+
+    plats = social_config.get("platforms", {})
+    if isinstance(plats, dict):
+        return [
+            name for name in plats
+            if resolve_platform_publish_mode(name, social_config).get("can_draft")
+        ]
+    return list(plats)
+
+
+def _is_live_social_post_result(post: dict) -> bool:
+    """True only for results that represent live outbound posts."""
+    if post.get("manual_only"):
+        return False
+    if post.get("status") in {"manual_only", "skipped", "error"}:
+        return False
+    return not post.get("error")
+
+
 def _format_source(source_name: str | None, source_url: str | None) -> str:
     """Return a markdown source reference."""
     name = source_name or "unknown"
@@ -1429,12 +1451,11 @@ class ResearchPipeline:
             logger.warning("social-config.json not found, skipping social phase")
             return {"skipped": True, "reason": "social-config.json missing"}
 
-        # Skip entirely when no platform is enabled — otherwise topic selection
-        # and the blocking approval gates still run with nothing to post to,
-        # hanging the pipeline for hours on a Slack reply that never comes.
-        if not _enabled_platforms(social_config):
-            logger.info("Social: no platforms enabled, skipping social phase")
-            return {"skipped": True, "reason": "no platforms enabled"}
+        # Skip only when no platform can even produce drafts. Disabled posting
+        # APIs still allow manual-copy drafts via SocialPipeline.
+        if not _draft_capable_platforms(social_config):
+            logger.info("Social: no draft-capable platforms, skipping social phase")
+            return {"skipped": True, "reason": "no draft-capable platforms"}
 
         pipeline = SocialPipeline(self.user_id, social_config, self.db)
         result = pipeline.run()
@@ -1442,16 +1463,26 @@ class ResearchPipeline:
 
         if result.get("kill_day"):
             logger.info("Social: kill day — no good topics found")
+        elif result.get("platforms_posted"):
+            platforms = result.get("platforms_posted", [])
+            logger.info(f"Social: posted to {platforms}")
+        elif result.get("manual_copy"):
+            platforms = [p.get("platform") for p in result["manual_copy"]]
+            logger.info(f"Social: manual-copy drafts for {platforms}")
         elif result.get("posts"):
             platforms = [p.get("platform") for p in result["posts"]]
-            logger.info(f"Social: posted to {platforms}")
+            logger.info(f"Social: completed with post results for {platforms}")
         else:
             logger.info(f"Social: completed with result: {list(result.keys())}")
 
         # Store engagement signals from social pipeline results
         try:
-            if result.get("posts"):
-                for post in result["posts"]:
+            live_posts = [
+                post for post in result.get("posts", [])
+                if _is_live_social_post_result(post)
+            ]
+            if live_posts:
+                for post in live_posts:
                     topic = post.get("topic") or post.get("title") or "social_post"
                     platform = post.get("platform", "unknown")
                     memory.store_signal(
@@ -1463,7 +1494,7 @@ class ResearchPipeline:
                         evidence=f"Posted to {platform}",
                         run_date=self.date_str,
                     )
-                logger.info(f"Signals: stored {len(result['posts'])} social post signals")
+                logger.info(f"Signals: stored {len(live_posts)} social post signals")
             elif result.get("kill_day"):
                 topic = result.get("topic") or "social_content"
                 memory.store_signal(

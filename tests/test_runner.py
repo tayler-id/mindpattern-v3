@@ -1060,8 +1060,30 @@ class TestPhaseSocial:
         assert result["kill_day"] is True
         mock_signal.assert_called_once()
 
-    def test_skips_when_no_platforms_enabled(self, pipeline):
+    def test_disabled_platforms_run_draft_only_social(self, pipeline):
         mock_social = MagicMock()
+        mock_social.run.return_value = {
+            "publish_mode": "manual_only",
+            "manual_copy": [
+                {
+                    "platform": "bluesky",
+                    "status": "manual_only",
+                    "manual_only": True,
+                    "content": "Bluesky copy",
+                    "error": "bluesky is disabled; use manual copy.",
+                }
+            ],
+            "posts": [
+                {
+                    "platform": "bluesky",
+                    "status": "manual_only",
+                    "manual_only": True,
+                    "content": "Bluesky copy",
+                    "error": "bluesky is disabled; use manual copy.",
+                }
+            ],
+            "platforms_posted": [],
+        }
         with (
             patch("orchestrator.runner.PROJECT_ROOT", Path(tempfile.mkdtemp())),
             patch("social.pipeline.SocialPipeline", return_value=mock_social),
@@ -1072,11 +1094,34 @@ class TestPhaseSocial:
                 )
             )),
             patch("json.load", return_value={"platforms": {"bluesky": {"enabled": False}}}),
+            patch("orchestrator.runner.memory.store_signal") as mock_signal,
+        ):
+            result = pipeline._phase_social()
+
+        assert result["publish_mode"] == "manual_only"
+        assert result["manual_copy"][0]["status"] == "manual_only"
+        mock_social.run.assert_called_once()
+        mock_signal.assert_not_called()
+
+    def test_skips_when_no_platforms_are_draft_capable(self, pipeline):
+        mock_social = MagicMock()
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", Path(tempfile.mkdtemp())),
+            patch("social.pipeline.SocialPipeline", return_value=mock_social),
+            patch("builtins.open", MagicMock(
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False)
+                )
+            )),
+            patch("json.load", return_value={
+                "platforms": {"bluesky": {"enabled": False, "draft_enabled": False}}
+            }),
         ):
             result = pipeline._phase_social()
 
         assert result["skipped"] is True
-        assert result["reason"] == "no platforms enabled"
+        assert result["reason"] == "no draft-capable platforms"
         mock_social.run.assert_not_called()
 
 

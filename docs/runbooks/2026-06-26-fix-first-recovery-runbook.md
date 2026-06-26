@@ -366,6 +366,18 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_social.py -q` -> 46 passed in 0.11s.
 - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q` -> 107 passed in 0.63s.
 
+### 2026-06-26 Task 11 Runner Social Draft-Only Phase
+
+Updated `_phase_social()` so it skips only when no platform is draft-capable.
+Disabled-but-draft-capable platform config now runs `SocialPipeline` and can
+return `manual_copy` results. Manual-only, skipped, and error results are no
+longer stored as live `posted` engagement signals.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_runner.py -q` -> 62 passed in 0.48s.
+- `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q` -> 108 passed in 0.53s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

@@ -299,6 +299,14 @@ Goal execution baseline on 2026-06-26:
     -> 46 passed in 0.11s.
   - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q`
     -> 107 passed in 0.63s.
+- Task 11 complete: `_phase_social()` now skips only when no platform is
+  draft-capable. Disabled-but-draft-capable config runs `SocialPipeline` and
+  can return `manual_copy`; manual-only/skipped/error results are not stored as
+  live `posted` engagement signals.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py -q`
+    -> 62 passed in 0.48s.
+  - `.venv/bin/python3 -m pytest tests/test_social.py tests/test_runner.py -q`
+    -> 108 passed in 0.53s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|
