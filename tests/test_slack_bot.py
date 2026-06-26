@@ -5,6 +5,8 @@ in the test environment.
 """
 
 import ast
+import json
+import sqlite3
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -886,3 +888,55 @@ class TestBriefingSocialState:
 
         text = client.chat_postMessage.call_args.kwargs["text"]
         assert "Social: Error - Writing: writer died" in text
+
+    def test_status_reports_source_health_from_latest_trace(self, tmp_path):
+        handler, client = self._handler()
+
+        data_dir = tmp_path / "data" / "ramsay"
+        data_dir.mkdir(parents=True)
+        db = sqlite3.connect(data_dir / "memory.db")
+        db.executescript("""
+            CREATE TABLE findings (run_date TEXT, agent TEXT);
+            CREATE TABLE social_posts (date TEXT, platform TEXT, content TEXT, posted INTEGER);
+            CREATE TABLE engagements (created_at TEXT);
+        """)
+        db.commit()
+        db.close()
+
+        traces = sqlite3.connect(data_dir / "traces.db")
+        traces.execute(
+            "CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "pipeline_run_id TEXT, event_type TEXT, payload TEXT)"
+        )
+        traces.execute(
+            "INSERT INTO events (pipeline_run_id, event_type, payload) VALUES (?, ?, ?)",
+            (
+                "run-1",
+                "preflight_complete",
+                json.dumps({
+                    "run_date": "2026-06-26",
+                    "source_health": {
+                        "rss": {"status": "empty", "count": 0, "reason": "no items"},
+                        "reddit": {"status": "unavailable", "count": 0, "reason": "backend off"},
+                        "youtube": {"status": "timeout", "count": 0, "reason": "timed out"},
+                    },
+                    "source_health_summary": {
+                        "expected_source_count": 2,
+                        "responsive_source_count": 1,
+                        "unavailable_sources": ["reddit"],
+                        "degraded_sources": ["youtube"],
+                    },
+                }),
+            ),
+        )
+        traces.commit()
+        traces.close()
+
+        with patch("slack_bot.handlers.briefing.PROJECT_ROOT", tmp_path):
+            handler._post_status("123.456", date_str="2026-06-26")
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "Sources: 1/2 responsive" in text
+        assert "Unavailable: reddit" in text
+        assert "Degraded: youtube (timeout)" in text
+        assert "backend off" not in text

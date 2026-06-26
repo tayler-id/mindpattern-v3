@@ -486,6 +486,17 @@ class TestPhaseTrendScan:
             ],
             "assignments": {}, "already_covered": [], "total_items": 2,
             "new_count": 2, "covered_count": 0, "source_counts": {"hn": 1, "reddit": 1},
+            "source_health": {
+                "hn": {"status": "ok", "count": 1, "reason": ""},
+                "reddit": {"status": "ok", "count": 1, "reason": ""},
+            },
+            "source_health_summary": {
+                "source_count": 2,
+                "expected_source_count": 2,
+                "responsive_source_count": 2,
+                "unavailable_sources": [],
+                "degraded_sources": [],
+            },
             "duration_ms": 100,
         }
         with patch("preflight.run_all.run_all", return_value=fake_preflight):
@@ -494,6 +505,39 @@ class TestPhaseTrendScan:
         assert result["method"] == "deterministic"
         assert len(result["trends"]) >= 1
         assert pipeline.preflight_data is not None
+
+    def test_logs_source_health_summary_to_trace(self, pipeline):
+        """Preflight trace should carry source-health summary for briefing and audits."""
+        fake_preflight = {
+            "items": [], "assignments": {}, "already_covered": [],
+            "total_items": 0, "new_count": 0, "covered_count": 0,
+            "source_counts": {"rss": 0, "reddit": 0, "youtube": 0},
+            "source_health": {
+                "rss": {"status": "empty", "count": 0, "reason": "no items"},
+                "reddit": {"status": "unavailable", "count": 0, "reason": "backend off"},
+                "youtube": {"status": "timeout", "count": 0, "reason": "timed out"},
+            },
+            "source_health_summary": {
+                "source_count": 3,
+                "expected_source_count": 2,
+                "responsive_source_count": 1,
+                "unavailable_sources": ["reddit"],
+                "degraded_sources": ["youtube"],
+            },
+            "duration_ms": 50,
+        }
+
+        with patch("preflight.run_all.run_all", return_value=fake_preflight):
+            result = pipeline._phase_trend_scan()
+
+        row = pipeline.traces_conn.execute(
+            "SELECT payload FROM events WHERE event_type = 'preflight_complete'"
+        ).fetchone()
+        payload = json.loads(row["payload"])
+
+        assert result["source_health_summary"]["degraded_sources"] == ["youtube"]
+        assert payload["source_health_summary"]["unavailable_sources"] == ["reddit"]
+        assert payload["source_health"]["youtube"]["status"] == "timeout"
 
     def test_empty_preflight_returns_empty_trends(self, pipeline):
         """If preflight returns no items, trends should be empty."""

@@ -440,6 +440,21 @@ Verification:
 
 - `.venv/bin/python3 -m pytest tests/test_preflight.py -q` -> 46 passed in 88.37s.
 
+### 2026-06-26 Task 17 Runner and Briefing Source Health
+
+Added source-health summary propagation from trend scan into the
+`preflight_complete` trace event. The trace payload now includes the run date,
+source counts, compact per-source `status`/`count`/`reason`, and the
+`source_health_summary` while avoiding nested tool stderr payloads.
+`#mp-briefing status` now reads the latest matching preflight trace and shows
+responsive source count, unavailable sources, and degraded source names/statuses
+without printing raw backend errors or Slack/message content.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseTrendScan::test_logs_source_health_summary_to_trace tests/test_slack_bot.py::TestBriefingSocialState::test_status_reports_source_health_from_latest_trace -q` -> 2 passed in 0.07s.
+- `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_slack_bot.py tests/test_preflight.py -q` -> 194 passed in 88.94s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

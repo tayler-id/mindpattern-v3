@@ -79,6 +79,18 @@ def _format_source(source_name: str | None, source_url: str | None) -> str:
     return f"[{name}]({source_url})" if source_url else name
 
 
+def _source_health_for_trace(preflight_data: dict) -> dict:
+    """Keep trace source health compact and avoid nested tool stderr payloads."""
+    trace_health = {}
+    for source_name, health in (preflight_data.get("source_health") or {}).items():
+        trace_health[source_name] = {
+            "status": health.get("status", "failed"),
+            "count": health.get("count", 0),
+            "reason": health.get("reason", ""),
+        }
+    return trace_health
+
+
 def _fallback_ranked_findings(findings: list[dict], *, limit: int = 5) -> list[dict]:
     """Pick a deterministic, source-grounded fallback story set.
 
@@ -624,10 +636,15 @@ class ResearchPipeline:
             log_event(self.traces_conn, self.traces_run_id,
                       "preflight_complete",
                       json.dumps({
+                          "run_date": self.date_str,
                           "total_items": self.preflight_data["total_items"],
                           "new_count": self.preflight_data["new_count"],
                           "covered_count": self.preflight_data["covered_count"],
                           "source_counts": self.preflight_data["source_counts"],
+                          "source_health": _source_health_for_trace(self.preflight_data),
+                          "source_health_summary": self.preflight_data.get(
+                              "source_health_summary", {}
+                          ),
                           "duration_ms": self.preflight_data["duration_ms"],
                       }))
         except Exception as e:
@@ -654,6 +671,10 @@ class ResearchPipeline:
         return {
             "trends": self.trends,
             "preflight_items": len(items),
+            "source_health_summary": (
+                self.preflight_data.get("source_health_summary", {})
+                if self.preflight_data else {}
+            ),
             "method": "deterministic",
         }
 

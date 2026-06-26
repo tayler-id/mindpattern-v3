@@ -111,6 +111,71 @@ class BriefingHandler(BaseHandler):
 
         return "Social: No posts"
 
+    def _latest_source_health_state(self, date_str: str) -> dict | None:
+        """Load the latest preflight source-health trace for the requested day."""
+        traces_path = PROJECT_ROOT / "data" / "ramsay" / "traces.db"
+        if not traces_path.exists():
+            return None
+
+        try:
+            conn = sqlite3.connect(str(traces_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT payload FROM events WHERE event_type = ? "
+                "ORDER BY id DESC LIMIT 20",
+                ("preflight_complete",),
+            ).fetchall()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to read source health from traces: {e}")
+            return None
+
+        for row in rows:
+            try:
+                payload = json.loads(row["payload"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            payload_date = payload.get("run_date")
+            if payload_date and payload_date != date_str:
+                continue
+
+            if payload.get("source_health_summary") or payload.get("source_health"):
+                return {
+                    "summary": payload.get("source_health_summary") or {},
+                    "health": payload.get("source_health") or {},
+                }
+
+        return None
+
+    def _format_source_health_state(self, state: dict | None) -> list[str]:
+        """Format source health without raw stderr or per-item content."""
+        if not state:
+            return []
+
+        summary = state.get("summary") or {}
+        health = state.get("health") or {}
+        lines = []
+
+        responsive = summary.get("responsive_source_count")
+        expected = summary.get("expected_source_count")
+        if responsive is not None and expected is not None:
+            lines.append(f"Sources: {responsive}/{expected} responsive")
+
+        unavailable = summary.get("unavailable_sources") or []
+        if unavailable:
+            lines.append(f"Unavailable: {', '.join(unavailable)}")
+
+        degraded = summary.get("degraded_sources") or []
+        if degraded:
+            parts = []
+            for source in degraded:
+                status = (health.get(source) or {}).get("status", "failed")
+                parts.append(f"{source} ({status})")
+            lines.append(f"Degraded: {', '.join(parts)}")
+
+        return lines
+
     def _post_status(self, ts: str, date_str: str | None = None) -> None:
         """Query pipeline data and post a status summary."""
         if not date_str:
@@ -164,6 +229,12 @@ class BriefingHandler(BaseHandler):
             else:
                 lines.append("Social: No posts")
 
+            lines.extend(
+                self._format_source_health_state(
+                    self._latest_source_health_state(date_str)
+                )
+            )
+
             if engagement_count > 0:
                 lines.append(f"Engagement: {engagement_count} interactions")
 
@@ -199,6 +270,11 @@ class BriefingHandler(BaseHandler):
         social_line = self._format_social_state(social)
         if social_line:
             lines.append(social_line)
+
+        lines.extend(self._format_source_health_state({
+            "summary": results.get("source_health_summary") or {},
+            "health": results.get("source_health") or {},
+        }))
 
         verdict = social.get("expeditor_verdict", "")
         if verdict:

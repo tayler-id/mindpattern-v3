@@ -347,6 +347,16 @@ Goal execution baseline on 2026-06-26:
   expected-source denominator while keeping configured failures visible.
   - `.venv/bin/python3 -m pytest tests/test_preflight.py -q`
     -> 46 passed in 88.37s.
+- Task 17 complete: `_phase_trend_scan()` now writes source-health summary into
+  the `preflight_complete` trace with run date, source counts, compact
+  per-source `status`/`count`/`reason`, and no nested tool stderr payloads.
+  `#mp-briefing status` reads the latest matching preflight trace and reports
+  responsive source count, unavailable source names, and degraded source
+  names/statuses without printing raw backend errors or message content.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseTrendScan::test_logs_source_health_summary_to_trace tests/test_slack_bot.py::TestBriefingSocialState::test_status_reports_source_health_from_latest_trace -q`
+    -> 2 passed in 0.07s.
+  - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_slack_bot.py tests/test_preflight.py -q`
+    -> 194 passed in 88.94s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|
