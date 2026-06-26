@@ -33,13 +33,14 @@ class SkillsHandler(BaseHandler):
         ts = event.get("ts", "")
 
         if not text or len(text) < 20:
-            if text.lower() in ("help", "?"):
-                self.reply(
-                    "Paste a skill tip here. I'll format it for Bluesky and LinkedIn, "
-                    "then post it after you approve.\n\n"
-                    "Just paste the tip as plain text. No special formatting needed.",
-                    thread_ts=ts,
-                )
+            self.reply(
+                "Paste a concrete skill tip here and I'll format it for Bluesky "
+                "and LinkedIn, then post it after you approve.\n\n"
+                "Example: `When an agent keeps looping, stop the run and ask it "
+                "to identify the smallest failing assumption before trying "
+                "another fix.`",
+                thread_ts=ts,
+            )
             return
 
         self.react("brain", ts)

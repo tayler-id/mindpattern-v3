@@ -31,12 +31,14 @@ class TipsHandler(BaseHandler):
         ts = event.get("ts", "")
 
         if not text or len(text) < 20:
-            if text.lower() in ("help", "?"):
-                self.reply(
-                    "Paste a tip here. I'll format it as a *Tayler'd Tip!* post "
-                    "for Bluesky and LinkedIn, then post it after you approve.",
-                    thread_ts=ts,
-                )
+            self.reply(
+                "Paste a concrete tip here and I'll format it as a "
+                "*Tayler'd Tip!* post for Bluesky and LinkedIn, then post it "
+                "after you approve.\n\n"
+                "Example: `Before asking an agent to refactor, make it explain "
+                "the current data flow in five bullets.`",
+                thread_ts=ts,
+            )
             return
 
         self.react("bulb", ts)

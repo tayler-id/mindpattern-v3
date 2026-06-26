@@ -175,3 +175,35 @@ class TestBotPingInterval:
                     pytest.fail("SocketModeClient missing ping_interval parameter")
 
         pytest.fail("Could not find SocketModeClient() constructor call in bot.py")
+
+
+class TestSkillsTipsShortInputFeedback:
+    """Skills/tips channels must never silently ignore visible owner tests."""
+
+    def test_skills_short_input_replies_with_guidance(self):
+        from slack_bot.handlers.skills import SkillsHandler
+
+        client = MagicMock()
+        handler = SkillsHandler(client=client, channel_id="C_SKILLS", owner_user_id="U_OWNER")
+
+        handler.handle({"text": "test", "ts": "123.456"})
+
+        client.chat_postMessage.assert_called_once()
+        kwargs = client.chat_postMessage.call_args.kwargs
+        assert kwargs["channel"] == "C_SKILLS"
+        assert kwargs["thread_ts"] == "123.456"
+        assert "skill tip" in kwargs["text"].lower()
+
+    def test_tips_short_input_replies_with_guidance(self):
+        from slack_bot.handlers.tips import TipsHandler
+
+        client = MagicMock()
+        handler = TipsHandler(client=client, channel_id="C_TIPS", owner_user_id="U_OWNER")
+
+        handler.handle({"text": "test", "ts": "123.456"})
+
+        client.chat_postMessage.assert_called_once()
+        kwargs = client.chat_postMessage.call_args.kwargs
+        assert kwargs["channel"] == "C_TIPS"
+        assert kwargs["thread_ts"] == "123.456"
+        assert "tip" in kwargs["text"].lower()

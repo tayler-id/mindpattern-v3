@@ -161,10 +161,19 @@ Live Slack check on 2026-06-26:
   - `#mp-skills` = `C0AP3CCL4G5`, bot member, user member, public, not archived.
   - `#mp-tips` = `C0APYE9HBK3`, bot member, user member, public, not archived.
   - `#mp-briefing` and `#mp-engagement` also show bot/user membership.
-- Recent Slack history metadata, without message bodies:
+- Earlier Slack history metadata, without message bodies, before the follow-up
+  `#mp-skills` / `#mp-tips` tests:
   - Latest `#mp-skills` owner message: 2026-05-12 09:36:58 EDT.
   - Latest `#mp-tips` owner message: 2026-05-12 09:15:07 EDT.
   - Latest `#mp-posts` owner message: 2026-06-26 14:08:36 EDT.
+- Follow-up live test on 2026-06-26:
+  - Slack delivered current-day events to both handlers:
+    - `#mp-skills` at 18:53:54 UTC, channel `C0AP3CCL4G5`.
+    - `#mp-tips` at 18:54:08 UTC, channel `C0APYE9HBK3`.
+  - No bot reply followed because both handlers silently returned for messages
+    shorter than 20 characters unless the exact message was `help` or `?`.
+  - Fix in progress: short inputs now reply with channel-specific guidance
+    instead of disappearing. Regression tests added in `tests/test_slack_bot.py`.
 - Interpretation for `#mp-skills` / `#mp-tips`:
   - They are not deleted, private, archived, or missing from the deployed bot
     config.
