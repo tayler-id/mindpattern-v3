@@ -324,6 +324,19 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 79 passed in 0.19s.
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_posting.py -q` -> 132 passed in 0.18s.
 
+### 2026-06-26 Task 8 Slack Bot Doctor
+
+Added a redacted registry build report and a `doctor` command in
+`#mp-briefing`. The report shows registered handler names, configured channel
+count, missing channel config names, owner configured/missing, token source
+labels, and heartbeat freshness without printing tokens, owner IDs, channel IDs,
+message bodies, or secrets.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 81 passed in 0.11s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 243 passed in 3.23s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

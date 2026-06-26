@@ -737,3 +737,88 @@ class TestDisabledPlatformManualCopy:
         assert any("manual copy" in message.lower() for message in messages)
         assert any("Bluesky copy" in message for message in messages)
         assert not any(":x: bluesky" in message.lower() for message in messages)
+
+
+class TestSlackBotDoctorStatus:
+    """Bot doctor output should prove wiring without leaking secrets."""
+
+    def test_build_handlers_records_redacted_registry_report(self):
+        from slack_bot import registry
+
+        with patch("slack_bot.registry.load_channel_config", return_value={
+            "posts": "C_POSTS",
+            "briefing": "C_BRIEFING",
+        }):
+            registry.build_handlers(MagicMock(), "U_OWNER")
+
+        with patch.dict("slack_bot.registry.os.environ", {
+            "SLACK_BOT_TOKEN": "bot-sensitive-value",
+            "SLACK_APP_TOKEN": "app-sensitive-value",
+        }):
+            report = registry.get_bot_doctor_report("U_OWNER")
+
+        assert set(report["registered_names"]) == {"posts", "briefing"}
+        assert report["configured_count"] == 2
+        assert "skills" in report["missing_names"]
+        assert "tips" in report["missing_names"]
+        assert report["owner_configured"] is True
+        assert report["token_sources"]["bot_token"] == "environment"
+        assert report["token_sources"]["app_token"] == "environment"
+
+        serialized = repr(report)
+        assert "C_POSTS" not in serialized
+        assert "C_BRIEFING" not in serialized
+        assert "U_OWNER" not in serialized
+        assert "bot-sensitive-value" not in serialized
+        assert "app-sensitive-value" not in serialized
+
+    def test_briefing_doctor_reports_safe_bot_health(self, tmp_path):
+        from slack_bot.handlers.briefing import BriefingHandler
+
+        heartbeat_file = tmp_path / "bot-heartbeat"
+        heartbeat_file.write_text("")
+        now = heartbeat_file.stat().st_mtime + 42
+
+        fake_report = {
+            "expected_names": ["posts", "skills", "tips", "briefing"],
+            "registered_names": ["posts", "briefing"],
+            "missing_names": ["skills", "tips"],
+            "failed_names": [],
+            "configured_count": 2,
+            "registered_count": 2,
+            "owner_configured": True,
+            "token_sources": {
+                "bot_token": "environment",
+                "app_token": "environment",
+            },
+        }
+
+        client = MagicMock()
+        handler = BriefingHandler(
+            client=client,
+            channel_id="C_BRIEFING",
+            owner_user_id="U_OWNER",
+        )
+
+        with patch("slack_bot.handlers.briefing.get_bot_doctor_report", return_value=fake_report):
+            with patch("slack_bot.handlers.briefing.heartbeat.heartbeat_path", return_value=heartbeat_file):
+                with patch("slack_bot.handlers.briefing.heartbeat.is_stale", return_value=False):
+                    with patch("slack_bot.handlers.briefing.time.time", return_value=now):
+                        handler.handle({"text": "doctor", "ts": "123.456"})
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        lower = text.lower()
+        assert "slack bot doctor" in lower
+        assert "registered handlers (2/4): posts, briefing" in lower
+        assert "configured channels: 2" in lower
+        assert "missing channel config: skills, tips" in lower
+        assert "owner: configured" in lower
+        assert "bot token: environment" in lower
+        assert "app token: environment" in lower
+        assert "heartbeat: fresh" in lower
+        assert "42s" in lower
+
+        assert "C_BRIEFING" not in text
+        assert "U_OWNER" not in text
+        assert "bot-sensitive-value" not in lower
+        assert "app-sensitive-value" not in lower

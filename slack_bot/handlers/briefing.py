@@ -8,10 +8,13 @@ import json
 import logging
 import sqlite3
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
+from slack_bot import heartbeat
 from slack_bot.handlers.base import BaseHandler
+from slack_bot.registry import get_bot_doctor_report
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +30,52 @@ class BriefingHandler(BaseHandler):
         text = event.get("text", "").strip().lower()
         ts = event.get("ts", "")
 
-        if text in ("status", "how did it go", "summary", "briefing", "?", "help"):
+        if text in ("doctor", "bot doctor", "bot status"):
+            self._post_bot_doctor(ts)
+        elif text in ("status", "how did it go", "summary", "briefing", "?", "help"):
             self._post_status(ts)
         elif text == "yesterday":
             yesterday = (datetime.now() - __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
             self._post_status(ts, date_str=yesterday)
+
+    def _post_bot_doctor(self, ts: str) -> None:
+        """Post safe bot wiring health without IDs, tokens, or message bodies."""
+        report = get_bot_doctor_report(self.owner_user_id)
+        expected_count = len(report.get("expected_names", []))
+        registered_names = report.get("registered_names", [])
+        missing_names = report.get("missing_names", [])
+        failed_names = report.get("failed_names", [])
+        token_sources = report.get("token_sources", {})
+
+        lines = ["*Slack bot doctor*\n"]
+        lines.append(
+            "Registered handlers "
+            f"({report.get('registered_count', 0)}/{expected_count}): "
+            f"{', '.join(registered_names) if registered_names else 'none'}"
+        )
+        lines.append(f"Configured channels: {report.get('configured_count', 0)}")
+        if missing_names:
+            lines.append(f"Missing channel config: {', '.join(missing_names)}")
+        if failed_names:
+            lines.append(f"Failed handlers: {', '.join(failed_names)}")
+        lines.append(
+            f"Owner: {'configured' if report.get('owner_configured') else 'missing'}"
+        )
+        lines.append(f"Bot token: {token_sources.get('bot_token', 'unknown')}")
+        lines.append(f"App token: {token_sources.get('app_token', 'unknown')}")
+        lines.append(f"Heartbeat: {self._heartbeat_status()}")
+
+        self.reply("\n".join(lines), thread_ts=ts)
+
+    def _heartbeat_status(self) -> str:
+        """Return heartbeat freshness without exposing host paths."""
+        try:
+            mtime = heartbeat.heartbeat_path().stat().st_mtime
+        except FileNotFoundError:
+            return "missing"
+        age = max(0, int(time.time() - mtime))
+        state = "stale" if heartbeat.is_stale() else "fresh"
+        return f"{state} ({age}s old)"
 
     def _post_status(self, ts: str, date_str: str | None = None) -> None:
         """Query pipeline data and post a status summary."""
