@@ -245,3 +245,80 @@ class TestSharedSlackApprovalParser:
         from slack_bot.approval import parse_platform_approval
 
         assert parse_platform_approval(reply, self.platforms) == []
+
+
+class TestSkillsTipsStrictApproval:
+    """Skills/tips handlers must use fail-closed approval semantics."""
+
+    @staticmethod
+    def _handler_with_drafts(handler_class, channel_id):
+        client = MagicMock()
+        handler = handler_class(
+            client=client,
+            channel_id=channel_id,
+            owner_user_id="U_OWNER",
+        )
+        handler._create_drafts = MagicMock(return_value={
+            "bluesky": "Bluesky draft",
+            "linkedin": "LinkedIn draft",
+        })
+        handler.react = MagicMock()
+        handler.wait_for_reply = MagicMock()
+        handler._post = MagicMock(return_value={})
+        return handler, client
+
+    @pytest.mark.parametrize("reply", [
+        "wait", "hold on", "skip linkedin", "maybe bluesky",
+        "Here is my edited draft:\nReplacement copy",
+    ])
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_unclear_replies_do_not_post(self, handler_class, channel_id, reply):
+        handler, client = self._handler_with_drafts(handler_class, channel_id)
+        handler.wait_for_reply.return_value = reply
+
+        handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        handler._post.assert_not_called()
+        assert "skipped" in client.chat_postMessage.call_args_list[-1].kwargs["text"].lower()
+
+    @pytest.mark.parametrize("reply,expected", [
+        ("all", ["bluesky", "linkedin"]),
+        ("bluesky", ["bluesky"]),
+        ("linkedin", ["linkedin"]),
+        ("linkedin bluesky", ["linkedin", "bluesky"]),
+    ])
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_explicit_replies_post_selected_platforms(
+        self, handler_class, channel_id, reply, expected
+    ):
+        handler, _client = self._handler_with_drafts(handler_class, channel_id)
+        handler.wait_for_reply.return_value = reply
+
+        handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        handler._post.assert_called_once_with(
+            {"bluesky": "Bluesky draft", "linkedin": "LinkedIn draft"},
+            expected,
+        )

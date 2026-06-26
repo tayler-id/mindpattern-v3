@@ -242,6 +242,12 @@ Goal execution baseline on 2026-06-26:
     -> 39 passed in 0.02s.
   - `.venv/bin/python3 -m pytest tests/test_approval_parsing.py -q`
     -> 53 passed in 3.10s.
+- Task 3 complete: switched `#mp-skills` and `#mp-tips` to the shared
+  fail-closed approval parser. Unclear replies now post nothing.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 57 passed in 0.03s.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q`
+    -> 219 passed in 3.25s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

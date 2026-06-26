@@ -12,6 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
+from slack_bot.approval import parse_platform_approval
 from slack_bot.handlers.base import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -88,12 +89,10 @@ class TipsHandler(BaseHandler):
 
         # Determine which platforms
         platforms = list(drafts.keys())
-        if reply_lower in ("all", "yes", "y", "go", "post"):
-            approved = platforms
-        else:
-            approved = [p for p in platforms if p.lower() in reply_lower]
-            if not approved:
-                approved = platforms
+        approved = parse_platform_approval(reply_text, platforms)
+        if not approved:
+            self.reply("Skipped. Nothing posted.", thread_ts=ts)
+            return
 
         # Post
         self.reply(f"Posting to: {', '.join(approved)}...", thread_ts=ts)

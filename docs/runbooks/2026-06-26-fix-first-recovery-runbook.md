@@ -268,6 +268,17 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 39 passed in 0.02s.
 - `.venv/bin/python3 -m pytest tests/test_approval_parsing.py -q` -> 53 passed in 3.10s.
 
+### 2026-06-26 Task 3 Strict Skills/Tips Approval
+
+Switched `#mp-skills` and `#mp-tips` to the shared fail-closed approval parser.
+Unclear replies such as `wait`, `hold on`, `skip linkedin`, pasted edits, or
+partial sentences now post nothing.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 57 passed in 0.03s.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_social.py tests/test_approval.py tests/test_approval_parsing.py -q` -> 219 passed in 3.25s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety
