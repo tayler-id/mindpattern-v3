@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Agent Evidence &amp; Compliance Report — Atlas Support Agent</title>
+<style>
+  :root{
+    --ink:#16202b; --muted:#5b6b7b; --line:#dfe6ee; --bg:#f4f7fa;
+    --ok:#0f7b46; --okbg:#e7f6ee; --warn:#9a6b00; --warnbg:#fdf3da;
+    --bad:#b3261e; --badbg:#fbe9e7; --brand:#1f4e79; --chip:#eef3f8;
+  }
+  *{box-sizing:border-box}
+  body{font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);margin:0;padding:28px}
+  .page{max-width:880px;margin:0 auto;background:#fff;border:1px solid var(--line);
+        border-radius:10px;overflow:hidden}
+  header{display:flex;justify-content:space-between;align-items:flex-start;
+         padding:22px 28px;border-bottom:3px solid var(--brand)}
+  .brand{font-weight:800;letter-spacing:.5px;color:var(--brand);font-size:15px}
+  .brand small{display:block;font-weight:500;color:var(--muted);letter-spacing:0;font-size:11px;margin-top:2px}
+  h1{font-size:20px;margin:2px 0 4px}
+  .meta{color:var(--muted);font-size:12.5px;text-align:right}
+  .meta b{color:var(--ink)}
+  section{padding:18px 28px;border-top:1px solid var(--line)}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--brand);margin:0 0 12px}
+  .verdict{display:flex;gap:14px;align-items:center;background:var(--okbg);
+           border:1px solid #bfe6cf;border-radius:8px;padding:14px 16px;margin-top:4px}
+  .seal{font-size:13px;font-weight:800;color:#fff;background:var(--ok);
+        border-radius:50%;width:54px;height:54px;display:flex;align-items:center;
+        justify-content:center;text-align:center;line-height:1.1;flex:0 0 auto}
+  .verdict .t{font-weight:700;color:var(--ok)}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .kpi{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .kpi .n{font-size:22px;font-weight:800}
+  .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       background:#f1f4f7;padding:1px 5px;border-radius:4px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .t-ok{color:var(--ok);background:var(--okbg)}
+  .t-warn{color:var(--warn);background:var(--warnbg)}
+  .t-bad{color:var(--bad);background:var(--badbg)}
+  .policy{font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;background:#0f1b2a;color:#cfe3f5;
+          border-radius:8px;padding:14px 16px;white-space:pre;overflow:auto}
+  .policy .k{color:#7fb2e6}.policy .v{color:#bfe6cf}.policy .c{color:#6b8299}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .note{font-size:12px;color:var(--muted)}
+  .chain{font:11.5px/1.7 ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
+  .chain b{color:var(--ink)}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:8px}
+  .sigline{border-top:1px solid var(--ink);margin-top:34px;padding-top:4px;font-size:12px;color:var(--muted)}
+  footer{padding:14px 28px;background:#0f1b2a;color:#9fb3c6;font-size:11px;display:flex;justify-content:space-between}
+  .watermark{font-size:11px;color:var(--warn);background:var(--warnbg);border:1px dashed #e6cf94;
+             border-radius:6px;padding:6px 10px;margin:0 auto 14px;max-width:880px;text-align:center}
+  @media print{body{background:#fff;padding:0}.page{border:none}.watermark{display:none}}
+  @media(max-width:680px){.grid{grid-template-columns:repeat(2,1fr)}.two,.sign{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="watermark">SAMPLE / MOCK — fictional data, for buyer-validation only. Not a real audit. Working product name “AgentLedger.”</div>
+
+<div class="page">
+  <header>
+    <div>
+      <div class="brand">AGENTLEDGER<small>Agent Evidence &amp; Assurance</small></div>
+      <h1>AI Agent Evidence &amp; Compliance Report</h1>
+      <div class="note">Tamper-evident record of autonomous agent activity for the stated reporting period.</div>
+    </div>
+    <div class="meta">
+      <div>Report&nbsp;ID <b>AL-2026-06-0417</b></div>
+      <div>Period <b>1–30 Jun 2026</b></div>
+      <div>Generated <b>2026-06-30 09:14 UTC</b></div>
+      <div>Integrity <b style="color:var(--ok)">✓ VERIFIED</b></div>
+    </div>
+  </header>
+
+  <!-- VERDICT / SIGN-OFF -->
+  <section>
+    <h2>Reviewer Summary &amp; Sign-off</h2>
+    <div class="verdict">
+      <div class="seal">PASS w/ 1 note</div>
+      <div>
+        <div class="t">Agent operated within declared policy. Recommended for continued production use.</div>
+        <div class="note">2,847 actions recorded · 100% captured &amp; hash-verified · 1 out-of-scope attempt <b>blocked</b> · 2 high-value actions correctly routed to human approval · 1 PII-exposure event auto-redacted. No undetected policy breaches.</div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="kpi"><div class="n">2,847</div><div class="l">Actions recorded</div></div>
+      <div class="kpi"><div class="n">99.96%</div><div class="l">Policy adherence</div></div>
+      <div class="kpi"><div class="n">1</div><div class="l">Blocked attempts</div></div>
+      <div class="kpi"><div class="n">$612.40</div><div class="l">Agent-authorized spend</div></div>
+    </div>
+  </section>
+
+  <!-- AGENT PROFILE -->
+  <section>
+    <h2>Agent Under Review</h2>
+    <div class="two">
+      <table>
+        <tr><th>Agent</th><td>Atlas — Customer Support Agent</td></tr>
+        <tr><th>Owner</th><td>Support Eng · j.okafor@harborfinancial.example</td></tr>
+        <tr><th>Purpose</th><td>Tier-1 customer support: account lookups, FAQ, refund processing, escalation</td></tr>
+        <tr><th>Model</th><td><code>claude-sonnet-4-6</code> (pinned) · harness v3.2</td></tr>
+      </table>
+      <table>
+        <tr><th>Environment</th><td>production · us-east</td></tr>
+        <tr><th>Customers served</th><td>1,193 unique sessions</td></tr>
+        <tr><th>Runtime</th><td>Always-on · 30-day window</td></tr>
+        <tr><th>Data classification</th><td>Contains PII &amp; financial data (in-scope for SOC 2, GLBA)</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- POLICY -->
+  <section>
+    <h2>Declared Operating Policy (the rules this report was checked against)</h2>
+    <div class="policy"><span class="c"># agent-policy.yaml — declared by owner, version-locked 2026-05-28</span>
+<span class="k">allowed_tools</span>: [<span class="v">account_lookup</span>, <span class="v">kb_search</span>, <span class="v">issue_refund</span>, <span class="v">escalate_to_human</span>]
+<span class="k">data_scopes</span>:
+  allow: [<span class="v">support_tickets</span>, <span class="v">account_summary</span>]
+  deny:  [<span class="v">ledger_db</span>, <span class="v">raw_card_data</span>, <span class="v">employee_records</span>]
+<span class="k">spend_cap_usd</span>: <span class="v">50</span>            <span class="c"># per refund</span>
+<span class="k">require_human_approval</span>: [<span class="v">refund &gt; 50</span>, <span class="v">account_close</span>]
+<span class="k">pii_in_output</span>: <span class="v">redact</span>        <span class="c"># card numbers, SSN, full DOB</span></div>
+  </section>
+
+  <!-- FLAGGED EVENTS -->
+  <section>
+    <h2>Flagged &amp; Controlled Events <span class="note">(the events a reviewer must see)</span></h2>
+    <table>
+      <thead><tr><th>Time (UTC)</th><th>Event</th><th>What the agent tried</th><th>Control outcome</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>06-14 02:41</td>
+          <td><span class="tag t-bad">BLOCKED</span></td>
+          <td>Queried <code>ledger_db</code> for a balance reconciliation while resolving a dispute</td>
+          <td><b>Denied by data-scope policy</b> — <code>ledger_db</code> on deny-list. Action stopped before execution; session escalated to human.</td>
+        </tr>
+        <tr>
+          <td>06-09 16:03</td>
+          <td><span class="tag t-warn">APPROVAL</span></td>
+          <td>Issue refund of <b>$240.00</b> (above $50 cap)</td>
+          <td><b>Held for human approval</b> — approved by <code>m.reyes</code> at 16:07, then executed. Approval record attached.</td>
+        </tr>
+        <tr>
+          <td>06-22 11:18</td>
+          <td><span class="tag t-warn">APPROVAL</span></td>
+          <td>Issue refund of <b>$129.99</b> (above $50 cap)</td>
+          <td><b>Held for human approval</b> — approved by <code>m.reyes</code> at 11:25, then executed.</td>
+        </tr>
+        <tr>
+          <td>06-18 20:55</td>
+          <td><span class="tag t-warn">REDACTED</span></td>
+          <td>Draft reply contained a full 16-digit card number echoed from the customer</td>
+          <td><b>PII auto-redacted</b> at output layer before send — customer received masked <code>•••• 4417</code>.</td>
+        </tr>
+        <tr>
+          <td colspan="4" class="note">No other policy deviations detected across 2,847 recorded actions. Full action ledger available on request.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- COMPLIANCE MAPPING -->
+  <section>
+    <h2>Control Mapping (evidence per framework)</h2>
+    <table>
+      <thead><tr><th>Framework / Control</th><th>Requirement</th><th>Evidence in this report</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>SOC 2 — CC7.2</b></td><td>Monitoring of system activity</td><td>100% of agent actions captured to append-only ledger</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>SOC 2 — CC6.1</b></td><td>Logical access restriction</td><td>Data-scope deny-list enforced; 1 out-of-scope access blocked</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>EU AI Act — Art. 12</b></td><td>Automatic logging / traceability</td><td>Tamper-evident, hash-chained event ledger (below)</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>EU AI Act — Art. 14</b></td><td>Human oversight of high-risk actions</td><td>2 high-value refunds routed to + approved by a human</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>NIST AI RMF — MEASURE/MANAGE</b></td><td>Incident traceability &amp; response</td><td>Per-action forensic trail; mean reconstruct time &lt; 2 min</td><td><span class="tag t-ok">MET</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- TAMPER EVIDENCE -->
+  <section>
+    <h2>Integrity Proof <span class="note">(why this is evidence, not just logs)</span></h2>
+    <p class="note">Every record is chained to the cryptographic hash of the one before it. Any edit, deletion, or back-dating breaks the chain and is detectable. This report’s chain was re-verified at generation time.</p>
+    <div class="chain">
+      record&nbsp;0001 &nbsp;sha256 <b>9f2a…c14e</b><br>
+      record&nbsp;0002 &nbsp;prev <b>9f2a…c14e</b> → sha256 <b>3b71…a08d</b><br>
+      record&nbsp;0003 &nbsp;prev <b>3b71…a08d</b> → sha256 <b>e5c0…77f2</b><br>
+      … 2,844 records …<br>
+      record&nbsp;2847 &nbsp;prev <b>1ad9…6b30</b> → sha256 <b>c882…41aa</b> &nbsp;<span class="tag t-ok">CHAIN INTACT</span>
+    </div>
+  </section>
+
+  <!-- SIGN OFF -->
+  <section>
+    <h2>Attestation</h2>
+    <p class="note">The undersigned confirm this report accurately reflects the recorded behavior of the named agent for the stated period.</p>
+    <div class="sign">
+      <div class="sigline">Agent Owner — J. Okafor, Support Engineering</div>
+      <div class="sigline">Reviewer — ____________________ , Risk &amp; Compliance</div>
+    </div>
+  </section>
+
+  <footer>
+    <span>AgentLedger · Agent Evidence &amp; Assurance · report AL-2026-06-0417</span>
+    <span>Page 1 of 1 · Full ledger &amp; approval records available on request</span>
+  </footer>
+</div>
+
+</body>
+</html>

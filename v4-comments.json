@@ -1,0 +1,48 @@
+{
+  "exported": "2026-06-11T16:15:01.595Z",
+  "doc": "v4-blueprint",
+  "comments": [
+    {
+      "id": "nvai0no8lj",
+      "target": "The core idea",
+      "section": "why",
+      "text": "will we be able to backfill all the past research",
+      "ts": "2026-06-11T16:03:34.951Z"
+    },
+    {
+      "id": "pdav8glcw3",
+      "target": "v3 vs v4 comparison",
+      "section": "why",
+      "text": "on v4 explain the schema to me",
+      "ts": "2026-06-11T16:04:15.983Z"
+    },
+    {
+      "id": "b214j24nz65",
+      "target": "System architecture diagram",
+      "section": "system",
+      "text": "what is Sigbnals mean",
+      "ts": "2026-06-11T16:05:26.658Z"
+    },
+    {
+      "id": "jtfon0hcya",
+      "target": "System architecture diagram",
+      "section": "system",
+      "text": "how does the improvment harness work in detail",
+      "ts": "2026-06-11T16:05:50.582Z"
+    },
+    {
+      "id": "w4nlfpregx",
+      "target": "Deployment layout",
+      "section": "system",
+      "text": "the slackbot doe snot work since we moved to to fly in v3",
+      "ts": "2026-06-11T16:06:41.632Z"
+    },
+    {
+      "id": "mupaupswy4",
+      "target": "Mental model: card catalog (KG)",
+      "section": "models",
+      "text": "is this going to me cards MD files or all jsut vector DB what did you find in your research for building are we going to use a wiki style is ther ebetter tools htat we are not using. redis has solutions i knwo",
+      "ts": "2026-06-11T16:07:55.223Z"
+    }
+  ]
+}

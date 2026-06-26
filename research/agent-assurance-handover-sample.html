@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Assurance &amp; Handover Pack — Cargo Copilot (Northbeam AI → Vantage Logistics)</title>
+<style>
+  :root{
+    --ink:#16202b; --muted:#5b6b7b; --line:#dfe6ee; --bg:#f4f7fa;
+    --ok:#0f7b46; --okbg:#e7f6ee; --warn:#9a6b00; --warnbg:#fdf3da;
+    --bad:#b3261e; --badbg:#fbe9e7; --brand:#6b21a8; --chip:#f3eefb;
+  }
+  *{box-sizing:border-box}
+  body{font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);margin:0;padding:28px}
+  .page{max-width:880px;margin:0 auto;background:#fff;border:1px solid var(--line);
+        border-radius:10px;overflow:hidden}
+  header{display:flex;justify-content:space-between;align-items:flex-start;
+         padding:22px 28px;border-bottom:3px solid var(--brand)}
+  .brand{font-weight:800;letter-spacing:.5px;color:var(--brand);font-size:15px}
+  .brand small{display:block;font-weight:500;color:var(--muted);letter-spacing:0;font-size:11px;margin-top:2px}
+  h1{font-size:20px;margin:2px 0 4px}
+  .meta{color:var(--muted);font-size:12.5px;text-align:right}
+  .meta b{color:var(--ink)}
+  section{padding:18px 28px;border-top:1px solid var(--line)}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--brand);margin:0 0 12px}
+  .verdict{display:flex;gap:14px;align-items:center;background:var(--okbg);
+           border:1px solid #bfe6cf;border-radius:8px;padding:14px 16px;margin-top:4px}
+  .seal{font-size:12px;font-weight:800;color:#fff;background:var(--ok);
+        border-radius:50%;width:56px;height:56px;display:flex;align-items:center;
+        justify-content:center;text-align:center;line-height:1.1;flex:0 0 auto}
+  .verdict .t{font-weight:700;color:var(--ok)}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .kpi{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .kpi .n{font-size:22px;font-weight:800}
+  .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  code{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       background:#f1f4f7;padding:1px 5px;border-radius:4px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .t-ok{color:var(--ok);background:var(--okbg)}
+  .t-warn{color:var(--warn);background:var(--warnbg)}
+  .t-bad{color:var(--bad);background:var(--badbg)}
+  .policy{font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;background:#1c0f2a;color:#e3d6f5;
+          border-radius:8px;padding:14px 16px;white-space:pre;overflow:auto}
+  .policy .k{color:#c69bf0}.policy .v{color:#bfe6cf}.policy .c{color:#8b7aa0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .note{font-size:12px;color:var(--muted)}
+  .chain{font:11.5px/1.7 ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
+  .chain b{color:var(--ink)}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:8px}
+  .sigline{border-top:1px solid var(--ink);margin-top:34px;padding-top:4px;font-size:12px;color:var(--muted)}
+  footer{padding:14px 28px;background:#1c0f2a;color:#c3b3d6;font-size:11px;display:flex;justify-content:space-between}
+  .watermark{font-size:11px;color:var(--warn);background:var(--warnbg);border:1px dashed #e6cf94;
+             border-radius:6px;padding:6px 10px;margin:0 auto 14px;max-width:880px;text-align:center}
+  .resp td:first-child{font-weight:600}
+  @media print{body{background:#fff;padding:0}.page{border:none}.watermark{display:none}}
+  @media(max-width:680px){.grid{grid-template-columns:repeat(2,1fr)}.two,.sign{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="watermark">SAMPLE / MOCK — fictional data, for buyer-validation only. Working product name “AgentLedger.” Variant B: vendor → client handover.</div>
+
+<div class="page">
+  <header>
+    <div>
+      <div class="brand">AGENTLEDGER<small>Agent Assurance &amp; Handover</small></div>
+      <h1>Agent Assurance &amp; Handover Pack</h1>
+      <div class="note">Independent evidence that a delivered AI agent operates within the agreed scope — prepared for client acceptance &amp; security review.</div>
+    </div>
+    <div class="meta">
+      <div>Pack&nbsp;ID <b>AL-H-2026-0291</b></div>
+      <div>Prepared by <b>Northbeam AI</b></div>
+      <div>For <b>Vantage Logistics</b></div>
+      <div>Validation window <b>1–30 Jun 2026</b></div>
+      <div>Integrity <b style="color:var(--ok)">✓ VERIFIED</b></div>
+    </div>
+  </header>
+
+  <!-- VERDICT -->
+  <section>
+    <h2>Acceptance Summary</h2>
+    <div class="verdict">
+      <div class="seal">READY TO ACCEPT</div>
+      <div>
+        <div class="t">“Cargo Copilot” met every agreed guardrail during the validation window. Cleared for production handover.</div>
+        <div class="note">4,106 actions recorded · 100% captured &amp; hash-verified · 2 out-of-scope attempts <b>blocked</b> · 3 high-value actions routed to client approval · 0 undetected breaches. This pack answers your standard vendor security questionnaire (see control mapping).</div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="kpi"><div class="n">4,106</div><div class="l">Actions recorded</div></div>
+      <div class="kpi"><div class="n">100%</div><div class="l">Within agreed scope</div></div>
+      <div class="kpi"><div class="n">2</div><div class="l">Blocked attempts</div></div>
+      <div class="kpi"><div class="n">&lt;2 min</div><div class="l">Incident reconstruct time</div></div>
+    </div>
+  </section>
+
+  <!-- AGENT -->
+  <section>
+    <h2>Delivered Agent</h2>
+    <div class="two">
+      <table>
+        <tr><th>Agent</th><td>Cargo Copilot — Ops &amp; shipment-exception handler</td></tr>
+        <tr><th>Built by</th><td>Northbeam AI (vendor)</td></tr>
+        <tr><th>Deployed for</th><td>Vantage Logistics (client) · ops team</td></tr>
+        <tr><th>Scope</th><td>Track shipments, draft carrier emails, file exception tickets, request credits</td></tr>
+      </table>
+      <table>
+        <tr><th>Model</th><td><code>claude-sonnet-4-6</code> (pinned) + GLM-5.2 fallback</td></tr>
+        <tr><th>Environment</th><td>client VPC · eu-west (data residency)</td></tr>
+        <tr><th>Sessions handled</th><td>2,540 shipment exceptions</td></tr>
+        <tr><th>Data classification</th><td>Customer + carrier PII (in-scope for SOC 2, GDPR)</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- POLICY -->
+  <section>
+    <h2>Agreed Operating Boundaries <span class="note">(signed off by client before go-live)</span></h2>
+    <div class="policy"><span class="c"># scope-of-work.yaml — agreed Northbeam ⇄ Vantage, 2026-05-30</span>
+<span class="k">allowed_tools</span>: [<span class="v">track_shipment</span>, <span class="v">draft_email</span>, <span class="v">file_exception</span>, <span class="v">request_credit</span>]
+<span class="k">data_scopes</span>:
+  allow: [<span class="v">shipments</span>, <span class="v">carrier_contacts</span>]
+  deny:  [<span class="v">customer_billing</span>, <span class="v">hr_system</span>, <span class="v">pricing_engine</span>]
+<span class="k">credit_cap_usd</span>: <span class="v">100</span>           <span class="c"># per shipment</span>
+<span class="k">require_client_approval</span>: [<span class="v">credit &gt; 100</span>, <span class="v">send_external_email</span>]
+<span class="k">pii_in_output</span>: <span class="v">redact</span></div>
+  </section>
+
+  <!-- RESPONSIBILITY MATRIX (the liability wedge) -->
+  <section>
+    <h2>Responsibility &amp; Warranty <span class="note">(who is accountable for what)</span></h2>
+    <table class="resp">
+      <thead><tr><th>Area</th><th>Northbeam (vendor) warrants</th><th>Vantage (client) owns</th></tr></thead>
+      <tbody>
+        <tr><td>Guardrails</td><td>Scope, spend cap, PII redaction &amp; approval gates enforced as agreed</td><td>Approving the boundaries &amp; staffing approvers</td></tr>
+        <tr><td>Evidence</td><td>Complete, tamper-evident record of every action</td><td>Retaining packs for its own audits</td></tr>
+        <tr><td>Data access</td><td>Agent confined to allow-listed scopes only</td><td>Granting/revoking the underlying data access</td></tr>
+        <tr><td>Decisions</td><td>Surfacing high-value actions for human approval</td><td>Final business decisions &amp; approvals</td></tr>
+      </tbody>
+    </table>
+    <p class="note">This bounded warranty is what most agent vendors cannot offer — industry-wide, ~88% cap liability at fees and only ~17% warrant compliance. The evidence below substantiates the warranty.</p>
+  </section>
+
+  <!-- FLAGGED EVENTS -->
+  <section>
+    <h2>Controlled Events <span class="note">(guardrails doing their job)</span></h2>
+    <table>
+      <thead><tr><th>Time (UTC)</th><th>Event</th><th>What the agent tried</th><th>Control outcome</th></tr></thead>
+      <tbody>
+        <tr><td>06-07 09:22</td><td><span class="tag t-bad">BLOCKED</span></td><td>Read <code>pricing_engine</code> to “offer a discount” on a delayed load</td><td><b>Denied by scope</b> — out-of-scope tool; escalated to Vantage ops.</td></tr>
+        <tr><td>06-19 14:50</td><td><span class="tag t-bad">BLOCKED</span></td><td>Queried <code>customer_billing</code> while resolving a dispute</td><td><b>Denied by scope</b> — deny-listed data; action stopped pre-execution.</td></tr>
+        <tr><td>06-11 11:04</td><td><span class="tag t-warn">APPROVAL</span></td><td>Issue carrier credit of <b>$420</b> (above $100 cap)</td><td><b>Held for client approval</b> — approved by <code>ops.lead@vantage</code>, then executed.</td></tr>
+        <tr><td>06-25 17:31</td><td><span class="tag t-warn">REDACTED</span></td><td>Draft email echoed a customer’s full phone &amp; address block</td><td><b>PII auto-redacted</b> before send.</td></tr>
+        <tr><td colspan="4" class="note">No undetected deviations across 4,106 recorded actions. Full ledger &amp; approval records attached on request.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- COMPLIANCE MAPPING -->
+  <section>
+    <h2>Security-Questionnaire / Control Mapping</h2>
+    <table>
+      <thead><tr><th>Framework / Control</th><th>Requirement</th><th>Evidence</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><b>SOC 2 — CC7.2</b></td><td>Activity monitoring</td><td>100% of actions captured to append-only ledger</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>SOC 2 — CC6.1</b></td><td>Logical access restriction</td><td>Deny-list enforced; 2 out-of-scope attempts blocked</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>GDPR — Art. 5/32</b></td><td>Data minimization &amp; security</td><td>Scope-confined; PII redacted at output; EU data residency</td><td><span class="tag t-ok">MET</span></td></tr>
+        <tr><td><b>EU AI Act — Art. 14</b></td><td>Human oversight</td><td>High-value credits routed to client approver</td><td><span class="tag t-ok">MET</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- INTEGRITY -->
+  <section>
+    <h2>Integrity Proof</h2>
+    <p class="note">Each record is chained to the hash of the previous one — any edit or deletion breaks the chain and is detectable. Re-verified at generation.</p>
+    <div class="chain">
+      record 0001 sha256 <b>5c8e…1d22</b> → record 0002 prev <b>5c8e…1d22</b> → <b>a7f0…9e41</b> → … 4,103 records … → record 4106 → <b>d310…77bc</b> &nbsp;<span class="tag t-ok">CHAIN INTACT</span>
+    </div>
+  </section>
+
+  <!-- SIGN OFF -->
+  <section>
+    <h2>Handover Sign-off</h2>
+    <div class="sign">
+      <div class="sigline">Northbeam AI — Delivery Lead</div>
+      <div class="sigline">Vantage Logistics — Accepting Owner</div>
+    </div>
+  </section>
+
+  <footer>
+    <span>AgentLedger · Assurance &amp; Handover · pack AL-H-2026-0291</span>
+    <span>Prepared by Northbeam AI for Vantage Logistics · full ledger on request</span>
+  </footer>
+</div>
+
+</body>
+</html>

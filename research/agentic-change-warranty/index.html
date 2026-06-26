@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Change Warranty — Opportunities &amp; Technology</title>
+<style>
+  :root{
+    --bg:#0a0e16; --bg2:#0f1521; --card:#141b29; --card2:#1a2233;
+    --line:#243047; --line2:#2e3c57;
+    --tx:#e6ecf5; --mut:#93a2bd; --dim:#6b7a96;
+    --acc:#4ea1ff; --acc2:#7c5cff; --grn:#3fd07f; --amb:#ffb44d; --red:#ff6b6b;
+    --grad:linear-gradient(135deg,#4ea1ff 0%,#7c5cff 100%);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:radial-gradient(1200px 700px at 80% -10%,#16213a 0%,var(--bg) 55%);
+    color:var(--tx);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--acc);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+  h1,h2,h3{line-height:1.2;margin:0 0 .4em}
+  code{background:#0c1320;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.86em;color:#bcd3ff}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+
+  /* hero */
+  header.hero{padding:64px 0 38px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc);font-weight:600;margin-bottom:14px}
+  .hero h1{font-size:clamp(30px,5vw,50px);font-weight:800;letter-spacing:-.02em;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .hero p.lede{font-size:19px;color:var(--mut);max-width:760px;margin-top:8px}
+  .verdict{margin-top:26px;display:flex;gap:14px;align-items:flex-start;background:var(--card);
+    border:1px solid var(--line2);border-left:4px solid var(--grn);border-radius:12px;padding:18px 20px}
+  .verdict .tag{flex:none;font-size:12px;font-weight:700;letter-spacing:.05em;color:#04150c;background:var(--grn);
+    padding:4px 10px;border-radius:20px;margin-top:2px}
+  .verdict p{margin:0;color:var(--tx)}
+
+  /* stat bar */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:30px 0 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 12px;text-align:center}
+  .stat b{display:block;font-size:24px;font-weight:800;color:var(--tx)}
+  .stat span{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+
+  section{padding:52px 0;border-bottom:1px solid var(--line)}
+  .kicker{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc2);font-weight:700;margin-bottom:8px}
+  h2.sec{font-size:30px;font-weight:800;letter-spacing:-.01em}
+  .sub{color:var(--mut);max-width:780px;margin-top:4px}
+
+  /* the gap */
+  .gap{display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;margin-top:28px}
+  .camp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .camp h3{font-size:17px}
+  .camp .lab{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
+  .camp ul{margin:12px 0 0;padding-left:18px;color:var(--mut);font-size:14.5px}
+  .camp ul li{margin:5px 0}
+  .gapmid{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 18px;min-width:210px}
+  .gapcard{background:linear-gradient(135deg,rgba(124,92,255,.16),rgba(78,161,255,.12));
+    border:1.5px solid var(--acc2);border-radius:14px;padding:20px;text-align:center}
+  .gapcard b{display:block;font-size:15px;color:#fff;margin-bottom:6px}
+  .gapcard span{font-size:13px;color:var(--mut)}
+  .arrow{color:var(--acc2);font-size:24px;line-height:1;margin:8px 0}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin-top:22px;font-size:14.5px;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:var(--bg2);color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  tr:last-child td{border-bottom:none}
+  td.no{color:var(--red);font-weight:700;text-align:center}
+  td.yes{color:var(--grn);font-weight:700;text-align:center}
+  .src{font-size:12px;color:var(--dim)}
+
+  /* opportunity cards */
+  .ops{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:26px}
+  .op{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;position:relative;
+    transition:.18s border-color,.18s transform}
+  .op:hover{border-color:var(--acc2);transform:translateY(-2px)}
+  .op .num{font-size:13px;font-weight:800;color:#04150c;background:var(--grad);width:28px;height:28px;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+  .op h3{font-size:17px}
+  .op p{font-size:14px;color:var(--mut);margin:8px 0 0}
+  .op .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+  .pill{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;border:1px solid var(--line2);color:var(--mut)}
+  .pill.lo{color:var(--grn);border-color:rgba(63,208,127,.4)}
+  .pill.md{color:var(--amb);border-color:rgba(255,180,77,.4)}
+  .pill.hi{color:var(--red);border-color:rgba(255,107,107,.4)}
+  .op.first{grid-column:1 / -1;border-color:var(--acc);background:linear-gradient(135deg,rgba(78,161,255,.07),var(--card))}
+
+  /* architecture */
+  .arch{background:#0b1018;border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:24px;overflow-x:auto}
+  .arch pre{margin:0;font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:#aebfe0;line-height:1.5}
+  .layers{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:24px}
+  .layer{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .layer h4{margin:0 0 4px;font-size:15px;color:var(--tx)}
+  .layer h4 span{color:var(--acc);font-weight:800;margin-right:6px}
+  .layer .tech{font-size:13px;color:var(--mut);margin-top:8px}
+  .layer .tech code{display:inline-block;margin:2px 3px 2px 0}
+  .layer.key{border-color:var(--acc2)}
+  .warnflag{margin-top:10px;font-size:12.5px;color:var(--amb);border-top:1px dashed var(--line2);padding-top:8px}
+
+  /* sequencing */
+  .seq{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:24px}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .step .when{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--acc)}
+  .step h4{margin:8px 0 6px;font-size:16px}
+  .step p{font-size:13.5px;color:var(--mut);margin:0}
+
+  /* risk grid */
+  .risks{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:24px}
+  .risk{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--amb);border-radius:10px;padding:14px 16px}
+  .risk b{font-size:14.5px}
+  .risk p{font-size:13.5px;color:var(--mut);margin:5px 0 0}
+  .risk.hard{border-left-color:var(--red)}
+
+  .callout{background:linear-gradient(135deg,rgba(124,92,255,.12),rgba(78,161,255,.08));
+    border:1px solid var(--line2);border-radius:14px;padding:22px 24px;margin-top:26px}
+  .callout b{color:#fff}
+
+  footer{padding:40px 0 60px;color:var(--dim);font-size:13px}
+  footer .files{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+  footer .files a{font-size:12.5px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 11px;color:var(--mut)}
+  .disc{font-size:12px;color:var(--dim);font-style:italic;margin-top:12px}
+
+  @media(max-width:780px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .gap{grid-template-columns:1fr}
+    .gapmid{padding:14px 0}.arrow{transform:rotate(90deg)}
+    .ops,.layers,.risks{grid-template-columns:1fr}
+    .seq{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Deep-research dossier · mid-2026</div>
+    <h1>Agentic Change Warranty</h1>
+    <p class="lede">Turning every AI-authored pull request into an <strong>insurable event</strong> —
+      the white space between AI code verification and AI insurance, and the technology to build into it.</p>
+
+    <div class="verdict">
+      <span class="tag">VERDICT</span>
+      <p><strong>Genuine, defensible white space.</strong> No company underwrites, warrants, or risk-scores
+      AI-authored code changes. Incumbents insure <em>model outputs</em> (hallucinations, accuracy, drift, agent
+      decisions) — never the <em>code artifact</em>. Verification tools provide signal with zero risk transfer.
+      The proven, viable path is an <strong>MGA/warranty layer backed by a reinsurer</strong>, priced on an
+      <strong>evidence/certification layer</strong> rather than actuarial loss data.</p>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>0</b><span>Cos. insuring AI&nbsp;code changes</span></div>
+      <div class="stat"><b>45%</b><span>AI code w/ OWASP vulns (Veracode)</span></div>
+      <div class="stat"><b>$25M</b><span>Armilla AI limit (proven blueprint)</span></div>
+      <div class="stat"><b>3</b><span>New ISO AI exclusions (Jan 2026)</span></div>
+      <div class="stat"><b>23/25</b><span>Claims verified 2–3 votes</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- THE GAP -->
+<section>
+  <div class="wrap">
+    <div class="kicker">The structural gap</div>
+    <h2 class="sec">Two crowded camps, an empty middle</h2>
+    <p class="sub">The market has a verification camp (signal, no money on the line) and an insurance camp
+      (money, but only on model behavior). The product is the bridge: claim-grade evidence + risk transfer on
+      the <strong>code artifact itself</strong>.</p>
+
+    <div class="gap">
+      <div class="camp">
+        <div class="lab">Verification camp</div>
+        <h3>Signal, no risk transfer</h3>
+        <ul>
+          <li><strong>SonarQube AI Code Assurance</strong> — labeling, quality gate, badge. Zero warranty language.</li>
+          <li><strong>Qodo</strong> — review &amp; governance. No risk transfer.</li>
+          <li><strong>CodeRabbit</strong> — PR/IDE/CLI review. "Do the final 10%."</li>
+          <li>Graphite · Greptile · Diamond</li>
+        </ul>
+      </div>
+
+      <div class="gapmid">
+        <div class="arrow">→</div>
+        <div class="gapcard">
+          <b>Agentic Change Warranty</b>
+          <span>Evidence → risk score → required checks → coverage certificate. <em>Nobody is here.</em></span>
+        </div>
+        <div class="arrow">←</div>
+      </div>
+
+      <div class="camp">
+        <div class="lab">Insurance camp</div>
+        <h3>Money, but only on model behavior</h3>
+        <ul>
+          <li><strong>Armilla AI</strong> — pays when a model fails contractual KPIs (accuracy/bias).</li>
+          <li><strong>Munich Re aiSure</strong> — parametric: model error rate &gt; threshold.</li>
+          <li><strong>Corgi</strong> — E&amp;O for the AI <em>vendor</em>, not the buyer's repo.</li>
+          <li>Testudo (2026) · Greenlight Re · Swiss Re (capacity)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LANDSCAPE TABLE -->
+<section>
+  <div class="wrap">
+    <div class="kicker">Competitive landscape</div>
+    <h2 class="sec">Who covers what — and what nobody covers</h2>
+    <table>
+      <thead><tr><th>Company</th><th>Insured party</th><th>Trigger</th><th>Covers the code artifact?</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Armilla AI</strong></td><td>AI buyer/vendor</td><td>Model fails contractual KPIs</td><td class="no">No</td></tr>
+        <tr><td><strong>Munich Re aiSure</strong></td><td>AI vendor/buyer</td><td>Model error rate &gt; threshold (parametric)</td><td class="no">No</td></tr>
+        <tr><td><strong>Corgi</strong></td><td>AI <em>vendor</em></td><td>Customer alleges vendor's AI failed (E&amp;O)</td><td class="no">No</td></tr>
+        <tr><td><strong>SonarQube / Qodo / CodeRabbit</strong></td><td>—</td><td>Verification only — no payout exists</td><td class="no">No</td></tr>
+        <tr><td><strong>Agentic Change Warranty</strong> <span class="src">(proposed)</span></td><td>AI buyer / dev team</td><td>An AI-authored PR/diff causes a defined loss</td><td class="yes">Yes — the gap</td></tr>
+      </tbody>
+    </table>
+    <p class="src" style="margin-top:12px">Adversarial search for any Armilla / Munich Re / Corgi coverage of pull
+      requests, diffs, commits, GitHub, or coding assistants returned <strong>nothing</strong>. [CONFIRMED 3-0]</p>
+  </div>
+</section>
+
+<!-- DEMAND -->
+<section>
+  <div class="wrap">
+    <div class="kicker">Why now</div>
+    <h2 class="sec">Demand pressure is structural — and insurers are retreating</h2>
+    <div class="risks" style="grid-template-columns:repeat(2,1fr)">
+      <div class="risk" style="border-left-color:var(--acc)">
+        <b>AI code is persistently defective</b>
+        <p>Veracode 2025: <strong>45%</strong> of AI-generated code introduced OWASP Top-10 vulns. A Spring 2026
+          follow-up found newer/larger models (GPT-5.x, Gemini 3, Claude 4.5/4.6) <strong>didn't improve</strong> —
+          flat ~55% over two years. The risk won't self-resolve. [3-0 / 2-1]</p>
+      </div>
+      <div class="risk" style="border-left-color:var(--acc)">
+        <b>Insurers are carving AI <em>out</em></b>
+        <p>ISO added CG&nbsp;40&nbsp;47 / 40&nbsp;48 / 35&nbsp;08 generative-AI exclusions (Jan&nbsp;2026); Berkley
+          added "absolute" AI exclusions to D&amp;O/E&amp;O. Cyber insurers exclude or reprice AI — <strong>opening the
+          gap, not closing it.</strong> [3-0]</p>
+      </div>
+      <div class="risk" style="border-left-color:var(--acc)">
+        <b>The blueprint is proven</b>
+        <p>Armilla = first Lloyd's <strong>MGA/Coverholder</strong> for AI liability. Doesn't carry risk (Swiss Re,
+          Greenlight Re, Chaucer back it). Prices via <strong>"500+ evaluations"</strong>, not claims data.
+          $25M limits by Jan 2026. [3-0]</p>
+      </div>
+      <div class="risk" style="border-left-color:var(--acc)">
+        <b>Vendor indemnities prove appetite</b>
+        <p>Copilot / Microsoft / Google / Amazon already indemnify <strong>IP</strong> claims — validating demand,
+          but covering only copyright. The security / incident / license risk of the <em>change</em> is unfilled. [context]</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- OPPORTUNITIES -->
+<section>
+  <div class="wrap">
+    <div class="kicker">The opportunities</div>
+    <h2 class="sec">Six products that fall out of the gap</h2>
+    <p class="sub">Ordered lowest-risk / buildable-now → highest-risk / highest-ceiling. Ship #1 → #2 → #4 first;
+      they generate the loss data the warranty (#3) needs.</p>
+
+    <div class="ops">
+      <div class="op first">
+        <div class="num">1</div>
+        <h3>The Underwriting Evidence Layer — the wedge</h3>
+        <p>GitHub-native. For every AI-authored PR, emit a <strong>claim-grade evidence package</strong>:
+          provenance attestation + diff-risk score + test evidence + model/tool trace + blast-radius — signed,
+          tamper-evident, machine-readable. <strong>No financial promise yet</strong> → no licensing. Pure risk
+          intelligence that bridges verification and insurance. Moat: "audit&nbsp;trail&nbsp;≠&nbsp;evidence."</p>
+        <div class="meta"><span class="pill lo">Build: Low–Med</span><span class="pill md">Market: Med</span><span class="pill">Moat: Med–High</span><span class="pill lo">MVP: weeks</span></div>
+      </div>
+
+      <div class="op">
+        <div class="num">2</div>
+        <h3>Underwriter-Pricing API</h3>
+        <p>Sell the evidence + risk score <strong>to the insurers</strong> (Armilla, Munich Re, Corgi, Testudo,
+          cyber carriers). They're retreating because they can't measure AI-code risk — you sell the measurement.
+          The "arms dealer" position: no underwriting risk, upstream of whoever wins.</p>
+        <div class="meta"><span class="pill lo">Build: Low</span><span class="pill md">Market: Med–High</span><span class="pill">Moat: Med</span><span class="pill lo">MVP: weeks–mo</span></div>
+      </div>
+
+      <div class="op">
+        <div class="num">3</div>
+        <h3>The Agentic Change Warranty</h3>
+        <p>The headline product. Attach a financial warranty to qualifying PRs: tier → eligibility → certificate.
+          <em>"Insurable up to $250k if merged after these two checks"</em> — coverage conditional on risk-reducing
+          actions. Warranty-first, MGA + reinsurer. Start narrow; earn the $1M tier with data.</p>
+        <div class="meta"><span class="pill hi">Build: High</span><span class="pill hi">Market: High</span><span class="pill">Moat: High</span><span class="pill md">MVP: quarters</span></div>
+      </div>
+
+      <div class="op">
+        <div class="num">4</div>
+        <h3>AI Bill of Materials for commits</h3>
+        <p>Graded provenance for AI changes: who/which model, which tools, which agent, what review — signed with
+          sigstore, tiered to SLSA Build Levels, exported as an attestation. The primitives are free but fragmented;
+          nobody packages an "AIBOM for code changes." Feeds #1–#3; AI cyber riders increasingly demand it.</p>
+        <div class="meta"><span class="pill lo">Build: Low–Med</span><span class="pill md">Market: Med</span><span class="pill">Moat: Med</span><span class="pill lo">MVP: weeks</span></div>
+      </div>
+
+      <div class="op">
+        <div class="num">5</div>
+        <h3>Coverage-Gap / Compliance product</h3>
+        <p>For companies suddenly excluded by ISO CG 40 47/48 or Berkley "absolute" exclusions. Help them
+          <strong>document</strong> their AI-code posture to negotiate coverage back, or buy a narrow warranty for
+          the carved-out exposure. Sell through brokers who now have a gap to explain.</p>
+        <div class="meta"><span class="pill lo">Build: Low</span><span class="pill md">Market: Med</span><span class="pill">Moat: Low–Med</span><span class="pill lo">MVP: weeks</span></div>
+      </div>
+
+      <div class="op">
+        <div class="num">6</div>
+        <h3>Warranty-backed channel for AI vendors</h3>
+        <p>White-label the warranty so coding-agent platforms, consultancies, and dev shops can sell
+          <em>"our agentic work is warrantied"</em> into conservative enterprises — the procurement/legal/cyber
+          buyers who trust indemnity over dashboards. Fills the non-IP half vendor indemnities leave open.</p>
+        <div class="meta"><span class="pill md">Build: Med–High</span><span class="pill md">Market: Med</span><span class="pill">Moat: Med–High</span><span class="pill md">MVP: quarters</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TECHNOLOGY -->
+<section>
+  <div class="wrap">
+    <div class="kicker">How to build it</div>
+    <h2 class="sec">The technology stack</h2>
+    <p class="sub">Everything below uses existing, mostly open-source primitives. The defensibility is the
+      <strong>assembly, scoring calibration, and admissibility</strong> — not new cryptography.</p>
+
+    <div class="arch">
+<pre>        GitHub PR (tagged ai-generated)
+                  │  webhook
+                  ▼
+        ┌─────────────────────┐
+        │  Ingest / GitHub App │   Probot · Octokit · Checks API
+        └─────────┬───────────┘
+                  ▼
+   ┌──────────── Signal Collectors (parallel) ─────────────┐
+   │ Diff-risk │ Security/ │ Deps &  │ Provenance/ │ Model │ Blast  │
+   │  (AST)    │ secrets   │ license │ attestation │ trace │ radius │
+   └─────┬─────┴─────┬─────┴────┬────┴──────┬──────┴───┬───┴───┬────┘
+         └───────────┴──────────┴───────────┴──────────┴───────┘
+                                ▼
+                 ┌──────────────────────────┐
+                 │   Risk Scoring Engine     │  rules → calibrated ML (XGBoost+SHAP)
+                 │   tier + required checks  │
+                 └─────────────┬────────────┘
+                               ▼
+                 ┌──────────────────────────┐
+                 │  Claim-grade Evidence     │  in-toto + sigstore + SLSA,
+                 │  Package (signed, append- │  hashed to a transparency log
+                 │  only, tamper-evident)    │
+                 └─────────────┬────────────┘
+                       ┌───────┴────────┐
+                       ▼                ▼
+           ┌────────────────┐   ┌────────────────────┐
+           │ Underwriter    │   │ Warranty / Cert     │
+           │ Pricing API    │   │ issuance + policy DB │
+           └────────────────┘   └────────────────────┘</pre>
+    </div>
+
+    <div class="layers">
+      <div class="layer">
+        <h4><span>1</span>Ingest — GitHub-native surface</h4>
+        <div class="tech"><code>GitHub App</code><code>Probot</code><code>Octokit</code><code>Checks API</code><code>branch protection</code><code>commit trailers</code> · TypeScript/Node</div>
+      </div>
+      <div class="layer">
+        <h4><span>2</span>Diff-risk collector</h4>
+        <div class="tech"><code>tree-sitter</code><code>difftastic</code><code>lizard</code><code>radon</code><code>lcov / coverage.py</code><code>Stryker / mutmut</code> + CODEOWNERS criticality</div>
+      </div>
+      <div class="layer">
+        <h4><span>3</span>Security &amp; secrets</h4>
+        <div class="tech"><code>Semgrep</code><code>CodeQL</code><code>gitleaks</code><code>trufflehog</code> · Snyk/Veracode APIs · OWASP Top-10 mapping</div>
+      </div>
+      <div class="layer">
+        <h4><span>4</span>Dependencies &amp; license</h4>
+        <div class="tech"><code>Syft → CycloneDX/SPDX</code><code>Grype</code><code>OSV-Scanner</code><code>ScanCode</code><code>FOSSA</code> · SBOM diff per PR</div>
+      </div>
+      <div class="layer key">
+        <h4><span>5</span>Provenance &amp; attestation — load-bearing</h4>
+        <div class="tech"><code>SLSA</code><code>GitHub artifact attestations</code> (L2 OOTB, <strong>L3</strong> via reusable workflows) <code>sigstore/cosign</code><code>Fulcio</code><code>Rekor</code><code>in-toto/DSSE</code></div>
+        <div class="warnflag">⚠ Provenance authenticates what/how — <strong>not</strong> that it's safe. GitHub disclaims the guarantee. Always fuse with layers 2–4.</div>
+      </div>
+      <div class="layer">
+        <h4><span>6</span>Model / tool / agent trace</h4>
+        <div class="tech"><code>OpenTelemetry GenAI conventions</code><code>OpenLLMetry</code> · reviewer-quality from Reviews API · sign into the attestation</div>
+      </div>
+      <div class="layer">
+        <h4><span>7</span>Blast-radius scoring</h4>
+        <div class="tech"><code>Sourcegraph SCIP/LSIF</code><code>tree-sitter call graphs</code><code>Backstage</code><code>Nx/Bazel query</code> · APM reach (Datadog/OTel) · feature-flag exposure</div>
+      </div>
+      <div class="layer">
+        <h4><span>8</span>Risk scoring engine</h4>
+        <div class="tech">v0 expert rules → v1 <code>XGBoost/LightGBM</code> + <code>SHAP</code>, calibrated (Platt/isotonic) · merge→incident feedback loop</div>
+      </div>
+      <div class="layer">
+        <h4><span>9</span>Evidence package</h4>
+        <div class="tech"><code>JSON-LD / CycloneDX</code><code>DSSE-signed</code><code>RFC 3161 timestamps</code> · hash-chained, anchored in Rekor/Trillian · OCI/S3 distribution</div>
+      </div>
+      <div class="layer">
+        <h4><span>10</span>Underwriting / warranty backend</h4>
+        <div class="tech"><code>REST/GraphQL pricing API</code><code>PostgreSQL (event-sourced)</code> · signed certificate PDFs · MGA/Coverholder + reinsurer · warranty-first instrument</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SEQUENCING -->
+<section>
+  <div class="wrap">
+    <div class="kicker">Go-to-market sequencing</div>
+    <h2 class="sec">Instrument first, insure later</h2>
+    <div class="seq">
+      <div class="step">
+        <div class="when">Now</div>
+        <h4>#1 Evidence layer + #4 AIBOM</h4>
+        <p>Ship the GitHub App with <strong>no financial promise</strong>. Get adoption. Start gathering the
+          merge→incident outcome data the actuarial problem demands. Low build &amp; market risk.</p>
+      </div>
+      <div class="step">
+        <div class="when">Next</div>
+        <h4>#2 Pricing API (arms dealer)</h4>
+        <p>Monetize the scoring by selling it to carriers — <strong>without taking underwriting risk.</strong>
+          You become the data/risk rail beneath whoever wins the insurance layer.</p>
+      </div>
+      <div class="step">
+        <div class="when">Later</div>
+        <h4>#3 Warranty → #5 / #6</h4>
+        <p>Take underwriting risk only once calibrated. Narrow, high-attribution PR classes first. MGA +
+          <strong>reinsurer for the catastrophe tail</strong> — mandatory, not optional.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RISKS -->
+<section>
+  <div class="wrap">
+    <div class="kicker">The hard parts</div>
+    <h2 class="sec">Feasibility risks &amp; open questions</h2>
+    <div class="risks">
+      <div class="risk hard">
+        <b>Attribution / causation — hardest problem</b>
+        <p>Proving a specific AI-authored diff <em>caused</em> a later breach (vs. model insurers' clean parametric
+          "error rate &gt; X"). Build this prototype first.</p>
+      </div>
+      <div class="risk hard">
+        <b>Actuarial data scarcity</b>
+        <p>Limited loss data + asymmetric info make AI risk "genuinely difficult to underwrite" (Geneva Assoc., 600
+          respondents). Mitigate with evidence-based pricing, like Armilla. [3-0]</p>
+      </div>
+      <div class="risk">
+        <b>Correlated / systemic risk</b>
+        <p>One bad model release or poisoned dependency can break thousands of repos at once. A catastrophe-correlated
+          tail → reinsurance is mandatory.</p>
+      </div>
+      <div class="risk">
+        <b>Adverse selection</b>
+        <p>The riskiest PRs seek coverage. Counter it by making coverage <strong>conditional on required checks.</strong></p>
+      </div>
+      <div class="risk">
+        <b>Buyer-pull demand is inferred, not proven</b>
+        <p>No source evidenced enterprises actually <em>paying</em> for per-PR code liability transfer. <strong>#1
+          validation target.</strong></p>
+      </div>
+      <div class="risk">
+        <b>Stealth entrants not ruled out</b>
+        <p>"No competitor found" ≠ "none exists." Lloyd's Lab, Vouch, Coalition, CFC, Testudo not exhaustively
+          cleared. Re-run research in 60–90 days.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p style="margin:0"><b>Bottom line.</b> The idea is <b>possible</b> and the gap is <b>real</b>. The
+      engineering is tractable with off-the-shelf primitives. The risk concentrates in <b>actuarial science and
+      causation</b>, not code. So: build the <b>evidence/scoring layer now</b> (no licensing, real value, generates
+      the data you lack), monetize via a <b>pricing API</b>, and gate the <b>financial warranty</b> behind narrow
+      scope + a reinsurer partner + accumulated loss data — exactly the path Armilla walked.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <strong>Full dossier — detailed markdown:</strong>
+    <div class="files">
+      <a href="00-README.md">00 · README</a>
+      <a href="01-verdict-and-executive-summary.md">01 · Verdict</a>
+      <a href="02-direct-competitors.md">02 · Competitors</a>
+      <a href="03-adjacent-verification-tools.md">03 · Verification tools</a>
+      <a href="04-white-space-provenance-evidence.md">04 · Provenance / evidence</a>
+      <a href="05-demand-signals.md">05 · Demand signals</a>
+      <a href="06-feasibility-and-obstacles.md">06 · Feasibility</a>
+      <a href="07-opportunities.md">07 · Opportunities</a>
+      <a href="08-technology-stack.md">08 · Technology</a>
+      <a href="09-sources.md">09 · Sources</a>
+      <a href="10-caveats-open-questions-refuted.md">10 · Caveats &amp; open Qs</a>
+    </div>
+    <p class="disc">Generated 2026-06-19 from deep-research run <span class="mono">wf_47c8b040-113</span> · 105 agents ·
+      23 sources · 105 claims → 25 adversarially verified (3-vote) → 23 confirmed. Findings anchor to the
+      late-2025 / mid-2026 window in a fast-moving market. Confidence tags and the two killed claims are documented
+      in file 10. Incumbent findings lean partly on vendor pages; treat buyer-pull demand and SLSA-tiered pricing as
+      hypotheses, not established facts.</p>
+  </div>
+</footer>
+
+</body>
+</html>
