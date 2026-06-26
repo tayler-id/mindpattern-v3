@@ -696,15 +696,19 @@ merge.
 verification evidence for the next agent.
 
 **Acceptance criteria:**
-- [ ] `graphify update .` has been run after indexed code/docs changes.
-- [ ] `graphify check-update .` is clean or any limitation is recorded.
-- [ ] Handoff lists commit IDs, tests run, deploy status, live smoke status, and
+- [x] `graphify update .` has been run after indexed code/docs changes.
+- [x] `graphify check-update .` is clean or any limitation is recorded.
+- [x] Handoff lists commit IDs, tests run, deploy status, live smoke status, and
       unresolved blockers.
 
 **Verification:**
-- [ ] Run `graphify update .`.
-- [ ] Run `graphify check-update .`.
-- [ ] Run `git status --short --branch`.
+- [x] Run `graphify update .`.
+  Result: rebuilt 6674 nodes, 10330 edges, and 407 communities.
+- [x] Run `graphify check-update .`.
+  Result: exit 0.
+- [x] Run `git status --short --branch`.
+  Result before Graphify evidence commit: `main...origin/main [ahead 23]` with
+  Graphify artifacts plus runbook/handoff evidence modified.
 
 **Dependencies:** Task 23
 

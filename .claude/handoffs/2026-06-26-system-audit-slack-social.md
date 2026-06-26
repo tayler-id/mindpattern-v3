@@ -15,11 +15,12 @@ deploy/smoke was not run in this recovery pass without owner approval.
 - Remote tracking: `main...origin/main`
 - HEAD when inspected: `44329ba03d07ce3495d61277711b1fa8a283613e`
 - Worktree was clean before this handoff file was added.
-- `graphify-out/GRAPH_REPORT.md` exists but is stale: built from `eb913fee`.
+- `graphify-out/GRAPH_REPORT.md` was refreshed on 2026-06-26 after Task 23:
+  6674 nodes, 10330 edges, 407 communities, built from `3059d101`.
 
 ## Recovery Implementation Status
 
-Fix-first tasks completed locally through Task 23:
+Fix-first tasks completed locally through Task 24:
 
 - Slack posts, skills, and tips now use fail-closed approval parsing.
 - Slack draft edit flow now re-previews edited copy and requires a second
@@ -36,6 +37,14 @@ Fix-first tasks completed locally through Task 23:
   `tests/test_runner.py` instead of excluding runner behavior entirely.
 - Obsolete defang tests were updated to preserve the restored research-agent
   contract: no default Claude tool allow/deny fences for daily research agents.
+- Graphify artifacts were refreshed and `graphify check-update .` exited
+  cleanly.
+
+Local recovery commit range before the Graphify/evidence commit:
+
+- First recovery commit: `6690b5d docs: add fix-first recovery runbook`
+- Last code/CI commit: `3059d10 ci: run critical runner tests`
+- Full list: `git log --oneline --reverse origin/main..HEAD`
 
 Latest Task 23 verification:
 
@@ -44,12 +53,28 @@ Latest Task 23 verification:
 - `.venv/bin/python3 -m pytest tests/test_runner.py -q` -> 69 passed in 0.58s.
 - `.venv/bin/python3 -m pytest tests/ -q --tb=short --ignore=tests/test_cors.py --ignore=tests/test_engagement_linkedin.py --ignore=tests/test_memory_cli.py --ignore=tests/test_runner.py -k "not test_blocked_when_at_limit and not test_get_model_research_agent"` -> 1154 passed, 3 deselected, 1 warning in 93.93s.
 
-Remaining before final handoff:
+Graphify verification:
 
-- Refresh Graphify and record the result.
-- Record final commit/status evidence.
+- `graphify update .` -> rebuilt `graphify-out/graph.json` and
+  `graphify-out/GRAPH_REPORT.md`.
+- `graphify check-update .` -> exit 0.
+
+Remaining approval-bound work:
+
 - Production Fly deploy, live Slack channel smoke, and full daily pipeline run
   remain deferred until Tayler explicitly approves them.
+
+External or approval-bound blockers:
+
+- Reddit remains dependent on an authenticated backend; the pipeline now marks
+  it unavailable instead of treating it as silent empty research.
+- Twitter/X query search remains dependent on a working search backend/cookie
+  path; failures now surface in source health with safe diagnostics.
+- Exa and YouTube production health still require a network-enabled production
+  smoke because local sandbox network failures are not proof of production
+  failure.
+- No live Slack post, outbound social post, Fly deploy, or full daily pipeline
+  was run during this recovery goal.
 
 ## System Map
 
