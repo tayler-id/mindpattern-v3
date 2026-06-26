@@ -236,6 +236,12 @@ Goal execution baseline on 2026-06-26:
   -> 61 passed in 0.61s.
 - No live Slack post, email send, Fly deploy, full pipeline run, schema change,
   or dependency change was performed.
+- Task 2 complete: added shared `slack_bot.approval.parse_platform_approval()`
+  and switched `#mp-posts` to use it.
+  - `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q`
+    -> 39 passed in 0.02s.
+  - `.venv/bin/python3 -m pytest tests/test_approval_parsing.py -q`
+    -> 53 passed in 3.10s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|

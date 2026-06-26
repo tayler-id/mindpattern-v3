@@ -207,3 +207,41 @@ class TestSkillsTipsShortInputFeedback:
         assert kwargs["channel"] == "C_TIPS"
         assert kwargs["thread_ts"] == "123.456"
         assert "tip" in kwargs["text"].lower()
+
+
+class TestSharedSlackApprovalParser:
+    """All Slack content channels should share one fail-closed parser."""
+
+    platforms = ["bluesky", "linkedin"]
+
+    @pytest.mark.parametrize("reply", [
+        "all", "yes", "y", "go", "post", "approve", "approved", "ok",
+        "ship", "ship it", "post it",
+    ])
+    def test_affirmative_replies_approve_all(self, reply):
+        from slack_bot.approval import parse_platform_approval
+
+        assert parse_platform_approval(reply, self.platforms) == self.platforms
+
+    @pytest.mark.parametrize("reply,expected", [
+        ("bluesky", ["bluesky"]),
+        ("linkedin", ["linkedin"]),
+        ("bluesky linkedin", ["bluesky", "linkedin"]),
+        ("linkedin, bluesky", ["linkedin", "bluesky"]),
+        ("bluesky and linkedin", ["bluesky", "linkedin"]),
+        ("LINKEDIN", ["linkedin"]),
+    ])
+    def test_platform_only_replies_approve_selected(self, reply, expected):
+        from slack_bot.approval import parse_platform_approval
+
+        assert parse_platform_approval(reply, self.platforms) == expected
+
+    @pytest.mark.parametrize("reply", [
+        "", "skip", "no", "cancel", "n", "wait", "hold on", "why?",
+        "skip linkedin", "maybe bluesky", "post it later",
+        "Here is my edited draft:\nSomething long that I pasted...",
+    ])
+    def test_unclear_replies_post_nothing(self, reply):
+        from slack_bot.approval import parse_platform_approval
+
+        assert parse_platform_approval(reply, self.platforms) == []

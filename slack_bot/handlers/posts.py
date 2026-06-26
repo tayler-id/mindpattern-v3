@@ -15,12 +15,12 @@ Uses the same agent files and pipeline modules as the daily social pipeline.
 
 import json
 import logging
-import re
 import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
 
+from slack_bot.approval import parse_platform_approval
 from slack_bot.handlers.base import BaseHandler
 
 logger = logging.getLogger(__name__)
@@ -292,22 +292,7 @@ class PostsHandler(BaseHandler):
         NOTHING BUT platform names — "skip linkedin" must skip, never post
         linkedin (audit: the old substring match approved it).
         """
-        reply_lower = reply.lower().strip()
-
-        if reply_lower in ("all", "yes", "y", "go", "post", "approve", "approved", "ok", "ship", "ship it", "post it"):
-            return platforms
-
-        tokens = [
-            t for t in re.split(r"[\s,/+&]+", reply_lower)
-            if t and t != "and"
-        ]
-        platform_map = {p.lower(): p for p in platforms}
-        if tokens and all(t in platform_map for t in tokens):
-            return list(dict.fromkeys(platform_map[t] for t in tokens))
-
-        # Anything else — "skip", "wait", "skip linkedin", pasted text — is
-        # a no-decision: nothing posts.
-        return []
+        return parse_platform_approval(reply, platforms)
 
     def _post_to_platforms(self, drafts: dict, platforms: list[str]) -> dict:
         """Post drafts to approved platforms. Returns {platform: result}."""

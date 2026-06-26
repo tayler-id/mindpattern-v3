@@ -257,6 +257,17 @@ Baseline tests:
 No live Slack post, email send, Fly deploy, full pipeline run, schema change, or
 dependency change was performed for the baseline.
 
+### 2026-06-26 Task 2 Shared Slack Approval Parser
+
+Implemented `slack_bot.approval.parse_platform_approval()` and switched
+`#mp-posts` to use it. The parser is fail-closed: only explicit affirmative
+tokens or replies composed entirely of platform names approve posting.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 39 passed in 0.02s.
+- `.venv/bin/python3 -m pytest tests/test_approval_parsing.py -q` -> 53 passed in 3.10s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety
