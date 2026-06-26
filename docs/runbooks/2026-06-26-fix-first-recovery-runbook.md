@@ -455,6 +455,31 @@ Verification:
 - `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseTrendScan::test_logs_source_health_summary_to_trace tests/test_slack_bot.py::TestBriefingSocialState::test_status_reports_source_health_from_latest_trace -q` -> 2 passed in 0.07s.
 - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_slack_bot.py tests/test_preflight.py -q` -> 194 passed in 88.94s.
 
+### 2026-06-26 Task 18 Deterministic Quality Floor Helper
+
+Added `orchestrator.evaluator.assess_quality_floor()` and configurable
+`QUALITY_FLOOR_THRESHOLDS`. The helper reports `pass`, `degraded`, or
+`fail_retryable` with metrics, thresholds, and reasons, but it does not change
+newsletter send behavior yet.
+
+Default thresholds:
+
+- Overall score: `0.60`; retryable below `0.50`.
+- Coverage score: `0.60`; retryable below `0.45`.
+- Duplicate score: `0.80`; retryable below `0.60`.
+- Source citation score: `0.50`; retryable below `0.35`.
+- Agent coverage: `11` of target `13`; retryable below `8`.
+- Finding volume: `70`; retryable below `40`.
+- Source diversity: `4` source classes; retryable below `2`.
+- Responsive source ratio: `0.75`; retryable below `0.50`.
+- Unique URL ratio: `0.80`; retryable below `0.65`.
+- Single-source dominance ceiling: `0.35`; retryable above `0.60`.
+
+Verification:
+
+- `.venv/bin/python3 -m pytest tests/test_evaluator.py::test_assess_quality_floor_passes_good_synthetic_run tests/test_evaluator.py::test_assess_quality_floor_marks_degraded_synthetic_run tests/test_evaluator.py::test_assess_quality_floor_marks_retryable_bad_synthetic_run -q` -> 3 passed in 0.01s.
+- `.venv/bin/python3 -m pytest tests/test_evaluator.py tests/test_runner.py -q` -> 72 passed in 0.48s.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Safety

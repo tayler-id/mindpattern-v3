@@ -8,6 +8,119 @@ import re
 from collections import Counter
 
 
+QUALITY_FLOOR_THRESHOLDS = {
+    "min_overall": 0.60,
+    "retryable_min_overall": 0.50,
+    "min_coverage": 0.60,
+    "retryable_min_coverage": 0.45,
+    "min_dedup": 0.80,
+    "retryable_min_dedup": 0.60,
+    "min_sources_score": 0.50,
+    "retryable_min_sources_score": 0.35,
+    "target_agent_count": 13,
+    "min_agent_count": 11,
+    "retryable_min_agent_count": 8,
+    "min_finding_count": 70,
+    "retryable_min_finding_count": 40,
+    "min_source_classes": 4,
+    "retryable_min_source_classes": 2,
+    "min_responsive_source_ratio": 0.75,
+    "retryable_min_responsive_source_ratio": 0.50,
+    "min_unique_url_ratio": 0.80,
+    "retryable_min_unique_url_ratio": 0.65,
+    "max_single_source_ratio": 0.35,
+    "retryable_max_single_source_ratio": 0.60,
+}
+
+
+def assess_quality_floor(
+    eval_scores: dict | None,
+    *,
+    findings: list[dict] | None = None,
+    preflight_data: dict | None = None,
+    thresholds: dict | None = None,
+) -> dict:
+    """Assess deterministic newsletter quality floor inputs.
+
+    This helper only reports pass/degraded/retryable status. It does not decide
+    whether the newsletter sends; runner integration happens separately.
+    """
+    thresholds = {**QUALITY_FLOOR_THRESHOLDS, **(thresholds or {})}
+    eval_scores = eval_scores or {}
+    findings = findings or []
+    preflight_data = preflight_data or {}
+
+    metrics = _quality_floor_metrics(eval_scores, findings, preflight_data)
+    degraded_reasons: list[str] = []
+    retryable_reasons: list[str] = []
+
+    def flag(metric: str, label: str, degraded_threshold: float, retryable_threshold: float) -> None:
+        value = metrics.get(metric)
+        if value is None:
+            return
+        if value < retryable_threshold:
+            retryable_reasons.append(
+                f"{label} {value:.3g} below retryable floor {retryable_threshold:.3g}"
+            )
+        elif value < degraded_threshold:
+            degraded_reasons.append(
+                f"{label} {value:.3g} below floor {degraded_threshold:.3g}"
+            )
+
+    def flag_min_count(metric: str, label: str, degraded_threshold: int, retryable_threshold: int) -> None:
+        value = metrics.get(metric)
+        if value is None:
+            return
+        if value < retryable_threshold:
+            retryable_reasons.append(
+                f"{label} {value} below retryable floor {retryable_threshold}"
+            )
+        elif value < degraded_threshold:
+            degraded_reasons.append(
+                f"{label} {value} below floor {degraded_threshold}"
+            )
+
+    def flag_max_ratio(metric: str, label: str, degraded_threshold: float, retryable_threshold: float) -> None:
+        value = metrics.get(metric)
+        if value is None:
+            return
+        if value > retryable_threshold:
+            retryable_reasons.append(
+                f"{label} {value:.3g} above retryable ceiling {retryable_threshold:.3g}"
+            )
+        elif value > degraded_threshold:
+            degraded_reasons.append(
+                f"{label} {value:.3g} above ceiling {degraded_threshold:.3g}"
+            )
+
+    flag("overall", "overall score", thresholds["min_overall"], thresholds["retryable_min_overall"])
+    flag("coverage", "coverage score", thresholds["min_coverage"], thresholds["retryable_min_coverage"])
+    flag("dedup", "duplicate score", thresholds["min_dedup"], thresholds["retryable_min_dedup"])
+    flag("sources_score", "source citation score", thresholds["min_sources_score"], thresholds["retryable_min_sources_score"])
+    flag_min_count("finding_count", "finding volume", thresholds["min_finding_count"], thresholds["retryable_min_finding_count"])
+    flag_min_count("agent_count", "agent coverage", thresholds["min_agent_count"], thresholds["retryable_min_agent_count"])
+    flag_min_count("source_class_count", "source diversity", thresholds["min_source_classes"], thresholds["retryable_min_source_classes"])
+    flag("responsive_source_ratio", "responsive source ratio", thresholds["min_responsive_source_ratio"], thresholds["retryable_min_responsive_source_ratio"])
+    flag("unique_url_ratio", "unique URL ratio", thresholds["min_unique_url_ratio"], thresholds["retryable_min_unique_url_ratio"])
+    flag_max_ratio("single_source_ratio", "single-source dominance", thresholds["max_single_source_ratio"], thresholds["retryable_max_single_source_ratio"])
+
+    status = "pass"
+    if retryable_reasons:
+        status = "fail_retryable"
+    elif degraded_reasons:
+        status = "degraded"
+
+    return {
+        "status": status,
+        "passed": status == "pass",
+        "degraded": status != "pass",
+        "retryable": status == "fail_retryable",
+        "reasons": retryable_reasons + degraded_reasons,
+        "metrics": metrics,
+        "thresholds": thresholds,
+    }
+
+
 class NewsletterEvaluator:
     """Score a newsletter on coverage, dedup, sources, actionability, length, and topic balance."""
 
@@ -307,6 +420,82 @@ class NewsletterEvaluator:
 
         # Defense in depth: clamp to [0.0, 1.0]
         return min(covered_weight / total_weight, 1.0)
+
+
+def _quality_floor_metrics(
+    eval_scores: dict,
+    findings: list[dict],
+    preflight_data: dict,
+) -> dict:
+    agents = {
+        str(_field(finding, "agent", "")).strip()
+        for finding in findings
+        if str(_field(finding, "agent", "")).strip()
+    }
+    urls = [
+        str(_field(finding, "source_url", "") or _field(finding, "url", "")).strip()
+        for finding in findings
+    ]
+    urls = [url for url in urls if url]
+    source_counts = _source_counts_for_floor(findings, preflight_data)
+    source_class_count = sum(1 for count in source_counts.values() if count > 0)
+    total_source_items = sum(count for count in source_counts.values() if count > 0)
+    single_source_ratio = (
+        max(source_counts.values()) / total_source_items
+        if total_source_items > 0 and source_counts else 0.0
+    )
+
+    source_health_summary = preflight_data.get("source_health_summary") or {}
+    expected_sources = source_health_summary.get("expected_source_count")
+    responsive_sources = source_health_summary.get("responsive_source_count")
+    if expected_sources:
+        responsive_source_ratio = responsive_sources / expected_sources
+    else:
+        responsive_source_ratio = 1.0 if responsive_sources in (None, 0) else 0.0
+
+    unique_url_ratio = len(set(urls)) / len(urls) if urls else (1.0 if not findings else 0.0)
+
+    return {
+        "overall": float(eval_scores.get("overall", 1.0)),
+        "coverage": float(eval_scores.get("coverage", 1.0)),
+        "dedup": float(eval_scores.get("dedup", 1.0)),
+        "sources_score": float(eval_scores.get("sources", 1.0)),
+        "finding_count": len(findings),
+        "agent_count": len(agents),
+        "source_class_count": source_class_count,
+        "responsive_source_ratio": responsive_source_ratio,
+        "unique_url_ratio": unique_url_ratio,
+        "single_source_ratio": single_source_ratio,
+    }
+
+
+def _field(row, key: str, default=None):
+    if hasattr(row, "get"):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
+def _source_counts_for_floor(findings: list[dict], preflight_data: dict) -> dict[str, int]:
+    source_counts = preflight_data.get("source_counts") or {}
+    if source_counts:
+        return {
+            str(source): int(count or 0)
+            for source, count in source_counts.items()
+        }
+
+    counts: Counter[str] = Counter()
+    for finding in findings:
+        source = (
+            _field(finding, "source")
+            or _field(finding, "source_name")
+            or _field(finding, "source_url")
+            or "unknown"
+        )
+        counts[str(source)] += 1
+    return dict(counts)
 
 
 # ── Private helpers ──────────────────────────────────────────────────────

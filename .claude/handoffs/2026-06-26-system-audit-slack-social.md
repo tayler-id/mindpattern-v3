@@ -357,6 +357,17 @@ Goal execution baseline on 2026-06-26:
     -> 2 passed in 0.07s.
   - `.venv/bin/python3 -m pytest tests/test_runner.py tests/test_slack_bot.py tests/test_preflight.py -q`
     -> 194 passed in 88.94s.
+- Task 18 complete: `orchestrator.evaluator.assess_quality_floor()` now
+  returns `pass`, `degraded`, or `fail_retryable` with metrics, thresholds, and
+  reasons. It is a pure helper only; newsletter send behavior is unchanged
+  until the integration task. Defaults are documented in the runbook:
+  overall/coverage/dedup/sources scores, 11-of-13 agents, 70 findings, 4 source
+  classes, 0.75 responsive source ratio, 0.80 unique URL ratio, and 0.35
+  single-source dominance ceiling with separate retryable floors.
+  - `.venv/bin/python3 -m pytest tests/test_evaluator.py::test_assess_quality_floor_passes_good_synthetic_run tests/test_evaluator.py::test_assess_quality_floor_marks_degraded_synthetic_run tests/test_evaluator.py::test_assess_quality_floor_marks_retryable_bad_synthetic_run -q`
+    -> 3 passed in 0.01s.
+  - `.venv/bin/python3 -m pytest tests/test_evaluator.py tests/test_runner.py -q`
+    -> 72 passed in 0.48s.
 
 | Area | What should happen | What is happening | Why it is not working | Fix needed |
 |---|---|---|---|---|
