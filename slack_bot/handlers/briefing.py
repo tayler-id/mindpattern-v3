@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from orchestrator.followup import parse_followup_request, run_followup_research
+from orchestrator.traces_db import open_traces_db
 from slack_bot import heartbeat
 from slack_bot.handlers.base import BaseHandler
 from slack_bot.registry import get_bot_doctor_report
@@ -27,16 +29,71 @@ class BriefingHandler(BaseHandler):
     """Handle messages in #mp-briefing and post pipeline summaries."""
 
     def handle(self, event: dict) -> None:
-        text = event.get("text", "").strip().lower()
+        raw_text = event.get("text", "").strip()
+        text = raw_text.lower()
         ts = event.get("ts", "")
 
-        if text in ("doctor", "bot doctor", "bot status"):
+        followup_request = parse_followup_request(raw_text, channel_type="briefing")
+        if followup_request:
+            self._post_followup(followup_request, ts)
+        elif text in ("doctor", "bot doctor", "bot status"):
             self._post_bot_doctor(ts)
         elif text in ("status", "how did it go", "summary", "briefing", "?", "help"):
             self._post_status(ts)
         elif text == "yesterday":
             yesterday = (datetime.now() - __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
             self._post_status(ts, date_str=yesterday)
+
+    def _post_followup(self, request: dict, ts: str) -> None:
+        """Run scoped follow-up research and return the result in-thread."""
+        if request.get("error"):
+            self.reply(request["error"], thread_ts=ts)
+            return
+
+        self.reply("Running follow-up research...", thread_ts=ts)
+        try:
+            with open_traces_db() as traces_conn:
+                result = run_followup_research(request, traces_conn=traces_conn)
+        except Exception as e:
+            logger.warning("Follow-up trace setup failed; running without trace: %s", e)
+            result = run_followup_research(request)
+
+        self.reply(self._format_followup_result(result), thread_ts=ts)
+
+    def _format_followup_result(self, result: dict) -> str:
+        """Format follow-up research for phone-readable Slack review."""
+        status = result.get("status", "unknown")
+        header = f"*Follow-up research*: {status}"
+        if result.get("degraded"):
+            header += " :warning:"
+
+        lines = [header]
+        if result.get("why_this_matters"):
+            lines.extend(["", f"*Why this matters:* {result['why_this_matters']}"])
+
+        findings = result.get("findings") or []
+        if findings:
+            lines.append("")
+            lines.append("*Findings:*")
+            for idx, finding in enumerate(findings[:7], 1):
+                title = finding.get("title", "Untitled")
+                summary = finding.get("summary", "")
+                source = finding.get("source_url") or finding.get("source_name")
+                line = f"{idx}. *{title}*"
+                if summary:
+                    line += f" - {summary}"
+                if source:
+                    line += f"\n   Source: {source}"
+                lines.append(line)
+        else:
+            lines.extend(["", "No usable findings returned."])
+
+        if result.get("next_action"):
+            lines.extend(["", f"*Next action:* {result['next_action']}"])
+        if result.get("artifact"):
+            lines.append(f"Artifact: `{result['artifact']}`")
+
+        return "\n".join(lines)
 
     def _post_bot_doctor(self, ts: str) -> None:
         """Post safe bot wiring health without IDs, tokens, or message bodies."""

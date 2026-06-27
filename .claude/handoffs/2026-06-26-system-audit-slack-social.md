@@ -733,6 +733,11 @@ place instead of deleting the column.
   parser, redaction, deterministic dry-run, safe trace/artifact writing, and
   degraded live-agent failure behavior. Verification:
   `.venv/bin/python3 -m pytest tests/test_followup_research.py -q`.
+- Added `#mp-briefing` follow-up command handling. `follow up: <topic>` now
+  acknowledges in-thread, runs the scoped follow-up service, and posts a
+  phone-readable result. Vague follow-up commands reply with guidance and do not
+  run the service. Verification:
+  `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestBriefingFollowupCommand -q`.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.

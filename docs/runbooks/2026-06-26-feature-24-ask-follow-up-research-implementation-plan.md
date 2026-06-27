@@ -86,7 +86,7 @@ instead of deleting the column.
 | 3 | Deterministic dry-run follow-up service | Yes | Added `run_followup_research(..., dry_run=True)` and dry-run no-agent-call test. |
 | 4 | Live-agent adapter with degraded results | Yes | Added injected live-agent boundary with failed/degraded result test. |
 | 5 | Safe trace and artifact writer | Yes | Added trace/artifact writing with redaction test using temp `traces.db`. |
-| 6 | `#mp-briefing` follow-up command | No | Owner command returns in-thread result. |
+| 6 | `#mp-briefing` follow-up command | Yes | `BriefingHandler` handles `follow up:` with acknowledgement/result replies and tests. |
 | 7 | Approval-loop follow-up interceptor | No | Shared helper handles `follow up:` inside polling loops. |
 | 8 | `#mp-posts` draft-thread follow-up | No | Follow-up reply does not approve, cancel, or post. |
 | 9 | `#mp-skills` and `#mp-tips` draft-thread follow-up | No | Same safe behavior for both channels. |

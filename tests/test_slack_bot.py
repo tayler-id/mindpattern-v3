@@ -953,3 +953,74 @@ class TestBriefingSocialState:
         assert "Degraded: youtube (timeout)" in text
         assert "Quality: degraded - coverage score 0.55 below floor 0.6" in text
         assert "backend off" not in text
+
+
+class TestBriefingFollowupCommand:
+    """#mp-briefing should run scoped follow-up research in-thread."""
+
+    @staticmethod
+    def _handler():
+        from slack_bot.handlers.briefing import BriefingHandler
+
+        client = MagicMock()
+        handler = BriefingHandler(
+            client=client,
+            channel_id="C_BRIEFING",
+            owner_user_id="U_OWNER",
+        )
+        return handler, client
+
+    def test_briefing_followup_command_acknowledges_and_posts_result(self):
+        handler, client = self._handler()
+        result = {
+            "status": "completed",
+            "degraded": False,
+            "findings": [
+                {
+                    "title": "Agent Reach source routing",
+                    "summary": "OpenCLI can cover Reddit while direct X search is degraded.",
+                    "source_name": "Dry Run",
+                    "source_url": "https://example.com/source",
+                }
+            ],
+            "why_this_matters": "Source routing decides newsletter quality.",
+            "next_action": "Turn into a social angle.",
+            "artifact": "reports/ramsay/followups/example.md",
+        }
+
+        with patch(
+            "slack_bot.handlers.briefing.run_followup_research",
+            return_value=result,
+            create=True,
+        ) as run_followup:
+            handler.handle({
+                "text": "follow up: compare agent-reach and opencli for social search",
+                "ts": "123.456",
+            })
+
+        run_followup.assert_called_once()
+        assert client.chat_postMessage.call_count == 2
+        first = client.chat_postMessage.call_args_list[0].kwargs
+        second = client.chat_postMessage.call_args_list[1].kwargs
+
+        assert first["thread_ts"] == "123.456"
+        assert "running follow-up research" in first["text"].lower()
+        assert second["thread_ts"] == "123.456"
+        assert "Agent Reach source routing" in second["text"]
+        assert "Source routing decides newsletter quality." in second["text"]
+        assert "Turn into a social angle." in second["text"]
+
+    def test_briefing_rejects_vague_followup_without_running_service(self):
+        handler, client = self._handler()
+
+        with patch(
+            "slack_bot.handlers.briefing.run_followup_research",
+            create=True,
+        ) as run_followup:
+            handler.handle({"text": "follow up: more", "ts": "123.456"})
+
+        run_followup.assert_not_called()
+        client.chat_postMessage.assert_called_once()
+        kwargs = client.chat_postMessage.call_args.kwargs
+        assert kwargs["thread_ts"] == "123.456"
+        assert "specific" in kwargs["text"].lower()
