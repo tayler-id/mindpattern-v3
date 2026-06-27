@@ -16,6 +16,7 @@ from orchestrator.followup import parse_followup_request, run_followup_research
 from orchestrator.traces_db import open_traces_db
 from slack_bot import heartbeat
 from slack_bot.handlers.base import BaseHandler
+from slack_bot.handlers.followup import format_followup_result
 from slack_bot.registry import get_bot_doctor_report
 
 logger = logging.getLogger(__name__)
@@ -62,38 +63,7 @@ class BriefingHandler(BaseHandler):
 
     def _format_followup_result(self, result: dict) -> str:
         """Format follow-up research for phone-readable Slack review."""
-        status = result.get("status", "unknown")
-        header = f"*Follow-up research*: {status}"
-        if result.get("degraded"):
-            header += " :warning:"
-
-        lines = [header]
-        if result.get("why_this_matters"):
-            lines.extend(["", f"*Why this matters:* {result['why_this_matters']}"])
-
-        findings = result.get("findings") or []
-        if findings:
-            lines.append("")
-            lines.append("*Findings:*")
-            for idx, finding in enumerate(findings[:7], 1):
-                title = finding.get("title", "Untitled")
-                summary = finding.get("summary", "")
-                source = finding.get("source_url") or finding.get("source_name")
-                line = f"{idx}. *{title}*"
-                if summary:
-                    line += f" - {summary}"
-                if source:
-                    line += f"\n   Source: {source}"
-                lines.append(line)
-        else:
-            lines.extend(["", "No usable findings returned."])
-
-        if result.get("next_action"):
-            lines.extend(["", f"*Next action:* {result['next_action']}"])
-        if result.get("artifact"):
-            lines.append(f"Artifact: `{result['artifact']}`")
-
-        return "\n".join(lines)
+        return format_followup_result(result)
 
     def _post_bot_doctor(self, ts: str) -> None:
         """Post safe bot wiring health without IDs, tokens, or message bodies."""

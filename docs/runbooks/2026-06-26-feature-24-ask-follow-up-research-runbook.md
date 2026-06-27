@@ -1,6 +1,6 @@
 # Spec and Runbook: Feature 24 - Ask Follow-Up Research
 
-> Status: Draft for owner review
+> Status: In progress
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-26
@@ -162,6 +162,7 @@ Commands requiring explicit owner approval:
 slack_bot/bot.py                 Socket Mode routing and owner filtering
 slack_bot/registry.py            Channel -> handler mapping and doctor status
 slack_bot/handlers/base.py       reply/react/thread helpers and URL reader
+slack_bot/handlers/followup.py   shared Slack follow-up formatting/interceptor
 slack_bot/handlers/briefing.py   #mp-briefing status commands
 slack_bot/handlers/social_ideas.py  proposed Slack Social Ideas Desk command handler
 slack_bot/handlers/posts.py      #mp-posts social draft workflow
@@ -582,7 +583,7 @@ deleting the column.
 | 2 | Yes | Add follow-up service dry-run path | Dry-run returns deterministic findings and calls no Claude/network. | `.venv/bin/python3 -m pytest tests/test_followup_research.py -q` | `orchestrator/followup.py`, tests |
 | 3 | Yes | Add safe trace/artifact writing | Completion/failure emits safe metadata and optional markdown artifact. | `.venv/bin/python3 -m pytest tests/test_followup_research.py -q` | `orchestrator/followup.py`, `orchestrator/traces_db.py` only if needed |
 | 4 | Yes | Wire `#mp-briefing` command | `follow up: ...` posts acknowledgement and final result in-thread. | `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_followup_research.py -q` | `slack_bot/handlers/briefing.py`, tests |
-| 5 | No | Wire one draft-thread workflow | `follow up:` in a draft approval loop researches without approving/posting. | `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_approval.py -q` | `slack_bot/handlers/posts.py` or `skills.py`, shared helper |
+| 5 | Yes | Wire one draft-thread workflow | `follow up:` in posts, skills, and tips draft approval loops researches without approving/posting and keeps waiting. | `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsEditFlow tests/test_slack_bot.py::TestSkillsTipsEditFlow tests/test_slack_bot.py::TestBriefingFollowupCommand -q` -> 14 passed | `slack_bot/handlers/posts.py`, `skills.py`, `tips.py`, `followup.py`, tests |
 | 6 | No | Add regression checks for no auto-post/no full pipeline | Follow-up command does not call `run.py`, social posting, email, or sync. | `.venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_social.py -q` | tests |
 | 7 | No | Add Social Ideas Desk parser tests | Root and thread commands are accepted/rejected explicitly. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py -q` | `tests/test_social_ideas_desk.py` |
 | 8 | No | Add social idea loader dry-run/fixture path | CI can rank social ideas without local private DB data. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py -q` | `orchestrator/social_ideas.py`, tests |

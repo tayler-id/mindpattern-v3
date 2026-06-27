@@ -478,6 +478,45 @@ class TestPostsEditFlow:
         ]
         assert any("unknown platform" in message.lower() for message in messages)
 
+    def test_followup_reply_runs_research_and_keeps_waiting(self):
+        handler, client = self._handler()
+        handler.wait_for_reply.side_effect = [
+            "follow up: compare agent-reach and opencli",
+            "skip",
+        ]
+        result = {
+            "status": "completed",
+            "degraded": False,
+            "findings": [
+                {
+                    "title": "Agent Reach comparison",
+                    "summary": "Agent Reach can route across backends.",
+                    "source_name": "Dry Run",
+                }
+            ],
+            "why_this_matters": "This helps decide the social angle.",
+            "next_action": "Revise the draft.",
+        }
+
+        with patch(
+            "slack_bot.handlers.followup.run_followup_research",
+            return_value=result,
+            create=True,
+        ) as run_followup, patch(
+            "slack_bot.handlers.followup.open_traces_db",
+            create=True,
+        ):
+            handler._run_and_approve({"anchor": "topic"}, "123.456")
+
+        run_followup.assert_called_once()
+        handler._post_to_platforms.assert_not_called()
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("Agent Reach comparison" in message for message in messages)
+        assert "Skipped. Nothing posted." in messages[-1]
+
 
 class TestSkillsTipsEditFlow:
     """#mp-skills and #mp-tips must support safe draft edits."""
@@ -588,6 +627,57 @@ class TestSkillsTipsEditFlow:
             for call in client.chat_postMessage.call_args_list
         ]
         assert any("unknown platform" in message.lower() for message in messages)
+
+    @pytest.mark.parametrize("handler_class,channel_id", [
+        pytest.param(
+            __import__("slack_bot.handlers.skills", fromlist=["SkillsHandler"]).SkillsHandler,
+            "C_SKILLS",
+            id="skills",
+        ),
+        pytest.param(
+            __import__("slack_bot.handlers.tips", fromlist=["TipsHandler"]).TipsHandler,
+            "C_TIPS",
+            id="tips",
+        ),
+    ])
+    def test_followup_reply_runs_research_and_keeps_waiting(self, handler_class, channel_id):
+        handler, client = self._handler(handler_class, channel_id)
+        handler.wait_for_reply.side_effect = [
+            "follow up: compare agent-reach and opencli",
+            "skip",
+        ]
+        result = {
+            "status": "completed",
+            "degraded": False,
+            "findings": [
+                {
+                    "title": "Agent Reach comparison",
+                    "summary": "Agent Reach can route across backends.",
+                    "source_name": "Dry Run",
+                }
+            ],
+            "why_this_matters": "This helps decide the social angle.",
+            "next_action": "Revise the draft.",
+        }
+
+        with patch(
+            "slack_bot.handlers.followup.run_followup_research",
+            return_value=result,
+            create=True,
+        ) as run_followup, patch(
+            "slack_bot.handlers.followup.open_traces_db",
+            create=True,
+        ):
+            handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
+
+        run_followup.assert_called_once()
+        handler._post.assert_not_called()
+        messages = [
+            call.kwargs["text"]
+            for call in client.chat_postMessage.call_args_list
+        ]
+        assert any("Agent Reach comparison" in message for message in messages)
+        assert "Skipped. Nothing posted." in messages[-1]
 
 
 class TestDisabledPlatformManualCopy:
@@ -992,7 +1082,10 @@ class TestBriefingFollowupCommand:
             "slack_bot.handlers.briefing.run_followup_research",
             return_value=result,
             create=True,
-        ) as run_followup:
+        ) as run_followup, patch(
+            "slack_bot.handlers.briefing.open_traces_db",
+            create=True,
+        ):
             handler.handle({
                 "text": "follow up: compare agent-reach and opencli for social search",
                 "ts": "123.456",

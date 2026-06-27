@@ -1,6 +1,6 @@
 # Implementation Plan: Feature 24 - Ask Follow-Up Research
 
-> Status: Draft for owner review
+> Status: In progress
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-26
@@ -87,9 +87,9 @@ instead of deleting the column.
 | 4 | Live-agent adapter with degraded results | Yes | Added injected live-agent boundary with failed/degraded result test. |
 | 5 | Safe trace and artifact writer | Yes | Added trace/artifact writing with redaction test using temp `traces.db`. |
 | 6 | `#mp-briefing` follow-up command | Yes | `BriefingHandler` handles `follow up:` with acknowledgement/result replies and tests. |
-| 7 | Approval-loop follow-up interceptor | No | Shared helper handles `follow up:` inside polling loops. |
-| 8 | `#mp-posts` draft-thread follow-up | No | Follow-up reply does not approve, cancel, or post. |
-| 9 | `#mp-skills` and `#mp-tips` draft-thread follow-up | No | Same safe behavior for both channels. |
+| 7 | Approval-loop follow-up interceptor | Yes | Added `slack_bot/handlers/followup.py`; targeted Slack tests verify follow-up replies are consumed before edit/approval parsing. |
+| 8 | `#mp-posts` draft-thread follow-up | Yes | `PostsHandler._run_and_approve()` handles `follow up:` then keeps waiting; test proves `_post_to_platforms()` is not called. |
+| 9 | `#mp-skills` and `#mp-tips` draft-thread follow-up | Yes | `SkillsHandler` and `TipsHandler` handle `follow up:` then keep waiting; tests prove `_post()` is not called and `skip` still cancels. |
 | 10 | Ask Follow-Up safety regression suite | No | Proves no runner/email/social/Fly side effects. |
 | 11 | Social Ideas parser and idea contract | No | Social-only commands; newsletter commands rejected. |
 | 12 | Fixture-backed social idea loader | No | CI does not depend on private DB data. |
@@ -333,6 +333,17 @@ so follow-up is consistent across existing Slack content channels.
 - `tests/test_slack_bot.py`
 
 **Estimated scope:** M
+
+**Implementation evidence:**
+- Added shared helper `slack_bot/handlers/followup.py`.
+- Wired `PostsHandler`, `SkillsHandler`, and `TipsHandler` approval loops to
+  consume `follow up:` before draft edit or approval parsing.
+- Verification passed:
+  `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsEditFlow::test_followup_reply_runs_research_and_keeps_waiting tests/test_slack_bot.py::TestSkillsTipsEditFlow::test_followup_reply_runs_research_and_keeps_waiting tests/test_followup_research.py -q`
+  -> 9 passed.
+- Verification passed:
+  `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsEditFlow tests/test_slack_bot.py::TestSkillsTipsEditFlow tests/test_slack_bot.py::TestBriefingFollowupCommand -q`
+  -> 14 passed.
 
 #### Task 10: Add Ask Follow-Up Safety Regression Suite
 

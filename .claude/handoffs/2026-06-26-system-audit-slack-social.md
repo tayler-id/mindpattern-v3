@@ -738,11 +738,22 @@ place instead of deleting the column.
   phone-readable result. Vague follow-up commands reply with guidance and do not
   run the service. Verification:
   `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestBriefingFollowupCommand -q`.
+- Added shared draft-thread follow-up handling in
+  `slack_bot/handlers/followup.py`, then wired `#mp-posts`, `#mp-skills`, and
+  `#mp-tips` approval loops to consume `follow up:` before edit/approval
+  parsing. The reply returns scoped findings in-thread, keeps waiting for a
+  real edit/skip/approval reply, and does not call `_post_to_platforms()` or
+  `_post()` because of the follow-up. Verification:
+  `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsEditFlow::test_followup_reply_runs_research_and_keeps_waiting tests/test_slack_bot.py::TestSkillsTipsEditFlow::test_followup_reply_runs_research_and_keeps_waiting tests/test_followup_research.py -q`
+  -> 9 passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsEditFlow tests/test_slack_bot.py::TestSkillsTipsEditFlow tests/test_slack_bot.py::TestBriefingFollowupCommand -q`
+  -> 14 passed.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
-- No implementation has started. Next agent should review the open questions in
-  the runbook before using the slash goal.
+- Remaining required Ask Follow-Up work: add explicit no-runner/no-newsletter/
+  no-social/no-Fly safety regression checks, run the broader local verification,
+  refresh Graphify, commit/push, and watch CI. Optional Social Ideas Desk work
+  has not started.
 
 ## Do Not Do Yet
 
