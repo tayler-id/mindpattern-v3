@@ -209,7 +209,8 @@ def _live_result(
             mode="live",
         )
 
-    findings = _extract_findings(agent_result)
+    agent_payload = _extract_agent_payload(agent_result)
+    findings = agent_payload["findings"]
     if not findings:
         return _failed_result(
             query_hash=request["query_hash"],
@@ -226,7 +227,8 @@ def _live_result(
         "query_preview": request["query_preview"],
         "findings": findings[:7],
         "why_this_matters": _result_why_this_matters(findings),
-        "next_action": "Review the follow-up findings and decide whether to cover, draft, archive, or ignore.",
+        "next_action": agent_payload.get("next_action")
+        or "Review the follow-up findings and decide whether to cover, draft, archive, or ignore.",
         "errors": [],
         "artifact": None,
     }
@@ -265,12 +267,88 @@ Requirements:
 """
 
 
-def _extract_findings(agent_result: Any) -> list[dict[str, Any]]:
+def _extract_agent_payload(agent_result: Any) -> dict[str, Any]:
+    """Normalize the live agent boundary into follow-up result fields."""
     if isinstance(agent_result, dict):
-        raw_findings = agent_result.get("findings") or []
+        payload = agent_result
+    elif isinstance(agent_result, str):
+        payload = _parse_agent_payload_text(agent_result)
     else:
         raw_findings = getattr(agent_result, "findings", None) or []
+        if raw_findings:
+            payload = {"findings": raw_findings}
+        else:
+            raw_output = str(getattr(agent_result, "raw_output", "") or "").strip()
+            payload = _parse_agent_payload_text(raw_output)
 
+    findings = _coerce_findings(payload.get("findings") or [])
+    if not findings and payload.get("raw_text"):
+        findings = [_raw_text_finding(str(payload["raw_text"]))]
+    return {
+        "findings": findings,
+        "next_action": _safe_optional_text(payload.get("next_action")),
+    }
+
+
+def _parse_agent_payload_text(text: str) -> dict[str, Any]:
+    """Parse JSON/fenced JSON when possible; otherwise preserve useful text."""
+    clean = (text or "").strip()
+    if not clean:
+        return {"findings": []}
+
+    try:
+        data = json.loads(clean)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    for block in _extract_balanced_json_blocks(clean):
+        try:
+            data = json.loads(block)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            continue
+
+    return {"findings": [], "raw_text": clean}
+
+
+def _extract_balanced_json_blocks(text: str) -> list[str]:
+    blocks: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == "{":
+            start = i
+            depth = 0
+            in_string = False
+            escape = False
+            j = i
+            while j < n:
+                ch = text[j]
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    if in_string:
+                        escape = True
+                elif ch == '"':
+                    in_string = not in_string
+                elif not in_string:
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0:
+                            blocks.append(text[start : j + 1])
+                            i = j
+                            break
+                j += 1
+        i += 1
+    return blocks
+
+
+def _coerce_findings(raw_findings: Any) -> list[dict[str, Any]]:
     findings = []
     for item in raw_findings:
         if not isinstance(item, dict):
@@ -286,6 +364,25 @@ def _extract_findings(agent_result: Any) -> list[dict[str, Any]]:
             "source_name": item.get("source_name") or item.get("source") or "Unknown",
         })
     return findings
+
+
+def _raw_text_finding(text: str) -> dict[str, Any]:
+    preview = " ".join(text.split())
+    if len(preview) > 900:
+        preview = preview[:899].rstrip() + "..."
+    return {
+        "title": "Follow-up response",
+        "summary": preview,
+        "source_url": None,
+        "source_name": "Claude Follow-Up",
+    }
+
+
+def _safe_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _failed_result(
@@ -410,4 +507,3 @@ def _safe_preview(text: str, limit: int = PREVIEW_CHARS) -> str:
 def _slugify(text: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
     return slug[:60] or "followup"
-

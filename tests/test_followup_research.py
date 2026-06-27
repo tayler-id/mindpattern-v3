@@ -8,6 +8,7 @@ posting, email, Fly, or private local databases.
 import ast
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from orchestrator.traces_db import init_db
@@ -196,3 +197,58 @@ def test_live_agent_failure_returns_visible_degraded_result(tmp_path):
     assert "failed" in result["why_this_matters"].lower()
     assert result["artifact"]
     assert Path(result["artifact"]).exists()
+
+
+def test_live_agent_result_parses_raw_json_output(tmp_path):
+    from orchestrator.followup import parse_followup_request, run_followup_research
+
+    request = parse_followup_request(
+        "follow up: why agent-reach matters for social search reliability"
+    )
+    raw_output = json.dumps({
+        "findings": [
+            {
+                "title": "Agent Reach keeps source access modular",
+                "summary": "It routes social search through available backends instead of hard-coding one fragile provider.",
+                "source_name": "Agent Reach",
+                "source_url": None,
+            }
+        ],
+        "next_action": "Turn this into a short social reliability note.",
+    })
+
+    result = run_followup_research(
+        request,
+        dry_run=False,
+        agent_runner=lambda *_args, **_kwargs: SimpleNamespace(
+            findings=[],
+            raw_output=f"Here is the result:\n{raw_output}\n",
+        ),
+        artifact_dir=tmp_path / "followups",
+    )
+
+    assert result["status"] == "completed"
+    assert result["findings"][0]["title"] == "Agent Reach keeps source access modular"
+    assert result["next_action"] == "Turn this into a short social reliability note."
+
+
+def test_live_agent_result_falls_back_to_raw_text_finding(tmp_path):
+    from orchestrator.followup import parse_followup_request, run_followup_research
+
+    request = parse_followup_request(
+        "follow up: why agent-reach matters for social search reliability"
+    )
+
+    result = run_followup_research(
+        request,
+        dry_run=False,
+        agent_runner=lambda *_args, **_kwargs: SimpleNamespace(
+            findings=[],
+            raw_output="Agent Reach matters because it lets the system swap search backends when one source degrades.",
+        ),
+        artifact_dir=tmp_path / "followups",
+    )
+
+    assert result["status"] == "completed"
+    assert result["findings"][0]["title"] == "Follow-up response"
+    assert "swap search backends" in result["findings"][0]["summary"]
