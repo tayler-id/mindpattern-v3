@@ -2155,8 +2155,13 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md": {
-    "mtime": 1782519647.1440234,
-    "ast_hash": "3ca2b8eb1317a49246cdcd1fbc4331f9",
+    "mtime": 1782522821.4960182,
+    "ast_hash": "0a21f42ed3ef936f2124d9cf8a7b84b3",
+    "semantic_hash": ""
+  },
+  "docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md": {
+    "mtime": 1782522810.6481562,
+    "ast_hash": "cab15d9e84a5442d6e9bd5c467d83d5b",
     "semantic_hash": ""
   }
 }

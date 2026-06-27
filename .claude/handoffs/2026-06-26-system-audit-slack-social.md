@@ -708,6 +708,11 @@ place instead of deleting the column.
   as the spec/runbook for new-feature table row 24, `"Ask Follow-Up" Research
   Button`, and expanded it to include the optional paired Slack Social Ideas
   Desk feature.
+- Created
+  `docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md`
+  with a dependency-ordered task breakdown. Required Ask Follow-Up work is
+  separated from optional Social Ideas Desk work so further research can ship
+  without waiting for the social-ideas layer.
 - Added Slack Social Ideas Desk to the new-feature ideas table as row 25; later
   rows are renumbered.
 - Scope is command-first Slack follow-up research from `#mp-briefing` and

@@ -6,6 +6,7 @@
 > Created: 2026-06-26
 > Source evidence: `.claude/handoffs/2026-06-26-system-audit-slack-social.md`
 > Feature row: New Feature Ideas table, row 24
+> Implementation plan: `docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md`
 
 This runbook turns feature idea 24, `"Ask Follow-Up" Research Button`, into an
 implementation-ready spec for a future `/goal` run. It does not implement the
@@ -616,6 +617,7 @@ Use this after the owner reviews and accepts the runbook:
 
 Primary source of truth:
 - docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md
+- docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md
 - .claude/handoffs/2026-06-26-system-audit-slack-social.md
 
 This is a new-feature pass for the "Ask Follow-Up" Research Button/Command and
@@ -647,7 +649,7 @@ Hard requirements:
 
 Execution rules:
 - Start by recording current dirty files and baseline tests.
-- Follow the runbook task table in dependency order.
+- Follow the implementation plan task by task, in dependency order.
 - For each task: write/update tests first, implement the smallest change, run
   the task verification command, then update the Done column and evidence.
 - Preserve unrelated user changes.
