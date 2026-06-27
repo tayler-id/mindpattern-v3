@@ -28,9 +28,9 @@ feature yet.
    change for the MVP.
 6. The feature should reuse existing agent execution and tracing patterns where
    possible instead of creating a second pipeline framework.
-7. The Slack Editorial Desk pairs with this feature as a review and feedback
-   surface for pipeline-selected candidates. It must not make Tayler pick the
-   newsletter stories manually.
+7. The optional Slack Social Ideas Desk pairs with this feature only for social
+   post ideas. It must not review, select, approve, block, or send newsletter
+   stories.
 
 If any of these are wrong, update this runbook before implementation starts.
 
@@ -39,10 +39,10 @@ If any of these are wrong, update this runbook before implementation starts.
 Build a controlled way for Tayler to ask, from Slack, "go deeper on this story"
 without running the whole newsletter pipeline.
 
-Paired objective: add a Slack Editorial Desk command that shows
-pipeline-recommended story candidates in one thread, then lets Tayler react, save,
-request follow-up, or explicitly override a bad candidate without becoming the
-manual story selector.
+Paired social objective: optionally add a Slack Social Ideas Desk command that
+shows social post ideas in one thread, then lets Tayler save, revise, reject,
+draft, or request follow-up research for a social angle. This is not a
+newsletter review desk and must never become one.
 
 The user should be able to trigger follow-up research from:
 
@@ -61,23 +61,21 @@ concise result in the same Slack thread:
   ignore.
 - Clear degraded/error notice if sources or agent execution fail.
 
-The Editorial Desk should show pipeline-selected candidates with optional
-actions:
+The Social Ideas Desk should show social post ideas with optional actions:
 
-- `good <n>`: positive feedback that the pipeline chose a useful candidate.
-- `save <n>`: keep the candidate for later without forcing it into today.
-- `revise <n>: <guidance>`: ask the bot to reframe the angle as feedback.
-- `reject <n>: <reason>`: mark the candidate as not useful feedback; it should
-  only remove/override a story when the command is explicitly implemented as a
-  pre-synthesis override.
+- `draft <n>`: create a Slack social draft/manual-copy candidate only.
+- `save <n>`: keep the social idea for later without posting it.
+- `revise <n>: <guidance>`: ask the bot to reframe the social angle.
+- `reject <n>: <reason>`: mark the social idea as not useful and preserve why.
 - `follow up <n>: <question>`: launch the scoped follow-up research flow for
-  that candidate.
+  that social idea.
 
 ## Non-Goals
 
 - Do not implement background auto-research based on every newsletter story.
 - Do not auto-post to LinkedIn, Bluesky, X, or any other social platform.
-- Do not send email or create a second daily newsletter.
+- Do not send an extra email or create a second daily newsletter from Slack
+  follow-up or Social Ideas Desk actions.
 - Do not run `run.py` as part of a Slack follow-up request.
 - Do not add dependencies unless the owner explicitly approves.
 - Do not change database schema for the MVP unless the implementation proves it
@@ -86,8 +84,13 @@ actions:
   `social-config.json`, `memory.db`, or `traces.db` in committed files.
 - Do not make Tayler manually choose newsletter stories. The pipeline remains
   responsible for selection.
-- Do not let Editorial Desk feedback publish anything. Positive feedback means
-  "the pipeline found something useful", not "send/post this live".
+- Do not create a newsletter review desk. The desk concept is allowed only for
+  social post ideas.
+- Do not make the normal daily newsletter wait for Slack feedback or approval.
+  Scheduled research, writing, and sending must keep running through the normal
+  quality-gated pipeline.
+- Do not let Social Ideas Desk feedback publish anything. `draft <n>` means
+  "make a Slack draft/manual-copy candidate", not "post this live".
 
 ## Tech Stack
 
@@ -118,8 +121,8 @@ git diff --stat
 # Follow-up feature tests after adding them
 .venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_slack_bot.py -q
 
-# Editorial Desk tests after adding them
-.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_slack_bot.py -q
+# Social Ideas Desk tests after adding them
+.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_slack_bot.py -q
 
 # Social/approval regression checks
 .venv/bin/python3 -m pytest tests/test_approval.py tests/test_social.py -q
@@ -159,18 +162,18 @@ slack_bot/bot.py                 Socket Mode routing and owner filtering
 slack_bot/registry.py            Channel -> handler mapping and doctor status
 slack_bot/handlers/base.py       reply/react/thread helpers and URL reader
 slack_bot/handlers/briefing.py   #mp-briefing status commands
-slack_bot/handlers/editorial.py  proposed Slack Editorial Desk command handler
+slack_bot/handlers/social_ideas.py  proposed Slack Social Ideas Desk command handler
 slack_bot/handlers/posts.py      #mp-posts social draft workflow
 slack_bot/handlers/skills.py     #mp-skills draft workflow
 slack_bot/handlers/tips.py       #mp-tips draft workflow
 orchestrator/agents.py           run_single_agent and run_claude_prompt
 orchestrator/traces_db.py        pipeline_runs, agent_runs, events
-orchestrator/editorial.py        proposed story candidate loading/decision logic
+orchestrator/social_ideas.py     proposed social idea loading/feedback logic
 reports/ramsay/followups/        proposed local follow-up markdown artifacts
-data/editorial-desk/             proposed uncommitted candidate/decision artifacts
+data/social-ideas/               proposed uncommitted social idea feedback artifacts
 tests/test_slack_bot.py          Slack handler and bot behavior tests
 tests/test_followup_research.py  proposed focused follow-up tests
-tests/test_editorial_desk.py     proposed Editorial Desk tests
+tests/test_social_ideas_desk.py  proposed Social Ideas Desk tests
 docs/runbooks/                   this runbook and future implementation notes
 ```
 
@@ -219,11 +222,11 @@ Unit tests must cover:
 - Follow-up service logs a trace event without exposing full Slack body.
 - `#mp-briefing` command posts an acknowledgement and final result.
 - Draft-thread follow-up does not approve or post any social draft.
-- Editorial Desk loads ranked candidates without requiring the owner's local DB
-  in CI.
-- Editorial Desk actions update candidate state without posting social content.
-- `follow up <n>` from Editorial Desk launches the follow-up path for the right
-  candidate.
+- Social Ideas Desk loads ranked social post ideas without requiring the
+  owner's local DB in CI.
+- Social Ideas Desk actions update idea state without posting social content.
+- `follow up <n>` from Social Ideas Desk launches the follow-up path for the
+  right social idea.
 - Existing approval parsing remains fail-closed.
 
 Integration-style tests should mock Slack and Claude but exercise real handler
@@ -240,10 +243,11 @@ Manual smoke, only after owner approval:
    triggered.
 6. Confirm traces/logs contain a follow-up event without secret or raw Slack body
    leakage.
-7. Send `desk` or `editorial desk` in the approved channel.
-8. Confirm the bot returns today's candidate list in one thread.
-9. Send `save 1`, `reject 2: stale`, and `follow up 3: why now?` in the thread.
-10. Confirm no candidate action posts to a live platform.
+7. Send `social ideas` in the approved social channel, likely `#mp-posts`.
+8. Confirm the bot returns today's social idea list in one thread.
+9. Send `save 1`, `reject 2: stale`, `draft 3`, and
+   `follow up 3: why now?` in the thread.
+10. Confirm no idea action posts to a live platform.
 
 ## Boundaries
 
@@ -254,59 +258,65 @@ Manual smoke, only after owner approval:
 - Always: update this runbook and handoff with evidence after implementation.
 - Always: keep follow-up runs scoped and visibly degraded when source/agent
   inputs fail.
+- Always: keep normal daily newsletter research, synthesis, writing, and send
+  behavior independent from Social Ideas Desk feedback.
 - Ask first: adding Slack Block Kit interactivity or changing Slack app settings.
 - Ask first: database schema changes.
 - Ask first: adding dependencies.
 - Ask first: deploying to Fly or running a live Slack smoke.
 - Ask first: storing follow-up outputs in `memory.db` as permanent findings.
-- Ask first: making Editorial Desk decisions alter newsletter synthesis
-  automatically before that behavior has an explicit test and owner approval.
+- Ask first: using Social Ideas Desk feedback anywhere outside social planning.
 - Never: run the full daily pipeline from the follow-up command.
-- Never: auto-send a newsletter from this feature.
+- Never: auto-send an extra newsletter from this feature.
 - Never: auto-post social content from this feature.
-- Never: make Slack Editorial Desk a required manual story-picking gate.
-- Never: treat Editorial Desk feedback as social posting approval.
+- Never: make Slack Social Ideas Desk a required manual story-picking, research,
+  writing, or send gate for the newsletter.
+- Never: block scheduled daily newsletter research, synthesis, writing, or
+  sending on Slack feedback.
+- Never: treat Social Ideas Desk feedback as live social posting approval.
 - Never: commit local databases, secrets, Slack message bodies, subscriber data,
   `users.json`, or `social-config.json`.
 
-## How Slack Editorial Desk Works
+## How Slack Social Ideas Desk Works
 
-Think of the Editorial Desk as a daily review panel for pipeline-selected
-candidates.
+Think of the Social Ideas Desk as a daily review panel for social post ideas,
+not newsletter stories.
 
-Today, the system researches, synthesizes, writes, and posts status. The human
-has to inspect reports, Slack threads, and source counts to understand what the
-pipeline chose and why. Editorial Desk changes that into one review thread:
+The normal system researches, synthesizes, writes, and sends the newsletter on
+schedule. Social Ideas Desk sits after or beside that flow and helps reuse strong
+research as social post ideas without blocking the newsletter:
 
-1. The bot gathers today's strongest candidates from the research findings,
-   current report, source health, and any social draft candidates.
-2. The bot shows the pipeline-ranked list in Slack with why each candidate was
-   surfaced.
-3. Tayler can ignore it completely and the newsletter still runs.
-4. If Tayler replies, the bot records feedback or triggers follow-up research.
-5. Later newsletter/social steps can learn from that feedback, but only after
-   that integration is explicitly implemented and tested.
+1. The bot gathers candidate social angles from current reports, findings, and
+   existing social draft/topic artifacts.
+2. The bot shows a numbered list in Slack with why each idea could become a
+   post.
+3. Tayler can ignore it completely and the scheduled newsletter still
+   researches, writes, and sends through normal quality gates.
+4. If Tayler replies, the bot records social-planning feedback, creates a draft,
+   or triggers follow-up research.
+5. No Social Ideas Desk action can publish live. Live posts still require the
+   existing explicit social approval path.
 
 Example Slack thread:
 
 ```text
-Tayler: editorial desk
+Tayler: social ideas
 
 Bot:
-Today's story candidates
+Today's social post ideas
 
 1. Agent Reach social search reliability
-   Why it matters: source health decides newsletter quality.
+   Why it matters: source health is a useful builder lesson.
    Sources: X fallback, Exa, YouTube
-   Suggested use: follow-up research
+   Suggested use: tactical LinkedIn/Bluesky post
 
 2. North Mini Code local coding model
    Why it matters: cheap agent loops without frontier pricing.
    Sources: Hugging Face, GitHub
-   Suggested use: newsletter story or social angle
+   Suggested use: builder take or short thread
 
 Optional replies:
-good 2
+draft 2
 save 1
 reject 3: stale
 revise 2: make this more tactical for builders
@@ -315,19 +325,19 @@ follow up 1: compare agent-reach vs opencli vs native CLIs
 
 Junior-dev mental model:
 
-- `Editorial Desk` is the review UI for pipeline-selected candidates.
-- `Candidate loader` is the data access layer.
+- `Social Ideas Desk` is the review UI for social post ideas.
+- `Idea loader` is the data access layer.
 - `Feedback store` is state.
 - `Follow-up research` is a command the desk can call.
-- `Newsletter/social` are consumers of feedback later, not automatic effects
-  in the MVP.
+- `Social draft creation` is a safe output, but live social posting still needs
+  explicit owner approval.
+- `Newsletter` is not a consumer of Social Ideas Desk feedback in the MVP.
 
-This pairs well with Ask Follow-Up because the pipeline may surface a candidate
-that is promising but under-explained. The desk shows what the pipeline surfaced;
-follow-up gives you a way to ask for deeper investigation without taking over
-story selection.
+This pairs well with Ask Follow-Up because a social angle may be promising but
+under-explained. The desk shows the social idea; follow-up gives you a way to ask
+for deeper investigation without touching newsletter selection or delivery.
 
-## Editorial Desk MVP Design
+## Social Ideas Desk MVP Design
 
 ### Command UX
 
@@ -335,15 +345,15 @@ Accepted root commands:
 
 ```text
 desk
-editorial desk
-today's candidates
-story candidates
+social ideas
+post ideas
+today's social ideas
 ```
 
 Accepted thread commands:
 
 ```text
-good <number>
+draft <number>
 save <number>
 reject <number>: <reason>
 revise <number>: <guidance>
@@ -355,13 +365,14 @@ Rejected commands should return guidance and change no state.
 
 ### Feedback Semantics
 
-Editorial Desk feedback is a learning and review signal, not a selection gate.
+Social Ideas Desk feedback is a social planning signal, not a newsletter gate or
+publish approval.
 
-For the MVP, `good <n>` should mean:
+For the MVP, `draft <n>` should mean:
 
-- The pipeline surfaced a useful candidate.
-- Preserve the positive signal and any guidance for future ranking.
-- Do not require this signal for the newsletter to run.
+- Create or prioritize a Slack social draft/manual-copy candidate.
+- Preserve the source idea and any guidance for later social planning.
+- Do not publish anything live.
 
 It should not mean:
 
@@ -369,23 +380,18 @@ It should not mean:
 - Send the newsletter.
 - Publish to social.
 - Skip quality checks.
-- Block the daily newsletter forever if Tayler does not respond.
+- Block the daily newsletter's research, writing, or sending if Tayler does not
+  respond.
 
 Recommended MVP behavior:
 
-- If Tayler gives feedback before synthesis, later integrations may use that as
-  a ranking signal once explicitly implemented and tested.
-- If Tayler gives no feedback, the daily newsletter still runs using the
-  normal quality-gated pipeline.
-- If Tayler marks a candidate useful for social, it should only create or
-  prioritize a Slack draft. It still needs the normal explicit posting approval
-  before any live social action.
-
-Possible later mode:
-
-- `editorial lock` could intentionally require human-selected candidates before
-  synthesis, but that should be a separate owner-approved feature because the
-  newsletter must not fail just because nobody replied in Slack.
+- If Tayler gives no feedback, the daily newsletter still researches, writes,
+  and sends using the normal quality-gated pipeline.
+- If Tayler asks for `draft <n>`, the bot creates or prioritizes a Slack draft.
+  It still needs the normal explicit posting approval before any live social
+  action.
+- If Tayler asks for `follow up <n>`, the bot runs scoped follow-up research and
+  returns the findings in-thread.
 
 ### Candidate Shape
 
@@ -393,31 +399,31 @@ Use a stable data object so Slack formatting, tests, and later dashboard work
 can share one contract:
 
 ```python
-candidate = {
+idea = {
     "id": "2026-06-26-001",
     "title": "Agent Reach social search reliability",
     "summary": "X search failed but feed fallback worked; Reddit needs OpenCLI.",
     "source_urls": ["https://..."],
     "source_names": ["X", "Exa", "YouTube"],
     "score": 0.86,
-    "recommended_use": "follow_up",
+    "recommended_use": "social_draft",
     "status": "pending",
 }
 ```
 
-MVP candidate sources, in order:
+MVP social idea sources, in order:
 
-1. Current-day findings in `memory.db`, if available.
-2. Current-day newsletter/report sections, if available.
-3. Current-day social draft/topic artifact, if available.
-4. Deterministic fixture candidates in tests.
+1. Current-day social draft/topic artifact, if available.
+2. Current-day report sections or newsletter output after they already exist.
+3. Current-day findings in `memory.db`, if available.
+4. Deterministic fixture ideas in tests.
 
 ### Feedback State
 
 MVP should avoid schema changes. Store feedback in an uncommitted JSON artifact:
 
 ```text
-data/editorial-desk/YYYY-MM-DD-decisions.json
+data/social-ideas/YYYY-MM-DD-feedback.json
 ```
 
 Later, after owner approval for a storage/schema change, this can move into
@@ -425,13 +431,13 @@ Later, after owner approval for a storage/schema change, this can move into
 
 Feedback states:
 
-- `good`
+- `draft_requested`
 - `saved`
 - `rejected`
 - `revision_requested`
 - `followup_requested`
 
-Each feedback item should record safe metadata only: candidate ID, action, timestamp,
+Each feedback item should record safe metadata only: idea ID, action, timestamp,
 short reason/guidance, and optional artifact path. Do not store raw Slack user
 IDs or full Slack message bodies.
 
@@ -534,13 +540,12 @@ history.
   Slack, email, social posting, or Fly sync.
 - Follow-up output includes 3-7 findings, source links where available, "why
   this matters", and a recommended next action.
-- `editorial desk` returns the pipeline's ranked story candidates in one Slack
-  thread.
-- Editorial Desk actions `good`, `save`, `revise`, `reject`, and `follow up`
-  update feedback state without posting anything live or making Tayler pick the
-  newsletter stories.
-- Editorial Desk `follow up <n>` launches scoped follow-up for the chosen
-  candidate.
+- `social ideas` returns ranked social post ideas in one Slack thread.
+- Social Ideas Desk actions `draft`, `save`, `revise`, `reject`, and
+  `follow up` update feedback state without posting anything live or affecting
+  newsletter research, writing, or sending.
+- Social Ideas Desk `follow up <n>` launches scoped follow-up for the chosen
+  social idea.
 - Failures are visible in Slack and trace logs as degraded or failed; they are
   not silent.
 - The feature does not weaken newsletter quality gates, source-health checks,
@@ -558,13 +563,12 @@ history.
    `#mp-posts`, or a new `#mp-followups` channel?
 4. Should follow-up research be allowed to use live external sources immediately,
    or should the first implementation ship with dry-run/local-only smoke first?
-5. Should Slack Editorial Desk live in `#mp-briefing`, `#mp-posts`, or its own
-   `#mp-editorial` channel?
-6. Should `reject <n>` be feedback-only for MVP, or should there be a separate
-   explicit override command such as `exclude <n>` when Tayler wants to remove a
-   pipeline-selected candidate before synthesis?
-7. Should saved candidates feed tomorrow's newsletter planning automatically,
-   or only appear when explicitly requested?
+5. Should Slack Social Ideas Desk live in `#mp-posts`, `#mp-briefing`, or a new
+   `#mp-social-ideas` channel?
+6. Should `draft <n>` route into the existing `#mp-posts` draft generator, or
+   create a manual-copy draft artifact first?
+7. Should saved social ideas feed a later social calendar automatically, or only
+   appear when explicitly requested?
 
 ## Implementation Tasks
 
@@ -579,12 +583,12 @@ deleting the column.
 | 4 | No | Wire `#mp-briefing` command | `follow up: ...` posts acknowledgement and final result in-thread. | `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_followup_research.py -q` | `slack_bot/handlers/briefing.py`, tests |
 | 5 | No | Wire one draft-thread workflow | `follow up:` in a draft approval loop researches without approving/posting. | `.venv/bin/python3 -m pytest tests/test_slack_bot.py tests/test_approval.py -q` | `slack_bot/handlers/posts.py` or `skills.py`, shared helper |
 | 6 | No | Add regression checks for no auto-post/no full pipeline | Follow-up command does not call `run.py`, social posting, email, or sync. | `.venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_social.py -q` | tests |
-| 7 | No | Add Editorial Desk parser tests | Root and thread commands are accepted/rejected explicitly. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `tests/test_editorial_desk.py` |
-| 8 | No | Add candidate loader dry-run/fixture path | CI can rank candidates without local private DB data. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `orchestrator/editorial.py`, tests |
-| 9 | No | Add feedback store | Actions persist safe candidate feedback without schema changes. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `orchestrator/editorial.py`, tests |
-| 10 | No | Wire Editorial Desk Slack command | `editorial desk` posts a numbered candidate thread. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_slack_bot.py -q` | `slack_bot/handlers/briefing.py` or `slack_bot/handlers/editorial.py`, tests |
-| 11 | No | Wire Editorial Desk actions | `good`, `save`, `revise`, `reject`, and `follow up` update feedback safely without manual story selection. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_followup_research.py -q` | Slack handler, `orchestrator/editorial.py`, follow-up integration |
-| 12 | No | Add no-live-post regression for Editorial Desk | Editorial actions cannot call social posting/email/sync. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_social.py -q` | tests |
+| 7 | No | Add Social Ideas Desk parser tests | Root and thread commands are accepted/rejected explicitly. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py -q` | `tests/test_social_ideas_desk.py` |
+| 8 | No | Add social idea loader dry-run/fixture path | CI can rank social ideas without local private DB data. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py -q` | `orchestrator/social_ideas.py`, tests |
+| 9 | No | Add social idea feedback store | Actions persist safe idea feedback without schema changes. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py -q` | `orchestrator/social_ideas.py`, tests |
+| 10 | No | Wire Social Ideas Desk Slack command | `social ideas` posts a numbered social idea thread. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_slack_bot.py -q` | `slack_bot/handlers/social_ideas.py`, tests |
+| 11 | No | Wire Social Ideas Desk actions | `draft`, `save`, `revise`, `reject`, and `follow up` update feedback safely without posting live or touching newsletter flow. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_followup_research.py -q` | Slack handler, `orchestrator/social_ideas.py`, follow-up integration |
+| 12 | No | Add no-live-post/no-newsletter-gate regression for Social Ideas Desk | Social idea actions cannot call live posting/email/sync or block newsletter phases. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_social.py tests/test_runner.py -q` | tests |
 | 13 | No | Update docs and handoff evidence | Runbook records commands, results, blockers, and live-smoke status. | `git diff --check` | this file, `.claude/handoffs/...` |
 | 14 | No | Run Graphify after code changes | Graphify artifacts are current if indexed code/docs changed. | `graphify update . && graphify check-update .` | `graphify-out/` |
 | 15 | No | Optional owner-approved Fly smoke | Live Slack commands return results and trigger no forbidden outbound actions. | owner-approved smoke checklist | no code unless smoke finds bug |
@@ -599,39 +603,42 @@ deleting the column.
 | Raw Slack content leaks into traces/docs | Privacy risk | Store hashes/previews only in traces; do not commit artifacts |
 | External source failures produce bland output | Quality regression | Mark degraded visibly and include source health/failure reason |
 | Claude/network calls make tests flaky | CI instability | Dry-run deterministic path and mocks for all external boundaries |
-| Editorial Desk feedback is mistaken for story selection or publish approval | Could make Tayler manually pick stories or post unintentionally | Treat feedback as optional learning/review only; add no-live-post and no-manual-gate regression tests |
-| Candidate feedback creates another hidden source of truth | Later agents may not know what Slack feedback means | Store feedback in a documented JSON contract first; update handoff/runbook evidence |
-| Ranking candidates from `memory.db` makes CI depend on private data | CI failure or false confidence | Use fixture/dry-run candidate loader in tests |
+| Social Ideas Desk feedback is mistaken for newsletter control or publish approval | Could block the newsletter or post unintentionally | Treat feedback as social-planning only; add no-live-post and no-newsletter-gate regression tests |
+| Social idea feedback creates another hidden source of truth | Later agents may not know what Slack feedback means | Store feedback in a documented JSON contract first; update handoff/runbook evidence |
+| Ranking ideas from `memory.db` makes CI depend on private data | CI failure or false confidence | Use fixture/dry-run idea loader in tests |
 
 ## Slash Goal Prompt
 
 Use this after the owner reviews and accepts the runbook:
 
 ```text
-/goal Implement MindPattern v3 Feature 24: Ask Follow-Up Research plus Slack Editorial Desk.
+/goal Implement MindPattern v3 Feature 24: Ask Follow-Up Research plus optional Slack Social Ideas Desk.
 
 Primary source of truth:
 - docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md
 - .claude/handoffs/2026-06-26-system-audit-slack-social.md
 
 This is a new-feature pass for the "Ask Follow-Up" Research Button/Command and
-the paired Slack Editorial Desk. Slack Editorial Desk is a review/feedback
-surface for pipeline-selected candidates, not a manual story picker. Start with
+the optional paired Slack Social Ideas Desk. Social Ideas Desk is only for social
+post ideas and follow-up research. It is not a newsletter story review desk, not
+a newsletter approval gate, and not a live social posting approval. Start with
 the command-first MVP unless the owner explicitly approves Slack Block Kit
 interactivity.
 
 Hard requirements:
 - Keep Slack-bot-first behavior.
 - Owner-only commands; fail closed if owner identity is missing.
-- No background auto-research.
+- No new background auto-research loop from this feature.
 - No full daily pipeline run from this feature.
-- No newsletter send, social post, Fly sync, or deployment without explicit
-  owner approval.
+- No extra/manual newsletter send from this feature, social post, Fly sync, or
+  deployment without explicit owner approval.
 - No live outbound social post ever without explicit owner approval in Slack.
 - The pipeline remains responsible for choosing newsletter stories.
-- Editorial Desk feedback must not become a required manual story-selection
-  gate.
-- Editorial Desk feedback must not publish anything live.
+- The normal scheduled daily newsletter must not wait for Social Ideas Desk
+  feedback or approval to research, write, or send.
+- Social Ideas Desk must be social-post-ideas only; it must not select,
+  approve, block, write, or send newsletter stories.
+- Social Ideas Desk feedback must not publish anything live.
 - Dry-run/focused tests must not call Claude, network, Slack, email, social APIs,
   or Fly.
 - Do not expose or commit secrets, personal data, raw Slack message bodies,
@@ -646,8 +653,10 @@ Execution rules:
 - Preserve unrelated user changes.
 - Keep draft-thread follow-up behavior from approving, posting, skipping, or
   losing the draft.
-- Keep Editorial Desk actions from posting social content, sending email, or
-  requiring Tayler to pick newsletter stories.
+- Keep Social Ideas Desk actions from posting social content, sending email, or
+  touching newsletter story selection.
+- Keep Social Ideas Desk feedback from blocking newsletter research, writing, or
+  sending.
 - After code/docs changes, run Graphify where required.
 - Work in small commits by verified task group.
 
@@ -658,12 +667,11 @@ Definition of done:
   approving or posting anything.
 - Follow-up service has deterministic dry-run behavior and safe trace/artifact
   output.
-- `editorial desk` shows the pipeline's ranked story candidates in one Slack
-  thread.
-- Editorial Desk supports `good`, `save`, `revise`, `reject`, and `follow up`
-  actions with safe feedback state.
-- The newsletter still runs from the normal quality-gated pipeline without
-  waiting for Editorial Desk feedback.
+- `social ideas` shows ranked social post ideas in one Slack thread.
+- Social Ideas Desk supports `draft`, `save`, `revise`, `reject`, and
+  `follow up` actions with safe feedback state.
+- The newsletter still researches, writes, and sends from the normal
+  quality-gated pipeline without waiting for Social Ideas Desk feedback.
 - Follow-up failures are visibly marked degraded or failed.
 - CI-equivalent tests pass locally.
 - Runbook and handoff are current for the next agent.

@@ -1,16 +1,16 @@
 # Graph Report - mindpattern-v3  (2026-06-26)
 
 ## Corpus Check
-- 395 files · ~409,145 words
+- 395 files · ~409,340 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6740 nodes · 10429 edges · 421 communities (394 shown, 27 thin omitted)
+- 6740 nodes · 10429 edges · 425 communities (398 shown, 27 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 562 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4bbb9751`
+- Built from commit: `1abca858`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -386,10 +386,13 @@
 - [[_COMMUNITY_Community 369|Community 369]]
 - [[_COMMUNITY_Community 370|Community 370]]
 - [[_COMMUNITY_Community 371|Community 371]]
+- [[_COMMUNITY_Community 372|Community 372]]
+- [[_COMMUNITY_Community 373|Community 373]]
 - [[_COMMUNITY_Community 374|Community 374]]
 - [[_COMMUNITY_Community 375|Community 375]]
 - [[_COMMUNITY_Community 376|Community 376]]
 - [[_COMMUNITY_Community 377|Community 377]]
+- [[_COMMUNITY_Community 378|Community 378]]
 - [[_COMMUNITY_Community 379|Community 379]]
 - [[_COMMUNITY_Community 380|Community 380]]
 - [[_COMMUNITY_Community 381|Community 381]]
@@ -419,6 +422,7 @@
 - [[_COMMUNITY_Community 415|Community 415]]
 - [[_COMMUNITY_Community 416|Community 416]]
 - [[_COMMUNITY_Community 417|Community 417]]
+- [[_COMMUNITY_Community 418|Community 418]]
 - [[_COMMUNITY_Community 419|Community 419]]
 - [[_COMMUNITY_Community 420|Community 420]]
 - [[_COMMUNITY_Community 421|Community 421]]
@@ -452,7 +456,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (421 total, 27 thin omitted)
+## Communities (425 total, 27 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
@@ -463,8 +467,8 @@ Cohesion: 0.02
 Nodes (77): Checkpoint, Find an incomplete pipeline run for this user+date that can be resumed., Clear all checkpoints for a pipeline run (for re-runs)., Save and restore pipeline state across crashes., PipelineMonitor, Observability layer for the research pipeline., Record phase start.          Args:             pipeline_run_id: The pipeline run, Record phase completion with metrics.          Args:             phase_id: ID re (+69 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.03
-Nodes (71): Connection, datetime, correction_stats(), Editorial correction storage — inspired by DPO preference learning.  Stores befo, Store an editorial correction.      Args:         db: Database connection., Get recent editorial corrections, optionally filtered by platform.      Args:, Stats on editorial corrections over the last N days.      Args:         db: Data, recent_corrections() (+63 more)
+Cohesion: 0.04
+Nodes (60): Connection, failures_for_date(), Get all failure lessons for a specific run date.      Args:         db: Database, get_feedback_footer(), list_feedback(), List feedback entries.      Args:         db: SQLite connection.         include, Generate evolving newsletter footer based on feedback history.      The footer a, list_skills() (+52 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.06
@@ -687,8 +691,8 @@ Cohesion: 0.08
 Nodes (13): Missing 'summary' field is caught., Missing 'source_url' field is caught., Invalid importance value (not high/medium/low) is caught., More than 15 findings triggers an error., Zero findings in the output dict triggers an error., Prompt injection 'ignore previous instructions' is detected., Prompt injection 'you are now' is detected., Normal text is NOT incorrectly flagged as injection. (+5 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 0.05
-Nodes (40): accumulate_preference(), apply_preference_decay(), get_feedback_context(), get_preference(), get_preference_context(), list_preferences(), mark_processed(), Generate markdown feedback context for orchestrator dispatch.      Includes unpr (+32 more)
+Cohesion: 0.07
+Nodes (26): accumulate_preference(), apply_preference_decay(), get_feedback_context(), get_preference(), get_preference_context(), list_preferences(), mark_processed(), Generate markdown feedback context for orchestrator dispatch.      Includes unpr (+18 more)
 
 ### Community 60 - "Community 60"
 Cohesion: 0.12
@@ -704,7 +708,7 @@ Nodes (21): 1. How this conclusion was reached (method), 2. The quantitative mod
 
 ### Community 63 - "Community 63"
 Cohesion: 0.05
-Nodes (60): get_memory_db(), finding_detail(), findings_data_by_agent(), findings_data_by_date(), findings_list(), _get_distinct_values(), get_finding_detail(), get_findings_list() (+52 more)
+Nodes (48): get_memory_db(), finding_detail(), findings_data_by_agent(), findings_data_by_date(), findings_list(), _get_distinct_values(), get_finding_detail(), get_findings_list() (+40 more)
 
 ### Community 64 - "Community 64"
 Cohesion: 0.14
@@ -712,7 +716,7 @@ Nodes (19): close(), DATA_DIR, DB_PATH, DRAFTS_DIR, fetch(), getDashboardState()
 
 ### Community 65 - "Community 65"
 Cohesion: 0.10
-Nodes (21): 12-Metric Reliability Framework, 4.11 Filesystem Context Patterns, 4.4 Model Routing, 4.7 Monitoring & Observability, 4.8 Deployment, 4.9 Knowledge Graphs, AGENTS.md / SKILL.md as Cross-Tool Standard, Alibaba OpenSandbox (+13 more)
+Nodes (21): 12-Metric Reliability Framework, 4.10 Error Handling & Recovery, 4.11 Filesystem Context Patterns, 4.4 Model Routing, 4.7 Monitoring & Observability, 4.9 Knowledge Graphs, AgentDropoutV2 — Cascading Error Prevention, AGENTS.md / SKILL.md as Cross-Tool Standard (+13 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.10
@@ -752,11 +756,11 @@ Nodes (19): Bezos, Core decision rule, Drucker, Flesch, Framework Catalog, Grove
 
 ### Community 75 - "Community 75"
 Cohesion: 0.04
-Nodes (62): Environment, _build_agents_data(), _build_corrections_data(), _build_engaged_authors_data(), _build_engagement_follows(), _build_engagement_replies(), _collect_source_data(), _collect_topic_data() (+54 more)
+Nodes (65): Environment, _build_agents_data(), _build_corrections_data(), _build_engaged_authors_data(), _build_engagement_follows(), _build_engagement_replies(), _collect_source_data(), _collect_topic_data() (+57 more)
 
 ### Community 76 - "Community 76"
-Cohesion: 0.14
-Nodes (14): failure_categories(), failures_for_date(), Failure lesson storage — inspired by RetroAgent pattern.  Stores what went wrong, Count failures by category over the last N days.      Args:         db: Database, Store a failure lesson.      Args:         db: Database connection.         run_, Get recent failure lessons, optionally filtered by category.      Args:, Get all failure lessons for a specific run date.      Args:         db: Database, recent_failures() (+6 more)
+Cohesion: 0.08
+Nodes (25): datetime, failure_categories(), Failure lesson storage — inspired by RetroAgent pattern.  Stores what went wrong, Count failures by category over the last N days.      Args:         db: Database, Store a failure lesson.      Args:         db: Database connection.         run_, Get recent failure lessons, optionally filtered by category.      Args:, recent_failures(), store_failure() (+17 more)
 
 ### Community 77 - "Community 77"
 Cohesion: 0.13
@@ -811,8 +815,8 @@ Cohesion: 0.16
 Nodes (17): atomic_write(), extract_agent_log(), format_agent_log(), _format_tool_call(), main(), parse_transcript(), Truncate text to max_len, adding ellipsis if needed., Format a single tool call as a readable line. (+9 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.10
-Nodes (18): Agent Roster, agents/research-agents, Connected To, Last Modified By Harness, Skill File Structure, Depends On, Key Functions, Known Fragile Points (+10 more)
+Cohesion: 0.29
+Nodes (7): Depends On, Key Functions, Known Fragile Points, Last Modified By Harness, orchestrator/prompt_tracker.py, Scans Directories, What It Does
 
 ### Community 91 - "Community 91"
 Cohesion: 0.13
@@ -839,16 +843,16 @@ Cohesion: 0.14
 Nodes (6): post_line(), M0 Task 15 — Fly→Mac journal.  Phone posts made through the Fly bot must land in, The receipt the ingest claims is the same key the pipeline claims         before, TestIngestLines, TestJournalWriter, TestPullAndIngest
 
 ### Community 97 - "Community 97"
-Cohesion: 0.08
-Nodes (27): evaluate_run(), get_context(), log_agent_run(), _now_iso(), Validate and return a YYYY-MM-DD date string. Raises ValueError on bad format., Return today's date as YYYY-MM-DD., Compute and store per-run quality metrics.      Evaluates a day's research outpu, Return current datetime as ISO 8601 string. (+19 more)
+Cohesion: 0.07
+Nodes (31): evaluate_run(), get_context(), get_top_sources(), log_agent_run(), _now_iso(), _orchestrator_context(), Validate and return a YYYY-MM-DD date string. Raises ValueError on bad format., Return today's date as YYYY-MM-DD. (+23 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.12
 Nodes (16): 1. Top 5 Stories Today, 2. Section Deep Dives, 3. Skills of the Day, 4. Feedback Footer, Agent: Newsletter Writer, Banned Phrases — NEVER use these:, Banned Words — NEVER use these:, Content Philosophy: (+8 more)
 
 ### Community 99 - "Community 99"
-Cohesion: 0.19
-Nodes (16): ArgumentParser, build_parser(), cmd_check_duplicate(), cmd_get_exemplars(), cmd_recent_corrections(), cmd_recent_posts(), cmd_search_findings(), _get_db() (+8 more)
+Cohesion: 0.09
+Nodes (26): ArgumentParser, build_parser(), cmd_check_duplicate(), cmd_get_exemplars(), cmd_recent_corrections(), cmd_recent_posts(), cmd_search_findings(), _get_db() (+18 more)
 
 ### Community 100 - "Community 100"
 Cohesion: 0.12
@@ -947,8 +951,8 @@ Cohesion: 0.13
 Nodes (14): Architecture, Channel Handlers, Daily Lifecycle, File Map, MindPattern v3 — Complete System Overview, Model Routing and Cost, Preflight Data Collection, Research Agents (+6 more)
 
 ### Community 124 - "Community 124"
-Cohesion: 0.06
-Nodes (40): cluster_findings(), _cluster_label(), compile_knowledge(), _extract_concept_title(), fetch_recent_findings(), _format_findings_for_prompt(), generate_index(), match_clusters_to_concepts() (+32 more)
+Cohesion: 0.05
+Nodes (45): cluster_findings(), _cluster_label(), compile_knowledge(), _extract_concept_title(), fetch_recent_findings(), _format_findings_for_prompt(), generate_index(), match_clusters_to_concepts() (+37 more)
 
 ### Community 125 - "Community 125"
 Cohesion: 0.05
@@ -1031,8 +1035,8 @@ Cohesion: 0.19
 Nodes (12): check_linkedin_token_health(), Platform health checks — LinkedIn token expiry monitoring., Check LinkedIn OAuth token health based on last refresh date.      Returns {, _first_existing(), get_pipeline_context(), pipeline_log(), pipeline_status(), Pipeline Status tab — real-time view of current or most recent pipeline run. (+4 more)
 
 ### Community 145 - "Community 145"
-Cohesion: 0.06
-Nodes (28): init_kg_schema(), open_kg(), Knowledge-graph schema: bi-temporal entities, aliases, edges, communities.  Tabl, Create all kg_* tables and indexes. Idempotent; safe to call repeatedly., Open memory.db (WAL + foreign keys + full memory schema) with the KG     tables, get_db(), _init_schema(), Database connection management and schema initialization.  Manages SQLite connec (+20 more)
+Cohesion: 0.15
+Nodes (10): init_kg_schema(), open_kg(), Knowledge-graph schema: bi-temporal entities, aliases, edges, communities.  Tabl, Create all kg_* tables and indexes. Idempotent; safe to call repeatedly., Open memory.db (WAL + foreign keys + full memory schema) with the KG     tables, conn(), Tests for the knowledge-graph schema (kg/schema.py).  Pure-SQLite, no network/mo, _tables() (+2 more)
 
 ### Community 146 - "Community 146"
 Cohesion: 0.18
@@ -1047,8 +1051,8 @@ Cohesion: 0.20
 Nodes (7): Topic template renders findings with daily links., Topic template links to source pages., Topic template links to related topics., Topic template renders gracefully with empty collections., Extract all [[wiki-links]] from rendered text., TestTopicTemplate, _wiki_links()
 
 ### Community 149 - "Community 149"
-Cohesion: 0.12
-Nodes (17): backfill_trend_results(), get_trend_performance(), get_trends_for_date(), Trend history tracking — the learning loop for trend detection.  Stores which tr, Backfill trend results: how many findings matched each trend.      For each tren, Get trend performance stats over the last N days.      Groups by topic, counts h, Store detected trends for a run date.      Args:         db: Database connection, Get all stored trends for a specific date. (+9 more)
+Cohesion: 0.05
+Nodes (35): get_db(), _init_schema(), Database connection management and schema initialization.  Manages SQLite connec, Open (and optionally initialize) the memory database.      Args:         db_path, Initialize all tables with IF NOT EXISTS. Safe to call repeatedly.      Fixes fr, backfill_trend_results(), get_trend_performance(), get_trends_for_date() (+27 more)
 
 ### Community 150 - "Community 150"
 Cohesion: 0.15
@@ -1103,8 +1107,8 @@ Cohesion: 0.15
 Nodes (13): Agentforce, Decagon, Devin / Cursor, Glean, Harvey, HubSpot Breeze, Intercom Fin, Ironclad / Spellbook (+5 more)
 
 ### Community 163 - "Community 163"
-Cohesion: 0.15
-Nodes (7): Daily file wiki-links to topic files., Daily file wiki-links to source files., Topic file wiki-links back to daily log., Source file includes finding history., All generated files use LF line endings only (no CRLF)., Posts file includes gate outcome data., TestContentCorrectness
+Cohesion: 0.13
+Nodes (19): _get_distinct_domains(), get_skill_detail(), get_skills_list(), get_summary_stats(), Skills Browser tab -- browse skills discovered by research agents in memory.db., Query a single skill by id., Return summary stats: total skills, unique domains, date range., Return Chart.js-native data for skills count grouped by domain (horizontal bar). (+11 more)
 
 ### Community 164 - "Community 164"
 Cohesion: 0.12
@@ -1223,8 +1227,8 @@ Cohesion: 0.39
 Nodes (3): Replies outside the thread or from non-owners are never approvals., Run one poll iteration against a mocked Slack replies API., TestThreadScopedOwnerOnlyPolling
 
 ### Community 194 - "Community 194"
-Cohesion: 0.07
-Nodes (21): _build_posts_data(), Transform social_posts rows for templates., db(), Tests for memory/mirror.py — SQLite-to-Obsidian mirror generation.  Uses a tempo, Create a fresh in-memory database with full schema initialization., Return a temporary vault directory., topics/_index.md contains links to all topic files., sources/_index.md contains links to all source files. (+13 more)
+Cohesion: 0.09
+Nodes (18): _build_posts_data(), Transform social_posts rows for templates., db(), Tests for memory/mirror.py — SQLite-to-Obsidian mirror generation.  Uses a tempo, Create a fresh in-memory database with full schema initialization., Return a temporary vault directory., topics/_index.md contains links to all topic files., sources/_index.md contains links to all source files. (+10 more)
 
 ### Community 195 - "Community 195"
 Cohesion: 0.12
@@ -1320,7 +1324,7 @@ Nodes (8): Tests for ApprovalGateway._slack_approval() with mocked urllib., Slac
 
 ### Community 221 - "Community 221"
 Cohesion: 0.15
-Nodes (8): Format Slack draft previews., Load voice.md for humanizer., Load social-config.json., Handle messages in #mp-tips — tip to social post as Tayler'd Tip!, TipsHandler, get_thread_replies() must catch Slack API errors., get_thread_replies() should have a try/except around conversations_replies., TestGetThreadRepliesErrorHandling
+Nodes (8): Format Slack draft previews., Load voice.md for humanizer., Load social-config.json., Handle messages in #mp-tips — tip to social post as Tayler'd Tip!, TipsHandler, wait_for_reply timeout parameter must not default to None (infinite)., wait_for_reply() must have a reasonable default timeout., TestWaitForReplyDefaultTimeout
 
 ### Community 222 - "Community 222"
 Cohesion: 0.42
@@ -1399,8 +1403,8 @@ Cohesion: 0.18
 Nodes (11): build_agent_prompt(), Build the prompt for a single research agent.      Structure (IFScale: critical, Research prompts must preserve the rich source and subagent workflow., TestBuildAgentPromptResearchBreadth, Tests for identity file loading in agent prompts., vault soul.md should override verticals SOUL.md, Without identity_dir, falls back to soul_path, Research agents need the full Claude Code research surface. (+3 more)
 
 ### Community 241 - "Community 241"
-Cohesion: 0.17
-Nodes (7): Tests for dashboard findings route — column allowlist validation., _get_distinct_values must reject column names not in the allowlist., Known-good column names should not raise., A SQL injection payload as column name must raise ValueError., An arbitrary column name not in the allowlist must raise ValueError., Empty string column name must raise ValueError., TestGetDistinctValuesAllowlist
+Cohesion: 0.12
+Nodes (9): generate_mirrors() creates daily/2026-03-15.md., generate_mirrors() creates topic files based on agent names., generate_mirrors() creates source files from finding URLs., generate_mirrors() creates social/posts.md., generate_mirrors() creates social/corrections.md., generate_mirrors() creates social/engagement-log.md., generate_mirrors() creates people/engaged-authors.md., generate_mirrors() creates _index.md in each subfolder. (+1 more)
 
 ### Community 242 - "Community 242"
 Cohesion: 0.25
@@ -1427,8 +1431,8 @@ Cohesion: 0.22
 Nodes (5): Migrate quality_history from v1 schema if needed.          v1 stored one row per, Takes traces.db connection.          Args:             traces_conn: sqlite3.Conn, Return column names for a table, or None if it doesn't exist., Create monitoring-specific tables if they don't exist.          Also migrates ta, Migrate agent_metrics from v1 schema if needed.          v1 had ``cost REAL`` in
 
 ### Community 248 - "Community 248"
-Cohesion: 0.04
-Nodes (54): append_entry(), archive_old_entries(), atomic_write(), _file_lock(), get_recent_entries(), _normalise_heading(), Atomic read/write for Obsidian vault markdown files.  All writes go through atom, Split markdown text into (heading, body) pairs on ``## `` boundaries.      The f (+46 more)
+Cohesion: 0.05
+Nodes (44): append_entry(), archive_old_entries(), atomic_write(), _file_lock(), get_recent_entries(), Split markdown text into (heading, body) pairs on ``## `` boundaries.      The f, Update a ``## ``-delimited section in a markdown file.      Matching is case-ins, Append a dated entry to an append-only log file (e.g. decisions.md).      Each e (+36 more)
 
 ### Community 249 - "Community 249"
 Cohesion: 0.27
@@ -1551,7 +1555,7 @@ Cohesion: 0.29
 Nodes (7): Architecture Note, Depends On, Key Functions, Known Fragile Points, Last Modified By Harness, orchestrator/agents.py, What It Does
 
 ### Community 281 - "Community 281"
-Cohesion: 0.29
+Cohesion: 0.25
 Nodes (7): Agent Patterns, External API Patterns, Harness, Last Updated, Migration, Pipeline, What Fails
 
 ### Community 282 - "Community 282"
@@ -1628,7 +1632,7 @@ Nodes (6): 1.6 Agent Memory & Cross-Run Persistence, EchoVault — Persistent Lo
 
 ### Community 300 - "Community 300"
 Cohesion: 0.22
-Nodes (5): _slugify() converts strings to filesystem-safe slugs., _slugify() strips special characters., _topic_from_agent() extracts topic name from agent name., _domain_from_url() extracts domain from URL., TestSlugGeneration
+Nodes (5): generate_mirrors() handles empty database gracefully., Findings with NULL source_url are handled., Running generate_mirrors() twice produces the same output., Titles with special characters don't break file generation., TestEdgeCases
 
 ### Community 301 - "Community 301"
 Cohesion: 0.47
@@ -1747,16 +1751,16 @@ Cohesion: 0.33
 Nodes (5): From Concept, {{ from_title }} <-> {{ to_title }}, Relationship, Shared Evidence, To Concept
 
 ### Community 331 - "Community 331"
-Cohesion: 0.50
-Nodes (4): 4.10 Error Handling & Recovery, AgentDropoutV2 — Cascading Error Prevention, Agents of Chaos: 16 Real-World Failures, IMMACULATE — Detecting API Provider Cheating
+Cohesion: 0.33
+Nodes (6): Depends On, Key Functions, Known Fragile Points, Last Modified By Harness, orchestrator/analyzer.py, What It Does
 
 ### Community 334 - "Community 334"
 Cohesion: 0.25
 Nodes (8): _dedup_sections(), Remove duplicate ## sections from markdown content.      Keeps the first occurre, _dedup_sections should keep first occurrence, drop subsequent., No duplicates -> no changes., Headings should be matched case-insensitively., test_dedup_sections_case_insensitive(), test_dedup_sections_preserves_unique(), test_dedup_sections_removes_duplicates()
 
 ### Community 336 - "Community 336"
-Cohesion: 0.25
-Nodes (5): _has_frontmatter(), Topic template output has valid frontmatter., Source template output has valid frontmatter., Check that rendered text starts with YAML frontmatter delimiters., Corrections template output has valid frontmatter.
+Cohesion: 0.33
+Nodes (4): _has_frontmatter(), Topic template output has valid frontmatter., Source template output has valid frontmatter., Check that rendered text starts with YAML frontmatter delimiters.
 
 ### Community 337 - "Community 337"
 Cohesion: 0.33
@@ -1891,8 +1895,16 @@ Cohesion: 0.50
 Nodes (3): Deterministic vs Agentic Boundary, MindPattern Autonomous Harness, Pipeline Flow
 
 ### Community 371 - "Community 371"
-Cohesion: 0.50
-Nodes (3): wait_for_reply timeout parameter must not default to None (infinite)., wait_for_reply() must have a reasonable default timeout., TestWaitForReplyDefaultTimeout
+Cohesion: 0.40
+Nodes (5): Agent Roster, agents/research-agents, Connected To, Last Modified By Harness, Skill File Structure
+
+### Community 372 - "Community 372"
+Cohesion: 0.40
+Nodes (3): Corrections template renders before/after pairs., Corrections template output has valid frontmatter., TestCorrectionsTemplate
+
+### Community 373 - "Community 373"
+Cohesion: 0.40
+Nodes (3): read_source_file returns content of an existing file., read_source_file returns '' for a file that does not exist., TestReadSourceFile
 
 ### Community 374 - "Community 374"
 Cohesion: 0.29
@@ -1905,6 +1917,10 @@ Nodes (7): MindPatternBot, Route incoming Socket Mode events to handlers., TTL-s
 ### Community 377 - "Community 377"
 Cohesion: 0.40
 Nodes (5): 2.1 Multi-Document Synthesis & Deduplication, Context Mode MCP — 98% Context Reduction, Coverage Manifest Before Synthesis, PageIndex — Vectorless RAG via Hierarchical Tree Indexing, Sub-Agent Compression Pattern
+
+### Community 378 - "Community 378"
+Cohesion: 0.50
+Nodes (4): 4.8 Deployment, Alibaba OpenSandbox, Cloudflare Agents — Serverless, Docker/Anthropic Sandbox Isolation
 
 ### Community 379 - "Community 379"
 Cohesion: 0.33
@@ -1963,8 +1979,12 @@ Cohesion: 0.27
 Nodes (10): fetch(), fetch_with_diagnostics(), _parse_stderr_diagnostics(), Fetch RSS items and return as preflight entries., Transform rss-fetch.py output item to preflight entry., Parse structured rss-fetch stderr lines, preserving raw fallback., Return a compact reason string naming bad feeds/URLs when possible., Fetch RSS items and return entries plus source-health diagnostics. (+2 more)
 
 ### Community 416 - "Community 416"
-Cohesion: 0.29
-Nodes (5): jinja_env(), Tests for Jinja2 Obsidian mirror templates in memory/templates/.  Validates that, Jinja2 Environment pointing at memory/templates/., Corrections template renders before/after pairs., TestCorrectionsTemplate
+Cohesion: 0.50
+Nodes (3): jinja_env(), Tests for Jinja2 Obsidian mirror templates in memory/templates/.  Validates that, Jinja2 Environment pointing at memory/templates/.
+
+### Community 418 - "Community 418"
+Cohesion: 0.50
+Nodes (3): get_thread_replies() must catch Slack API errors., get_thread_replies() should have a try/except around conversations_replies., TestGetThreadRepliesErrorHandling
 
 ### Community 420 - "Community 420"
 Cohesion: 0.50

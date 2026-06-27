@@ -632,7 +632,7 @@ source, newsletter quality, and Slack approval paths are stabilized first.
 
 | # | New feature | What it adds | Why it matters | Likely systems | Effort / Risk | Success signal |
 |---|---|---|---|---|---|---|
-| 1 | Slack Editorial Desk | A dedicated Slack command that shows pipeline-selected story candidates with good/save/revise/reject/follow-up feedback actions. | Turns Slack into a daily review room without making the user manually pick newsletter stories. | `slack_bot`, `memory.db`, `reports` | M / Med | User can review pipeline-selected candidates and request follow-up from one Slack thread. |
+| 1 | Slack Social Ideas Desk | A dedicated Slack command that shows social post ideas with draft/save/revise/reject/follow-up actions. | Turns Slack into a social planning room without touching newsletter story selection or sending. | `slack_bot`, `memory.db`, `reports`, social drafts | M / Med | User can review social post ideas, create drafts, and request follow-up from one Slack thread. |
 | 2 | Topic Watchlists | User-defined topics like "agent security", "AI IDEs", "MCP", or "SaaS disruption" with custom depth and priority. | Lets the system intentionally track what matters instead of only reacting to feeds. | `memory`, `preflight`, dashboard | M / Low | Watchlist topics appear with coverage and freshness scores. |
 | 3 | Trend Radar Dashboard | Visual map of rising topics, sources, companies, people, and tools over 7/30/90 days. | Makes research direction visible and helps spot momentum before it becomes obvious. | dashboard, embeddings, `run_quality` | L / Med | Dashboard shows trend clusters and velocity. |
 | 4 | Opportunity Brief Generator | Converts research into "what to build / sell / write / test next" briefs. | Moves beyond newsletter summarization into actionable strategy. | `orchestrator`, memory, dashboard | M / Med | Each issue can produce 3-5 opportunity briefs. |
@@ -656,7 +656,7 @@ source, newsletter quality, and Slack approval paths are stabilized first.
 | 22 | Newsletter Section A/B Lab | Test alternate section ordering, titles, or framing against user/reader feedback. | Lets quality improve from evidence, not taste alone. | newsletter, feedback, evaluator | L / Med | Version metrics show which framing performs better. |
 | 23 | Personal Knowledge Graph Explorer | Browse entities, topics, sources, and story relationships from the vault/database. | Makes the accumulated research legible. | memory graph, dashboard | L / Med | User can navigate from topic to stories to sources. |
 | 24 | "Ask Follow-Up" Research Button | From a newsletter story or Slack draft, trigger a deeper follow-up research run. | Lets human curiosity steer the next layer of research. | Slack bot, orchestrator agents | M / Med | One Slack command launches scoped follow-up and returns findings. |
-| 25 | Slack Editorial Desk | A dedicated Slack command that shows pipeline-selected story candidates with good/save/revise/reject/follow-up feedback actions. | Turns Slack into a daily review room without making the user manually pick newsletter stories. | Slack bot, memory, reports | M / Med | User can review pipeline-selected candidates and request follow-up from one Slack thread. |
+| 25 | Slack Social Ideas Desk | A dedicated Slack command that shows social post ideas with draft/save/revise/reject/follow-up actions. | Turns Slack into a social planning room without touching newsletter story selection or sending. | Slack bot, memory, reports, social drafts | M / Med | User can review social post ideas, create drafts, and request follow-up from one Slack thread. |
 | 26 | Competitive Landscape Maps | For a topic, produce a market map of companies, tools, categories, and open-source projects. | Useful for strategy and product opportunity discovery. | preflight, synthesis, dashboard | L / Med | Topic page shows category map with sources. |
 | 27 | Decision Journal | Track editorial/product decisions made from the research and whether they paid off. | Closes the loop between insight and action. | vault, dashboard, memory | M / Low | Decisions link to source evidence and later outcomes. |
 | 28 | Public Collections | Curated public pages like "Best AI agent tools this month" or "MCP security brief." | Turns private research into shareable assets. | dashboard, reports | M / Med | Collection page can be published from selected findings. |
@@ -706,19 +706,21 @@ place instead of deleting the column.
 
 - Created `docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md`
   as the spec/runbook for new-feature table row 24, `"Ask Follow-Up" Research
-  Button`, and expanded it to include the paired Slack Editorial Desk feature.
-- Added Slack Editorial Desk to the new-feature ideas table as row 25; later
+  Button`, and expanded it to include the optional paired Slack Social Ideas
+  Desk feature.
+- Added Slack Social Ideas Desk to the new-feature ideas table as row 25; later
   rows are renumbered.
 - Scope is command-first Slack follow-up research from `#mp-briefing` and
-  draft/review threads plus a Slack command that shows pipeline-selected story
-  candidates with good, save, revise, reject, and follow-up feedback actions. It
-  explicitly does not run the full daily pipeline, send newsletters, post social
-  content, sync Fly, change schema, or add dependencies without owner approval.
-- Editorial Desk is not a manual story picker. The pipeline remains responsible
-  for choosing newsletter stories. Editorial Desk feedback is optional; it is
-  not a newsletter send command, social posting approval, or required gate. The
-  newsletter should still run through the normal quality-gated pipeline if
-  Tayler does not reply in Slack.
+  draft/review threads plus an optional Slack command that shows social post
+  ideas with draft, save, revise, reject, and follow-up actions. It explicitly
+  does not run the full daily pipeline, send newsletters, post social content,
+  sync Fly, change schema, or add dependencies without owner approval.
+- There is no newsletter desk in scope. The normal scheduled
+  newsletter remains responsible for research, story selection, writing, and
+  sending through the quality-gated pipeline. Social Ideas Desk is social-only;
+  it can create drafts/manual-copy candidates and trigger follow-up research,
+  but it cannot approve, block, write, or send the newsletter and cannot publish
+  live social posts.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
