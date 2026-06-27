@@ -5,9 +5,10 @@ and injected agent boundaries so they never call Claude, Slack, network, social
 posting, email, Fly, or private local databases.
 """
 
+import ast
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from orchestrator.traces_db import init_db
 
@@ -83,6 +84,63 @@ def test_dry_run_followup_returns_findings_without_agent_calls(tmp_path):
     assert Path(result["artifact"]).exists()
 
 
+def test_disable_outbound_forces_dry_run_without_default_agent(tmp_path, monkeypatch):
+    from orchestrator.followup import parse_followup_request, run_followup_research
+
+    monkeypatch.setenv("MP_DISABLE_OUTBOUND", "1")
+    request = parse_followup_request(
+        "follow up: compare agent-reach and opencli for social search"
+    )
+
+    with patch("orchestrator.followup._default_agent_runner") as default_runner:
+        result = run_followup_research(
+            request,
+            dry_run=None,
+            artifact_dir=tmp_path / "followups",
+        )
+
+    default_runner.assert_not_called()
+    assert result["mode"] == "dry_run"
+    assert result["status"] == "completed"
+
+
+def test_followup_service_has_no_runner_delivery_social_or_fly_imports():
+    source = Path("orchestrator/followup.py").read_text()
+    tree = ast.parse(source)
+    imports = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+            imports.update(f"{node.module}.{alias.name}" for alias in node.names)
+
+    forbidden_imports = {
+        "run",
+        "orchestrator.runner",
+        "orchestrator.newsletter",
+        "social.pipeline",
+        "social.posting",
+        "social.approval",
+    }
+    forbidden_tokens = {
+        "run.py",
+        "send_newsletter",
+        "send_email",
+        "sync_to_fly",
+        "sync_data_to_fly",
+        "flyctl",
+        "BlueskyClient",
+        "LinkedInClient",
+        "post_to_platforms",
+    }
+
+    assert imports.isdisjoint(forbidden_imports)
+    for token in forbidden_tokens:
+        assert token not in source
+
+
 def test_followup_logs_safe_trace_and_artifact(tmp_path):
     from orchestrator.followup import parse_followup_request, run_followup_research
 
@@ -138,4 +196,3 @@ def test_live_agent_failure_returns_visible_degraded_result(tmp_path):
     assert "failed" in result["why_this_matters"].lower()
     assert result["artifact"]
     assert Path(result["artifact"]).exists()
-

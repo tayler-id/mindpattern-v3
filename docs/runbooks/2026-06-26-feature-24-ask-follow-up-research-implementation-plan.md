@@ -90,7 +90,7 @@ instead of deleting the column.
 | 7 | Approval-loop follow-up interceptor | Yes | Added `slack_bot/handlers/followup.py`; targeted Slack tests verify follow-up replies are consumed before edit/approval parsing. |
 | 8 | `#mp-posts` draft-thread follow-up | Yes | `PostsHandler._run_and_approve()` handles `follow up:` then keeps waiting; test proves `_post_to_platforms()` is not called. |
 | 9 | `#mp-skills` and `#mp-tips` draft-thread follow-up | Yes | `SkillsHandler` and `TipsHandler` handle `follow up:` then keep waiting; tests prove `_post()` is not called and `skip` still cancels. |
-| 10 | Ask Follow-Up safety regression suite | No | Proves no runner/email/social/Fly side effects. |
+| 10 | Ask Follow-Up safety regression suite | Yes | Added import/token guards for runner/newsletter/social/Fly delivery paths and `MP_DISABLE_OUTBOUND=1` dry-run boundary test; Task 10 verification passed. |
 | 11 | Social Ideas parser and idea contract | No | Social-only commands; newsletter commands rejected. |
 | 12 | Fixture-backed social idea loader | No | CI does not depend on private DB data. |
 | 13 | Safe social idea feedback store | No | JSON artifact contract; no schema. |
@@ -367,6 +367,15 @@ surprise draft creation.
 - `tests/test_social.py` or `tests/test_runner.py`
 
 **Estimated scope:** S
+
+**Implementation evidence:**
+- Added follow-up service guards proving no imports/references to daily runner,
+  newsletter delivery, social posting, or Fly sync boundaries.
+- Added `MP_DISABLE_OUTBOUND=1` regression proving the default agent runner is
+  not called and deterministic dry-run is selected.
+- Verification passed:
+  `.venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_social.py tests/test_runner.py::TestDryRunPhases -q`
+  -> 60 passed.
 
 ### Checkpoint: Ask Follow-Up MVP
 
