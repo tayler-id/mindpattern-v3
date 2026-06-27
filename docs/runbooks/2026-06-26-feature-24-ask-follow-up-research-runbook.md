@@ -591,8 +591,8 @@ deleting the column.
 | 10 | No | Wire Social Ideas Desk Slack command | `social ideas` posts a numbered social idea thread. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_slack_bot.py -q` | `slack_bot/handlers/social_ideas.py`, tests |
 | 11 | No | Wire Social Ideas Desk actions | `draft`, `save`, `revise`, `reject`, and `follow up` update feedback safely without posting live or touching newsletter flow. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_followup_research.py -q` | Slack handler, `orchestrator/social_ideas.py`, follow-up integration |
 | 12 | No | Add no-live-post/no-newsletter-gate regression for Social Ideas Desk | Social idea actions cannot call live posting/email/sync or block newsletter phases. | `.venv/bin/python3 -m pytest tests/test_social_ideas_desk.py tests/test_social.py tests/test_runner.py -q` | tests |
-| 13 | No | Update docs and handoff evidence | Runbook records commands, results, blockers, and live-smoke status. | `git diff --check` | this file, `.claude/handoffs/...` |
-| 14 | No | Run Graphify after code changes | Graphify artifacts are current if indexed code/docs changed. | `graphify update . && graphify check-update .` | `graphify-out/` |
+| 13 | Yes | Update docs and handoff evidence | Runbook records commands, results, blockers, and live-smoke status. | `git diff --check`; docs/handoff updated through Ask Follow-Up Task 10 | this file, `.claude/handoffs/...` |
+| 14 | Yes | Run Graphify after code changes | Graphify artifacts are current if indexed code/docs changed. | `graphify update .` -> 6826 nodes, 10611 edges, 420 communities; `graphify check-update .` -> exit 0 | `graphify-out/` |
 | 15 | No | Optional owner-approved Fly smoke | Live Slack commands return results and trigger no forbidden outbound actions. | owner-approved smoke checklist | no code unless smoke finds bug |
 
 ## Risk Register

@@ -97,8 +97,8 @@ instead of deleting the column.
 | 14 | Social Ideas Slack command | No | `social ideas` posts a numbered social idea list. |
 | 15 | Social Ideas actions | No | `draft/save/revise/reject/follow up` are safe. |
 | 16 | Social Ideas safety regression suite | No | Proves no live post and no newsletter gate. |
-| 17 | Docs, handoff, and Done evidence | No | Runbook/handoff current for next agent. |
-| 18 | Graphify, CI, commit, push | No | Graph fresh, tests pass, clean status. |
+| 17 | Docs, handoff, and Done evidence | Yes | Runbook/handoff updated with Ask Follow-Up evidence through Task 10; optional Social Ideas Desk intentionally deferred. |
+| 18 | Graphify, CI, commit, push | No | Local verification and Graphify passed; push/CI watch still pending. |
 | 19 | Optional owner-approved live smoke | Deferred | Requires explicit deploy/live Slack approval. |
 
 ## Task List
@@ -379,10 +379,10 @@ surprise draft creation.
 
 ### Checkpoint: Ask Follow-Up MVP
 
-- [ ] `#mp-briefing` follow-up is implemented and tested.
-- [ ] Draft-thread follow-up is implemented in existing approval loops.
-- [ ] No tests require Slack tokens, Claude, network, Fly, or private DB data.
-- [ ] The daily newsletter path is not modified.
+- [x] `#mp-briefing` follow-up is implemented and tested.
+- [x] Draft-thread follow-up is implemented in existing approval loops.
+- [x] No tests require Slack tokens, Claude, network, Fly, or private DB data.
+- [x] The daily newsletter path is not modified.
 
 ### Phase 3: Optional Social Ideas Desk
 

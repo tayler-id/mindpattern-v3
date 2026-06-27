@@ -805,8 +805,8 @@
     "semantic_hash": ""
   },
   "slack_bot/handlers/briefing.py": {
-    "mtime": 1782506113.375411,
-    "ast_hash": "13e1b1f7378e2f141d500e9b18be6787",
+    "mtime": 1782523737.2555127,
+    "ast_hash": "fe3ed62d21a29a135e185e18531365dc",
     "semantic_hash": ""
   },
   "slack_bot/handlers/engagement.py": {
@@ -820,18 +820,18 @@
     "semantic_hash": ""
   },
   "slack_bot/handlers/posts.py": {
-    "mtime": 1782503002.820177,
-    "ast_hash": "f5423308384aaba010e6abe0d6b8703f",
+    "mtime": 1782523716.259451,
+    "ast_hash": "d80488f5f05b9679cc390ce49b80bc93",
     "semantic_hash": ""
   },
   "slack_bot/handlers/skills.py": {
-    "mtime": 1782503015.8559377,
-    "ast_hash": "3e67e2e09e7f186e73263d2fb8ecd381",
+    "mtime": 1782523721.4709194,
+    "ast_hash": "3356c065af26bdae9a591af3b4deea4c",
     "semantic_hash": ""
   },
   "slack_bot/handlers/tips.py": {
-    "mtime": 1782503027.434313,
-    "ast_hash": "a2b0eb58992d33c3687f823c96c8a5bf",
+    "mtime": 1782523725.774174,
+    "ast_hash": "7bbf1625104496237e094debc8e6a380",
     "semantic_hash": ""
   },
   "slack_bot/heartbeat.py": {
@@ -1175,8 +1175,8 @@
     "semantic_hash": ""
   },
   "tests/test_slack_bot.py": {
-    "mtime": 1782506121.5023184,
-    "ast_hash": "cb0da277f11c445714eaf691a7fa3de3",
+    "mtime": 1782523745.9556625,
+    "ast_hash": "edf9dc73cb072e63c544ffaea645910f",
     "semantic_hash": ""
   },
   "tests/test_social.py": {
@@ -2155,13 +2155,28 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md": {
-    "mtime": 1782522821.4960182,
-    "ast_hash": "0a21f42ed3ef936f2124d9cf8a7b84b3",
+    "mtime": 1782523907.9464223,
+    "ast_hash": "c859a4215452b0cd7ff91dc6e2650b19",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md": {
-    "mtime": 1782522810.6481562,
-    "ast_hash": "cab15d9e84a5442d6e9bd5c467d83d5b",
+    "mtime": 1782523899.7604818,
+    "ast_hash": "de114bb248ce8f7fe182e1f36b79980a",
+    "semantic_hash": ""
+  },
+  "orchestrator/followup.py": {
+    "mtime": 1782523327.8497229,
+    "ast_hash": "5403744afdb954a2a135fa7a2b436010",
+    "semantic_hash": ""
+  },
+  "slack_bot/handlers/followup.py": {
+    "mtime": 1782523711.0982018,
+    "ast_hash": "5b0905a4675bc85b0cbf4e64d626daea",
+    "semantic_hash": ""
+  },
+  "tests/test_followup_research.py": {
+    "mtime": 1782523889.5189931,
+    "ast_hash": "95bf2c143c6af65d70dcfb41eea8e49b",
     "semantic_hash": ""
   }
 }

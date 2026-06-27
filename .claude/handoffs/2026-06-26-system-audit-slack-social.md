@@ -753,12 +753,23 @@ place instead of deleting the column.
   dry-run without calling the default agent boundary. Verification:
   `.venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_social.py tests/test_runner.py::TestDryRunPhases -q`
   -> 60 passed.
+- Broader local verification passed after the Ask Follow-Up MVP changes:
+  `.venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_slack_bot.py tests/test_approval.py tests/test_social.py -q`
+  -> 212 passed; `.venv/bin/python3 -m pytest -q --tb=short tests/test_runner.py::TestPhaseTrendScan tests/test_runner.py::TestPhaseResearch tests/test_runner.py::TestPhaseSynthesis tests/test_runner.py::TestPhaseSocial`
+  -> 23 passed.
+- Graphify was refreshed after code/docs changes:
+  `graphify update .` -> 6826 nodes, 10611 edges, 420 communities;
+  `graphify check-update .` -> exit 0.
+- Optional Social Ideas Desk is intentionally deferred in this goal. No
+  Social Ideas Desk parser, loader, feedback store, or Slack command was
+  implemented.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
-- Remaining required Ask Follow-Up work: run the broader local verification,
-  refresh Graphify, commit/push, and watch CI. Optional Social Ideas Desk work
-  has not started.
+- Remaining required Ask Follow-Up work: commit the final docs/Graphify
+  evidence, push to `origin/main`, and watch GitHub Actions. No Fly deploy,
+  live Slack smoke, full daily pipeline run, newsletter send, or live social
+  post has been run for this feature.
 
 ## Do Not Do Yet
 
