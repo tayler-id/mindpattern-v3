@@ -28,9 +28,9 @@ feature yet.
    change for the MVP.
 6. The feature should reuse existing agent execution and tracing patterns where
    possible instead of creating a second pipeline framework.
-7. The Slack Editorial Desk pairs with this feature as the daily story chooser:
-   it should let Tayler approve, save, revise, reject, or ask follow-up on story
-   candidates from one Slack thread.
+7. The Slack Editorial Desk pairs with this feature as a review and feedback
+   surface for pipeline-selected candidates. It must not make Tayler pick the
+   newsletter stories manually.
 
 If any of these are wrong, update this runbook before implementation starts.
 
@@ -39,10 +39,10 @@ If any of these are wrong, update this runbook before implementation starts.
 Build a controlled way for Tayler to ask, from Slack, "go deeper on this story"
 without running the whole newsletter pipeline.
 
-Paired objective: add a Slack Editorial Desk command that shows today's best
-story candidates in one thread, then lets Tayler make editorial decisions from
-Slack instead of reconstructing the day from logs, reports, and scattered
-drafts.
+Paired objective: add a Slack Editorial Desk command that shows
+pipeline-recommended story candidates in one thread, then lets Tayler react, save,
+request follow-up, or explicitly override a bad candidate without becoming the
+manual story selector.
 
 The user should be able to trigger follow-up research from:
 
@@ -61,12 +61,15 @@ concise result in the same Slack thread:
   ignore.
 - Clear degraded/error notice if sources or agent execution fail.
 
-The Editorial Desk should show candidates with actions:
+The Editorial Desk should show pipeline-selected candidates with optional
+actions:
 
-- `approve <n>`: mark candidate as approved for newsletter or social angle.
-- `save <n>`: keep the candidate for later without using it today.
-- `revise <n>: <guidance>`: ask the bot to reframe the angle.
-- `reject <n>: <reason>`: mark the candidate as not useful and preserve why.
+- `good <n>`: positive feedback that the pipeline chose a useful candidate.
+- `save <n>`: keep the candidate for later without forcing it into today.
+- `revise <n>: <guidance>`: ask the bot to reframe the angle as feedback.
+- `reject <n>: <reason>`: mark the candidate as not useful feedback; it should
+  only remove/override a story when the command is explicitly implemented as a
+  pre-synthesis override.
 - `follow up <n>: <question>`: launch the scoped follow-up research flow for
   that candidate.
 
@@ -81,8 +84,10 @@ The Editorial Desk should show candidates with actions:
   cannot meet acceptance criteria with trace events and local artifacts.
 - Do not expose Slack message bodies, secrets, subscriber data, `users.json`,
   `social-config.json`, `memory.db`, or `traces.db` in committed files.
-- Do not let Editorial Desk approval publish anything. Editorial approval means
-  "this story/angle is worth using", not "post this live".
+- Do not make Tayler manually choose newsletter stories. The pipeline remains
+  responsible for selection.
+- Do not let Editorial Desk feedback publish anything. Positive feedback means
+  "the pipeline found something useful", not "send/post this live".
 
 ## Tech Stack
 
@@ -259,25 +264,28 @@ Manual smoke, only after owner approval:
 - Never: run the full daily pipeline from the follow-up command.
 - Never: auto-send a newsletter from this feature.
 - Never: auto-post social content from this feature.
-- Never: treat Editorial Desk approval as social posting approval.
+- Never: make Slack Editorial Desk a required manual story-picking gate.
+- Never: treat Editorial Desk feedback as social posting approval.
 - Never: commit local databases, secrets, Slack message bodies, subscriber data,
   `users.json`, or `social-config.json`.
 
 ## How Slack Editorial Desk Works
 
-Think of the Editorial Desk as a daily inbox of story options.
+Think of the Editorial Desk as a daily review panel for pipeline-selected
+candidates.
 
 Today, the system researches, synthesizes, writes, and posts status. The human
-has to inspect reports, Slack threads, and source counts to decide what is
-actually worth using. Editorial Desk changes that into one control thread:
+has to inspect reports, Slack threads, and source counts to understand what the
+pipeline chose and why. Editorial Desk changes that into one review thread:
 
 1. The bot gathers today's strongest candidates from the research findings,
    current report, source health, and any social draft candidates.
-2. The bot ranks them and posts a numbered list in Slack.
-3. Tayler replies with simple commands against the numbers.
-4. The bot records the decision and, if needed, triggers follow-up research.
-5. Later newsletter/social steps can read those decisions, but only after that
-   integration is explicitly implemented and tested.
+2. The bot shows the pipeline-ranked list in Slack with why each candidate was
+   surfaced.
+3. Tayler can ignore it completely and the newsletter still runs.
+4. If Tayler replies, the bot records feedback or triggers follow-up research.
+5. Later newsletter/social steps can learn from that feedback, but only after
+   that integration is explicitly implemented and tested.
 
 Example Slack thread:
 
@@ -297,8 +305,8 @@ Today's story candidates
    Sources: Hugging Face, GitHub
    Suggested use: newsletter story or social angle
 
-Reply:
-approve 2
+Optional replies:
+good 2
 save 1
 reject 3: stale
 revise 2: make this more tactical for builders
@@ -307,17 +315,17 @@ follow up 1: compare agent-reach vs opencli vs native CLIs
 
 Junior-dev mental model:
 
-- `Editorial Desk` is the UI/controller.
+- `Editorial Desk` is the review UI for pipeline-selected candidates.
 - `Candidate loader` is the data access layer.
-- `Decision store` is state.
+- `Feedback store` is state.
 - `Follow-up research` is a command the desk can call.
-- `Newsletter/social` are consumers of decisions later, not automatic effects
+- `Newsletter/social` are consumers of feedback later, not automatic effects
   in the MVP.
 
-This pairs well with Ask Follow-Up because every candidate has two possible
-states: either it is strong enough to use now, or it needs deeper research. The
-desk gives you the decision buttons; follow-up gives you the deeper investigation
-when a candidate is interesting but not ready.
+This pairs well with Ask Follow-Up because the pipeline may surface a candidate
+that is promising but under-explained. The desk shows what the pipeline surfaced;
+follow-up gives you a way to ask for deeper investigation without taking over
+story selection.
 
 ## Editorial Desk MVP Design
 
@@ -335,9 +343,7 @@ story candidates
 Accepted thread commands:
 
 ```text
-approve <number>
-approve <number> newsletter
-approve <number> social
+good <number>
 save <number>
 reject <number>: <reason>
 revise <number>: <guidance>
@@ -347,18 +353,19 @@ status
 
 Rejected commands should return guidance and change no state.
 
-### Approval Semantics
+### Feedback Semantics
 
-Editorial Desk approval is an editorial signal, not a send command.
+Editorial Desk feedback is a learning and review signal, not a selection gate.
 
-For the MVP, `approve <n>` should mean:
+For the MVP, `good <n>` should mean:
 
-- This candidate is worth using.
-- Prefer it for today's newsletter/social planning.
-- Preserve the approved angle and any guidance for later pipeline steps.
+- The pipeline surfaced a useful candidate.
+- Preserve the positive signal and any guidance for future ranking.
+- Do not require this signal for the newsletter to run.
 
 It should not mean:
 
+- Choose the newsletter stories manually.
 - Send the newsletter.
 - Publish to social.
 - Skip quality checks.
@@ -366,17 +373,17 @@ It should not mean:
 
 Recommended MVP behavior:
 
-- If Tayler approves candidates before synthesis, the newsletter can prefer
-  those candidates once that integration is implemented.
-- If Tayler does not approve anything, the daily newsletter still runs using the
+- If Tayler gives feedback before synthesis, later integrations may use that as
+  a ranking signal once explicitly implemented and tested.
+- If Tayler gives no feedback, the daily newsletter still runs using the
   normal quality-gated pipeline.
-- If a candidate is approved for social, it should only create or prioritize a
-  Slack draft. It still needs the normal explicit posting approval before any
-  live social action.
+- If Tayler marks a candidate useful for social, it should only create or
+  prioritize a Slack draft. It still needs the normal explicit posting approval
+  before any live social action.
 
 Possible later mode:
 
-- `editorial lock` could intentionally require approved candidates before
+- `editorial lock` could intentionally require human-selected candidates before
   synthesis, but that should be a separate owner-approved feature because the
   newsletter must not fail just because nobody replied in Slack.
 
@@ -405,25 +412,26 @@ MVP candidate sources, in order:
 3. Current-day social draft/topic artifact, if available.
 4. Deterministic fixture candidates in tests.
 
-### Decision State
+### Feedback State
 
-MVP should avoid schema changes. Store decisions in an uncommitted JSON artifact:
+MVP should avoid schema changes. Store feedback in an uncommitted JSON artifact:
 
 ```text
 data/editorial-desk/YYYY-MM-DD-decisions.json
 ```
 
-Later, after approval, this can move into `memory.db` for durable analytics.
+Later, after owner approval for a storage/schema change, this can move into
+`memory.db` for durable analytics.
 
-Decision states:
+Feedback states:
 
-- `approved`
+- `good`
 - `saved`
 - `rejected`
 - `revision_requested`
 - `followup_requested`
 
-Each decision should record safe metadata only: candidate ID, action, timestamp,
+Each feedback item should record safe metadata only: candidate ID, action, timestamp,
 short reason/guidance, and optional artifact path. Do not store raw Slack user
 IDs or full Slack message bodies.
 
@@ -526,9 +534,11 @@ history.
   Slack, email, social posting, or Fly sync.
 - Follow-up output includes 3-7 findings, source links where available, "why
   this matters", and a recommended next action.
-- `editorial desk` returns today's ranked story candidates in one Slack thread.
-- Editorial Desk actions `approve`, `save`, `revise`, `reject`, and
-  `follow up` update decision state without posting anything live.
+- `editorial desk` returns the pipeline's ranked story candidates in one Slack
+  thread.
+- Editorial Desk actions `good`, `save`, `revise`, `reject`, and `follow up`
+  update feedback state without posting anything live or making Tayler pick the
+  newsletter stories.
 - Editorial Desk `follow up <n>` launches scoped follow-up for the chosen
   candidate.
 - Failures are visible in Slack and trace logs as degraded or failed; they are
@@ -550,9 +560,9 @@ history.
    or should the first implementation ship with dry-run/local-only smoke first?
 5. Should Slack Editorial Desk live in `#mp-briefing`, `#mp-posts`, or its own
    `#mp-editorial` channel?
-6. Should `approve <n>` mean "approved for newsletter", "approved for social
-   angle", or should the command require a target such as
-   `approve 2 newsletter`?
+6. Should `reject <n>` be feedback-only for MVP, or should there be a separate
+   explicit override command such as `exclude <n>` when Tayler wants to remove a
+   pipeline-selected candidate before synthesis?
 7. Should saved candidates feed tomorrow's newsletter planning automatically,
    or only appear when explicitly requested?
 
@@ -571,9 +581,9 @@ deleting the column.
 | 6 | No | Add regression checks for no auto-post/no full pipeline | Follow-up command does not call `run.py`, social posting, email, or sync. | `.venv/bin/python3 -m pytest tests/test_followup_research.py tests/test_social.py -q` | tests |
 | 7 | No | Add Editorial Desk parser tests | Root and thread commands are accepted/rejected explicitly. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `tests/test_editorial_desk.py` |
 | 8 | No | Add candidate loader dry-run/fixture path | CI can rank candidates without local private DB data. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `orchestrator/editorial.py`, tests |
-| 9 | No | Add decision store | Actions persist safe candidate decisions without schema changes. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `orchestrator/editorial.py`, tests |
+| 9 | No | Add feedback store | Actions persist safe candidate feedback without schema changes. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py -q` | `orchestrator/editorial.py`, tests |
 | 10 | No | Wire Editorial Desk Slack command | `editorial desk` posts a numbered candidate thread. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_slack_bot.py -q` | `slack_bot/handlers/briefing.py` or `slack_bot/handlers/editorial.py`, tests |
-| 11 | No | Wire Editorial Desk actions | `approve`, `save`, `revise`, `reject`, and `follow up` update state safely. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_followup_research.py -q` | Slack handler, `orchestrator/editorial.py`, follow-up integration |
+| 11 | No | Wire Editorial Desk actions | `good`, `save`, `revise`, `reject`, and `follow up` update feedback safely without manual story selection. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_followup_research.py -q` | Slack handler, `orchestrator/editorial.py`, follow-up integration |
 | 12 | No | Add no-live-post regression for Editorial Desk | Editorial actions cannot call social posting/email/sync. | `.venv/bin/python3 -m pytest tests/test_editorial_desk.py tests/test_social.py -q` | tests |
 | 13 | No | Update docs and handoff evidence | Runbook records commands, results, blockers, and live-smoke status. | `git diff --check` | this file, `.claude/handoffs/...` |
 | 14 | No | Run Graphify after code changes | Graphify artifacts are current if indexed code/docs changed. | `graphify update . && graphify check-update .` | `graphify-out/` |
@@ -589,8 +599,8 @@ deleting the column.
 | Raw Slack content leaks into traces/docs | Privacy risk | Store hashes/previews only in traces; do not commit artifacts |
 | External source failures produce bland output | Quality regression | Mark degraded visibly and include source health/failure reason |
 | Claude/network calls make tests flaky | CI instability | Dry-run deterministic path and mocks for all external boundaries |
-| Editorial Desk approval is mistaken for publish approval | Could post unintentionally if wired into social path incorrectly | Treat editorial approval as story selection only; add no-live-post regression tests |
-| Candidate state creates another hidden source of truth | Later agents may not know what Slack decisions mean | Store decisions in a documented JSON contract first; update handoff/runbook evidence |
+| Editorial Desk feedback is mistaken for story selection or publish approval | Could make Tayler manually pick stories or post unintentionally | Treat feedback as optional learning/review only; add no-live-post and no-manual-gate regression tests |
+| Candidate feedback creates another hidden source of truth | Later agents may not know what Slack feedback means | Store feedback in a documented JSON contract first; update handoff/runbook evidence |
 | Ranking candidates from `memory.db` makes CI depend on private data | CI failure or false confidence | Use fixture/dry-run candidate loader in tests |
 
 ## Slash Goal Prompt
@@ -605,8 +615,10 @@ Primary source of truth:
 - .claude/handoffs/2026-06-26-system-audit-slack-social.md
 
 This is a new-feature pass for the "Ask Follow-Up" Research Button/Command and
-the paired Slack Editorial Desk. Start with the command-first MVP unless the
-owner explicitly approves Slack Block Kit interactivity.
+the paired Slack Editorial Desk. Slack Editorial Desk is a review/feedback
+surface for pipeline-selected candidates, not a manual story picker. Start with
+the command-first MVP unless the owner explicitly approves Slack Block Kit
+interactivity.
 
 Hard requirements:
 - Keep Slack-bot-first behavior.
@@ -616,8 +628,10 @@ Hard requirements:
 - No newsletter send, social post, Fly sync, or deployment without explicit
   owner approval.
 - No live outbound social post ever without explicit owner approval in Slack.
-- Editorial Desk approval means story/angle selection only; it must not publish
-  anything live.
+- The pipeline remains responsible for choosing newsletter stories.
+- Editorial Desk feedback must not become a required manual story-selection
+  gate.
+- Editorial Desk feedback must not publish anything live.
 - Dry-run/focused tests must not call Claude, network, Slack, email, social APIs,
   or Fly.
 - Do not expose or commit secrets, personal data, raw Slack message bodies,
@@ -632,7 +646,8 @@ Execution rules:
 - Preserve unrelated user changes.
 - Keep draft-thread follow-up behavior from approving, posting, skipping, or
   losing the draft.
-- Keep Editorial Desk actions from posting social content or sending email.
+- Keep Editorial Desk actions from posting social content, sending email, or
+  requiring Tayler to pick newsletter stories.
 - After code/docs changes, run Graphify where required.
 - Work in small commits by verified task group.
 
@@ -643,9 +658,12 @@ Definition of done:
   approving or posting anything.
 - Follow-up service has deterministic dry-run behavior and safe trace/artifact
   output.
-- `editorial desk` shows ranked story candidates in one Slack thread.
-- Editorial Desk supports `approve`, `save`, `revise`, `reject`, and
-  `follow up` actions with safe decision state.
+- `editorial desk` shows the pipeline's ranked story candidates in one Slack
+  thread.
+- Editorial Desk supports `good`, `save`, `revise`, `reject`, and `follow up`
+  actions with safe feedback state.
+- The newsletter still runs from the normal quality-gated pipeline without
+  waiting for Editorial Desk feedback.
 - Follow-up failures are visibly marked degraded or failed.
 - CI-equivalent tests pass locally.
 - Runbook and handoff are current for the next agent.
