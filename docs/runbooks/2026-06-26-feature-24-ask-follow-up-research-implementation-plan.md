@@ -81,11 +81,11 @@ instead of deleting the column.
 
 | Task | Title | Done | Evidence / remaining work |
 |---|---|---|---|
-| 1 | Capture baseline and guardrails | No | Record dirty files and focused test baseline. |
-| 2 | Follow-up parser and safe request contract | No | Add parser tests and pure helpers. |
-| 3 | Deterministic dry-run follow-up service | No | No Claude/network in dry-run. |
-| 4 | Live-agent adapter with degraded results | No | Mocked adapter around existing agent execution. |
-| 5 | Safe trace and artifact writer | No | Existing trace schema only; redacted payloads. |
+| 1 | Capture baseline and guardrails | Yes | `git status --short --branch`, `git diff --stat`, Slack/social/approval baseline, and runner dry-run baseline passed before edits. |
+| 2 | Follow-up parser and safe request contract | Yes | Added `parse_followup_request()` and parser/redaction tests. |
+| 3 | Deterministic dry-run follow-up service | Yes | Added `run_followup_research(..., dry_run=True)` and dry-run no-agent-call test. |
+| 4 | Live-agent adapter with degraded results | Yes | Added injected live-agent boundary with failed/degraded result test. |
+| 5 | Safe trace and artifact writer | Yes | Added trace/artifact writing with redaction test using temp `traces.db`. |
 | 6 | `#mp-briefing` follow-up command | No | Owner command returns in-thread result. |
 | 7 | Approval-loop follow-up interceptor | No | Shared helper handles `follow up:` inside polling loops. |
 | 8 | `#mp-posts` draft-thread follow-up | No | Follow-up reply does not approve, cancel, or post. |
@@ -618,4 +618,3 @@ test real Slack commands. This is not required for local implementation.
 3. Should live follow-up research be allowed in the first implementation, or
    should the first merged version ship dry-run/local-only until a separate
    owner-approved smoke?
-

@@ -726,6 +726,13 @@ place instead of deleting the column.
   it can create drafts/manual-copy candidates and trigger follow-up research,
   but it cannot approve, block, write, or send the newsletter and cannot publish
   live social posts.
+- Implementation progress: baseline was clean and focused baseline tests passed
+  before edits (`tests/test_slack_bot.py tests/test_approval.py
+  tests/test_social.py -q`, `tests/test_runner.py::TestDryRunPhases -q`).
+  Added `orchestrator/followup.py` plus `tests/test_followup_research.py` for
+  parser, redaction, deterministic dry-run, safe trace/artifact writing, and
+  degraded live-agent failure behavior. Verification:
+  `.venv/bin/python3 -m pytest tests/test_followup_research.py -q`.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
