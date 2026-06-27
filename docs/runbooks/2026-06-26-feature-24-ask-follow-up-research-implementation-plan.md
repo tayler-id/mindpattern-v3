@@ -98,7 +98,7 @@ instead of deleting the column.
 | 15 | Social Ideas actions | No | `draft/save/revise/reject/follow up` are safe. |
 | 16 | Social Ideas safety regression suite | No | Proves no live post and no newsletter gate. |
 | 17 | Docs, handoff, and Done evidence | Yes | Runbook/handoff updated with Ask Follow-Up evidence through Task 10; optional Social Ideas Desk intentionally deferred. |
-| 18 | Graphify, CI, commit, push | No | Local verification and Graphify passed; push/CI watch still pending. |
+| 18 | Graphify, CI, commit, push | Yes | Local verification and Graphify passed; pushed to `origin/main`; GitHub Actions `Tests` run `28274600368` passed. |
 | 19 | Optional owner-approved live smoke | Deferred | Requires explicit deploy/live Slack approval. |
 
 ## Task List

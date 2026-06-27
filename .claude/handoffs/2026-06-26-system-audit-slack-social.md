@@ -760,16 +760,17 @@ place instead of deleting the column.
 - Graphify was refreshed after code/docs changes:
   `graphify update .` -> 6826 nodes, 10611 edges, 420 communities;
   `graphify check-update .` -> exit 0.
+- Pushed to `origin/main` through commit `8f13e59` and watched GitHub Actions
+  `Tests` run `28274600368`; it passed in 1m47s.
 - Optional Social Ideas Desk is intentionally deferred in this goal. No
   Social Ideas Desk parser, loader, feedback store, or Slack command was
   implemented.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
-- Remaining required Ask Follow-Up work: commit the final docs/Graphify
-  evidence, push to `origin/main`, and watch GitHub Actions. No Fly deploy,
-  live Slack smoke, full daily pipeline run, newsletter send, or live social
-  post has been run for this feature.
+- Remaining required Ask Follow-Up work: none for the local/CI implementation.
+  No Fly deploy, live Slack smoke, full daily pipeline run, newsletter send, or
+  live social post has been run for this feature.
 
 ## Do Not Do Yet
 
