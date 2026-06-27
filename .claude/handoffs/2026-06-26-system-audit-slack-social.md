@@ -701,6 +701,21 @@ place instead of deleting the column.
 | 29 | Yes | Put runner tests back in CI | Developer workflow | CI ignores `tests/test_runner.py`. | Split or stabilize runner tests and include critical subsets in GitHub Actions. | `.github/workflows/test.yml`, tests | Catches pipeline regressions before merge. | M / Med | CI runs runner phase tests. |
 | 30 | Yes | Keep Graphify current | Developer workflow | Graph report is stale vs HEAD. | Run/update graph after code changes and surface staleness in handoffs. | `graphify-out/`, hooks | Better architecture navigation for agents. | S / Low | Graph report commit matches HEAD. |
 
+## 2026-06-26 Feature 24 Runbook Draft
+
+- Created `docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md`
+  as the spec/runbook for new-feature table row 24, `"Ask Follow-Up" Research
+  Button`.
+- Scope is command-first Slack follow-up research from `#mp-briefing` and
+  draft/review threads. It explicitly does not run the full daily pipeline,
+  send newsletters, post social content, sync Fly, change schema, or add
+  dependencies without owner approval.
+- The runbook includes assumptions, non-goals, exact commands, project
+  structure, code style, testing strategy, boundaries, success criteria, a
+  task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
+- No implementation has started. Next agent should review the open questions in
+  the runbook before using the slash goal.
+
 ## Do Not Do Yet
 
 - Do not refactor `orchestrator/runner.py` before the Slack/social config issue

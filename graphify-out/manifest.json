@@ -665,8 +665,8 @@
     "semantic_hash": ""
   },
   "orchestrator/runner.py": {
-    "mtime": 1782516724.7763288,
-    "ast_hash": "6b6c256474a1301654b6eba592172304",
+    "mtime": 1782517027.4812474,
+    "ast_hash": "c6d8e8b1fb9463a9f5f0369bf7dad1e4",
     "semantic_hash": ""
   },
   "orchestrator/sync.py": {
@@ -980,8 +980,8 @@
     "semantic_hash": ""
   },
   "tests/test_api_contract.py": {
-    "mtime": 1781198063.0273516,
-    "ast_hash": "c44d337e2de9efb6be6a2e8143f173f8",
+    "mtime": 1782517814.1355336,
+    "ast_hash": "20cc5cbed0b8c7ddba25f446ef0217c3",
     "semantic_hash": ""
   },
   "tests/test_approval.py": {
@@ -1180,8 +1180,8 @@
     "semantic_hash": ""
   },
   "tests/test_social.py": {
-    "mtime": 1782516671.65963,
-    "ast_hash": "404345c05841c6983ab5093fbb2c1b5c",
+    "mtime": 1782517831.2395558,
+    "ast_hash": "1593bedb75de90bc31bd90bfb985ecd6",
     "semantic_hash": ""
   },
   "tests/test_sync.py": {
@@ -2152,6 +2152,11 @@
   "harness/knowledge/memory-graph.md": {
     "mtime": 1782492227.8497493,
     "ast_hash": "c9c6efe23e73526526a41f76f4c58624",
+    "semantic_hash": ""
+  },
+  "docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md": {
+    "mtime": 1782518437.0089593,
+    "ast_hash": "dd1bd63e82bda4012db0a1f75e61ee7c",
     "semantic_hash": ""
   }
 }
