@@ -656,12 +656,13 @@ source, newsletter quality, and Slack approval paths are stabilized first.
 | 22 | Newsletter Section A/B Lab | Test alternate section ordering, titles, or framing against user/reader feedback. | Lets quality improve from evidence, not taste alone. | newsletter, feedback, evaluator | L / Med | Version metrics show which framing performs better. |
 | 23 | Personal Knowledge Graph Explorer | Browse entities, topics, sources, and story relationships from the vault/database. | Makes the accumulated research legible. | memory graph, dashboard | L / Med | User can navigate from topic to stories to sources. |
 | 24 | "Ask Follow-Up" Research Button | From a newsletter story or Slack draft, trigger a deeper follow-up research run. | Lets human curiosity steer the next layer of research. | Slack bot, orchestrator agents | M / Med | One Slack command launches scoped follow-up and returns findings. |
-| 25 | Competitive Landscape Maps | For a topic, produce a market map of companies, tools, categories, and open-source projects. | Useful for strategy and product opportunity discovery. | preflight, synthesis, dashboard | L / Med | Topic page shows category map with sources. |
-| 26 | Decision Journal | Track editorial/product decisions made from the research and whether they paid off. | Closes the loop between insight and action. | vault, dashboard, memory | M / Low | Decisions link to source evidence and later outcomes. |
-| 27 | Public Collections | Curated public pages like "Best AI agent tools this month" or "MCP security brief." | Turns private research into shareable assets. | dashboard, reports | M / Med | Collection page can be published from selected findings. |
-| 28 | Sponsor/Partner Match Finder | Finds companies/tools that match newsletter themes and audience. | Creates monetization/business-development options without changing editorial flow. | research agents, dashboard | M / Med | Weekly list of relevant sponsor/partner leads. |
-| 29 | Personal Engagement CRM | Track people engaged with on Bluesky/LinkedIn, conversation history, follow-ups, and outcomes. | Makes engagement strategic instead of one-off replies. | social engagement, memory, dashboard | M / Med | Contact timeline shows replies, topics, and next actions. |
-| 30 | Research API / Webhooks | Expose selected findings, cards, and briefs to other tools through API/webhooks. | Lets MindPattern become infrastructure for other workflows. | FastAPI dashboard, auth, memory | L / High | Authenticated endpoint returns current findings/cards. |
+| 25 | Slack Editorial Desk | A dedicated Slack command that shows today's best story candidates with approve, save, revise, reject, and follow-up actions. | Turns Slack into the daily editorial control room instead of a log feed. | Slack bot, memory, reports | M / Med | User can choose newsletter/social angles from Slack in one thread. |
+| 26 | Competitive Landscape Maps | For a topic, produce a market map of companies, tools, categories, and open-source projects. | Useful for strategy and product opportunity discovery. | preflight, synthesis, dashboard | L / Med | Topic page shows category map with sources. |
+| 27 | Decision Journal | Track editorial/product decisions made from the research and whether they paid off. | Closes the loop between insight and action. | vault, dashboard, memory | M / Low | Decisions link to source evidence and later outcomes. |
+| 28 | Public Collections | Curated public pages like "Best AI agent tools this month" or "MCP security brief." | Turns private research into shareable assets. | dashboard, reports | M / Med | Collection page can be published from selected findings. |
+| 29 | Sponsor/Partner Match Finder | Finds companies/tools that match newsletter themes and audience. | Creates monetization/business-development options without changing editorial flow. | research agents, dashboard | M / Med | Weekly list of relevant sponsor/partner leads. |
+| 30 | Personal Engagement CRM | Track people engaged with on Bluesky/LinkedIn, conversation history, follow-ups, and outcomes. | Makes engagement strategic instead of one-off replies. | social engagement, memory, dashboard | M / Med | Contact timeline shows replies, topics, and next actions. |
+| 31 | Research API / Webhooks | Expose selected findings, cards, and briefs to other tools through API/webhooks. | Lets MindPattern become infrastructure for other workflows. | FastAPI dashboard, auth, memory | L / High | Authenticated endpoint returns current findings/cards. |
 
 ## Mixed Repair and Improvement Backlog
 
@@ -705,11 +706,18 @@ place instead of deleting the column.
 
 - Created `docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-runbook.md`
   as the spec/runbook for new-feature table row 24, `"Ask Follow-Up" Research
-  Button`.
+  Button`, and expanded it to include the paired Slack Editorial Desk feature.
+- Added Slack Editorial Desk to the new-feature ideas table as row 25; later
+  rows are renumbered.
 - Scope is command-first Slack follow-up research from `#mp-briefing` and
-  draft/review threads. It explicitly does not run the full daily pipeline,
-  send newsletters, post social content, sync Fly, change schema, or add
-  dependencies without owner approval.
+  draft/review threads plus a Slack command that shows today's best story
+  candidates with approve, save, revise, reject, and follow-up actions. It
+  explicitly does not run the full daily pipeline, send newsletters, post social
+  content, sync Fly, change schema, or add dependencies without owner approval.
+- Editorial Desk approval is defined as story/angle selection only. It is not a
+  newsletter send command and not a social posting approval. The newsletter
+  should still run through the normal quality-gated pipeline if Tayler does not
+  reply in Slack.
 - The runbook includes assumptions, non-goals, exact commands, project
   structure, code style, testing strategy, boundaries, success criteria, a
   task table with a `Done` column, risks, and a ready-to-paste `/goal` prompt.
