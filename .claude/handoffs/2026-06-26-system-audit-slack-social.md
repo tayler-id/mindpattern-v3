@@ -760,8 +760,8 @@ place instead of deleting the column.
 - Graphify was refreshed after code/docs changes:
   `graphify update .` -> 6826 nodes, 10611 edges, 420 communities;
   `graphify check-update .` -> exit 0.
-- Pushed to `origin/main` through commit `8f13e59` and watched GitHub Actions
-  `Tests` run `28274600368`; it passed in 1m47s.
+- Pushed to `origin/main` and watched GitHub Actions `Tests` successfully after
+  the final evidence push.
 - Optional Social Ideas Desk is intentionally deferred in this goal. No
   Social Ideas Desk parser, loader, feedback store, or Slack command was
   implemented.

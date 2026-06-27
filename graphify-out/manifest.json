@@ -2160,8 +2160,8 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md": {
-    "mtime": 1782524215.3238952,
-    "ast_hash": "16c96ed1d956be410b90258a86f17dc3",
+    "mtime": 1782524390.972763,
+    "ast_hash": "8f905ac8cb1dc83c65920c6d75c0e4e2",
     "semantic_hash": ""
   },
   "orchestrator/followup.py": {
