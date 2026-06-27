@@ -12,7 +12,8 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -28,6 +29,60 @@ PREVIEW_CHARS = 120
 
 _COMMAND_PREFIXES = ("follow up:", "follow-up:", "research this:")
 _VAGUE_QUERIES = {"more", "this", "that", "it", "details", "why"}
+_FOLLOWUP_ACTION_HELP = (
+    "Reply `cover` to queue this as a next-day newsletter coverage candidate, "
+    "`draft` to run the social post pipeline, `archive`/`save` to store it in "
+    "memory and the entity graph, or `ignore` to mark it handled."
+)
+_FOLLOWUP_ACTION_ALIASES = {
+    "cover": "cover",
+    "cover tomorrow": "cover",
+    "newsletter": "cover",
+    "queue": "cover",
+    "queue for newsletter": "cover",
+    "draft": "draft",
+    "social": "draft",
+    "social draft": "draft",
+    "post draft": "draft",
+    "archive": "archive",
+    "save": "archive",
+    "saved": "archive",
+    "store": "archive",
+    "ignore": "ignore",
+    "ignored": "ignore",
+    "reject": "ignore",
+    "drop": "ignore",
+}
+_FOLLOWUP_AGENT_ROLES = [
+    {
+        "name": "followup-web-researcher",
+        "focus": (
+            "Find fresh web and primary-source evidence. Prefer official docs, "
+            "release notes, original posts, repos, and source pages."
+        ),
+    },
+    {
+        "name": "followup-social-researcher",
+        "focus": (
+            "Find community signal and practitioner discussion. Check Reddit, "
+            "X/Twitter, HN, forums, and builder communities when available."
+        ),
+    },
+    {
+        "name": "followup-technical-researcher",
+        "focus": (
+            "Find technical implementation details, tradeoffs, APIs, libraries, "
+            "GitHub issues, benchmarks, and operational constraints."
+        ),
+    },
+    {
+        "name": "followup-skeptic-researcher",
+        "focus": (
+            "Verify claims, freshness, duplication risk, counter-evidence, and "
+            "whether there is a real why-now angle."
+        ),
+    },
+]
 _SECRET_PATTERNS = [
     re.compile(r"xox[a-z]-[A-Za-z0-9-]+"),
     re.compile(r"sk-[A-Za-z0-9_-]+"),
@@ -121,6 +176,133 @@ def run_followup_research(
     return _finalize_result(result, traces_conn=traces_conn, artifact_dir=artifact_dir)
 
 
+def parse_followup_action(text: str | None) -> str | None:
+    """Parse a post-result follow-up action.
+
+    These are real workflow actions, separate from the agent's suggested next
+    step. Unknown text returns None so approval/edit parsers can handle it.
+    """
+    normalized = " ".join((text or "").strip().lower().split())
+    normalized = normalized.strip(" .!?:;")
+    return _FOLLOWUP_ACTION_ALIASES.get(normalized)
+
+
+def followup_action_help() -> str:
+    """Return the Slack-facing action help text."""
+    return _FOLLOWUP_ACTION_HELP
+
+
+def apply_followup_action(
+    result: dict[str, Any],
+    action_text: str,
+    *,
+    db=None,
+    db_path: Path | str | None = None,
+    user_id: str = "ramsay",
+    today: str | None = None,
+) -> dict[str, Any]:
+    """Apply a completed follow-up action to memory/graph state.
+
+    ``draft`` intentionally returns a handoff result: Slack must run the social
+    post pipeline because only Slack can enforce the owner approval loop.
+    """
+    action = parse_followup_action(action_text)
+    if not action:
+        return {
+            "status": "ignored",
+            "action": None,
+            "message": "No follow-up action matched.",
+        }
+
+    if action == "draft":
+        return {
+            "status": "needs_social_pipeline",
+            "action": "draft",
+            "message": (
+                "Running the existing social draft pipeline from these follow-up "
+                "findings. No live post happens without Slack approval."
+            ),
+        }
+
+    owns_connection = db is None
+    if owns_connection:
+        import memory
+
+        db = memory.get_db(db_path, user_id=user_id)
+
+    try:
+        if action == "cover":
+            run_date = _next_day(today)
+            persisted = _persist_followup_findings(
+                db,
+                result,
+                run_date=run_date,
+                category="followup_cover_candidate",
+                importance="high",
+                agent_name="followup-cover-candidate",
+            )
+            return {
+                "status": "completed",
+                "action": "cover",
+                "run_date": run_date,
+                **persisted,
+                "message": (
+                    f"Saved {persisted['finding_count']} follow-up finding(s) "
+                    f"as next-day coverage candidates for {run_date}. "
+                    "The normal newsletter pipeline will consider them; no "
+                    "newsletter was sent now."
+                ),
+            }
+
+        if action == "archive":
+            run_date = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            persisted = _persist_followup_findings(
+                db,
+                result,
+                run_date=run_date,
+                category="followup_archive",
+                importance="medium",
+                agent_name=None,
+            )
+            return {
+                "status": "completed",
+                "action": "archive",
+                "run_date": run_date,
+                **persisted,
+                "message": (
+                    f"Archived {persisted['finding_count']} follow-up finding(s) "
+                    "into memory and linked them into the entity graph."
+                ),
+            }
+
+        if action == "ignore":
+            run_date = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            note_id = _store_followup_note(
+                db,
+                result,
+                run_date=run_date,
+                note_type="followup_ignored",
+            )
+            return {
+                "status": "completed",
+                "action": "ignore",
+                "run_date": run_date,
+                "note_id": note_id,
+                "finding_count": 0,
+                "relationship_count": 0,
+                "message": "Marked this follow-up as ignored so it is not treated as an open candidate.",
+            }
+    finally:
+        if owns_connection:
+            db.close()
+
+    return {
+        "status": "ignored",
+        "action": action,
+        "message": "No follow-up action was applied.",
+    }
+
+
 def _should_dry_run(dry_run: bool | None) -> bool:
     if dry_run is not None:
         return dry_run
@@ -162,10 +344,10 @@ def _dry_run_result(request: dict[str, Any]) -> dict[str, Any]:
             "source_url": None,
         },
         {
-            "title": "Return a next action",
+            "title": "Return workflow actions",
             "summary": (
-                "The result would recommend whether to cover tomorrow, turn into "
-                "a social angle, archive, or ignore."
+                "The result would offer owner actions: cover tomorrow, create a "
+                "social draft, archive to memory/entity graph, or ignore."
             ),
             "source_name": "Dry Run",
             "source_url": None,
@@ -183,6 +365,7 @@ def _dry_run_result(request: dict[str, Any]) -> dict[str, Any]:
             "network, Slack, email, social APIs, Fly, or the daily runner."
         ),
         "next_action": "Use a live follow-up only after owner-approved runtime access.",
+        "action_help": _FOLLOWUP_ACTION_HELP,
         "errors": [],
         "artifact": None,
     }
@@ -193,43 +376,42 @@ def _live_result(
     *,
     agent_runner: Callable[..., Any] | None,
 ) -> dict[str, Any]:
-    runner = agent_runner or _default_agent_runner
-    try:
-        agent_result = runner(
-            "follow-up-researcher",
-            _build_followup_prompt(request["query"]),
-            task_type="research_agent",
-        )
-    except Exception as exc:
-        logger.warning("Follow-up agent execution failed: %s", exc)
-        return _failed_result(
-            query_hash=request["query_hash"],
-            query_preview=request["query_preview"],
-            reason="Follow-up research failed before producing findings.",
-            mode="live",
-        )
-
-    agent_payload = _extract_agent_payload(agent_result)
-    findings = agent_payload["findings"]
+    agent_results = _run_followup_agents(request, agent_runner=agent_runner)
+    findings = _merge_followup_findings(agent_results)
+    errors = [
+        f"{result['agent_name']}: {result['error']}"
+        for result in agent_results
+        if result.get("error")
+    ]
+    successful_agent_count = sum(1 for result in agent_results if result.get("findings"))
     if not findings:
         return _failed_result(
             query_hash=request["query_hash"],
             query_preview=request["query_preview"],
-            reason="Follow-up research completed without usable findings.",
+            reason=_failure_reason(errors),
             mode="live",
         )
 
+    next_action = _first_next_action(agent_results)
     return {
         "status": "completed",
-        "degraded": False,
+        "degraded": bool(errors),
         "mode": "live",
         "query_hash": request["query_hash"],
         "query_preview": request["query_preview"],
         "findings": findings[:7],
-        "why_this_matters": _result_why_this_matters(findings),
-        "next_action": agent_payload.get("next_action")
-        or "Review the follow-up findings and decide whether to cover, draft, archive, or ignore.",
-        "errors": [],
+        "why_this_matters": _result_why_this_matters(
+            findings,
+            agent_count=len(agent_results),
+            successful_agent_count=successful_agent_count,
+        ),
+        "next_action": next_action
+        or "Review the follow-up findings, then choose one owner action.",
+        "action_help": _FOLLOWUP_ACTION_HELP,
+        "errors": errors,
+        "agent_count": len(agent_results),
+        "successful_agent_count": successful_agent_count,
+        "failed_agent_count": len(errors),
         "artifact": None,
     }
 
@@ -240,11 +422,113 @@ def _default_agent_runner(*args, **kwargs):
     return run_single_agent(*args, **kwargs)
 
 
-def _build_followup_prompt(query: str) -> str:
+def _run_followup_agents(
+    request: dict[str, Any],
+    *,
+    agent_runner: Callable[..., Any] | None,
+) -> list[dict[str, Any]]:
+    runner = agent_runner or _default_agent_runner
+    roles = _FOLLOWUP_AGENT_ROLES
+    max_workers = max(1, min(len(roles), _followup_worker_count()))
+    indexed_results: dict[int, dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_role = {
+            executor.submit(
+                runner,
+                role["name"],
+                _build_followup_prompt(request["query"], role),
+                task_type="research_agent",
+            ): (idx, role)
+            for idx, role in enumerate(roles)
+        }
+        for future in as_completed(future_to_role):
+            idx, role = future_to_role[future]
+            try:
+                agent_payload = _extract_agent_payload(future.result())
+                findings = _tag_findings(agent_payload["findings"], role["name"])
+                indexed_results[idx] = {
+                    "agent_name": role["name"],
+                    "findings": findings,
+                    "next_action": agent_payload.get("next_action"),
+                    "error": None,
+                }
+            except Exception as exc:
+                logger.warning("Follow-up agent %s failed: %s", role["name"], exc)
+                indexed_results[idx] = {
+                    "agent_name": role["name"],
+                    "findings": [],
+                    "next_action": None,
+                    "error": str(exc),
+                }
+
+    return [indexed_results[idx] for idx in sorted(indexed_results)]
+
+
+def _followup_worker_count() -> int:
+    raw = os.environ.get("MP_FOLLOWUP_AGENT_WORKERS", "")
+    if not raw:
+        return len(_FOLLOWUP_AGENT_ROLES)
+    try:
+        return int(raw)
+    except ValueError:
+        return len(_FOLLOWUP_AGENT_ROLES)
+
+
+def _tag_findings(findings: list[dict[str, Any]], agent_name: str) -> list[dict[str, Any]]:
+    tagged = []
+    for finding in findings:
+        item = dict(finding)
+        item.setdefault("agent", agent_name)
+        tagged.append(item)
+    return tagged
+
+
+def _merge_followup_findings(agent_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for result in agent_results:
+        for finding in result.get("findings") or []:
+            key = (
+                _normalize_dedupe_key(finding.get("title")),
+                _normalize_dedupe_key(
+                    finding.get("source_url") or finding.get("source_name")
+                ),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(dict(finding))
+    return merged
+
+
+def _normalize_dedupe_key(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _first_next_action(agent_results: list[dict[str, Any]]) -> str | None:
+    for result in agent_results:
+        text = _safe_optional_text(result.get("next_action"))
+        if text:
+            return text
+    return None
+
+
+def _failure_reason(errors: list[str]) -> str:
+    if not errors:
+        return "Follow-up research completed without usable findings."
+    return "All follow-up agents failed or returned no usable findings: " + "; ".join(errors)
+
+
+def _build_followup_prompt(query: str, role: dict[str, str] | None = None) -> str:
+    role_focus = role["focus"] if role else "Find fresh, source-grounded information."
     return f"""You are running a scoped MindPattern follow-up research pass.
 
 Question:
 {query}
+
+Agent focus:
+{role_focus}
 
 Return JSON only:
 {{
@@ -262,6 +546,8 @@ Return JSON only:
 Requirements:
 - Find fresh, source-grounded information.
 - Prefer primary sources.
+- Do not summarize only existing MindPattern findings; use fresh research and
+  external/public evidence when tool access is available.
 - Explain why now.
 - Do not send newsletters or post social content.
 """
@@ -401,6 +687,7 @@ def _failed_result(
         "findings": [],
         "why_this_matters": f"Follow-up research failed: {reason}",
         "next_action": "Retry with a more specific question or inspect source health.",
+        "action_help": "",
         "errors": [reason],
         "artifact": None,
     }
@@ -452,7 +739,24 @@ def _write_artifact(result: dict[str, Any], artifact_dir: Path | str | None) -> 
             source_url = finding.get("source_url")
             if source_url:
                 lines.append(f"  Source: {source_url}")
-    lines.extend(["", "## Next Action", "", result.get("next_action", "")])
+    if result.get("agent_count"):
+        lines.extend([
+            "",
+            "## Agent Coverage",
+            "",
+            (
+                f"{result.get('successful_agent_count', 0)}/"
+                f"{result.get('agent_count', 0)} follow-up agents returned usable findings."
+            ),
+        ])
+    lines.extend([
+        "",
+        "## Suggested Next Step",
+        "",
+        result.get("next_action", ""),
+    ])
+    if result.get("action_help"):
+        lines.extend(["", "## Available Owner Actions", "", result["action_help"]])
     path.write_text("\n".join(lines).strip() + "\n")
     return path
 
@@ -472,6 +776,9 @@ def _log_trace(traces_conn, result: dict[str, Any]) -> None:
         "mode": result.get("mode", "unknown"),
         "finding_count": len(result.get("findings") or []),
         "artifact": result.get("artifact"),
+        "agent_count": result.get("agent_count"),
+        "successful_agent_count": result.get("successful_agent_count"),
+        "failed_agent_count": result.get("failed_agent_count"),
         "errors": result.get("errors") or [],
     }
     traces_db.log_event(
@@ -482,12 +789,178 @@ def _log_trace(traces_conn, result: dict[str, Any]) -> None:
     )
 
 
-def _result_why_this_matters(findings: list[dict[str, Any]]) -> str:
+def _result_why_this_matters(
+    findings: list[dict[str, Any]],
+    *,
+    agent_count: int | None = None,
+    successful_agent_count: int | None = None,
+) -> str:
     first = findings[0]
+    if agent_count:
+        return (
+            f"The follow-up ran {agent_count} focused research agent(s); "
+            f"{successful_agent_count or 0} returned usable findings. "
+            f"Start with: {first.get('title', 'the strongest finding')}."
+        )
     return (
         f"The follow-up found {len(findings)} source-grounded item(s). "
         f"Start with: {first.get('title', 'the strongest finding')}."
     )
+
+
+def _persist_followup_findings(
+    db,
+    result: dict[str, Any],
+    *,
+    run_date: str,
+    category: str,
+    importance: str,
+    agent_name: str | None,
+) -> dict[str, Any]:
+    import memory
+
+    try:
+        from kg.schema import init_kg_schema
+
+        init_kg_schema(db)
+    except Exception as exc:
+        logger.warning("KG schema init failed during follow-up persistence: %s", exc)
+
+    finding_ids: list[int] = []
+    relationship_count = 0
+    for finding in result.get("findings") or []:
+        title = str(finding.get("title") or "").strip()
+        summary = str(finding.get("summary") or "").strip()
+        if not title or not summary:
+            continue
+
+        agent = agent_name or str(finding.get("agent") or "followup-research")
+        existing = db.execute(
+            """SELECT id FROM findings
+               WHERE run_date = ? AND agent = ? AND title = ? AND category = ?
+               LIMIT 1""",
+            (run_date, agent, title, category),
+        ).fetchone()
+        if existing:
+            finding_id = int(existing["id"])
+        else:
+            finding_id = memory.store_finding(
+                db,
+                run_date=run_date,
+                agent=agent,
+                title=title,
+                summary=_followup_summary_with_context(summary, result),
+                importance=importance,
+                category=category,
+                source_url=finding.get("source_url"),
+                source_name=finding.get("source_name"),
+            )
+        finding_ids.append(finding_id)
+        relationship_count += _link_followup_finding(db, finding, finding_id, result)
+
+    return {
+        "finding_ids": finding_ids,
+        "finding_count": len(finding_ids),
+        "relationship_count": relationship_count,
+    }
+
+
+def _followup_summary_with_context(summary: str, result: dict[str, Any]) -> str:
+    preview = result.get("query_preview") or ""
+    artifact = result.get("artifact") or ""
+    suffix_parts = []
+    if preview:
+        suffix_parts.append(f"Follow-up query: {preview}")
+    if artifact:
+        suffix_parts.append(f"Artifact: {artifact}")
+    if not suffix_parts:
+        return summary
+    return f"{summary}\n\n" + "\n".join(suffix_parts)
+
+
+def _link_followup_finding(
+    db,
+    finding: dict[str, Any],
+    finding_id: int,
+    result: dict[str, Any],
+) -> int:
+    import memory
+
+    title = str(finding.get("title") or "Untitled follow-up")[:100]
+    count = 0
+    memory.store_relationship(
+        db,
+        entity_a="Follow-Up Research",
+        relationship="surfaced",
+        entity_b=title,
+        entity_a_type="workflow",
+        entity_b_type="topic",
+        finding_id=finding_id,
+    )
+    count += 1
+
+    source_name = str(finding.get("source_name") or "").strip()
+    if source_name and source_name.lower() not in {"unknown", "dry run"}:
+        memory.store_relationship(
+            db,
+            entity_a=source_name[:100],
+            relationship="reported_on",
+            entity_b=title,
+            entity_a_type="source",
+            entity_b_type="topic",
+            finding_id=finding_id,
+        )
+        count += 1
+
+    query_preview = str(result.get("query_preview") or "").strip()
+    if query_preview:
+        memory.store_relationship(
+            db,
+            entity_a=query_preview[:100],
+            relationship="led_to",
+            entity_b=title,
+            entity_a_type="question",
+            entity_b_type="topic",
+            finding_id=finding_id,
+        )
+        count += 1
+    return count
+
+
+def _store_followup_note(
+    db,
+    result: dict[str, Any],
+    *,
+    run_date: str,
+    note_type: str,
+) -> int:
+    import memory
+
+    titles = [
+        str(f.get("title") or "Untitled")
+        for f in (result.get("findings") or [])[:5]
+    ]
+    content = {
+        "query_hash": result.get("query_hash", ""),
+        "query_preview": result.get("query_preview", ""),
+        "artifact": result.get("artifact", ""),
+        "finding_titles": titles,
+    }
+    return memory.store_note(
+        db,
+        run_date=run_date,
+        agent="followup-research",
+        note_type=note_type,
+        content=json.dumps(content, sort_keys=True),
+    )
+
+
+def _next_day(today: str | None) -> str:
+    if today:
+        base = datetime.strptime(today, "%Y-%m-%d")
+    else:
+        base = datetime.now(timezone.utc).replace(tzinfo=None)
+    return (base + timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def _hash_text(text: str) -> str:

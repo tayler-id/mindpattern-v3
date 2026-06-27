@@ -1062,9 +1062,12 @@ class TestBriefingFollowupCommand:
 
     def test_briefing_followup_command_acknowledges_and_posts_result(self):
         handler, client = self._handler()
+        handler.wait_for_reply = MagicMock(return_value=None)
         result = {
             "status": "completed",
             "degraded": False,
+            "agent_count": 4,
+            "successful_agent_count": 4,
             "findings": [
                 {
                     "title": "Agent Reach source routing",
@@ -1075,6 +1078,7 @@ class TestBriefingFollowupCommand:
             ],
             "why_this_matters": "Source routing decides newsletter quality.",
             "next_action": "Turn into a social angle.",
+            "action_help": "Reply `cover`, `draft`, `archive`, or `ignore`.",
             "artifact": "reports/ramsay/followups/example.md",
         }
 
@@ -1100,8 +1104,55 @@ class TestBriefingFollowupCommand:
         assert "running follow-up research" in first["text"].lower()
         assert second["thread_ts"] == "123.456"
         assert "Agent Reach source routing" in second["text"]
+        assert "Agents: 4/4 returned usable findings" in second["text"]
         assert "Source routing decides newsletter quality." in second["text"]
+        assert "Suggested next step" in second["text"]
+        assert "Next action" not in second["text"]
         assert "Turn into a social angle." in second["text"]
+        assert "Reply `cover`, `draft`, `archive`, or `ignore`." in second["text"]
+        handler.wait_for_reply.assert_called_once()
+
+    def test_briefing_followup_cover_reply_saves_candidate(self):
+        handler, client = self._handler()
+        handler.wait_for_reply = MagicMock(return_value="cover")
+        result = {
+            "status": "completed",
+            "degraded": False,
+            "findings": [
+                {
+                    "title": "Agent Reach source routing",
+                    "summary": "OpenCLI can cover Reddit while direct X search is degraded.",
+                    "source_name": "Dry Run",
+                }
+            ],
+            "why_this_matters": "Source routing decides newsletter quality.",
+            "next_action": "Consider this tomorrow.",
+            "artifact": "reports/ramsay/followups/example.md",
+        }
+
+        with patch(
+            "slack_bot.handlers.briefing.run_followup_research",
+            return_value=result,
+            create=True,
+        ), patch(
+            "slack_bot.handlers.briefing.open_traces_db",
+            create=True,
+        ), patch(
+            "slack_bot.handlers.followup.apply_followup_action",
+            return_value={
+                "status": "completed",
+                "action": "cover",
+                "message": "Saved 1 follow-up finding(s) as next-day coverage candidates for 2026-06-27.",
+            },
+        ) as apply_action:
+            handler.handle({
+                "text": "follow up: compare agent-reach and opencli for social search",
+                "ts": "123.456",
+            })
+
+        apply_action.assert_called_once_with(result, "cover")
+        messages = [call.kwargs["text"] for call in client.chat_postMessage.call_args_list]
+        assert any("next-day coverage candidates" in message for message in messages)
 
     def test_briefing_rejects_vague_followup_without_running_service(self):
         handler, client = self._handler()

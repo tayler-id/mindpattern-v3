@@ -76,6 +76,55 @@ External or approval-bound blockers:
 - No live Slack post, outbound social post, Fly deploy, or full daily pipeline
   was run during this recovery goal.
 
+## Feature 24 Ask Follow-Up Update - 2026-06-27
+
+Ask Follow-Up now treats `cover`, `draft`, `archive`/`save`, and `ignore` as
+real owner actions, not vague recommendations.
+
+Implemented behavior:
+
+- `follow up: <question>` fans out to four focused research agents:
+  `followup-web-researcher`, `followup-social-researcher`,
+  `followup-technical-researcher`, and `followup-skeptic-researcher`.
+- Slack labels the agent-returned `next_action` as `Suggested next step`.
+  Real owner commands are shown separately as `Actions`.
+- `cover` stores follow-up findings as high-importance
+  `followup_cover_candidate` findings for the next day. The normal scheduled
+  newsletter pipeline will consider those findings; no newsletter is sent from
+  the follow-up action.
+- `draft` routes the follow-up findings into the existing
+  `PostsHandler._run_and_approve()` social pipeline, so it uses the established
+  Creative Director, writers, critics, humanizer, and expeditor path. Live
+  posting still requires explicit Slack approval.
+- `archive` / `save` writes follow-up findings into `memory.db.findings` and
+  links them into the working `entity_graph`, so the artifact is part of
+  durable memory/graph state instead of only markdown.
+- `ignore` stores an agent note marking the follow-up handled.
+- `#mp-briefing` now waits for one owner action reply after a follow-up result.
+  The post/skills/tips approval loops also recognize follow-up actions before
+  normal approval parsing.
+
+Verification for this update:
+
+- `.venv/bin/python3 -m pytest tests/test_followup_research.py -q` -> 15
+  passed.
+- `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsEditFlow tests/test_slack_bot.py::TestSkillsTipsEditFlow tests/test_slack_bot.py::TestBriefingFollowupCommand tests/test_runner.py::TestDryRunPhases -q`
+  -> 34 passed.
+- `.venv/bin/python3 -m pytest tests/test_social.py -q` -> 48 passed.
+- `python3 -m py_compile orchestrator/followup.py slack_bot/handlers/followup.py slack_bot/handlers/briefing.py slack_bot/handlers/posts.py slack_bot/handlers/skills.py slack_bot/handlers/tips.py`
+  -> passed.
+- `git diff --check` -> passed.
+
+Still not done until explicitly run:
+
+- Deploy this update to Fly.
+- Live Slack smoke in `#mp-briefing`:
+  1. send `follow up: <specific topic>`;
+  2. confirm agent coverage and findings return;
+  3. reply `archive`, `cover`, and `draft` on separate follow-up runs;
+  4. confirm `draft` waits for approval and does not post by itself.
+- Optional Social Ideas Desk remains deferred and social-only.
+
 ## System Map
 
 MindPattern v3 is a Python 3.14 autonomous daily research pipeline.

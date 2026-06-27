@@ -1,6 +1,6 @@
 # Implementation Plan: Feature 24 - Ask Follow-Up Research
 
-> Status: In progress
+> Status: Ask Follow-Up implemented; optional Social Ideas Desk deferred
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-26
@@ -15,7 +15,10 @@ approves the task order and any open decisions.
 Build "Ask Follow-Up" first: an owner-only Slack command that runs scoped
 follow-up research and returns findings in-thread without running the daily
 pipeline, sending a newsletter, posting social content, syncing Fly, or changing
-schema.
+schema. Follow-up owner actions are real commands: `cover` stores next-day
+newsletter candidates, `draft` enters the existing social draft pipeline,
+`archive`/`save` persists to memory/entity graph, and `ignore` marks the result
+handled.
 
 The optional Slack Social Ideas Desk is a later layer. It can help with social
 post ideas and call the same follow-up research flow, but it must not review,
@@ -35,6 +38,10 @@ quality-gated pipeline without waiting for Slack feedback.
   private `memory.db` contents.
 - Use existing `orchestrator.traces_db.log_event()` for trace events. Do not add
   schema for the MVP unless the owner explicitly approves it.
+- Persist follow-up action state through existing tables only:
+  `findings`, `entity_graph`, and `agent_notes`.
+- Do not treat the agent-returned `next_action` string as executable. Slack
+  must label it as a suggestion; only owner replies run actions.
 - Store follow-up artifacts under `reports/ramsay/followups/` and social idea
   feedback under uncommitted `data/social-ideas/`. Do not commit generated
   artifacts, databases, Slack bodies, subscriber data, `users.json`, or
@@ -100,6 +107,10 @@ instead of deleting the column.
 | 17 | Docs, handoff, and Done evidence | Yes | Runbook/handoff updated with Ask Follow-Up evidence through Task 10; optional Social Ideas Desk intentionally deferred. |
 | 18 | Graphify, CI, commit, push | Yes | Local verification and Graphify passed; pushed to `origin/main`; GitHub Actions `Tests` was watched successfully after the final evidence push. |
 | 19 | Optional owner-approved live smoke | Deferred | Requires explicit deploy/live Slack approval. |
+| 20 | Multi-agent follow-up fanout | Yes | Added four focused follow-up agents: web, social, technical, skeptic. Verification: `.venv/bin/python3 -m pytest tests/test_followup_research.py -q` -> 15 passed. |
+| 21 | Follow-up owner actions | Yes | Added `cover`, `draft`, `archive`/`save`, and `ignore` parser/action paths. `cover` stores next-day candidates; `archive` stores memory/entity-graph links; `ignore` stores an agent note. Verification included `tests/test_followup_research.py`. |
+| 22 | Slack action UX and social draft handoff | Yes | Slack now shows `Suggested next step` plus real `Actions`; next owner reply can run an action. `draft` uses the existing `PostsHandler._run_and_approve()` pipeline. Verification: targeted Slack tests plus `tests/test_social.py`. |
+| 23 | Deploy live multi-agent/actions update | Deferred | Code verified locally. Fly deploy/live Slack action smoke still requires owner approval. |
 
 ## Task List
 

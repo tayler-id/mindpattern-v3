@@ -1,6 +1,6 @@
 # Spec and Runbook: Feature 24 - Ask Follow-Up Research
 
-> Status: In progress
+> Status: Ask Follow-Up implemented; optional Social Ideas Desk deferred
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-26
@@ -9,8 +9,7 @@
 > Implementation plan: `docs/runbooks/2026-06-26-feature-24-ask-follow-up-research-implementation-plan.md`
 
 This runbook turns feature idea 24, `"Ask Follow-Up" Research Button`, into an
-implementation-ready spec for a future `/goal` run. It does not implement the
-feature yet.
+implementation and smoke-test reference.
 
 ## Assumptions
 
@@ -20,13 +19,15 @@ feature yet.
    Block Kit button can be added only if the current Slack app interactivity
    wiring supports it or the owner approves that setup work.
 3. A follow-up run is not a full daily pipeline run. It must not send a
-   newsletter, sync Fly, create social drafts, post social content, or touch
-   subscriber delivery.
+   newsletter, sync Fly, post social content, or touch subscriber delivery.
+   A later owner reply of `draft` may create Slack social drafts through the
+   existing post pipeline, but still cannot post live without Slack approval.
 4. Follow-up research is owner-triggered only. The bot must ignore non-owner
    requests and fail closed when owner identity is missing.
 5. Follow-up output should return to Slack in the triggering thread and write a
-   local artifact for auditability, but should not require a database schema
-   change for the MVP.
+   local artifact for auditability. Archive/cover actions should reuse existing
+   `memory.db` tables (`findings`, `entity_graph`, `agent_notes`) rather than
+   adding schema.
 6. The feature should reuse existing agent execution and tracing patterns where
    possible instead of creating a second pipeline framework.
 7. The optional Slack Social Ideas Desk pairs with this feature only for social
@@ -58,9 +59,23 @@ concise result in the same Slack thread:
 - 3-7 concrete findings.
 - Source links where available.
 - "Why this matters" summary.
-- Suggested next action: cover tomorrow, turn into social angle, archive, or
-  ignore.
+- Suggested next step from the research agents.
+- Real owner actions: `cover`, `draft`, `archive`/`save`, and `ignore`.
 - Clear degraded/error notice if sources or agent execution fail.
+
+Follow-up owner actions:
+
+- `cover`: save the findings as high-importance next-day
+  `followup_cover_candidate` findings. Tomorrow's normal newsletter synthesis
+  sees them as candidate findings; it does not send or rewrite a newsletter
+  immediately, and it does not require Tayler to pick stories manually.
+- `draft`: hand the follow-up findings to the existing social post pipeline
+  (`PostsHandler._run_and_approve()`), which runs the established Creative
+  Director, writers, critics, humanizer, and expeditor path, then waits for
+  explicit Slack approval before any live posting.
+- `archive` / `save`: store the findings into `memory.db.findings` and link
+  them into the working `entity_graph` so the artifact is not dead markdown.
+- `ignore`: store a follow-up ignored note so the result is marked handled.
 
 The Social Ideas Desk should show social post ideas with optional actions:
 
@@ -92,6 +107,8 @@ The Social Ideas Desk should show social post ideas with optional actions:
   quality-gated pipeline.
 - Do not let Social Ideas Desk feedback publish anything. `draft <n>` means
   "make a Slack draft/manual-copy candidate", not "post this live".
+- Do not treat the agent-returned `next_action` field as an executable command.
+  Slack labels it as a suggested next step; only owner replies run actions.
 
 ## Tech Stack
 
@@ -222,6 +239,10 @@ Unit tests must cover:
 - `MP_DISABLE_OUTBOUND=1` or dry-run mode does not call Claude/network helpers.
 - Follow-up service returns deterministic fake findings in dry-run.
 - Follow-up service logs a trace event without exposing full Slack body.
+- Live follow-up fans out to focused web, social, technical, and skeptic agents.
+- `cover` stores next-day coverage candidate findings and entity-graph links.
+- `archive` / `save` stores follow-up findings in memory and entity graph.
+- Slack result formatting shows "Suggested next step" plus real action commands.
 - `#mp-briefing` command posts an acknowledgement and final result.
 - Draft-thread follow-up does not approve or post any social draft.
 - Social Ideas Desk loads ranked social post ideas without requiring the
@@ -240,16 +261,22 @@ Manual smoke, only after owner approval:
 1. Deploy to Fly.
 2. In `#mp-briefing`, send `follow up: agent-reach social search reliability`.
 3. Confirm the bot replies in-thread with an acknowledgement.
-4. Confirm it returns scoped findings, sources, and next action.
+4. Confirm it returns scoped findings, sources, agent coverage, suggested next
+   step, and real actions.
 5. Confirm no newsletter email, social post, Fly sync, or daily pipeline run was
    triggered.
-6. Confirm traces/logs contain a follow-up event without secret or raw Slack body
+6. Reply `archive` and confirm the bot reports memory/entity-graph persistence.
+7. Run another follow-up and reply `cover`; confirm it reports next-day coverage
+   candidate storage.
+8. Run another follow-up and reply `draft`; confirm it enters the existing
+   social draft pipeline and waits for explicit approval.
+9. Confirm traces/logs contain a follow-up event without secret or raw Slack body
    leakage.
-7. Send `social ideas` in the approved social channel, likely `#mp-posts`.
-8. Confirm the bot returns today's social idea list in one thread.
-9. Send `save 1`, `reject 2: stale`, `draft 3`, and
+10. Send `social ideas` in the approved social channel, likely `#mp-posts`.
+11. Confirm the bot returns today's social idea list in one thread.
+12. Send `save 1`, `reject 2: stale`, `draft 3`, and
    `follow up 3: why now?` in the thread.
-10. Confirm no idea action posts to a live platform.
+13. Confirm no idea action posts to a live platform.
 
 ## Boundaries
 

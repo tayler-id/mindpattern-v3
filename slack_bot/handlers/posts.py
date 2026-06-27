@@ -23,7 +23,10 @@ from pathlib import Path
 from slack_bot.approval import parse_platform_approval
 from slack_bot.drafts import apply_draft_edit, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
-from slack_bot.handlers.followup import handle_followup_reply
+from slack_bot.handlers.followup import (
+    handle_followup_action_reply,
+    handle_followup_reply,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +153,9 @@ class PostsHandler(BaseHandler):
             if not reply_text:
                 self.reply("No response — cancelling.", thread_ts=ts)
                 return
+
+            if handle_followup_action_reply(self, reply_text, ts, channel_type="posts"):
+                continue
 
             if handle_followup_reply(self, reply_text, ts, channel_type="posts"):
                 continue

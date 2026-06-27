@@ -16,7 +16,11 @@ from orchestrator.followup import parse_followup_request, run_followup_research
 from orchestrator.traces_db import open_traces_db
 from slack_bot import heartbeat
 from slack_bot.handlers.base import BaseHandler
-from slack_bot.handlers.followup import format_followup_result
+from slack_bot.handlers.followup import (
+    format_followup_result,
+    handle_followup_action_reply,
+    remember_followup_result,
+)
 from slack_bot.registry import get_bot_doctor_report
 
 logger = logging.getLogger(__name__)
@@ -59,7 +63,16 @@ class BriefingHandler(BaseHandler):
             logger.warning("Follow-up trace setup failed; running without trace: %s", e)
             result = run_followup_research(request)
 
+        remember_followup_result(self, result, channel_type="briefing")
         self.reply(self._format_followup_result(result), thread_ts=ts)
+        action_text = self.wait_for_reply(ts, timeout=900)
+        if action_text:
+            handle_followup_action_reply(
+                self,
+                action_text,
+                ts,
+                channel_type="briefing",
+            )
 
     def _format_followup_result(self, result: dict) -> str:
         """Format follow-up research for phone-readable Slack review."""

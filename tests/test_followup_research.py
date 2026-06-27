@@ -199,6 +199,86 @@ def test_live_agent_failure_returns_visible_degraded_result(tmp_path):
     assert Path(result["artifact"]).exists()
 
 
+def test_live_followup_fans_out_to_multiple_research_agents(tmp_path):
+    from orchestrator.followup import parse_followup_request, run_followup_research
+
+    request = parse_followup_request(
+        "follow up: why agent-reach matters for social search reliability"
+    )
+    calls = []
+
+    def fake_agent_runner(agent_name, prompt, **_kwargs):
+        calls.append((agent_name, prompt))
+        return {
+            "findings": [
+                {
+                    "title": f"Finding from {agent_name}",
+                    "summary": f"{agent_name} found fresh context beyond current stored findings.",
+                    "source_name": agent_name,
+                }
+            ],
+            "next_action": "Compare the agent outputs.",
+        }
+
+    result = run_followup_research(
+        request,
+        dry_run=False,
+        agent_runner=fake_agent_runner,
+        artifact_dir=tmp_path / "followups",
+    )
+
+    called_agents = {name for name, _prompt in calls}
+    assert called_agents == {
+        "followup-web-researcher",
+        "followup-social-researcher",
+        "followup-technical-researcher",
+        "followup-skeptic-researcher",
+    }
+    assert all("Do not summarize only existing MindPattern findings" in prompt for _name, prompt in calls)
+    assert result["status"] == "completed"
+    assert result["mode"] == "live"
+    assert result["agent_count"] == 4
+    assert result["successful_agent_count"] == 4
+    assert len(result["findings"]) == 4
+    assert {finding["agent"] for finding in result["findings"]} == called_agents
+
+
+def test_live_followup_degrades_when_one_agent_fails_but_uses_others(tmp_path):
+    from orchestrator.followup import parse_followup_request, run_followup_research
+
+    request = parse_followup_request(
+        "follow up: why agent-reach matters for social search reliability"
+    )
+
+    def mixed_agent_runner(agent_name, *_args, **_kwargs):
+        if agent_name == "followup-social-researcher":
+            raise RuntimeError("reddit backend unavailable")
+        return {
+            "findings": [
+                {
+                    "title": f"Finding from {agent_name}",
+                    "summary": "Usable research survived a partial backend failure.",
+                    "source_name": agent_name,
+                }
+            ]
+        }
+
+    result = run_followup_research(
+        request,
+        dry_run=False,
+        agent_runner=mixed_agent_runner,
+        artifact_dir=tmp_path / "followups",
+    )
+
+    assert result["status"] == "completed"
+    assert result["degraded"] is True
+    assert result["agent_count"] == 4
+    assert result["successful_agent_count"] == 3
+    assert result["failed_agent_count"] == 1
+    assert len(result["findings"]) == 3
+    assert "followup-social-researcher" in result["errors"][0]
+
+
 def test_live_agent_result_parses_raw_json_output(tmp_path):
     from orchestrator.followup import parse_followup_request, run_followup_research
 
@@ -252,3 +332,115 @@ def test_live_agent_result_falls_back_to_raw_text_finding(tmp_path):
     assert result["status"] == "completed"
     assert result["findings"][0]["title"] == "Follow-up response"
     assert "swap search backends" in result["findings"][0]["summary"]
+
+
+def test_parse_followup_action_maps_owner_workflow_commands():
+    from orchestrator.followup import parse_followup_action
+
+    assert parse_followup_action("cover") == "cover"
+    assert parse_followup_action("cover tomorrow") == "cover"
+    assert parse_followup_action("draft") == "draft"
+    assert parse_followup_action("social draft") == "draft"
+    assert parse_followup_action("archive") == "archive"
+    assert parse_followup_action("save") == "archive"
+    assert parse_followup_action("ignore") == "ignore"
+    assert parse_followup_action("skip") is None
+    assert parse_followup_action("maybe later") is None
+
+
+def test_cover_action_saves_next_day_candidate_findings_and_graph_links(tmp_path):
+    import memory
+    from orchestrator.followup import apply_followup_action
+
+    db = memory.get_db(tmp_path / "memory.db")
+    result = {
+        "query_hash": "sha256:test",
+        "query_preview": "agent reach social reliability",
+        "artifact": "reports/ramsay/followups/example.md",
+        "findings": [
+            {
+                "agent": "followup-web-researcher",
+                "title": "Agent Reach routes social search",
+                "summary": "It lets the system swap backends when one source fails.",
+                "source_name": "Agent Reach",
+                "source_url": "https://example.com/agent-reach",
+            }
+        ],
+    }
+
+    with patch("memory.findings.embed_text", return_value=[0.0] * 384):
+        action_result = apply_followup_action(
+            result,
+            "cover",
+            db=db,
+            today="2026-06-26",
+        )
+
+    assert action_result["status"] == "completed"
+    assert action_result["action"] == "cover"
+    assert action_result["run_date"] == "2026-06-27"
+    assert action_result["finding_count"] == 1
+    assert action_result["relationship_count"] == 3
+
+    row = db.execute(
+        "SELECT run_date, agent, title, importance, category, summary FROM findings"
+    ).fetchone()
+    assert row["run_date"] == "2026-06-27"
+    assert row["agent"] == "followup-cover-candidate"
+    assert row["importance"] == "high"
+    assert row["category"] == "followup_cover_candidate"
+    assert "Follow-up query: agent reach social reliability" in row["summary"]
+
+    graph_count = db.execute(
+        "SELECT COUNT(*) AS c FROM entity_graph WHERE finding_id = ?",
+        (action_result["finding_ids"][0],),
+    ).fetchone()["c"]
+    db.close()
+    assert graph_count == 3
+
+
+def test_archive_action_saves_followup_to_memory_and_working_entity_graph(tmp_path):
+    import memory
+    from orchestrator.followup import apply_followup_action
+
+    db = memory.get_db(tmp_path / "memory.db")
+    result = {
+        "query_hash": "sha256:test",
+        "query_preview": "agent reach social reliability",
+        "artifact": "reports/ramsay/followups/example.md",
+        "findings": [
+            {
+                "agent": "followup-social-researcher",
+                "title": "Reddit auth restores social signal",
+                "summary": "Authenticated Reddit access helps avoid zero-source research.",
+                "source_name": "Reddit",
+            }
+        ],
+    }
+
+    with patch("memory.findings.embed_text", return_value=[0.0] * 384):
+        action_result = apply_followup_action(
+            result,
+            "archive",
+            db=db,
+            today="2026-06-26",
+        )
+
+    assert action_result["status"] == "completed"
+    assert action_result["action"] == "archive"
+    assert action_result["run_date"] == "2026-06-26"
+    assert action_result["finding_count"] == 1
+
+    finding = db.execute(
+        "SELECT agent, category, importance FROM findings"
+    ).fetchone()
+    assert finding["agent"] == "followup-social-researcher"
+    assert finding["category"] == "followup_archive"
+    assert finding["importance"] == "medium"
+
+    relationships = db.execute(
+        "SELECT entity_a, relationship, entity_b FROM entity_graph ORDER BY id"
+    ).fetchall()
+    db.close()
+    assert any(r["entity_a"] == "Follow-Up Research" for r in relationships)
+    assert any(r["entity_a"] == "Reddit" for r in relationships)
