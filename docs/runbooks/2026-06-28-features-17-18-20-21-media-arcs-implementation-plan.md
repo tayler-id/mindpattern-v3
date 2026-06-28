@@ -74,11 +74,11 @@ of deleting the column.
 | 1 | All | Capture dirty state and baseline tests | Yes | 2026-06-28: recorded dirty state for v3 and Rabbit Hole. Baseline passed: `tests/test_followup_research.py tests/test_slack_bot.py tests/test_social.py -q` -> 154 passed; `tests/test_runner.py::TestDryRunPhases -q` -> 4 passed; Rabbit Hole `pnpm lint` -> 0 errors, 2 pre-existing unused-var warnings. |
 | 2 | All | Add shared evidence/artifact contracts | Yes | 2026-06-28: added `orchestrator/media_contracts.py` and `tests/test_media_artifact_contracts.py`; verification `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py -q` -> 6 passed. |
 | 3 | 17 | Add narrative arc fixture builder | No | Test-only fixtures across multiple dates and sources. |
-| 4 | 17 | Implement arc extraction/scoring | No | Source-backed arc artifacts with stale/rejected handling. |
+| 4 | 17 | Implement arc extraction/scoring | No | Source-backed arc artifacts with stale/rejected handling; arcs stay out of pass-1 story selection. |
 | 5 | 17 | Expose sanitized arcs API | No | `/api/narrative-arcs` and tests. |
-| 6 | 17 | Add synthesis context hook | No | Arcs enrich synthesis without forcing story choice. |
+| 6 | 17 | Add synthesis pass-2 context hook | No | Arcs enrich synthesis pass 2 only and never alter selected stories. |
 | 7 | 18 | Add social angle contract/parser | No | Strict Slack command grammar and no newsletter-control commands. |
-| 8 | 18 | Implement angle generation and Angle Critic service | No | Deterministic dry-run, provider boundary, assigning-editor critic scores/cuts. |
+| 8 | 18 | Reconcile builder-detail boundary, then implement angle generation and Angle Critic service | No | Owner-approved builder-detail boundary first; deterministic dry-run, provider boundary, assigning-editor critic scores/cuts; artifacts under gitignored `reports/ramsay/social-angles/`. |
 | 9 | 18 | Wire #mp-posts angle command | No | Slack returns angle variants in-thread. |
 | 10 | 18 | Wire social draft handoff | No | `draft <n>` uses the existing approval-gated social flow. |
 | 11 | 20 | Add audio script builder | No | Plain spoken script from report markdown with source notes. |
@@ -227,13 +227,18 @@ single-day duplicates, stale arcs, and weak-source arcs.
 ### Task 4: Implement Arc Extraction and Scoring
 
 **Description:** Build `orchestrator/arcs.py` to cluster evidence into stable,
-source-backed narrative arcs.
+source-backed narrative arcs. This task must also make the enrichment-only rule
+testable: arcs must never enter candidate balancing or pass-1 story selection.
 
 **Acceptance criteria:**
 - [ ] Returns stable arc IDs.
 - [ ] Requires multi-day evidence.
 - [ ] Scores recurrence, velocity, source diversity, freshness, and confidence.
 - [ ] Writes `reports/ramsay/arcs/YYYY-MM-DD.json`.
+- [ ] Regression proves pass-1 selected stories are identical with and without
+      arcs for the same fixtures.
+- [ ] Arc code is not called from `_balance_story_candidates()` or pass-1 story
+      selection.
 
 **Verification:**
 - [ ] `.venv/bin/python3 -m pytest tests/test_narrative_arcs.py -q`
@@ -266,14 +271,16 @@ source-backed narrative arcs.
 
 **Estimated scope:** S
 
-### Task 6: Add Synthesis Context Hook
+### Task 6: Add Synthesis Pass-2 Context Hook
 
-**Description:** Pass top active arcs into synthesis as context, without making
-arcs force story selection.
+**Description:** Pass top active arcs into synthesis pass 2 as narrative context
+only, after pass-1 story selection has already completed.
 
 **Acceptance criteria:**
 - [ ] Synthesis prompt can include active arcs with evidence trails.
 - [ ] No arc with stale/weak evidence is injected as authoritative.
+- [ ] Arcs are injected only into pass 2 / narrative context and never into
+      `_balance_story_candidates()` or pass-1 story selection.
 - [ ] Existing quality floor behavior remains unchanged.
 
 **Verification:**
@@ -311,16 +318,23 @@ arcs force story selection.
 
 **Estimated scope:** S
 
-### Task 8: Implement Angle Generation and Angle Critic Service
+### Task 8: Reconcile Builder-Detail Boundary, Then Implement Angle Generation and Angle Critic Service
 
-**Description:** Generate 4-6 source-backed social angle variants from a story,
-finding, arc, or URL, then run an assignment-editor-style critic that scores,
-cuts, and ranks the candidates before Slack output.
+**Description:** First reconcile the owner-approved boundary between good
+practitioner transparency and bad product-pitch/self-promotional framing in
+`social/writers.py` and `agents/expeditor.md`. Then generate 4-6 source-backed
+social angle variants from a story, finding, arc, or URL, and run an
+assignment-editor-style critic that scores, cuts, and ranks candidates before
+Slack output.
 
 **Acceptance criteria:**
 - [ ] Dry-run returns deterministic variants.
 - [ ] Live provider boundary is injectable/mocked in tests.
 - [ ] Each angle includes hook, type, source URLs, confidence, and risk note.
+- [ ] Owner-approved builder-detail boundary is captured in docs/tests before
+      prompt changes.
+- [ ] `social/writers.py` and `agents/expeditor.md` agree on allowed
+      practitioner transparency versus disallowed product-pitch language.
 - [ ] Critic scores focus, why-now, audience value, evidence strength,
       freshness, tension, specificity, platform fit, Tayler fit, and risk
       calibration.
@@ -331,6 +345,8 @@ cuts, and ranks the candidates before Slack output.
 - [ ] Existing writer/expeditor prompt conflict around builder-detail language
       is reconciled with tests for allowed practitioner transparency versus
       disallowed product-pitch framing.
+- [ ] Angle artifacts are written only under gitignored
+      `reports/ramsay/social-angles/`, never `data/social-angles/`.
 
 **Verification:**
 - [ ] `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q`

@@ -131,6 +131,8 @@ They should degrade visibly when a source backend is unavailable.
   write, or send.
 - Do not auto-post audio, video, or social content to external platforms.
 - Do not create a hidden second newsletter pipeline.
+- Do not let narrative arcs add, remove, reorder, replace, or gate selected
+  newsletter stories. Feature 17 is enrichment-only.
 - Do not add a new graph database for the MVP.
 - Do not write public files into the website repo from the daily runner.
 - Do not commit generated audio, video, Slack message bodies, databases,
@@ -228,12 +230,15 @@ evidence trails with dates, sources, agents, and related findings.
 - Emit daily arc candidates to `reports/ramsay/arcs/YYYY-MM-DD.json`.
 - Provide `get_narrative_arcs(date, limit)` for synthesis and public API use.
 - Include an evidence trail for every arc. No source trail means no arc.
+- Inject arcs only into synthesis pass 2 / narrative context. Arcs must never be
+  passed into `_balance_story_candidates()` or the pass-1 story-selection prompt.
 
 ### Trusted/Safe/Hardened Requirements
 
 - Every arc must have at least 3 evidence items across at least 2 dates.
 - A "strong" arc must have at least 2 source domains or 2 contributing agents.
 - Do not synthesize unsupported claims; arc summaries must cite evidence IDs.
+- Arcs never add, remove, reorder, replace, or gate selected newsletter stories.
 - Mark arcs `emerging`, `active`, `stale`, or `archived`.
 - Store only safe public evidence fields in artifacts.
 - Log trace events for arc extraction count, degraded source reasons, and
@@ -255,6 +260,8 @@ evidence trails with dates, sources, agents, and related findings.
   with evidence trails.
 - Single-day duplicates do not become arcs.
 - A stale arc is not injected into synthesis unless it has fresh evidence.
+- Pass-1 selected story IDs/titles are identical with and without arcs for the
+  same fixture input.
 - Public API returns sanitized arc summaries and no private DB fields.
 
 ## Feature 18: Social Angle Lab
@@ -282,9 +289,9 @@ pipeline with explicit Slack approval.
   confidence, and risk notes.
 - Run an assignment-editor-style Angle Critic before Slack output. The critic
   scores and cuts candidates before any social writer agent drafts a post.
-- Store safe JSON under `data/social-angles/YYYY-MM-DD.json` or
-  `reports/ramsay/social-angles/YYYY-MM-DD.json` depending on whether the
-  artifact is public.
+- Store safe JSON only under `reports/ramsay/social-angles/YYYY-MM-DD.json`.
+  Do not use `data/social-angles/`; `data/` is not ignored and may commit
+  internal angle content.
 - Let `draft <n>` hand the chosen angle to `PostsHandler._run_and_approve()`.
 - Let `video <n>` hand the chosen angle to Feature 21's video script mode.
 
@@ -384,6 +391,9 @@ Feature 18 must not ship while those rules disagree. The implementation should
 define a single owner-approved boundary between good practitioner transparency
 and bad product-pitch/self-promotional framing, then update tests/prompts around
 that boundary.
+
+This owner-approved boundary is required before Task 8 starts. Until then,
+Feature 18 implementation must stop after parser/contract work.
 
 ### Trusted/Safe/Hardened Requirements
 
