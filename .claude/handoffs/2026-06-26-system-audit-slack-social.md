@@ -965,8 +965,9 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 20 Task 12, TTS provider boundary. Feature 18
-  Tasks 7-10 and Feature 20 Task 11 are complete locally. Angle artifacts stay in gitignored
+- Current next task: Feature 20 Task 13, audio artifact/provenance writer.
+  Feature 18 Tasks 7-10 and Feature 20 Tasks 11-12 are complete locally.
+  Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
   now provides a pure strict parser/contract for `angles:`, `angle lab:`,
@@ -1013,6 +1014,14 @@ place instead of deleting the column.
   Verification: `.venv/bin/python3 -m pytest tests/test_audio_briefing.py -q`
   -> 4 passed; `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_media_artifact_contracts.py -q`
   -> 10 passed.
+- Feature 20 Task 12 status: implemented locally. Added `TTSProviderConfig`,
+  `tts_provider_config_from_env()`, and `build_tts_audio()` to produce
+  deterministic dry-run metadata by default and require explicit env config
+  plus an injected adapter for live TTS. Missing live config or adapter fails
+  closed without provider/network imports or calls. Verification:
+  `.venv/bin/python3 -m pytest tests/test_audio_briefing.py -q` -> 9 passed;
+  `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_media_artifact_contracts.py -q`
+  -> 15 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.

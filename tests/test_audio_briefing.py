@@ -84,6 +84,150 @@ def test_build_audio_script_missing_report_fails_cleanly(tmp_path):
     assert "missing" in result["error"].lower()
 
 
+def test_build_tts_audio_dry_run_is_deterministic_and_does_not_call_provider(tmp_path):
+    from unittest.mock import MagicMock
+
+    from orchestrator.audio_briefing import build_audio_script, build_tts_audio
+
+    report = tmp_path / "2026-06-28.md"
+    report.write_text(
+        """# MindPattern Research Agent - June 28, 2026
+
+Agent Reach restores source coverage. [Source](https://example.com/source)
+""",
+    )
+    script_result = build_audio_script(report, date="2026-06-28", user="ramsay")
+    provider = MagicMock()
+
+    first = build_tts_audio(script_result, dry_run=True, tts_provider=provider)
+    second = build_tts_audio(script_result, dry_run=True, tts_provider=provider)
+
+    provider.assert_not_called()
+    assert first == second
+    assert first["status"] == "ready"
+    assert first["mode"] == "dry_run"
+    assert first["audio_bytes"] is None
+    assert first["metadata"]["provider"] == "dry_run"
+    assert first["metadata"]["audio_placeholder"] is True
+    assert first["metadata"]["script_hash"] == script_result["script_hash"]
+    assert first["metadata"]["source_report_hash"] == script_result["source_report_hash"]
+    assert "AI-generated audio" in first["metadata"]["labels"]
+    assert "manual publish only" in first["metadata"]["labels"]
+
+
+def test_build_tts_audio_dry_run_preserves_degraded_status(tmp_path):
+    from orchestrator.audio_briefing import build_audio_script, build_tts_audio
+
+    report = tmp_path / "2026-06-28.md"
+    report.write_text(
+        """> Degraded issue notice: source diversity too weak.
+
+# MindPattern Research Agent - June 28, 2026
+
+The issue should carry its degraded label into audio.
+""",
+    )
+    script_result = build_audio_script(report, date="2026-06-28", user="ramsay")
+
+    result = build_tts_audio(script_result, dry_run=True)
+
+    assert result["status"] == "degraded"
+    assert result["metadata"]["degraded"] is True
+    assert "Degraded audio briefing" in result["metadata"]["labels"]
+    assert result["metadata"]["audio_placeholder"] is True
+
+
+def test_build_tts_audio_fails_closed_when_live_config_is_missing(tmp_path):
+    from unittest.mock import MagicMock
+
+    from orchestrator.audio_briefing import build_audio_script, build_tts_audio
+
+    report = tmp_path / "2026-06-28.md"
+    report.write_text("# Report\n\nSource-backed script.")
+    script_result = build_audio_script(report, date="2026-06-28", user="ramsay")
+    provider = MagicMock()
+
+    result = build_tts_audio(
+        script_result,
+        dry_run=False,
+        env={},
+        tts_provider=provider,
+    )
+
+    provider.assert_not_called()
+    assert result["status"] == "failed"
+    assert result["mode"] == "provider"
+    assert result["audio_bytes"] is None
+    assert "MP_AUDIO_TTS_ENABLED" in result["error"]
+
+
+def test_build_tts_audio_live_path_is_injectable_and_mocked(tmp_path):
+    from unittest.mock import MagicMock
+
+    from orchestrator.audio_briefing import build_audio_script, build_tts_audio
+
+    report = tmp_path / "2026-06-28.md"
+    report.write_text("# Report\n\nSource-backed script.")
+    script_result = build_audio_script(report, date="2026-06-28", user="ramsay")
+    provider = MagicMock(
+        return_value={
+            "audio_bytes": b"fixture mp3 bytes",
+            "audio_format": "mp3",
+            "duration_seconds": 12.5,
+            "provider_request_id": "req_fixture",
+        }
+    )
+
+    result = build_tts_audio(
+        script_result,
+        dry_run=False,
+        env={
+            "MP_AUDIO_TTS_ENABLED": "true",
+            "MP_AUDIO_TTS_PROVIDER": "openai",
+            "MP_AUDIO_TTS_MODEL": "fixture-model",
+            "MP_AUDIO_TTS_VOICE": "fixture-voice",
+        },
+        tts_provider=provider,
+    )
+
+    provider.assert_called_once()
+    script_arg, config_arg = provider.call_args.args
+    assert script_arg == script_result["script"]
+    assert config_arg.provider == "openai"
+    assert config_arg.model == "fixture-model"
+    assert config_arg.voice == "fixture-voice"
+    assert result["status"] == "ready"
+    assert result["mode"] == "provider"
+    assert result["audio_bytes"] == b"fixture mp3 bytes"
+    assert result["metadata"]["provider"] == "openai"
+    assert result["metadata"]["model"] == "fixture-model"
+    assert result["metadata"]["voice"] == "fixture-voice"
+    assert result["metadata"]["audio_placeholder"] is False
+    assert result["metadata"]["audio_hash"].startswith("sha256:")
+    assert result["metadata"]["provider_request_id"] == "req_fixture"
+
+
+def test_build_tts_audio_live_path_fails_closed_without_adapter(tmp_path):
+    from orchestrator.audio_briefing import build_audio_script, build_tts_audio
+
+    report = tmp_path / "2026-06-28.md"
+    report.write_text("# Report\n\nSource-backed script.")
+    script_result = build_audio_script(report, date="2026-06-28", user="ramsay")
+
+    result = build_tts_audio(
+        script_result,
+        dry_run=False,
+        env={
+            "MP_AUDIO_TTS_ENABLED": "true",
+            "MP_AUDIO_TTS_PROVIDER": "openai",
+        },
+    )
+
+    assert result["status"] == "failed"
+    assert result["audio_bytes"] is None
+    assert "adapter" in result["error"].lower()
+
+
 def test_audio_script_module_has_no_provider_network_or_runner_imports():
     source = Path("orchestrator/audio_briefing.py").read_text()
     tree = ast.parse(source)

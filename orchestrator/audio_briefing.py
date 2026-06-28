@@ -1,24 +1,37 @@
 """Audio briefing script builder.
 
-This module only converts a completed newsletter report into spoken prose,
-transcript markdown, and source notes. Provider adapters and binary media
-artifacts are later tasks.
+This module converts a completed newsletter report into spoken prose,
+transcript markdown, source notes, and deterministic TTS metadata. Binary media
+artifact writing is a later task.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 
 _SAFE_USER_RE = re.compile(r"^[a-z0-9_-]+$")
+_SAFE_CONFIG_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _RAW_URL_RE = re.compile(r"https?://[^\s)>\]]+")
 _FENCED_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 _DEGRADED_RE = re.compile(r"^>\s*Degraded issue notice:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class TTSProviderConfig:
+    """Explicit live TTS configuration passed to an injected adapter."""
+
+    provider: str
+    model: str
+    voice: str
+    enabled: bool = False
 
 
 def build_audio_script(
@@ -82,6 +95,141 @@ def build_audio_script(
     return result
 
 
+def build_tts_audio(
+    script_result: dict[str, Any],
+    *,
+    dry_run: bool = True,
+    env: Mapping[str, str] | None = None,
+    tts_provider: Callable[[str, TTSProviderConfig], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build deterministic TTS metadata or call an injected live adapter.
+
+    The default path is dry-run and never calls a provider. Live mode requires
+    ``dry_run=False``, explicit environment configuration, and an injected
+    adapter; missing pieces fail closed without network or provider imports.
+    """
+    config = tts_provider_config_from_env(env)
+    mode = "dry_run" if dry_run else "provider"
+
+    if script_result.get("status") == "failed" or not script_result.get("script"):
+        return _failed_tts_result(
+            script_result=script_result,
+            mode=mode,
+            config=config,
+            error="Audio script is not usable for TTS.",
+        )
+
+    if dry_run:
+        metadata = _build_tts_metadata(
+            script_result=script_result,
+            config=TTSProviderConfig(
+                provider="dry_run",
+                model="dry-run-tts-v1",
+                voice="dry-run",
+                enabled=False,
+            ),
+            mode="dry_run",
+            audio_format="mp3",
+            duration_seconds=_estimate_duration_seconds(script_result),
+            audio_hash=_hash_text(
+                "|".join([
+                    "dry_run_audio_placeholder",
+                    script_result.get("script_hash", ""),
+                    script_result.get("date", ""),
+                ])
+            ),
+            audio_placeholder=True,
+        )
+        return {
+            "status": _status_from_script(script_result),
+            "mode": "dry_run",
+            "date": script_result.get("date", ""),
+            "user": script_result.get("user", ""),
+            "degraded": bool(script_result.get("degraded")),
+            "audio_bytes": None,
+            "metadata": metadata,
+            "error": None,
+        }
+
+    if not config.enabled:
+        return _failed_tts_result(
+            script_result=script_result,
+            mode="provider",
+            config=config,
+            error=(
+                "Live TTS requires MP_AUDIO_TTS_ENABLED=true and "
+                "MP_AUDIO_TTS_PROVIDER."
+            ),
+        )
+    if tts_provider is None:
+        return _failed_tts_result(
+            script_result=script_result,
+            mode="provider",
+            config=config,
+            error="Live TTS requires an injected provider adapter.",
+        )
+
+    try:
+        provider_result = tts_provider(script_result["script"], config)
+    except Exception as exc:  # pragma: no cover - defensive provider boundary
+        return _failed_tts_result(
+            script_result=script_result,
+            mode="provider",
+            config=config,
+            error=f"TTS provider adapter failed: {exc}",
+        )
+
+    audio_bytes = provider_result.get("audio_bytes")
+    if not isinstance(audio_bytes, bytes) or not audio_bytes:
+        return _failed_tts_result(
+            script_result=script_result,
+            mode="provider",
+            config=config,
+            error="TTS provider adapter returned no audio bytes.",
+        )
+
+    metadata = _build_tts_metadata(
+        script_result=script_result,
+        config=config,
+        mode="provider",
+        audio_format=_safe_config_value(provider_result.get("audio_format"), "mp3").lower(),
+        duration_seconds=float(provider_result.get("duration_seconds") or 0),
+        audio_hash=_hash_bytes(audio_bytes),
+        audio_placeholder=False,
+        provider_request_id=provider_result.get("provider_request_id"),
+    )
+    return {
+        "status": _status_from_script(script_result),
+        "mode": "provider",
+        "date": script_result.get("date", ""),
+        "user": script_result.get("user", ""),
+        "degraded": bool(script_result.get("degraded")),
+        "audio_bytes": audio_bytes,
+        "metadata": metadata,
+        "error": None,
+    }
+
+
+def tts_provider_config_from_env(env: Mapping[str, str] | None = None) -> TTSProviderConfig:
+    """Read explicit TTS configuration without importing or calling providers."""
+    values = os.environ if env is None else env
+    enabled = _env_truthy(values.get("MP_AUDIO_TTS_ENABLED"))
+    provider = _safe_config_value(values.get("MP_AUDIO_TTS_PROVIDER"), "")
+    if not enabled or not provider:
+        return TTSProviderConfig(
+            provider="dry_run",
+            model="dry-run-tts-v1",
+            voice="dry-run",
+            enabled=False,
+        )
+    return TTSProviderConfig(
+        provider=provider.lower(),
+        model=_safe_config_value(values.get("MP_AUDIO_TTS_MODEL"), "gpt-4o-mini-tts"),
+        voice=_safe_config_value(values.get("MP_AUDIO_TTS_VOICE"), "alloy"),
+        enabled=True,
+    )
+
+
 def _failed_result(*, date: str, user: str, error: str) -> dict[str, Any]:
     return {
         "status": "failed",
@@ -99,6 +247,33 @@ def _failed_result(*, date: str, user: str, error: str) -> dict[str, Any]:
         "script_hash": "",
         "transcript_markdown": "",
         "error": error,
+    }
+
+
+def _failed_tts_result(
+    *,
+    script_result: dict[str, Any],
+    mode: str,
+    config: TTSProviderConfig,
+    error: str,
+) -> dict[str, Any]:
+    return {
+        "status": "failed",
+        "mode": mode,
+        "date": script_result.get("date", ""),
+        "user": script_result.get("user", ""),
+        "degraded": True,
+        "audio_bytes": None,
+        "metadata": _build_tts_metadata(
+            script_result=script_result,
+            config=config,
+            mode=mode,
+            audio_format="mp3",
+            duration_seconds=0,
+            audio_hash="",
+            audio_placeholder=True,
+        ),
+        "error": redact_sensitive_text(error),
     }
 
 
@@ -197,6 +372,73 @@ def _format_transcript(
     return "\n".join(lines).strip() + "\n"
 
 
+def _build_tts_metadata(
+    *,
+    script_result: dict[str, Any],
+    config: TTSProviderConfig,
+    mode: str,
+    audio_format: str,
+    duration_seconds: float,
+    audio_hash: str,
+    audio_placeholder: bool,
+    provider_request_id: Any = None,
+) -> dict[str, Any]:
+    metadata = {
+        "id": f"{script_result.get('date', '')}-audio-morning-briefing",
+        "type": "audio_briefing",
+        "date": script_result.get("date", ""),
+        "user": script_result.get("user", ""),
+        "status": _status_from_script(script_result),
+        "mode": mode,
+        "provider": config.provider,
+        "model": config.model,
+        "voice": config.voice,
+        "audio_format": audio_format,
+        "duration_seconds": duration_seconds,
+        "audio_placeholder": audio_placeholder,
+        "audio_hash": audio_hash,
+        "script_hash": script_result.get("script_hash", ""),
+        "source_report_hash": script_result.get("source_report_hash", ""),
+        "word_count": int(script_result.get("word_count") or 0),
+        "source_count": int(script_result.get("source_count") or 0),
+        "degraded": bool(script_result.get("degraded")),
+        "degraded_reason": redact_sensitive_text(script_result.get("degraded_reason") or ""),
+        "labels": _audio_labels(script_result),
+    }
+    if provider_request_id:
+        metadata["provider_request_id"] = redact_sensitive_text(str(provider_request_id))
+    return metadata
+
+
+def _audio_labels(script_result: dict[str, Any]) -> list[str]:
+    labels = ["AI-generated audio", "manual publish only"]
+    if script_result.get("degraded"):
+        labels.append("Degraded audio briefing")
+    return labels
+
+
+def _status_from_script(script_result: dict[str, Any]) -> str:
+    return "degraded" if script_result.get("degraded") else "ready"
+
+
+def _estimate_duration_seconds(script_result: dict[str, Any]) -> float:
+    word_count = int(script_result.get("word_count") or 0)
+    if word_count <= 0:
+        return 0
+    return round(max(1.0, word_count / 150 * 60), 2)
+
+
+def _env_truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_config_value(value: Any, default: str) -> str:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return default
+    return candidate if _SAFE_CONFIG_RE.fullmatch(candidate) else default
+
+
 def _clean_url(url: Any) -> str:
     value = str(url or "").strip()
     if not value.startswith(("http://", "https://")):
@@ -206,3 +448,7 @@ def _clean_url(url: Any) -> str:
 
 def _hash_text(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _hash_bytes(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()[:16]
