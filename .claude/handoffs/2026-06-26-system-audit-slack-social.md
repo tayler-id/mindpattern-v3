@@ -1085,6 +1085,15 @@ place instead of deleting the column.
   missing. Verification:
   `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_slack_bot.py -q`
   -> 109 passed.
+- Feature 21 Task 19 status: implemented locally. Added `slack_bot/files.py`
+  with Slack's external upload sequence for script artifacts:
+  `files.getUploadURLExternal`, raw-byte upload to the returned URL, then
+  `files.completeUploadExternal` with `channel_id` and the parent `thread_ts`.
+  The helper never calls legacy `files.upload`, surfaces missing `files:write`,
+  keeps auth inside the Slack client, and has an injectable raw-upload boundary
+  so tests make no Slack/network calls. Verification:
+  `.venv/bin/python3 -m pytest tests/test_slack_files.py tests/test_video_scripts.py -q`
+  -> 15 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, or TTS/video
   provider call has been run for this feature slice. Rabbit Hole edits were
