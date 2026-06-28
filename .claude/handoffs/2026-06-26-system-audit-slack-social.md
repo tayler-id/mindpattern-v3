@@ -1103,6 +1103,17 @@ place instead of deleting the column.
   token-shaped data. Verification:
   `.venv/bin/python3 -m pytest tests/test_media_feature_safety.py tests/test_narrative_arcs.py tests/test_social_angle_lab.py tests/test_audio_briefing.py tests/test_video_scripts.py tests/test_social.py tests/test_runner.py::TestDryRunPhases -q`
   -> 96 passed, 1 Starlette/httpx deprecation warning.
+- Task 21 release hygiene status: implemented locally. Updated the runbook
+  status, implementation-plan Done table/checkpoints, and this handoff. Ran
+  `git diff --check` -> passed; `graphify update .` -> rebuilt 7259 nodes,
+  11666 edges, 439 communities, with HTML viz skipped because the graph exceeds
+  the 5000-node default; `graphify check-update .` -> passed. Current v3 branch
+  is ahead of origin/main with feature commits; unrelated dirty files remain in
+  `data/ramsay/**`, `data/social-drafts/eic-topic.json`, `run-launchd.sh`, and
+  `tests/test_launchd_wrapper.py`. Current Rabbit Hole branch is
+  `rabbit-hole`; only the Task 15 audio rendering commit was made there, with
+  pre-existing unrelated dirty files still present in `src/components/story/`,
+  `src/components/wire/`, `src/lib/sections.ts`, and `docs/specs/`.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, or TTS/video
   provider call has been run for this feature slice. Rabbit Hole edits were

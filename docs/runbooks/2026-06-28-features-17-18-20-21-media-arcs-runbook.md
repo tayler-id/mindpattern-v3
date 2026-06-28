@@ -1,6 +1,6 @@
 # Spec and Runbook: Features 17, 18, 20, and 21 - Arcs, Angles, Audio, and Video Scripts
 
-> Status: Spec ready; implementation not started
+> Status: Implemented locally through Task 20; release hygiene in progress
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-28
@@ -14,6 +14,28 @@ This runbook specifies four related MindPattern v3 features:
 - Feature 18: Social Angle Lab
 - Feature 20: Audio Morning Briefing
 - Feature 21: Short-Form Video Script Mode
+
+## Implementation Status - 2026-06-28
+
+Local implementation is complete through Task 20 in the paired implementation
+plan:
+
+- Feature 17 creates source-backed narrative arc artifacts and exposes safe
+  public arc API output. Arcs are injected only into synthesis pass 2 as
+  enrichment context and never alter pass-1 story selection.
+- Feature 18 returns critic-ranked Social Angle Lab candidates in `#mp-posts`
+  and hands `draft <n>` into the existing approval-gated social draft path.
+- Feature 20 builds deterministic audio briefing metadata/artifacts in v3,
+  exposes safe public audio endpoints, and renders audio players in the Rabbit
+  Hole website via the v3 public API.
+- Feature 21 returns Slack-ready short-form video script packages from
+  `#mp-posts`, including `video angle <n>` handoff after a Social Angle Lab
+  result, with AI-assisted/manual-publish labels and source evidence.
+- Slack file artifact upload support exists as a tested helper using Slack's
+  external upload flow; live upload/smoke still requires owner approval.
+- No full daily pipeline, newsletter send, Fly deploy, Vercel deploy, live
+  Slack smoke, live social post, schema change, dependency install, or real
+  TTS/video provider call was run during this implementation.
 
 The user explicitly changed Feature 20 from "dashboard" to the public Rabbit
 Hole website at `/Users/taylerramsay/Projects/mindpattern-rabbit-hole`, which

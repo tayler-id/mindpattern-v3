@@ -1,6 +1,6 @@
 # Implementation Plan: Features 17, 18, 20, and 21 - Arcs, Angles, Audio, and Video Scripts
 
-> Status: In progress; Feature 17 foundation implemented through pass-2/API slice
+> Status: Implemented locally through release hygiene; optional live smoke deferred
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-28
@@ -91,7 +91,7 @@ of deleting the column.
 | 18 | 21 | Wire #mp-posts video command and angle handoff | Yes | 2026-06-28: `#mp-posts` now intercepts `video script: <topic/url>`, `video finding <id>`, `video arc <id>`, and `video angle <n>` before URL/idea fallback. Direct video commands generate phone-readable Slack script packages with manual-publish labels and safe artifacts; `video angle <n>` works only as a reply after a Social Angle Lab result and uses the selected angle evidence. Finding/arc evidence lookup is read-only and degrades if local evidence is unavailable. Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_slack_bot.py -q` -> 109 passed. |
 | 19 | 21 | Add Slack file upload helper | Yes | 2026-06-28: added `slack_bot/files.py` external upload helper using Slack's current `files.getUploadURLExternal` -> raw-byte upload -> `files.completeUploadExternal` sequence. The helper requires a parent `thread_ts`, uses `channel_id`, never calls legacy `files.upload`, surfaces missing `files:write`, and keeps auth inside the Slack client. Network/upload is injectable and fully mocked in tests. Verification: `.venv/bin/python3 -m pytest tests/test_slack_files.py tests/test_video_scripts.py -q` -> 15 passed. |
 | 20 | All | Safety regression suite | Yes | 2026-06-28: added `tests/test_media_feature_safety.py` with cross-feature guards for forbidden outbound/deploy/posting markers, Slack video dry paths, unclear Social Angle Lab replies, mocked Slack file upload boundaries, and public-output redaction. Verification: `.venv/bin/python3 -m pytest tests/test_media_feature_safety.py tests/test_narrative_arcs.py tests/test_social_angle_lab.py tests/test_audio_briefing.py tests/test_video_scripts.py tests/test_social.py tests/test_runner.py::TestDryRunPhases -q` -> 96 passed, 1 Starlette/httpx deprecation warning. |
-| 21 | All | Docs, handoff, Graphify, commits | No | Update Done evidence, run Graphify, commit verified phases. |
+| 21 | All | Docs, handoff, Graphify, commits | Yes | 2026-06-28: updated the runbook status, Done table, checkpoints, and handoff evidence; ran `git diff --check` -> passed; ran `graphify update .` -> rebuilt 7259 nodes, 11666 edges, 439 communities, HTML viz skipped because graph exceeds the 5000-node default; ran `graphify check-update .` -> passed. Both repo statuses are recorded in the handoff/final response. |
 | 22 | Optional | Owner-approved live smoke | Deferred | Requires explicit Fly/Slack/Vercel approval. |
 
 ## Implementation Order and Checkpoints
@@ -105,10 +105,10 @@ checkpoint is also complete.
 - [x] Task 0 Opus 4.8 runbook/plan review gate is complete (2026-06-28,
       `claude-opus-4-8[1m]`, APPROVED TO CONTINUE with conditional required
       edits — see the Done Status Table Task 0 row).
-- [ ] Dirty state is recorded for v3 and Rabbit Hole.
-- [ ] Focused baseline tests are run or failures are documented.
-- [ ] Shared evidence/artifact contracts pass their tests.
-- [ ] No runtime behavior has changed except new tested contract helpers.
+- [x] Dirty state is recorded for v3 and Rabbit Hole.
+- [x] Focused baseline tests are run or failures are documented.
+- [x] Shared evidence/artifact contracts pass their tests.
+- [x] No runtime behavior has changed except new tested contract helpers.
 
 ### Checkpoint: Narrative Arcs after Tasks 3-6
 
@@ -141,9 +141,9 @@ checkpoint is also complete.
 ### Checkpoint: Release Hygiene after Tasks 20-21
 
 - [x] Cross-feature safety regressions pass.
-- [ ] Done columns and handoff evidence are updated in place.
-- [ ] Graphify is refreshed and checked.
-- [ ] v3 and Rabbit Hole dirty files are reported.
+- [x] Done columns and handoff evidence are updated in place.
+- [x] Graphify is refreshed and checked.
+- [x] v3 and Rabbit Hole dirty files are reported.
 
 ### Optional Checkpoint: Owner-Approved Live Smoke after Task 22
 
