@@ -14,9 +14,10 @@ from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, Query, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from dashboard.auth import require_auth
+from orchestrator.audio_briefing import audio_artifact_paths
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -128,6 +129,86 @@ def _public_narrative_arc(arc: dict) -> dict:
             )
         },
         "evidence": evidence,
+    }
+
+
+def _audio_not_found() -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "Audio briefing not found"})
+
+
+def _safe_audio_paths(date: str, user: str) -> dict[str, Path] | None:
+    date_val = _valid_run_date(date)
+    user_val = _safe_user(user)
+    if date_val is None or user_val is None:
+        return None
+    try:
+        return audio_artifact_paths(
+            date=date_val,
+            user=user_val,
+            reports_root=REPORTS_DIR,
+        )
+    except ValueError:
+        return None
+
+
+def _load_audio_metadata(date: str, user: str) -> tuple[dict | None, dict[str, Path] | None]:
+    paths = _safe_audio_paths(date, user)
+    if paths is None or not paths["metadata"].exists():
+        return None, paths
+    try:
+        metadata = json.loads(paths["metadata"].read_text(errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return None, paths
+
+    date_val = _valid_run_date(str(metadata.get("date", "")))
+    if date_val != date:
+        return None, paths
+    metadata["date"] = date
+    metadata["user"] = user
+    return metadata, paths
+
+
+def _public_audio_metadata(
+    metadata: dict,
+    *,
+    user: str,
+    paths: dict[str, Path],
+) -> dict:
+    date = _valid_run_date(str(metadata.get("date", ""))) or ""
+    has_audio_file = bool(metadata.get("has_audio_file")) and paths["audio"].exists()
+    notes = []
+    for note in metadata.get("show_notes") or []:
+        if not isinstance(note, dict):
+            continue
+        url = redact_sensitive_text(note.get("url", ""))
+        if not url.startswith(("http://", "https://")):
+            continue
+        notes.append({
+            "label": redact_sensitive_text(note.get("label", "Source")),
+            "url": url,
+        })
+
+    return {
+        "id": redact_sensitive_text(metadata.get("id", f"{date}-audio-morning-briefing")),
+        "type": "audio_briefing",
+        "date": date,
+        "user": user,
+        "status": redact_sensitive_text(metadata.get("status", "")),
+        "generated_at": redact_sensitive_text(metadata.get("generated_at", "")),
+        "provider": redact_sensitive_text(metadata.get("provider", "")),
+        "model": redact_sensitive_text(metadata.get("model", "")),
+        "voice": redact_sensitive_text(metadata.get("voice", "")),
+        "source_count": int(metadata.get("source_count") or 0),
+        "duration_seconds": float(metadata.get("duration_seconds") or 0),
+        "has_audio_file": has_audio_file,
+        "audio_placeholder": bool(metadata.get("audio_placeholder")),
+        "source_report_hash": redact_sensitive_text(metadata.get("source_report_hash", "")),
+        "script_hash": redact_sensitive_text(metadata.get("script_hash", "")),
+        "audio_hash": redact_sensitive_text(metadata.get("audio_hash", "")),
+        "labels": [redact_sensitive_text(label) for label in metadata.get("labels") or []],
+        "show_notes": notes,
+        "public_url": f"/api/audio-briefings/{date}/file?user={user}" if has_audio_file else "",
+        "transcript_url": f"/api/audio-briefings/{date}/transcript?user={user}",
     }
 
 
@@ -491,6 +572,76 @@ async def get_narrative_arc(
         if arc.get("id") == arc_id_val:
             return _public_narrative_arc(arc)
     return None
+
+
+@router.get("/api/audio-briefings")
+async def list_audio_briefings(
+    user: str = Query("ramsay"),
+    limit: int = Query(30, ge=0, le=100),
+):
+    """Public: list generated audio briefings. No private paths or raw files."""
+    user_val = _safe_user(user)
+    if user_val is None:
+        return []
+    audio_dir = (REPORTS_DIR / user_val / "audio").resolve()
+    try:
+        audio_dir.relative_to(REPORTS_DIR.resolve())
+    except ValueError:
+        return []
+    if not audio_dir.exists():
+        return []
+
+    items = []
+    for metadata_file in sorted(audio_dir.glob("*.json"), reverse=True):
+        if metadata_file.name.endswith(".provenance.json"):
+            continue
+        date_val = _valid_run_date(metadata_file.stem)
+        if date_val is None:
+            continue
+        metadata, paths = _load_audio_metadata(date_val, user_val)
+        if metadata is None or paths is None:
+            continue
+        items.append(_public_audio_metadata(metadata, user=user_val, paths=paths))
+        if len(items) >= limit:
+            break
+    return items
+
+
+@router.get("/api/audio-briefings/{date}")
+async def get_audio_briefing(date: str, user: str = Query("ramsay")):
+    """Public: get one audio briefing metadata record by date."""
+    metadata, paths = _load_audio_metadata(date, user)
+    if metadata is None or paths is None:
+        return _audio_not_found()
+    return _public_audio_metadata(metadata, user=user, paths=paths)
+
+
+@router.get("/api/audio-briefings/{date}/file")
+async def get_audio_briefing_file(date: str, user: str = Query("ramsay")):
+    """Public: stream a known MP3 artifact for a valid date/user only."""
+    metadata, paths = _load_audio_metadata(date, user)
+    if metadata is None or paths is None:
+        return _audio_not_found()
+    public = _public_audio_metadata(metadata, user=user, paths=paths)
+    if not public["has_audio_file"] or not paths["audio"].exists():
+        return _audio_not_found()
+    return FileResponse(
+        paths["audio"],
+        media_type="audio/mpeg",
+        filename=paths["audio"].name,
+    )
+
+
+@router.get("/api/audio-briefings/{date}/transcript")
+async def get_audio_briefing_transcript(date: str, user: str = Query("ramsay")):
+    """Public: return a known audio transcript for a valid date/user only."""
+    metadata, paths = _load_audio_metadata(date, user)
+    if metadata is None or paths is None or not paths["transcript"].exists():
+        return _audio_not_found()
+    return PlainTextResponse(
+        paths["transcript"].read_text(errors="replace"),
+        media_type="text/plain",
+    )
 
 
 @router.get("/api/skills/search")

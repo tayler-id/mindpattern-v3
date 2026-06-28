@@ -267,6 +267,52 @@ def _create_contract_reports(reports_dir):
         (user_dir / report["filename"]).write_text(text)
 
 
+def _create_contract_audio(reports_dir):
+    audio_dir = reports_dir / "ramsay" / "audio"
+    audio_dir.mkdir(parents=True)
+    (audio_dir / "2026-06-28.mp3").write_bytes(b"fixture mp3 bytes")
+    (audio_dir / "2026-06-28.transcript.md").write_text(
+        "# MindPattern Audio Briefing - 2026-06-28\n\n"
+        "Status: ready\n\n"
+        "Fixture audio transcript.\n\n"
+        "## Source notes\n\n"
+        "- [Primary source](https://example.com/audio-source)\n"
+    )
+    (audio_dir / "2026-06-28.json").write_text(json.dumps({
+        "id": "2026-06-28-audio-morning-briefing",
+        "type": "audio_briefing",
+        "date": "2026-06-28",
+        "user": "ramsay",
+        "status": "ready",
+        "generated_at": "2026-06-28T12:00:00+00:00",
+        "provider": "dry_run",
+        "model": "dry-run-tts-v1",
+        "voice": "dry-run",
+        "source_count": 1,
+        "duration_seconds": 9.5,
+        "has_audio_file": True,
+        "audio_placeholder": False,
+        "source_report_hash": "sha256:sourcefixture",
+        "script_hash": "sha256:scriptfixture",
+        "audio_hash": "sha256:audiofixture",
+        "labels": ["AI-generated audio", "manual publish only"],
+        "show_notes": [
+            {"label": "Primary source", "url": "https://example.com/audio-source"}
+        ],
+        "artifact_files": {
+            "audio": "2026-06-28.mp3",
+            "transcript": "2026-06-28.transcript.md",
+            "metadata": "2026-06-28.json",
+            "provenance": "2026-06-28.provenance.json",
+        },
+    }))
+    (audio_dir / "2026-06-28.provenance.json").write_text(json.dumps({
+        "type": "audio_briefing",
+        "date": "2026-06-28",
+        "status": "ready",
+    }))
+
+
 def _json_type(value):
     """Collapse JSON types: ints and floats are both 'number'."""
     if isinstance(value, bool):
@@ -315,6 +361,7 @@ def fixture_storage(tmp_path_factory):
     user_dir.mkdir(parents=True)
     _create_contract_db(user_dir / "memory.db")
     _create_contract_reports(reports_dir)
+    _create_contract_audio(reports_dir)
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(api_routes, "DATA_DIR", data_dir)
@@ -358,3 +405,48 @@ def test_endpoint_contract(client, fixture_name, path):
 def test_healthz(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
+
+
+def test_audio_briefing_endpoints(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("audio briefing endpoints are verified locally before deploy")
+
+    listing = client.get("/api/audio-briefings?user=ramsay")
+    assert listing.status_code == 200
+    body = listing.json()
+    assert len(body) == 1
+    assert body[0]["date"] == "2026-06-28"
+    assert body[0]["public_url"].endswith("/api/audio-briefings/2026-06-28/file?user=ramsay")
+    assert body[0]["transcript_url"].endswith(
+        "/api/audio-briefings/2026-06-28/transcript?user=ramsay"
+    )
+    assert "artifact_files" not in body[0]
+
+    detail = client.get("/api/audio-briefings/2026-06-28?user=ramsay")
+    assert detail.status_code == 200
+    metadata = detail.json()
+    assert metadata["status"] == "ready"
+    assert metadata["source_count"] == 1
+    assert metadata["labels"] == ["AI-generated audio", "manual publish only"]
+    assert metadata["show_notes"][0]["url"] == "https://example.com/audio-source"
+
+    audio = client.get("/api/audio-briefings/2026-06-28/file?user=ramsay")
+    assert audio.status_code == 200
+    assert audio.content == b"fixture mp3 bytes"
+    assert audio.headers["content-type"].startswith("audio/")
+
+    transcript = client.get("/api/audio-briefings/2026-06-28/transcript?user=ramsay")
+    assert transcript.status_code == 200
+    assert "Fixture audio transcript." in transcript.text
+    assert transcript.headers["content-type"].startswith("text/plain")
+
+
+def test_audio_briefing_endpoints_reject_unsafe_or_missing_artifacts(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("audio briefing endpoints are verified locally before deploy")
+
+    assert client.get("/api/audio-briefings?user=../ramsay").json() == []
+    assert client.get("/api/audio-briefings/2026-99-99?user=ramsay").status_code == 404
+    assert client.get("/api/audio-briefings/2026-06-27?user=ramsay").status_code == 404
+    assert client.get("/api/audio-briefings/2026-06-28/file?user=../ramsay").status_code == 404
+    assert client.get("/api/audio-briefings/2026-06-27/transcript?user=ramsay").status_code == 404

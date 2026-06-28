@@ -965,8 +965,8 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 20 Task 14, safe public audio API endpoints.
-  Feature 18 Tasks 7-10 and Feature 20 Tasks 11-13 are complete locally.
+- Current next task: Feature 20 Task 15, render audio on the Rabbit Hole site.
+  Feature 18 Tasks 7-10 and Feature 20 Tasks 11-14 are complete locally.
   Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
@@ -1032,6 +1032,17 @@ place instead of deleting the column.
   `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_traces_db.py -q`
   -> 20 passed; `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_media_artifact_contracts.py tests/test_traces_db.py -q`
   -> 26 passed.
+- Feature 20 Task 14 status: implemented locally. Added public read-only
+  `/api/audio-briefings`, `/api/audio-briefings/{date}`,
+  `/api/audio-briefings/{date}/file`, and
+  `/api/audio-briefings/{date}/transcript` endpoints that serve only validated
+  `reports/<user>/audio/YYYY-MM-DD.*` artifacts. Public metadata is whitelisted;
+  invalid dates/users and missing artifacts return empty list or 404. Added the
+  audio prefix to the public-read auth allowlist and verified private routes
+  stay protected. Verification:
+  `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_audio_briefing.py -q`
+  -> 27 passed; `.venv/bin/python3 -m pytest tests/test_auth_middleware.py tests/test_api_contract.py tests/test_audio_briefing.py -q`
+  -> 43 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.
