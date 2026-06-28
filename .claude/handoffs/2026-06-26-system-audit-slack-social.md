@@ -1074,6 +1074,17 @@ place instead of deleting the column.
   `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q` -> 9 passed;
   `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q`
   -> 15 passed.
+- Feature 21 Task 18 status: implemented locally. `#mp-posts` now intercepts
+  `video script: <topic/url>`, `video finding <id>`, `video arc <id>`, and
+  `video angle <n>` before URL/idea fallback. Direct video commands produce
+  phone-readable Slack script packages with "manual publish only" labels and
+  safe ignored artifacts. `video angle <n>` only works as a reply after a Social
+  Angle Lab result, uses the selected angle's source evidence, and does not
+  call `_run_and_approve()` or post to social platforms. Finding and arc
+  evidence lookup is read-only and degrades visibly when local evidence is
+  missing. Verification:
+  `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_slack_bot.py -q`
+  -> 109 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, or TTS/video
   provider call has been run for this feature slice. Rabbit Hole edits were

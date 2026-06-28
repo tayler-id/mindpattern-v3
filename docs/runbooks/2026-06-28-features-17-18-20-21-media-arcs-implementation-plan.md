@@ -88,7 +88,7 @@ of deleting the column.
 | 15 | 20 | Render audio on Rabbit Hole | Yes | 2026-06-28: in `mindpattern-rabbit-hole`, added typed audio helpers (`getAudioBriefings()`, `getAudioBriefing()`, `backendAssetUrl()`), `AudioBriefing` types, and `AudioBriefingPlayer` with native audio controls, transcript link, source labels, and visible AI-generated/manual-publish labels. `/briefings` now shows compact audio players for dates with audio without nesting controls inside links; `/briefings/[date]` renders the full player above the report body and degrades cleanly when no audio exists. Verification in Rabbit Hole: `pnpm lint` -> 0 errors, 2 pre-existing warnings; `pnpm exec tsc --noEmit --incremental false` -> passed. Rabbit Hole commit: `69b9d6e feat: render audio briefings`. |
 | 16 | 21 | Add video script contract/parser | Yes | 2026-06-28: added pure `orchestrator/video_scripts.py` with strict parsing for `video script:`, `video finding <id>`, `video arc <id>`, and `video angle <n>`. Unrelated text returns `None`; malformed supported commands return failed request objects without falling through. Parser rejects live-post/manual-publish violations and newsletter-control wording, redacts sensitive text, and defines a stable `VideoScriptPackage` public contract with safe URLs and visible labels. Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q` -> 5 passed; `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q` -> 11 passed. |
 | 17 | 21 | Implement video script package service | Yes | 2026-06-28: extended `orchestrator/video_scripts.py` with deterministic `generate_video_script_package()` and safe `video_script_artifact_paths()` under gitignored `reports/<user>/video-scripts/YYYY-MM-DD-<slug>.{json,md}`. The service produces one selected 30/45/60 second Slack-ready package with hook, spoken script, shot list, captions, source URLs, claim-to-source evidence, AI-assisted/manual-publish labels, and risk labels. Weak or missing evidence returns a degraded package with follow-up research recommendation and no fabricated claim evidence. Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q` -> 9 passed; `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q` -> 15 passed. |
-| 18 | 21 | Wire #mp-posts video command and angle handoff | No | Slack thread output with manual-publish labels. |
+| 18 | 21 | Wire #mp-posts video command and angle handoff | Yes | 2026-06-28: `#mp-posts` now intercepts `video script: <topic/url>`, `video finding <id>`, `video arc <id>`, and `video angle <n>` before URL/idea fallback. Direct video commands generate phone-readable Slack script packages with manual-publish labels and safe artifacts; `video angle <n>` works only as a reply after a Social Angle Lab result and uses the selected angle evidence. Finding/arc evidence lookup is read-only and degrades if local evidence is unavailable. Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_slack_bot.py -q` -> 109 passed. |
 | 19 | 21 | Add Slack file upload helper | No | External upload flow for script artifacts; mocked tests. |
 | 20 | All | Safety regression suite | No | Proves no live social post, newsletter send, full pipeline, deploy, or provider call in tests. |
 | 21 | All | Docs, handoff, Graphify, commits | No | Update Done evidence, run Graphify, commit verified phases. |
@@ -126,17 +126,17 @@ checkpoint is also complete.
 
 ### Checkpoint: Audio Website Slice after Tasks 11-15
 
-- [ ] v3 can build deterministic audio metadata without network calls.
-- [ ] v3 exposes only safe audio metadata/file/transcript endpoints.
-- [ ] Rabbit Hole renders audio availability and players without broken UI.
-- [ ] Generated media is not committed.
+- [x] v3 can build deterministic audio metadata without network calls.
+- [x] v3 exposes only safe audio metadata/file/transcript endpoints.
+- [x] Rabbit Hole renders audio availability and players without broken UI.
+- [x] Generated media is not committed.
 
 ### Checkpoint: Video Script Slice after Tasks 16-19
 
-- [ ] `#mp-posts` can return video script packages.
-- [ ] `video angle <n>` works after an angle result in the same Slack thread.
+- [x] `#mp-posts` can return video script packages.
+- [x] `video angle <n>` works after an angle result in the same Slack thread.
 - [ ] Slack file upload is fully mocked in tests and requires `files:write`.
-- [ ] Output is labeled manual-publish only.
+- [x] Output is labeled manual-publish only.
 
 ### Checkpoint: Release Hygiene after Tasks 20-21
 

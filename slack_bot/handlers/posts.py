@@ -33,6 +33,10 @@ from orchestrator.social_angles import (
     parse_social_angle_request,
     social_angle_to_topic,
 )
+from orchestrator.video_scripts import (
+    generate_video_script_package,
+    parse_video_script_request,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,181 @@ def _angle_source_context(request: dict) -> dict:
     }
 
 
+def _video_source_context(request: dict) -> dict:
+    """Build source context for a direct Slack video request."""
+    source_type = request.get("source_type")
+    if source_type == "finding":
+        return _finding_video_source_context(request.get("finding_id"))
+    if source_type == "arc":
+        return _arc_video_source_context(request.get("arc_id"))
+
+    source_urls = []
+    if request.get("url"):
+        source_urls.append(request["url"])
+    return {
+        "title": request.get("query_preview") or request.get("query") or "Video script",
+        "summary": "Slack short-form video script request.",
+        "source_urls": source_urls,
+    }
+
+
+def _finding_video_source_context(finding_id: int | None) -> dict:
+    """Load source evidence for a finding ID without failing the Slack command."""
+    fallback = {
+        "title": f"Finding {finding_id}" if finding_id else "Finding",
+        "summary": "Finding evidence was not found locally.",
+        "source_urls": [],
+    }
+    if not finding_id:
+        return fallback
+
+    db_path = PROJECT_ROOT / "data" / "ramsay" / "memory.db"
+    if not db_path.exists():
+        return fallback
+
+    try:
+        db = sqlite3.connect(str(db_path))
+        db.row_factory = sqlite3.Row
+        columns = {
+            row["name"]
+            for row in db.execute("PRAGMA table_info(findings)").fetchall()
+        }
+        if not columns:
+            return fallback
+
+        select_columns = [
+            column
+            for column in (
+                "id",
+                "run_date",
+                "agent",
+                "title",
+                "summary",
+                "importance",
+                "source_url",
+                "source_name",
+            )
+            if column in columns
+        ]
+        if not select_columns:
+            return fallback
+
+        if "id" in columns:
+            row = db.execute(
+                f"SELECT {', '.join(select_columns)} FROM findings WHERE id = ? LIMIT 1",
+                (finding_id,),
+            ).fetchone()
+        else:
+            row = db.execute(
+                f"SELECT {', '.join(select_columns)} FROM findings LIMIT 1 OFFSET ?",
+                (max(0, finding_id - 1),),
+            ).fetchone()
+        if not row:
+            return fallback
+
+        source_url = row["source_url"] if "source_url" in row.keys() else ""
+        title = row["title"] if "title" in row.keys() and row["title"] else fallback["title"]
+        summary = ""
+        if "summary" in row.keys() and row["summary"]:
+            summary = row["summary"]
+        elif "importance" in row.keys() and row["importance"]:
+            summary = row["importance"]
+        return {
+            "title": title,
+            "summary": summary or fallback["summary"],
+            "source_urls": [source_url] if source_url else [],
+            "evidence": [
+                {
+                    "finding_id": str(finding_id),
+                    "run_date": row["run_date"] if "run_date" in row.keys() else "",
+                    "agent": row["agent"] if "agent" in row.keys() else "",
+                    "title": title,
+                    "summary": summary,
+                    "source_url": source_url,
+                    "source_name": row["source_name"] if "source_name" in row.keys() else "",
+                }
+            ],
+        }
+    except Exception as exc:
+        logger.warning("[mp-posts] Finding evidence lookup failed: %s", exc)
+        return fallback
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _arc_video_source_context(arc_id: str | None) -> dict:
+    """Load source evidence for a narrative arc artifact."""
+    fallback = {
+        "title": f"Arc {arc_id}" if arc_id else "Narrative arc",
+        "summary": "Narrative arc evidence was not found locally.",
+        "source_urls": [],
+    }
+    if not arc_id:
+        return fallback
+
+    arcs_dir = PROJECT_ROOT / "reports" / "ramsay" / "arcs"
+    if not arcs_dir.exists():
+        return fallback
+
+    for path in sorted(arcs_dir.glob("*.json"), reverse=True):
+        try:
+            payload = json.loads(path.read_text())
+        except Exception:
+            continue
+        for arc in payload.get("arcs") or []:
+            if arc.get("id") != arc_id:
+                continue
+            evidence = list(arc.get("evidence") or [])
+            source_urls = [
+                item.get("source_url", "")
+                for item in evidence
+                if isinstance(item, dict) and item.get("source_url")
+            ]
+            return {
+                "title": arc.get("title") or fallback["title"],
+                "summary": arc.get("summary") or fallback["summary"],
+                "source_urls": source_urls,
+                "evidence": evidence,
+            }
+    return fallback
+
+
+def _angle_video_source_context(angle: dict, result: dict) -> dict:
+    """Build video evidence context from a selected Social Angle Lab result."""
+    evidence = [
+        {
+            "title": angle.get("hook", ""),
+            "summary": angle.get("thesis", ""),
+            "source_url": source_url,
+            "source_name": "Social Angle Lab",
+            "finding_id": angle.get("angle_id", ""),
+            "run_date": result.get("date", ""),
+            "agent": "social-angle-lab",
+        }
+        for source_url in angle.get("source_urls") or []
+    ]
+    return {
+        "title": angle.get("hook") or angle.get("angle_id") or "Social angle",
+        "summary": angle.get("thesis") or angle.get("risk_note") or "Social angle selected for video.",
+        "source_urls": list(angle.get("source_urls") or []),
+        "evidence": evidence,
+    }
+
+
+def _select_angle_for_video(request: dict, result: dict) -> tuple[dict | None, str | None]:
+    """Select a shown angle for `video angle <n>`."""
+    index = request.get("angle_index")
+    shown = list(result.get("shown_angles") or [])
+    if not index:
+        return None, "Reply `video angle 1` to create a video package from a specific angle."
+    if index < 1 or index > len(shown):
+        return None, f"Angle {index} is not available for video."
+    return shown[index - 1], None
+
+
 class PostsHandler(BaseHandler):
     """Handle messages in #mp-posts — idea or URL to social post pipeline."""
 
@@ -74,6 +253,11 @@ class PostsHandler(BaseHandler):
                 "then post drafts back for your approval.",
                 thread_ts=ts,
             )
+            return
+
+        video_request = parse_video_script_request(text, channel_type="posts")
+        if video_request is not None:
+            self._handle_video_request(video_request, ts)
             return
 
         angle_request = parse_social_angle_request(text, channel_type="posts")
@@ -150,10 +334,15 @@ class PostsHandler(BaseHandler):
         if not reply_text:
             return
 
+        video_request = parse_video_script_request(reply_text, channel_type="posts")
+        if video_request is not None:
+            self._handle_video_request(video_request, ts, angle_result=result)
+            return
+
         action = parse_social_angle_draft_action(reply_text, result)
         if action is None:
             self.reply(
-                "No draft action matched. Nothing posted. Reply `draft 1` after an angle result to start a draft.",
+                "No draft action matched. Nothing posted. Reply `draft 1` to start a draft or `video angle 1` to create a video script package.",
                 thread_ts=ts,
             )
             return
@@ -213,10 +402,110 @@ class PostsHandler(BaseHandler):
             lines.append(
                 "Reply `draft 1` (or another number) to turn an angle into normal approval-gated social drafts."
             )
-            lines.append("Video handoff arrives with Feature 21.")
+            lines.append("Reply `video angle 1` to create a manual-publish short-form video script package.")
 
         if result.get("artifact"):
             lines.append(f"Artifact: `{result['artifact']}`")
+        return "\n".join(lines)
+
+    def _handle_video_request(
+        self,
+        request: dict,
+        ts: str,
+        *,
+        angle_result: dict | None = None,
+    ) -> None:
+        """Handle Slack short-form video commands without posting to social."""
+        if request.get("error"):
+            self.reply(request["error"], thread_ts=ts)
+            return
+
+        source_context = _video_source_context(request)
+        if request.get("source_type") == "angle":
+            if not angle_result:
+                self.reply(
+                    "`video angle <n>` works only as a reply after a Social Angle Lab result.",
+                    thread_ts=ts,
+                )
+                return
+            angle, error = _select_angle_for_video(request, angle_result)
+            if error:
+                self.reply(error, thread_ts=ts)
+                return
+            source_context = _angle_video_source_context(angle or {}, angle_result)
+
+        self.react("movie_camera", ts)
+        result = generate_video_script_package(
+            request,
+            date=datetime.now().strftime("%Y-%m-%d"),
+            user="ramsay",
+            reports_root=PROJECT_ROOT / "reports",
+            source_context=source_context,
+            write_artifact=True,
+        )
+        self.reply(self._format_video_result(result), thread_ts=ts)
+
+    def _format_video_result(self, result: dict) -> str:
+        """Format a phone-readable short-form video package for Slack."""
+        status = result.get("status", "unknown")
+        package = result.get("package") or {}
+        labels = ", ".join(package.get("labels") or ["manual publish only"])
+        lines = [
+            f"*Short-form video package*: {status}",
+            f"{labels}. No live post was created.",
+        ]
+        if result.get("error"):
+            lines.append(f"Error: {result['error']}")
+            return "\n".join(lines)
+
+        if not package:
+            lines.append(result.get("recommendation") or "No usable video package was created.")
+            return "\n".join(lines)
+
+        lines.extend([
+            f"Duration: {package.get('duration_seconds', 45)} seconds",
+            f"Hook: {package.get('hook', '')}",
+            "",
+            "*Spoken script:*",
+            package.get("spoken_script", ""),
+        ])
+
+        shot_list = package.get("shot_list") or []
+        if shot_list:
+            lines.extend(["", "*Shot list:*"])
+            lines.extend(f"- {item}" for item in shot_list[:5])
+
+        captions = package.get("captions") or []
+        if captions:
+            lines.extend(["", "*Captions:*"])
+            lines.extend(f"- {item}" for item in captions[:5])
+
+        source_urls = package.get("source_urls") or []
+        if source_urls:
+            lines.extend(["", "*Sources:*"])
+            lines.extend(f"- {url}" for url in source_urls[:5])
+        else:
+            lines.extend(["", "*Sources:*", "- No usable source URL attached. Treat as degraded."])
+
+        risk_labels = ", ".join(package.get("risk_labels") or [])
+        if risk_labels:
+            lines.append(f"Risk labels: {risk_labels}")
+
+        if result.get("recommendation"):
+            lines.append(f"Next action: {result['recommendation']}")
+
+        artifacts = result.get("artifacts") or {}
+        markdown_artifact = artifacts.get("markdown")
+        json_artifact = artifacts.get("json")
+        if markdown_artifact or json_artifact:
+            lines.append(
+                "Artifacts: "
+                + ", ".join(
+                    artifact
+                    for artifact in (markdown_artifact, json_artifact)
+                    if artifact
+                )
+            )
         return "\n".join(lines)
 
     def _handle_idea(self, idea: str, ts: str) -> None:

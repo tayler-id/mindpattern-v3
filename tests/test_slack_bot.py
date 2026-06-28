@@ -696,6 +696,174 @@ class TestPostsAngleCommand:
         assert "No draft action matched" in text
 
 
+class TestPostsVideoCommand:
+    """#mp-posts video commands should return script packages, not post content."""
+
+    @staticmethod
+    def _handler():
+        from slack_bot.handlers.posts import PostsHandler
+
+        client = MagicMock()
+        handler = PostsHandler(
+            client=client,
+            channel_id="C_POSTS",
+            owner_user_id="U_OWNER",
+        )
+        handler.react = MagicMock()
+        handler._run_and_approve = MagicMock()
+        handler._handle_url = MagicMock()
+        handler._handle_idea = MagicMock()
+        handler.wait_for_reply = MagicMock(return_value=None)
+        return handler, client
+
+    @staticmethod
+    def _video_result(source_type="url"):
+        return {
+            "status": "ready",
+            "date": "2026-06-28",
+            "request": {"source_type": source_type, "angle_index": 1},
+            "package": {
+                "package_id": "video_123",
+                "source_type": source_type,
+                "source_ref": "https://example.com/story",
+                "duration_seconds": 45,
+                "status": "ready",
+                "hook": "The source check most teams skip.",
+                "spoken_script": "Check the evidence before turning the finding into a post.",
+                "shot_list": ["Open on the source.", "Show the proof.", "End with manual publish."],
+                "captions": ["Source evidence before the take.", "Manual publish only."],
+                "source_urls": ["https://example.com/story"],
+                "labels": ["AI-assisted script", "manual publish only"],
+                "risk_labels": ["source-backed"],
+            },
+            "claim_evidence": [
+                {
+                    "claim": "The source check most teams skip.",
+                    "source_url": "https://example.com/story",
+                    "source_ref": "https://example.com/story",
+                }
+            ],
+            "recommendation": "Ready for Slack review. Keep manual publish approval before using on social.",
+            "artifacts": {
+                "json": "/tmp/video-script.json",
+                "markdown": "/tmp/video-script.md",
+            },
+            "error": None,
+        }
+
+    def test_video_script_command_posts_package_without_pipeline_or_posting(self):
+        handler, client = self._handler()
+        result = self._video_result()
+
+        with patch("slack_bot.handlers.posts.generate_video_script_package", return_value=result) as generate:
+            handler.handle({
+                "text": "video script: https://example.com/story",
+                "ts": "123.456",
+            })
+
+        generate.assert_called_once()
+        source_context = generate.call_args.kwargs["source_context"]
+        assert source_context["source_urls"] == ["https://example.com/story"]
+        handler._run_and_approve.assert_not_called()
+        handler._handle_url.assert_not_called()
+        handler._handle_idea.assert_not_called()
+        handler.react.assert_called_once_with("movie_camera", "123.456")
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "Short-form video package" in text
+        assert "manual publish only" in text
+        assert "The source check most teams skip." in text
+        assert "https://example.com/story" in text
+        assert "/tmp/video-script.md" in text
+
+    def test_video_angle_reply_uses_selected_angle_evidence_after_angle_result(self):
+        handler, client = self._handler()
+        handler.wait_for_reply = MagicMock(return_value="video angle 1")
+        angle_result = {
+            "status": "completed",
+            "mode": "dry_run",
+            "shown_angles": [
+                {
+                    "angle_id": "angle_1",
+                    "angle_type": "builder_lesson",
+                    "platform": "linkedin",
+                    "hook": "Why source reliability matters before drafting.",
+                    "thesis": "Source reliability is the useful builder lesson.",
+                    "source_urls": ["https://example.com/story"],
+                    "confidence": 0.8,
+                    "risk_note": "Source-backed.",
+                    "score": 8.4,
+                    "verdict": "keep",
+                }
+            ],
+            "summary": {"generated_count": 1, "shown_count": 1, "rejected_count": 0},
+            "artifact": "/tmp/social-angles.json",
+            "request": {"query_preview": "source reliability"},
+            "error": None,
+        }
+        video_result = self._video_result(source_type="angle")
+
+        with patch("slack_bot.handlers.posts.generate_social_angles", return_value=angle_result):
+            with patch("slack_bot.handlers.posts.generate_video_script_package", return_value=video_result) as generate_video:
+                handler.handle({"text": "angles: https://example.com/story", "ts": "123.456"})
+
+        handler._run_and_approve.assert_not_called()
+        generate_video.assert_called_once()
+        request = generate_video.call_args.args[0]
+        source_context = generate_video.call_args.kwargs["source_context"]
+        assert request["source_type"] == "angle"
+        assert request["angle_index"] == 1
+        assert source_context["title"] == "Why source reliability matters before drafting."
+        assert source_context["summary"] == "Source reliability is the useful builder lesson."
+        assert source_context["source_urls"] == ["https://example.com/story"]
+        messages = [call.kwargs["text"] for call in client.chat_postMessage.call_args_list]
+        assert any("Short-form video package" in message for message in messages)
+        assert any("manual publish only" in message for message in messages)
+
+    def test_top_level_video_angle_requires_prior_angle_result(self):
+        handler, client = self._handler()
+
+        with patch("slack_bot.handlers.posts.generate_video_script_package") as generate:
+            handler.handle({"text": "video angle 1", "ts": "123.456"})
+
+        generate.assert_not_called()
+        handler._run_and_approve.assert_not_called()
+        handler._handle_idea.assert_not_called()
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "after a Social Angle Lab result" in text
+
+    def test_video_finding_and_arc_commands_load_evidence_context(self):
+        handler, _client = self._handler()
+        finding_result = self._video_result(source_type="finding")
+        arc_result = self._video_result(source_type="arc")
+
+        with patch(
+            "slack_bot.handlers.posts._finding_video_source_context",
+            return_value={
+                "title": "Finding title",
+                "summary": "Finding summary",
+                "source_urls": ["https://example.com/finding"],
+            },
+        ):
+            with patch("slack_bot.handlers.posts.generate_video_script_package", return_value=finding_result) as generate:
+                handler.handle({"text": "video finding 42", "ts": "123.456"})
+        assert generate.call_args.kwargs["source_context"]["title"] == "Finding title"
+        assert generate.call_args.kwargs["source_context"]["source_urls"] == ["https://example.com/finding"]
+
+        with patch(
+            "slack_bot.handlers.posts._arc_video_source_context",
+            return_value={
+                "title": "Arc title",
+                "summary": "Arc summary",
+                "source_urls": ["https://example.com/arc"],
+            },
+        ):
+            with patch("slack_bot.handlers.posts.generate_video_script_package", return_value=arc_result) as generate:
+                handler.handle({"text": "video arc agent-reach-reliability", "ts": "789.000"})
+        assert generate.call_args.kwargs["source_context"]["title"] == "Arc title"
+        assert generate.call_args.kwargs["source_context"]["source_urls"] == ["https://example.com/arc"]
+
+
 class TestSkillsTipsEditFlow:
     """#mp-skills and #mp-tips must support safe draft edits."""
 
