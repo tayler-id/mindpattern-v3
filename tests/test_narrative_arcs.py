@@ -223,3 +223,45 @@ def test_story_candidate_balance_is_identical_with_arc_artifacts(tmp_path):
     assert [finding["id"] for finding in with_arcs] == [
         finding["id"] for finding in without_arcs
     ]
+
+
+def test_public_narrative_arcs_api_returns_sanitized_arc(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from dashboard.routes import api as api_routes
+    from dashboard.app import app
+    from orchestrator.arcs import build_narrative_arcs
+
+    findings = _arc_fixture_findings()
+    findings[2]["summary"] = "Email tayler@example.com for private raw notes."
+    build_narrative_arcs(
+        findings,
+        date="2026-06-28",
+        artifact_root=tmp_path,
+        user="ramsay",
+        write_artifact=True,
+    )
+    monkeypatch.setattr(api_routes, "REPORTS_DIR", tmp_path)
+
+    client = TestClient(app)
+    list_resp = client.get("/api/narrative-arcs?date=2026-06-28&user=ramsay")
+
+    assert list_resp.status_code == 200
+    arcs = list_resp.json()
+    assert len(arcs) == 1
+    assert "tayler@example.com" not in json.dumps(arcs)
+    assert any(
+        item["summary"] == "Email [redacted] for private raw notes."
+        for item in arcs[0]["evidence"]
+    )
+
+    detail_resp = client.get(
+        f"/api/narrative-arcs/{arcs[0]['id']}?date=2026-06-28&user=ramsay"
+    )
+
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["id"] == arcs[0]["id"]
+
+    invalid_resp = client.get("/api/narrative-arcs?date=../../users&user=ramsay")
+    assert invalid_resp.status_code == 200
+    assert invalid_resp.json() == []

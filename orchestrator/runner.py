@@ -15,6 +15,7 @@ from pathlib import Path
 
 import memory
 from . import agents as agent_dispatch
+from .arcs import format_arcs_for_synthesis, load_narrative_arcs
 from .checkpoint import Checkpoint
 from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
@@ -1340,6 +1341,34 @@ class ResearchPipeline:
                 "source-grounded, and do not pad weak claims.\n\n"
             )
 
+        narrative_arcs_context = ""
+        narrative_arcs_count = 0
+        try:
+            narrative_arcs = load_narrative_arcs(
+                date=self.date_str,
+                user=self.user_id,
+                reports_root=PROJECT_ROOT / "reports",
+                limit=5,
+                statuses={"active", "emerging"},
+            )
+            narrative_arcs_context = format_arcs_for_synthesis(narrative_arcs)
+            narrative_arcs_count = len(narrative_arcs) if narrative_arcs_context else 0
+            if narrative_arcs_context:
+                log_event(
+                    self.traces_conn,
+                    self.traces_run_id,
+                    "narrative_arcs_context",
+                    json.dumps({"count": narrative_arcs_count}),
+                )
+        except Exception as e:
+            logger.warning(f"Narrative arc context unavailable: {e}")
+            log_event(
+                self.traces_conn,
+                self.traces_run_id,
+                "narrative_arcs_context_degraded",
+                json.dumps({"error": f"{type(e).__name__}: {e}"}),
+            )
+
         pass2_prompt = (
             f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
             f"{soul_text}"
@@ -1347,6 +1376,7 @@ class ResearchPipeline:
             f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
             f"{fallback_mode_text}"
             f"## Story Selection\n{pass1_output}\n\n"
+            f"{narrative_arcs_context}\n\n"
             f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"{failure_text}"
@@ -1554,6 +1584,7 @@ class ResearchPipeline:
         self.newsletter_eval = eval_scores
         return {"word_count": word_count, "report_path": str(report_path),
                 "eval_scores": eval_scores, "source_balance": source_balance,
+                "narrative_arcs_count": narrative_arcs_count,
                 "quality_floor": quality_floor,
                 "quality_fallback": quality_fallback,
                 "degraded": quality_floor.get("degraded", False)}

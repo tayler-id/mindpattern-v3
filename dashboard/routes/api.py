@@ -19,6 +19,8 @@ from fastapi.responses import JSONResponse
 from dashboard.auth import require_auth
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
+from orchestrator.arcs import load_narrative_arcs
+from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from slack_bot.heartbeat import is_stale as bot_heartbeat_stale
 
 router = APIRouter()
@@ -61,11 +63,72 @@ def _strip_pii_dict(d: dict, fields: list[str]) -> dict:
 
 
 _USER_RE = re.compile(r"^[a-z0-9_-]+$")
+_ARC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 
 
 def _safe_user(user: str) -> Optional[str]:
     """Reject user ids that could traverse paths (user becomes a path part)."""
     return user if _USER_RE.fullmatch(user or "") else None
+
+
+def _safe_arc_id(arc_id: str) -> Optional[str]:
+    """Reject path-like or malformed public narrative arc IDs."""
+    return arc_id if _ARC_ID_RE.fullmatch(arc_id or "") else None
+
+
+def _valid_run_date(s: Optional[str]) -> Optional[str]:
+    """Return a real YYYY-MM-DD date string, else None."""
+    if not s:
+        return None
+    try:
+        return validate_run_date(s)
+    except ValueError:
+        return None
+
+
+def _public_narrative_arc(arc: dict) -> dict:
+    """Whitelist and redact fields exposed by the public narrative arc API."""
+    scores = arc.get("scores") if isinstance(arc.get("scores"), dict) else {}
+    evidence = []
+    for item in arc.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        source_url = redact_sensitive_text(item.get("source_url", ""))
+        if not source_url.startswith(("http://", "https://")):
+            source_url = ""
+        evidence.append({
+            "finding_id": item.get("finding_id"),
+            "run_date": _valid_run_date(str(item.get("run_date", ""))) or "",
+            "agent": redact_sensitive_text(item.get("agent", "")),
+            "title": redact_sensitive_text(item.get("title", "")),
+            "summary": redact_sensitive_text(item.get("summary", "")),
+            "source_url": source_url,
+            "source_name": redact_sensitive_text(item.get("source_name", "")),
+        })
+
+    return {
+        "id": redact_sensitive_text(arc.get("id", "")),
+        "title": redact_sensitive_text(arc.get("title", "")),
+        "summary": redact_sensitive_text(arc.get("summary", "")),
+        "status": redact_sensitive_text(arc.get("status", "")),
+        "first_seen": _valid_run_date(str(arc.get("first_seen", ""))) or "",
+        "last_seen": _valid_run_date(str(arc.get("last_seen", ""))) or "",
+        "evidence_count": int(arc.get("evidence_count") or 0),
+        "date_count": int(arc.get("date_count") or 0),
+        "source_domain_count": int(arc.get("source_domain_count") or 0),
+        "agent_count": int(arc.get("agent_count") or 0),
+        "scores": {
+            key: float(scores.get(key) or 0.0)
+            for key in (
+                "recurrence",
+                "velocity",
+                "source_diversity",
+                "freshness",
+                "confidence",
+            )
+        },
+        "evidence": evidence,
+    }
 
 
 def get_memory_db(user_id: str = "ramsay") -> Optional[sqlite3.Connection]:
@@ -375,6 +438,59 @@ async def search_findings(
         return results[:limit]
     finally:
         conn.close()
+
+
+@router.get("/api/narrative-arcs")
+async def get_narrative_arcs(
+    date: str = Query(None),
+    user: str = Query("ramsay"),
+    limit: int = Query(20, ge=0, le=100),
+):
+    """Public: source-backed narrative arcs for a run date. No raw PII."""
+    date_val = _valid_run_date(date)
+    user_val = _safe_user(user)
+    if date_val is None or user_val is None:
+        return []
+
+    try:
+        arcs = load_narrative_arcs(
+            date=date_val,
+            user=user_val,
+            reports_root=REPORTS_DIR,
+            limit=limit,
+        )
+    except (ValueError, OSError, json.JSONDecodeError):
+        return []
+
+    return [_public_narrative_arc(arc) for arc in arcs]
+
+
+@router.get("/api/narrative-arcs/{arc_id}")
+async def get_narrative_arc(
+    arc_id: str,
+    date: str = Query(None),
+    user: str = Query("ramsay"),
+):
+    """Public: one source-backed narrative arc by ID. No raw PII."""
+    arc_id_val = _safe_arc_id(arc_id)
+    date_val = _valid_run_date(date)
+    user_val = _safe_user(user)
+    if arc_id_val is None or date_val is None or user_val is None:
+        return None
+
+    try:
+        arcs = load_narrative_arcs(
+            date=date_val,
+            user=user_val,
+            reports_root=REPORTS_DIR,
+        )
+    except (ValueError, OSError, json.JSONDecodeError):
+        return None
+
+    for arc in arcs:
+        if arc.get("id") == arc_id_val:
+            return _public_narrative_arc(arc)
+    return None
 
 
 @router.get("/api/skills/search")

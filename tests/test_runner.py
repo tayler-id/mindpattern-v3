@@ -841,6 +841,62 @@ class TestPhaseSynthesis:
 
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.load_narrative_arcs")
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_narrative_arcs_are_pass2_context_only(
+        self, mock_claude, mock_load_arcs, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+        arc = {
+            "id": "ai-ides-consolidate-abc12345",
+            "title": "AI IDEs Consolidate",
+            "summary": "AI IDEs are moving from autocomplete to background agents.",
+            "status": "active",
+            "scores": {"confidence": 0.91},
+            "evidence": [
+                {
+                    "finding_id": 1,
+                    "run_date": pipeline.date_str,
+                    "agent": "agent-1",
+                    "title": "AI IDE story",
+                    "summary": "Evidence summary.",
+                    "source_url": "https://example.com/ai-ide",
+                    "source_name": "Example",
+                }
+            ],
+        }
+        mock_load_arcs.return_value = [arc]
+        mock_claude.side_effect = [
+            ("Selected stories: Title 0, Title 1, Title 2, Title 3, Title 4", 0),
+            ("# Newsletter\n\nArc-aware but selection-stable brief.\n" + ("word " * 3500), 0),
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            with patch("orchestrator.runner.NewsletterEvaluator") as mock_eval_cls:
+                mock_evaluator = MagicMock()
+                mock_evaluator.evaluate.return_value = {
+                    "overall": 0.85,
+                    "coverage": 0.9,
+                    "dedup": 0.95,
+                    "sources": 0.8,
+                }
+                mock_eval_cls.return_value = mock_evaluator
+
+                result = pipeline._phase_synthesis()
+
+        pass1_prompt = mock_claude.call_args_list[0].args[0]
+        pass2_prompt = mock_claude.call_args_list[1].args[0]
+
+        assert result["word_count"] > 0
+        assert "Narrative Arc Context" not in pass1_prompt
+        assert "AI IDEs Consolidate" not in pass1_prompt
+        assert "Narrative Arc Context" in pass2_prompt
+        assert "Use as context only. Do not change the selected story set." in pass2_prompt
+        assert "AI IDEs Consolidate" in pass2_prompt
+        assert "Selected stories: Title 0" in pass2_prompt
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
     def test_pass1_failure_uses_fallback_selection_and_writes_newsletter(
         self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path

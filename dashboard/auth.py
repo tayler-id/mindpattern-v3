@@ -38,6 +38,7 @@ PUBLIC_PREFIXES = [
     "/api/findings",
     "/api/stats",
     "/api/patterns",
+    "/api/narrative-arcs",
     "/api/sources",
     "/api/skills",        # covers /api/skills/search
     "/api/skill-domains",

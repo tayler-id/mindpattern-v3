@@ -937,6 +937,44 @@ place instead of deleting the column.
   No Fly deploy, live Slack smoke, full daily pipeline run, newsletter send, or
   live social post has been run for this feature.
 
+## 2026-06-28 Features 17/18/20/21 Implementation Progress
+
+- Active goal: implement Feature 17 Narrative Arc Builder, Feature 18 Social
+  Angle Lab, Feature 20 Audio Morning Briefing to Rabbit Hole, and Feature 21
+  Short-Form Video Script Mode from
+  `docs/runbooks/2026-06-28-features-17-18-20-21-media-arcs-runbook.md` and
+  `docs/runbooks/2026-06-28-features-17-18-20-21-media-arcs-implementation-plan.md`.
+- Opus 4.8 approval gate is satisfied and recorded in the implementation plan.
+  Binding F17 condition was applied: narrative arcs are enrichment-only and may
+  be injected only into synthesis pass 2 / narrative context, never
+  `_balance_story_candidates()` or pass-1 story selection.
+- Feature 17 status: Tasks 3-6 are implemented locally. `orchestrator/arcs.py`
+  builds deterministic multi-day/source-backed arc artifacts under
+  `reports/<user>/arcs/YYYY-MM-DD.json`. `dashboard/routes/api.py` exposes
+  public read-only `/api/narrative-arcs` and `/api/narrative-arcs/{arc_id}`
+  with date/user/arc-id validation and whitelisted/redacted output.
+- Runner integration: `orchestrator/runner.py` loads active/emerging arcs only
+  after synthesis pass 1 has completed, formats them with
+  `format_arcs_for_synthesis()`, and injects them into pass 2 only. Missing or
+  invalid arc artifacts degrade visibly through trace events and do not block
+  newsletter generation.
+- Verification run after the Feature 17 API/pass-2 slice:
+  `.venv/bin/python3 -m pytest tests/test_narrative_arcs.py -q` -> 6 passed;
+  `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis -q`
+  -> 10 passed; `.venv/bin/python3 -m pytest tests/test_evaluator.py -q`
+  -> 12 passed; combined focused suite
+  `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
+  -> 34 passed.
+- Current next task: Feature 18 Task 7, social angle contract/parser. Before
+  Task 8, the owner-approved builder-detail boundary must be captured and
+  `social/writers.py` must be reconciled with `agents/expeditor.md`; current
+  prompt rules conflict on whether builder/process language is forbidden or
+  required. Angle artifacts must stay in gitignored
+  `reports/ramsay/social-angles/`, not `data/social-angles/`.
+- No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
+  newsletter send, social post, schema change, dependency install, TTS/video
+  provider call, or Rabbit Hole repo edit has been run for this feature slice.
+
 ## Do Not Do Yet
 
 - Do not refactor `orchestrator/runner.py` before the Slack/social config issue

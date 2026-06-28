@@ -1,6 +1,6 @@
 # Implementation Plan: Features 17, 18, 20, and 21 - Arcs, Angles, Audio, and Video Scripts
 
-> Status: Planned; implementation not started
+> Status: In progress; Feature 17 foundation implemented through pass-2/API slice
 > Owner: Tayler
 > Author: Codex
 > Created: 2026-06-28
@@ -75,8 +75,8 @@ of deleting the column.
 | 2 | All | Add shared evidence/artifact contracts | Yes | 2026-06-28: added `orchestrator/media_contracts.py` and `tests/test_media_artifact_contracts.py`; verification `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py -q` -> 6 passed. |
 | 3 | 17 | Add narrative arc fixture builder | Yes | 2026-06-28: added deterministic `tests/test_narrative_arcs.py` fixtures covering multi-day/source arcs, same-day duplicates, stale arcs, artifact writes, and pass-1 candidate-balance invariance. Verification `.venv/bin/python3 -m pytest tests/test_narrative_arcs.py -q` -> 5 passed. |
 | 4 | 17 | Implement arc extraction/scoring | Yes | 2026-06-28: added `orchestrator/arcs.py` with stable arc IDs, multi-day/source thresholds, active/stale status, recurrence/velocity/source-diversity/freshness/confidence scores, public evidence output, and `reports/<user>/arcs/YYYY-MM-DD.json` artifact writing. Verification `.venv/bin/python3 -m pytest tests/test_narrative_arcs.py -q` -> 5 passed. |
-| 5 | 17 | Expose sanitized arcs API | No | `/api/narrative-arcs` and tests. |
-| 6 | 17 | Add synthesis pass-2 context hook | No | Arcs enrich synthesis pass 2 only and never alter selected stories. |
+| 5 | 17 | Expose sanitized arcs API | Yes | 2026-06-28: added public read-only `/api/narrative-arcs` and `/api/narrative-arcs/{arc_id}` backed by `reports/<user>/arcs/YYYY-MM-DD.json`, with date/user/arc-id validation and whitelisted/redacted output. Verification: `.venv/bin/python3 -m pytest tests/test_narrative_arcs.py::test_public_narrative_arcs_api_returns_sanitized_arc -q` -> 1 passed; `.venv/bin/python3 -m pytest tests/test_narrative_arcs.py -q` -> 6 passed. |
+| 6 | 17 | Add synthesis pass-2 context hook | Yes | 2026-06-28: runner loads active/emerging arcs only after pass 1 and injects formatted arc context into synthesis pass 2 only; `_balance_story_candidates()` and pass-1 story selection receive no arc data. Verification: `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis::test_narrative_arcs_are_pass2_context_only -q` -> 1 passed; `.venv/bin/python3 -m pytest tests/test_runner.py::TestPhaseSynthesis -q` -> 10 passed. |
 | 7 | 18 | Add social angle contract/parser | No | Strict Slack command grammar and no newsletter-control commands. |
 | 8 | 18 | Reconcile builder-detail boundary, then implement angle generation and Angle Critic service | No | Owner-approved builder-detail boundary first; deterministic dry-run, provider boundary, assigning-editor critic scores/cuts; artifacts under gitignored `reports/ramsay/social-angles/`. |
 | 9 | 18 | Wire #mp-posts angle command | No | Slack returns angle variants in-thread. |
@@ -112,10 +112,10 @@ checkpoint is also complete.
 
 ### Checkpoint: Narrative Arcs after Tasks 3-6
 
-- [ ] Arc extraction works from deterministic fixtures.
-- [ ] Public arc API is sanitized and path-safe.
-- [ ] Synthesis receives arcs only as evidence-backed context.
-- [ ] Newsletter quality floor tests still pass.
+- [x] Arc extraction works from deterministic fixtures.
+- [x] Public arc API is sanitized and path-safe.
+- [x] Synthesis receives arcs only as evidence-backed context.
+- [x] Newsletter quality floor tests still pass.
 
 ### Checkpoint: Social Angles after Tasks 7-10
 
