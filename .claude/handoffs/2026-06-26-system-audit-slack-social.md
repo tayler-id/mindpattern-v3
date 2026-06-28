@@ -1107,8 +1107,10 @@ place instead of deleting the column.
   status, implementation-plan Done table/checkpoints, and this handoff. Ran
   `git diff --check` -> passed; `graphify update .` -> rebuilt 7259 nodes,
   11666 edges, 439 communities, with HTML viz skipped because the graph exceeds
-  the 5000-node default; `graphify check-update .` -> passed. Current v3 branch
-  is ahead of origin/main with feature commits; unrelated dirty files remain in
+  the 5000-node default; `graphify check-update .` -> passed. Final full-suite
+  verification after all commits: `.venv/bin/python3 -m pytest -q` -> 1338
+  passed, 1 Starlette/httpx deprecation warning. Current v3 branch is ahead of
+  origin/main with feature commits; unrelated dirty files remain in
   `data/ramsay/**`, `data/social-drafts/eic-topic.json`, `run-launchd.sh`, and
   `tests/test_launchd_wrapper.py`. Current Rabbit Hole branch is
   `rabbit-hole`; only the Task 15 audio rendering commit was made there, with
