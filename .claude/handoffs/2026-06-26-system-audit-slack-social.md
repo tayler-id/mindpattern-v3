@@ -965,9 +965,8 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 18 Task 10, wire selected social angle handoff to
-  the existing approval-gated `#mp-posts` draft flow. Task 9 is complete
-  locally; angle artifacts stay in gitignored
+- Current next task: Feature 20 Task 11, audio script builder. Feature 18
+  Tasks 7-10 are complete locally. Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
   now provides a pure strict parser/contract for `angles:`, `angle lab:`,
@@ -996,6 +995,14 @@ place instead of deleting the column.
   commands reply with guidance and do not fall through to the social pipeline.
   Verification: `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsAngleCommand -q`
   -> 3 passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 94
+  passed.
+- Feature 18 Task 10 status: implemented locally. After ranked angle output,
+  `#mp-posts` waits for `draft <n>` or `draft <angle_id>`, converts the selected
+  angle into the existing social topic shape, and calls `_run_and_approve()` so
+  normal preview/edit/approval gates still control posting. Unclear replies do
+  nothing and post no content. Verification:
+  `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 12
+  passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 96
   passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video

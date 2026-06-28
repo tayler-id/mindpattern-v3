@@ -258,6 +258,64 @@ def test_angle_generation_provider_boundary_is_injectable_and_fails_to_dry_run(t
     assert fallback_result["summary"]["generated_count"] == 6
 
 
+def test_social_angle_draft_action_selects_angle_and_builds_topic():
+    from orchestrator.social_angles import (
+        parse_social_angle_draft_action,
+        social_angle_to_topic,
+    )
+
+    result = {
+        "request": {"query_preview": "Agent Reach source reliability"},
+        "shown_angles": [
+            {
+                "angle_id": "angle_1",
+                "angle_type": "builder_lesson",
+                "platform": "linkedin",
+                "hook": "What source reliability changes in my own research workflow.",
+                "thesis": "Check the source mix before drafting.",
+                "source_urls": ["https://example.com/story"],
+                "confidence": 0.8,
+                "risk_note": "Source-backed.",
+            },
+            {
+                "angle_id": "angle_2",
+                "angle_type": "contrarian_take",
+                "platform": "bluesky",
+                "hook": "The issue is reliability, not reach.",
+                "thesis": "More sources can still be brittle.",
+                "source_urls": ["https://example.com/story"],
+                "confidence": 0.7,
+                "risk_note": "Tighten why-now.",
+            },
+        ],
+        "artifact": "/tmp/social-angles.json",
+    }
+
+    action = parse_social_angle_draft_action("draft 2", result)
+    topic = social_angle_to_topic(action["angle"], result)
+
+    assert action["action"] == "draft"
+    assert action["index"] == 2
+    assert action["angle"]["angle_id"] == "angle_2"
+    assert topic["anchor"] == "The issue is reliability, not reach."
+    assert topic["reaction"] == "More sources can still be brittle."
+    assert topic["source_urls"] == ["https://example.com/story"]
+    assert topic["confidence"] == "MEDIUM"
+    assert topic["angle_id"] == "angle_2"
+    assert "Social Angle Lab" in topic["anchor_source"]
+    assert topic["connection_source"] == "/tmp/social-angles.json"
+
+
+def test_social_angle_draft_action_fails_closed_for_unclear_text():
+    from orchestrator.social_angles import parse_social_angle_draft_action
+
+    result = {"shown_angles": [{"angle_id": "angle_1"}]}
+
+    assert parse_social_angle_draft_action("go", result) is None
+    assert parse_social_angle_draft_action("draft", result)["error"]
+    assert parse_social_angle_draft_action("draft 9", result)["error"]
+
+
 def test_social_angle_contract_module_has_no_live_side_effect_imports():
     source = Path("orchestrator/social_angles.py").read_text()
     tree = ast.parse(source)

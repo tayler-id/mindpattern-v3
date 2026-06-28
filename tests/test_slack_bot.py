@@ -535,6 +535,7 @@ class TestPostsAngleCommand:
         handler._run_and_approve = MagicMock()
         handler._handle_url = MagicMock()
         handler._handle_idea = MagicMock()
+        handler.wait_for_reply = MagicMock(return_value=None)
         return handler, client
 
     def test_angles_url_posts_ranked_variants_without_pipeline_or_posting(self):
@@ -622,6 +623,77 @@ class TestPostsAngleCommand:
         text = client.chat_postMessage.call_args.kwargs["text"]
         assert "No draftable angles" in text
         assert "source" in text.lower()
+
+    def test_draft_reply_hands_selected_angle_to_approval_gated_pipeline(self):
+        handler, client = self._handler()
+        handler.wait_for_reply = MagicMock(return_value="draft 1")
+        result = {
+            "status": "completed",
+            "mode": "dry_run",
+            "shown_angles": [
+                {
+                    "angle_id": "angle_1",
+                    "angle_type": "builder_lesson",
+                    "platform": "linkedin",
+                    "hook": "What source reliability changes in my own research workflow.",
+                    "thesis": "Check the source mix before drafting.",
+                    "source_urls": ["https://example.com/story"],
+                    "confidence": 0.8,
+                    "risk_note": "Source-backed.",
+                    "score": 8.4,
+                    "verdict": "keep",
+                }
+            ],
+            "summary": {"generated_count": 1, "shown_count": 1, "rejected_count": 0},
+            "artifact": "/tmp/social-angles.json",
+            "request": {"query_preview": "source reliability"},
+            "error": None,
+        }
+
+        with patch("slack_bot.handlers.posts.generate_social_angles", return_value=result):
+            handler.handle({"text": "angles: https://example.com/story", "ts": "123.456"})
+
+        handler._run_and_approve.assert_called_once()
+        topic = handler._run_and_approve.call_args.args[0]
+        assert topic["angle_id"] == "angle_1"
+        assert topic["anchor"] == "What source reliability changes in my own research workflow."
+        assert topic["source_urls"] == ["https://example.com/story"]
+        assert handler._run_and_approve.call_args.args[1] == "123.456"
+        messages = [call.kwargs["text"] for call in client.chat_postMessage.call_args_list]
+        assert any("approval-gated social draft pipeline" in message for message in messages)
+
+    def test_unclear_angle_reply_does_not_start_pipeline(self):
+        handler, client = self._handler()
+        handler.wait_for_reply = MagicMock(return_value="go")
+        result = {
+            "status": "completed",
+            "mode": "dry_run",
+            "shown_angles": [
+                {
+                    "angle_id": "angle_1",
+                    "angle_type": "builder_lesson",
+                    "platform": "linkedin",
+                    "hook": "A source-backed angle.",
+                    "thesis": "A source-backed thesis.",
+                    "source_urls": ["https://example.com/story"],
+                    "confidence": 0.8,
+                    "risk_note": "Source-backed.",
+                    "score": 8.0,
+                    "verdict": "keep",
+                }
+            ],
+            "summary": {"generated_count": 1, "shown_count": 1, "rejected_count": 0},
+            "artifact": "/tmp/social-angles.json",
+            "request": {"query_preview": "source reliability"},
+            "error": None,
+        }
+
+        with patch("slack_bot.handlers.posts.generate_social_angles", return_value=result):
+            handler.handle({"text": "angles: https://example.com/story", "ts": "123.456"})
+
+        handler._run_and_approve.assert_not_called()
+        text = client.chat_postMessage.call_args_list[-1].kwargs["text"]
+        assert "No draft action matched" in text
 
 
 class TestSkillsTipsEditFlow:

@@ -80,7 +80,7 @@ of deleting the column.
 | 7 | 18 | Add social angle contract/parser | Yes | 2026-06-28: added pure `orchestrator/social_angles.py` contract/parser with strict support for `angles:`, `angle lab:`, `angles finding <id>`, and `angles arc <arc_id>`; unclear/newsletter-control text returns an error and changes no state; request previews are redacted; artifacts are pinned to gitignored `reports/<user>/social-angles/YYYY-MM-DD.json`; public `SocialAngleCandidate` output is whitelisted and source URL safe. Verification: `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 6 passed. |
 | 8 | 18 | Reconcile builder-detail boundary, then implement angle generation and Angle Critic service | Yes | 2026-06-28: owner approved boundary: practitioner transparency is allowed only when it teaches a source-backed builder/operator lesson; agent counts, cron/pipeline flexing, automated-infrastructure flexing, and product-demo framing are disallowed. Reconciled `social/writers.py`, `agents/expeditor.md`, platform writer/critic prompts, EIC, and engagement writer. Added deterministic `generate_social_angles()`, injectable provider boundary, `critique_social_angle()` assignment-editor scoring/cuts, ranked `shown_angles`, and artifact writes under `reports/<user>/social-angles/YYYY-MM-DD.json`. Verification: `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 10 passed. Grep confirmed old conflicting phrases absent from `agents/` and `social/writers.py`. |
 | 9 | 18 | Wire #mp-posts angle command | Yes | 2026-06-28: `#mp-posts` now intercepts Social Angle Lab commands before URL/idea handling, runs deterministic angle generation, and posts ranked candidates in-thread with source/artifact evidence and an explicit "No live post" label. Vague/invalid angle commands reply with guidance and do not fall through to the social pipeline. Verification: `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsAngleCommand -q` -> 3 passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 94 passed. |
-| 10 | 18 | Wire social draft handoff | No | `draft <n>` uses the existing approval-gated social flow. |
+| 10 | 18 | Wire social draft handoff | Yes | 2026-06-28: after ranked angle output, `#mp-posts` waits for `draft <n>` / `draft <angle_id>` and converts the selected angle into the existing topic shape, then calls `_run_and_approve()` so normal preview/edit/approval gates still control posting. Unclear replies do nothing and post no content. Verification: `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 12 passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 96 passed. |
 | 11 | 20 | Add audio script builder | No | Plain spoken script from report markdown with source notes. |
 | 12 | 20 | Add TTS provider boundary | No | Dry-run deterministic; live TTS behind explicit env/config. |
 | 13 | 20 | Add audio artifact/provenance writer | No | MP3/transcript/metadata/provenance sidecars, no git artifacts. |
@@ -119,10 +119,10 @@ checkpoint is also complete.
 
 ### Checkpoint: Social Angles after Tasks 7-10
 
-- [ ] `#mp-posts` can return angle variants.
-- [ ] `draft <n>` enters the existing Slack approval-gated social flow.
-- [ ] Unclear replies and newsletter-control wording fail closed.
-- [ ] No live platform post happens in tests.
+- [x] `#mp-posts` can return angle variants.
+- [x] `draft <n>` enters the existing Slack approval-gated social flow.
+- [x] Unclear replies and newsletter-control wording fail closed.
+- [x] No live platform post happens in tests.
 
 ### Checkpoint: Audio Website Slice after Tasks 11-15
 

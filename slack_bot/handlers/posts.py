@@ -27,7 +27,12 @@ from slack_bot.handlers.followup import (
     handle_followup_action_reply,
     handle_followup_reply,
 )
-from orchestrator.social_angles import generate_social_angles, parse_social_angle_request
+from orchestrator.social_angles import (
+    generate_social_angles,
+    parse_social_angle_draft_action,
+    parse_social_angle_request,
+    social_angle_to_topic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +139,34 @@ class PostsHandler(BaseHandler):
             source_context=_angle_source_context(request),
         )
         self.reply(self._format_angle_result(result), thread_ts=ts)
+        self._wait_for_angle_draft_action(result, ts)
+
+    def _wait_for_angle_draft_action(self, result: dict, ts: str) -> None:
+        """Wait for `draft <n>` and route through the normal approval loop."""
+        if result.get("status") != "completed" or not result.get("shown_angles"):
+            return
+
+        reply_text = self.wait_for_reply(ts)
+        if not reply_text:
+            return
+
+        action = parse_social_angle_draft_action(reply_text, result)
+        if action is None:
+            self.reply(
+                "No draft action matched. Nothing posted. Reply `draft 1` after an angle result to start a draft.",
+                thread_ts=ts,
+            )
+            return
+        if action.get("error"):
+            self.reply(action["error"], thread_ts=ts)
+            return
+
+        topic = social_angle_to_topic(action["angle"], result)
+        self.reply(
+            "Creating drafts from that angle with the approval-gated social draft pipeline...",
+            thread_ts=ts,
+        )
+        self._run_and_approve(topic, ts)
 
     def _format_angle_result(self, result: dict) -> str:
         """Format ranked social angles for Slack review."""
@@ -176,6 +209,11 @@ class PostsHandler(BaseHandler):
                 )
                 if sources:
                     lines.append(f"   Sources: {sources}")
+            lines.append("")
+            lines.append(
+                "Reply `draft 1` (or another number) to turn an angle into normal approval-gated social drafts."
+            )
+            lines.append("Video handoff arrives with Feature 21.")
 
         if result.get("artifact"):
             lines.append(f"Artifact: `{result['artifact']}`")

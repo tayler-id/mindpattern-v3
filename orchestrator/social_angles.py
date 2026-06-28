@@ -32,6 +32,7 @@ _NEWSLETTER_CONTROL_RE = re.compile(
     r"(the\s+)?(newsletter|issue|story|stories)\b",
     re.IGNORECASE,
 )
+_DRAFT_ACTION_RE = re.compile(r"^draft(?:\s+(.+))?$", re.IGNORECASE)
 _PRODUCT_PITCH_RE = re.compile(
     r"powered by mindpattern|built with mindpattern|mindpattern found|"
     r"mindpattern's agents|try mindpattern|built with my autonomous pipeline",
@@ -225,6 +226,73 @@ def critique_social_angle(
         "reason": reason,
         "revision_note": revision_note,
         "kill_switches": kill_switches,
+    }
+
+
+def parse_social_angle_draft_action(
+    text: str | None,
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Parse `draft <n>` / `draft <angle_id>` for a shown angle result."""
+    normalized = " ".join((text or "").strip().split())
+    match = _DRAFT_ACTION_RE.fullmatch(normalized)
+    if not match:
+        return None
+
+    target = (match.group(1) or "").strip()
+    shown = list(result.get("shown_angles") or [])
+    if not target:
+        return {
+            "action": "draft",
+            "error": "Reply `draft 1` to draft a specific angle.",
+        }
+
+    if target.isdigit():
+        index = int(target)
+        if index < 1 or index > len(shown):
+            return {
+                "action": "draft",
+                "index": index,
+                "error": f"Angle {index} is not available.",
+            }
+        return {
+            "action": "draft",
+            "index": index,
+            "angle": shown[index - 1],
+            "error": None,
+        }
+
+    target_id = _safe_label(target)
+    for idx, angle in enumerate(shown, 1):
+        if _safe_label(angle.get("angle_id", "")) == target_id:
+            return {
+                "action": "draft",
+                "index": idx,
+                "angle": angle,
+                "error": None,
+            }
+    return {
+        "action": "draft",
+        "error": f"Angle `{target}` is not available.",
+    }
+
+
+def social_angle_to_topic(angle: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Convert a selected angle into the existing social pipeline topic shape."""
+    source_urls = _safe_urls(angle.get("source_urls") or [])
+    query_preview = (result.get("request") or {}).get("query_preview") or "Social Angle Lab"
+    confidence = _confidence_label(angle.get("confidence"))
+    return {
+        "anchor": redact_sensitive_text(angle.get("hook", "")),
+        "anchor_source": f"Social Angle Lab: {redact_sensitive_text(query_preview)}",
+        "connection": redact_sensitive_text(angle.get("risk_note", "")),
+        "connection_source": result.get("artifact") or "",
+        "reaction": redact_sensitive_text(angle.get("thesis", "")),
+        "source_urls": source_urls,
+        "confidence": confidence,
+        "angle_id": _safe_label(angle.get("angle_id", "")),
+        "angle_type": _safe_label(angle.get("angle_type", "")),
+        "platform_hint": _safe_label(angle.get("platform", "")),
     }
 
 
@@ -699,3 +767,12 @@ def _clamp_confidence(value: float) -> float:
     except (TypeError, ValueError):
         confidence = 0.0
     return round(max(0.0, min(1.0, confidence)), 3)
+
+
+def _confidence_label(value: Any) -> str:
+    confidence = _clamp_confidence(value)
+    if confidence >= 0.8:
+        return "HIGH"
+    if confidence >= 0.5:
+        return "MEDIUM"
+    return "LOW"
