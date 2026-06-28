@@ -965,8 +965,8 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 20 Task 13, audio artifact/provenance writer.
-  Feature 18 Tasks 7-10 and Feature 20 Tasks 11-12 are complete locally.
+- Current next task: Feature 20 Task 14, safe public audio API endpoints.
+  Feature 18 Tasks 7-10 and Feature 20 Tasks 11-13 are complete locally.
   Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
@@ -1022,6 +1022,16 @@ place instead of deleting the column.
   `.venv/bin/python3 -m pytest tests/test_audio_briefing.py -q` -> 9 passed;
   `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_media_artifact_contracts.py -q`
   -> 15 passed.
+- Feature 20 Task 13 status: implemented locally. Added safe
+  `reports/<user>/audio/YYYY-MM-DD.*` paths and `write_audio_artifacts()` for
+  MP3 bytes when present, transcript markdown, metadata JSON, and provenance
+  JSON. Metadata includes source report hash, script hash, provider/model/voice,
+  source count, generated timestamp, AI-generated/manual-publish labels, and
+  audio-file presence. Trace events record ready/degraded/failed statuses via
+  `audio_briefing_artifact`. Verification:
+  `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_traces_db.py -q`
+  -> 20 passed; `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_media_artifact_contracts.py tests/test_traces_db.py -q`
+  -> 26 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.

@@ -8,13 +8,18 @@ artifact writing is a later task.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
+
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+DEFAULT_REPORTS_ROOT = PROJECT_ROOT / "reports"
 
 _SAFE_USER_RE = re.compile(r"^[a-z0-9_-]+$")
 _SAFE_CONFIG_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
@@ -147,6 +152,7 @@ def build_tts_audio(
             "user": script_result.get("user", ""),
             "degraded": bool(script_result.get("degraded")),
             "audio_bytes": None,
+            "transcript_markdown": script_result.get("transcript_markdown", ""),
             "metadata": metadata,
             "error": None,
         }
@@ -205,8 +211,100 @@ def build_tts_audio(
         "user": script_result.get("user", ""),
         "degraded": bool(script_result.get("degraded")),
         "audio_bytes": audio_bytes,
+        "transcript_markdown": script_result.get("transcript_markdown", ""),
         "metadata": metadata,
         "error": None,
+    }
+
+
+def audio_artifact_paths(
+    *,
+    date: str,
+    user: str = "ramsay",
+    reports_root: Path | str | None = None,
+) -> dict[str, Path]:
+    """Return safe audio artifact paths under reports/<user>/audio/."""
+    date = validate_run_date(date)
+    if not _SAFE_USER_RE.fullmatch(user or ""):
+        raise ValueError("user must be a safe path segment")
+
+    root = Path(reports_root) if reports_root is not None else DEFAULT_REPORTS_ROOT
+    root = root.resolve()
+    base = (root / user / "audio").resolve()
+    try:
+        base.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("audio artifact path escapes reports root") from exc
+
+    return {
+        "audio": base / f"{date}.mp3",
+        "transcript": base / f"{date}.transcript.md",
+        "metadata": base / f"{date}.json",
+        "provenance": base / f"{date}.provenance.json",
+    }
+
+
+def write_audio_artifacts(
+    tts_result: dict[str, Any],
+    *,
+    reports_root: Path | str | None = None,
+    traces_conn: Any = None,
+    pipeline_run_id: str | None = None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    """Write audio artifacts and optionally log a compact trace event."""
+    date = validate_run_date(str(tts_result.get("date", "")))
+    user = str(tts_result.get("user") or "ramsay")
+    if not _SAFE_USER_RE.fullmatch(user):
+        raise ValueError("user must be a safe path segment")
+
+    status = _safe_status(tts_result.get("status"))
+    paths = audio_artifact_paths(date=date, user=user, reports_root=reports_root)
+    paths["metadata"].parent.mkdir(parents=True, exist_ok=True)
+
+    audio_bytes = tts_result.get("audio_bytes")
+    has_audio_file = isinstance(audio_bytes, bytes) and bool(audio_bytes)
+    if has_audio_file:
+        paths["audio"].write_bytes(audio_bytes)
+
+    transcript = str(tts_result.get("transcript_markdown") or "").strip()
+    if not transcript:
+        transcript = _fallback_transcript(date=date, status=status)
+    paths["transcript"].write_text(transcript.rstrip() + "\n")
+
+    metadata = dict(tts_result.get("metadata") or {})
+    metadata.update({
+        "status": status,
+        "date": date,
+        "user": user,
+        "generated_at": _generated_at(generated_at),
+        "has_audio_file": has_audio_file,
+        "artifact_files": {
+            "audio": paths["audio"].name if has_audio_file else "",
+            "transcript": paths["transcript"].name,
+            "metadata": paths["metadata"].name,
+            "provenance": paths["provenance"].name,
+        },
+    })
+    paths["metadata"].write_text(_json_dumps(metadata))
+
+    provenance = _build_audio_provenance(metadata)
+    paths["provenance"].write_text(_json_dumps(provenance))
+
+    trace_payload = _audio_trace_payload(metadata)
+    trace_logged = _log_audio_trace(
+        traces_conn=traces_conn,
+        pipeline_run_id=pipeline_run_id,
+        payload=trace_payload,
+    )
+    return {
+        "status": status,
+        "date": date,
+        "user": user,
+        "paths": paths,
+        "metadata": metadata,
+        "provenance": provenance,
+        "trace_logged": trace_logged,
     }
 
 
@@ -264,6 +362,7 @@ def _failed_tts_result(
         "user": script_result.get("user", ""),
         "degraded": True,
         "audio_bytes": None,
+        "transcript_markdown": script_result.get("transcript_markdown", ""),
         "metadata": _build_tts_metadata(
             script_result=script_result,
             config=config,
@@ -399,6 +498,7 @@ def _build_tts_metadata(
         "audio_hash": audio_hash,
         "script_hash": script_result.get("script_hash", ""),
         "source_report_hash": script_result.get("source_report_hash", ""),
+        "show_notes": _safe_source_notes(script_result.get("show_notes") or []),
         "word_count": int(script_result.get("word_count") or 0),
         "source_count": int(script_result.get("source_count") or 0),
         "degraded": bool(script_result.get("degraded")),
@@ -418,7 +518,108 @@ def _audio_labels(script_result: dict[str, Any]) -> list[str]:
 
 
 def _status_from_script(script_result: dict[str, Any]) -> str:
+    if script_result.get("status") == "failed":
+        return "failed"
     return "degraded" if script_result.get("degraded") else "ready"
+
+
+def _safe_status(value: Any) -> str:
+    status = str(value or "").strip().lower()
+    return status if status in {"ready", "degraded", "failed"} else "failed"
+
+
+def _safe_source_notes(notes: list[dict[str, Any]]) -> list[dict[str, str]]:
+    safe = []
+    for note in notes:
+        if not isinstance(note, dict):
+            continue
+        url = _clean_url(note.get("url"))
+        if not url:
+            continue
+        safe.append({
+            "label": redact_sensitive_text(note.get("label") or "Source"),
+            "url": url,
+        })
+    return safe
+
+
+def _fallback_transcript(*, date: str, status: str) -> str:
+    return (
+        f"# MindPattern Audio Briefing - {date}\n\n"
+        f"Status: {status}\n\n"
+        "No audio transcript is available for this run.\n"
+    )
+
+
+def _generated_at(value: str | None) -> str:
+    if value:
+        return redact_sensitive_text(value)
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _build_audio_provenance(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_id": metadata.get("id", ""),
+        "type": "audio_briefing",
+        "date": metadata.get("date", ""),
+        "status": metadata.get("status", ""),
+        "generated_at": metadata.get("generated_at", ""),
+        "source_report_hash": metadata.get("source_report_hash", ""),
+        "script_hash": metadata.get("script_hash", ""),
+        "audio_hash": metadata.get("audio_hash", ""),
+        "source_count": int(metadata.get("source_count") or 0),
+        "labels": list(metadata.get("labels") or []),
+        "source_notes": _safe_source_notes(metadata.get("show_notes") or []),
+        "tts": {
+            "provider": metadata.get("provider", ""),
+            "model": metadata.get("model", ""),
+            "voice": metadata.get("voice", ""),
+            "mode": metadata.get("mode", ""),
+            "audio_format": metadata.get("audio_format", ""),
+            "audio_placeholder": bool(metadata.get("audio_placeholder")),
+        },
+    }
+
+
+def _audio_trace_payload(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "pipeline_artifact": "audio_briefing",
+        "status": metadata.get("status", ""),
+        "date": metadata.get("date", ""),
+        "user": metadata.get("user", ""),
+        "mode": metadata.get("mode", ""),
+        "provider": metadata.get("provider", ""),
+        "model": metadata.get("model", ""),
+        "voice": metadata.get("voice", ""),
+        "script_hash": metadata.get("script_hash", ""),
+        "source_report_hash": metadata.get("source_report_hash", ""),
+        "audio_hash": metadata.get("audio_hash", ""),
+        "source_count": int(metadata.get("source_count") or 0),
+        "has_audio_file": bool(metadata.get("has_audio_file")),
+    }
+
+
+def _log_audio_trace(
+    *,
+    traces_conn: Any,
+    pipeline_run_id: str | None,
+    payload: dict[str, Any],
+) -> bool:
+    if traces_conn is None:
+        return False
+    from orchestrator.traces_db import log_event
+
+    log_event(
+        traces_conn,
+        pipeline_run_id or f"audio-{payload.get('date', 'unknown')}",
+        "audio_briefing_artifact",
+        _json_dumps(payload),
+    )
+    return True
+
+
+def _json_dumps(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
 def _estimate_duration_seconds(script_result: dict[str, Any]) -> float:
