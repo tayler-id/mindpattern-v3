@@ -965,8 +965,9 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 20 Task 15, render audio on the Rabbit Hole site.
-  Feature 18 Tasks 7-10 and Feature 20 Tasks 11-14 are complete locally.
+- Current next task: Feature 21 Task 16, short-form video script
+  contract/parser. Feature 18 Tasks 7-10 and Feature 20 Tasks 11-15 are
+  complete locally/cross-repo.
   Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
@@ -1043,9 +1044,19 @@ place instead of deleting the column.
   `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_audio_briefing.py -q`
   -> 27 passed; `.venv/bin/python3 -m pytest tests/test_auth_middleware.py tests/test_api_contract.py tests/test_audio_briefing.py -q`
   -> 43 passed.
+- Feature 20 Task 15 status: implemented in `mindpattern-rabbit-hole` and
+  committed there as `69b9d6e feat: render audio briefings`. Added typed audio
+  helpers, `AudioBriefing` types, and `AudioBriefingPlayer` with native audio
+  controls, transcript links, source links, and visible AI-generated/manual-
+  publish labels. `/briefings` shows compact players for dates with audio
+  without nesting controls inside links; `/briefings/[date]` renders the full
+  player above the report body and degrades cleanly when no audio exists.
+  Verification in Rabbit Hole: `pnpm lint` -> 0 errors, 2 pre-existing
+  warnings; `pnpm exec tsc --noEmit --incremental false` -> passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
-  newsletter send, social post, schema change, dependency install, TTS/video
-  provider call, or Rabbit Hole repo edit has been run for this feature slice.
+  newsletter send, social post, schema change, dependency install, or TTS/video
+  provider call has been run for this feature slice. Rabbit Hole edits were
+  limited to Task 15 and committed in that repo.
 
 ## Do Not Do Yet
 
