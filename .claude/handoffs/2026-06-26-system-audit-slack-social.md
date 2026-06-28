@@ -965,8 +965,8 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 21 Task 16, short-form video script
-  contract/parser. Feature 18 Tasks 7-10 and Feature 20 Tasks 11-15 are
+- Current next task: Feature 21 Task 17, video script package service.
+  Feature 18 Tasks 7-10, Feature 20 Tasks 11-15, and Feature 21 Task 16 are
   complete locally/cross-repo.
   Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
@@ -1053,6 +1053,16 @@ place instead of deleting the column.
   player above the report body and degrades cleanly when no audio exists.
   Verification in Rabbit Hole: `pnpm lint` -> 0 errors, 2 pre-existing
   warnings; `pnpm exec tsc --noEmit --incremental false` -> passed.
+- Feature 21 Task 16 status: implemented locally. Added pure
+  `orchestrator/video_scripts.py` with strict parsing for `video script:`,
+  `video finding <id>`, `video arc <id>`, and `video angle <n>`. Unrelated text
+  returns `None`; malformed supported commands return failed request objects
+  without falling through. Parser rejects live-post/manual-publish violations
+  and newsletter-control wording, redacts sensitive text, and defines stable
+  `VideoScriptPackage` public output with safe URLs and visible labels.
+  Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q`
+  -> 5 passed; `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q`
+  -> 11 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, or TTS/video
   provider call has been run for this feature slice. Rabbit Hole edits were
