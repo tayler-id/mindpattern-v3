@@ -8,16 +8,26 @@ are later tasks.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
+from orchestrator.media_contracts import (
+    normalize_artifact_slug,
+    redact_sensitive_text,
+    validate_run_date,
+)
+
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+DEFAULT_REPORTS_ROOT = PROJECT_ROOT / "reports"
 
 MIN_QUERY_CHARS = 8
 PREVIEW_CHARS = 160
 
+_SAFE_USER_RE = re.compile(r"^[a-z0-9_-]+$")
 _SAFE_ARC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 _SAFE_LABEL_RE = re.compile(r"[^a-z0-9_-]+")
 _VAGUE_QUERIES = {"more", "this", "that", "it", "details", "ideas"}
@@ -190,6 +200,118 @@ def parse_video_script_request(
     )
 
 
+def generate_video_script_package(
+    request: dict[str, Any] | str | None,
+    *,
+    date: str,
+    user: str = "ramsay",
+    reports_root: Path | None = None,
+    source_context: dict[str, Any] | None = None,
+    duration_seconds: int = 45,
+    write_artifact: bool = True,
+) -> dict[str, Any]:
+    """Generate a deterministic Slack-ready video script package.
+
+    This is an offline package builder. It does not call providers, Slack,
+    social APIs, the daily runner, or a video renderer.
+    """
+    parsed = parse_video_script_request(request) if isinstance(request, str) else request
+    date = validate_run_date(date)
+    if not parsed:
+        return _video_result(
+            status="failed",
+            date=date,
+            user=user,
+            request={},
+            package=None,
+            claim_evidence=[],
+            recommendation="No video script request was provided.",
+            reports_root=reports_root,
+            write_artifact=False,
+            error="No video script request was provided.",
+        )
+    if parsed.get("error"):
+        return _video_result(
+            status="failed",
+            date=date,
+            user=user,
+            request=parsed,
+            package=None,
+            claim_evidence=[],
+            recommendation=parsed["error"],
+            reports_root=reports_root,
+            write_artifact=False,
+            error=parsed["error"],
+        )
+
+    context = _normalize_video_context(parsed, source_context or {})
+    source_urls = context["source_urls"]
+    status = "ready" if source_urls else "degraded"
+    risk_labels = ["source-backed"] if source_urls else ["weak evidence", "follow-up recommended"]
+    recommendation = (
+        "Ready for Slack review. Keep manual publish approval before using on social."
+        if source_urls
+        else "Run follow-up research or attach a source URL before publishing this video script."
+    )
+
+    package = VideoScriptPackage(
+        package_id=f"video_{_hash_text(context['title'])[-8:]}",
+        date=date,
+        source_type=parsed.get("source_type", "topic"),
+        source_ref=_source_ref(parsed),
+        duration_seconds=duration_seconds,
+        hook=f"{context['title']}: the source check most people skip.",
+        spoken_script=_spoken_script(context, has_evidence=bool(source_urls)),
+        shot_list=_shot_list(context, has_evidence=bool(source_urls)),
+        captions=_captions(context, has_evidence=bool(source_urls)),
+        source_urls=source_urls,
+        labels=["AI-assisted script", "manual publish only"],
+        risk_labels=risk_labels,
+        status=status,
+    ).to_public_dict()
+
+    claim_evidence = _claim_evidence(context, parsed) if source_urls else []
+    return _video_result(
+        status=status,
+        date=date,
+        user=user,
+        request=parsed,
+        package=package,
+        claim_evidence=claim_evidence,
+        recommendation=recommendation,
+        artifact_slug=context["title"],
+        reports_root=reports_root,
+        write_artifact=write_artifact,
+    )
+
+
+def video_script_artifact_paths(
+    *,
+    date: str,
+    user: str = "ramsay",
+    slug: str,
+    reports_root: Path | None = None,
+) -> dict[str, Path]:
+    """Return ignored reports paths for a video script JSON/Markdown pair."""
+    if not _SAFE_USER_RE.fullmatch(user or ""):
+        raise ValueError("user must be a safe path segment")
+    if "/" in slug or "\\" in slug or ".." in slug:
+        raise ValueError("slug must not contain path separators")
+    date = validate_run_date(date)
+    root = (reports_root or DEFAULT_REPORTS_ROOT).resolve()
+    base = (root / user / "video-scripts").resolve()
+    try:
+        base.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("video script artifact path escapes reports root") from exc
+    safe_slug = normalize_artifact_slug(slug)
+    stem = f"{date}-{safe_slug}"
+    return {
+        "json": base / f"{stem}.json",
+        "markdown": base / f"{stem}.md",
+    }
+
+
 def _request(
     *,
     source_type: str,
@@ -238,6 +360,185 @@ def _error_request(
         "url": "",
         "error": error,
     }
+
+
+def _video_result(
+    *,
+    status: str,
+    date: str,
+    user: str,
+    request: dict[str, Any],
+    package: dict[str, Any] | None,
+    claim_evidence: list[dict[str, str]],
+    recommendation: str,
+    reports_root: Path | None,
+    write_artifact: bool,
+    artifact_slug: str = "video-script",
+    error: str | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "status": status,
+        "date": validate_run_date(date),
+        "user": user,
+        "request": _public_request(request),
+        "package": package,
+        "claim_evidence": claim_evidence,
+        "recommendation": redact_sensitive_text(recommendation),
+        "artifacts": {"json": "", "markdown": ""},
+        "error": error,
+    }
+    if write_artifact and package:
+        paths = video_script_artifact_paths(
+            date=date,
+            user=user,
+            slug=artifact_slug,
+            reports_root=reports_root,
+        )
+        paths["json"].parent.mkdir(parents=True, exist_ok=True)
+        payload["artifacts"] = {key: str(path) for key, path in paths.items()}
+        paths["json"].write_text(json.dumps(payload, indent=2, sort_keys=True))
+        paths["markdown"].write_text(_video_markdown(payload))
+    return payload
+
+
+def _public_request(request: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "command": request.get("command", ""),
+        "source": request.get("source", ""),
+        "channel_type": request.get("channel_type"),
+        "source_type": request.get("source_type", ""),
+        "query_preview": redact_sensitive_text(request.get("query_preview", "")),
+        "request_hash": request.get("request_hash", ""),
+        "finding_id": request.get("finding_id"),
+        "arc_id": request.get("arc_id", ""),
+        "angle_index": request.get("angle_index"),
+        "url": _safe_url(request.get("url", "")),
+        "error": request.get("error"),
+    }
+
+
+def _normalize_video_context(
+    request: dict[str, Any],
+    source_context: dict[str, Any],
+) -> dict[str, Any]:
+    title = source_context.get("title") or request.get("query_preview") or "Video script"
+    summary = source_context.get("summary") or "A source-backed short-form video script request."
+    urls = []
+    if request.get("url"):
+        urls.append(request["url"])
+    urls.extend(source_context.get("source_urls") or [])
+    urls.extend(
+        item.get("source_url", "")
+        for item in source_context.get("evidence", []) or []
+        if isinstance(item, dict)
+    )
+    return {
+        "title": _short_text(redact_sensitive_text(title), 96),
+        "summary": _short_text(redact_sensitive_text(summary), 220),
+        "source_urls": _safe_urls(urls),
+    }
+
+
+def _source_ref(request: dict[str, Any]) -> str:
+    source_type = request.get("source_type")
+    if source_type == "finding":
+        return f"finding:{request.get('finding_id')}"
+    if source_type == "arc":
+        return f"arc:{request.get('arc_id')}"
+    if source_type == "angle":
+        return f"angle:{request.get('angle_index')}"
+    if source_type == "url":
+        return request.get("url", "")
+    return request.get("query_preview", "")
+
+
+def _spoken_script(context: dict[str, Any], *, has_evidence: bool) -> str:
+    if not has_evidence:
+        return (
+            f"Here is the angle to research further: {context['title']}. "
+            "Before recording, attach source evidence so every claim can be checked."
+        )
+    return (
+        f"{context['title']}. {context['summary']} "
+        "The takeaway is simple: check the source evidence before turning the finding into a post."
+    )
+
+
+def _shot_list(context: dict[str, Any], *, has_evidence: bool) -> list[str]:
+    if not has_evidence:
+        return [
+            "Open with the unresolved question.",
+            "Show placeholder source slots.",
+            "End with follow-up research request.",
+        ]
+    return [
+        "Open on the headline or source title.",
+        "Show the source mix that supports the claim.",
+        "End on the builder takeaway and manual-publish label.",
+    ]
+
+
+def _captions(context: dict[str, Any], *, has_evidence: bool) -> list[str]:
+    if not has_evidence:
+        return [f"Needs follow-up research: {context['title']}"]
+    return [
+        f"{context['title']}",
+        "Source evidence before the take.",
+        "Manual publish only.",
+    ]
+
+
+def _claim_evidence(
+    context: dict[str, Any],
+    request: dict[str, Any],
+) -> list[dict[str, str]]:
+    source_url = context["source_urls"][0]
+    source_ref = _source_ref(request)
+    return [
+        {
+            "claim": context["title"],
+            "source_url": source_url,
+            "source_ref": source_ref,
+        },
+        {
+            "claim": context["summary"],
+            "source_url": source_url,
+            "source_ref": source_ref,
+        },
+    ]
+
+
+def _video_markdown(payload: dict[str, Any]) -> str:
+    package = payload["package"]
+    lines = [
+        f"# Video Script Package - {payload['date']}",
+        "",
+        f"Status: {payload['status']}",
+        f"Labels: {', '.join(package.get('labels') or [])}",
+        f"Recommendation: {payload['recommendation']}",
+        "",
+        "## Hook",
+        "",
+        package.get("hook", ""),
+        "",
+        "## Spoken Script",
+        "",
+        package.get("spoken_script", ""),
+        "",
+        "## Shot List",
+    ]
+    for item in package.get("shot_list") or []:
+        lines.append(f"- {item}")
+    lines.extend(["", "## Captions"])
+    for item in package.get("captions") or []:
+        lines.append(f"- {item}")
+    lines.extend(["", "## Evidence"])
+    if payload.get("claim_evidence"):
+        for item in payload["claim_evidence"]:
+            lines.append(f"- {item['claim']} ({item['source_url']})")
+    else:
+        lines.append("- No usable source evidence attached.")
+    return "\n".join(lines).strip() + "\n"
 
 
 def _safe_duration(seconds: int) -> int:

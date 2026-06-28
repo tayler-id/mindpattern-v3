@@ -108,6 +108,122 @@ def test_video_script_package_public_contract_is_stable_and_safe():
     }
 
 
+def test_generate_video_script_package_writes_source_backed_artifacts(tmp_path):
+    from orchestrator.video_scripts import (
+        generate_video_script_package,
+        parse_video_script_request,
+    )
+
+    request = parse_video_script_request("video script: https://example.com/source-story")
+
+    result = generate_video_script_package(
+        request,
+        date="2026-06-28",
+        user="ramsay",
+        reports_root=tmp_path,
+        source_context={
+            "title": "Agent Reach restores social search reliability",
+            "summary": "X, Reddit, YouTube, and Exa coverage make research less brittle.",
+            "source_urls": ["https://example.com/source-story"],
+        },
+        duration_seconds=45,
+    )
+
+    assert result["status"] == "ready"
+    assert result["package"]["duration_seconds"] == 45
+    assert "AI-assisted script" in result["package"]["labels"]
+    assert "manual publish only" in result["package"]["labels"]
+    assert result["package"]["source_urls"] == ["https://example.com/source-story"]
+    assert result["claim_evidence"]
+    assert all(item["source_url"] == "https://example.com/source-story" for item in result["claim_evidence"])
+
+    json_path = Path(result["artifacts"]["json"])
+    markdown_path = Path(result["artifacts"]["markdown"])
+    assert json_path == tmp_path / "ramsay" / "video-scripts" / "2026-06-28-agent-reach-restores-social-search-reliability.json"
+    assert markdown_path.exists()
+    assert "reports/ramsay/video-scripts" not in str(json_path)
+    payload = json.loads(json_path.read_text())
+    markdown = markdown_path.read_text()
+    assert payload["package"]["hook"] == result["package"]["hook"]
+    assert "manual publish only" in markdown
+    assert "https://example.com/source-story" in markdown
+
+
+def test_generate_video_script_package_supports_selected_duration(tmp_path):
+    from orchestrator.video_scripts import (
+        generate_video_script_package,
+        parse_video_script_request,
+    )
+
+    request = parse_video_script_request("video finding 123")
+
+    result = generate_video_script_package(
+        request,
+        date="2026-06-28",
+        reports_root=tmp_path,
+        source_context={
+            "title": "Source-backed finding",
+            "summary": "The finding changes a builder workflow.",
+            "source_urls": ["https://example.com/finding"],
+        },
+        duration_seconds=60,
+        write_artifact=False,
+    )
+
+    assert result["status"] == "ready"
+    assert result["package"]["duration_seconds"] == 60
+    assert result["artifacts"]["json"] == ""
+
+
+def test_generate_video_script_package_degrades_when_evidence_is_weak(tmp_path):
+    from orchestrator.video_scripts import (
+        generate_video_script_package,
+        parse_video_script_request,
+    )
+
+    request = parse_video_script_request("video script: agent reliability angle")
+
+    result = generate_video_script_package(
+        request,
+        date="2026-06-28",
+        reports_root=tmp_path,
+        source_context={},
+        write_artifact=False,
+    )
+
+    assert result["status"] == "degraded"
+    assert result["package"]["status"] == "degraded"
+    assert "weak evidence" in result["package"]["risk_labels"]
+    assert "follow-up research" in result["recommendation"].lower()
+    assert result["claim_evidence"] == []
+
+
+def test_video_script_artifact_paths_are_reports_only(tmp_path):
+    from orchestrator.video_scripts import video_script_artifact_paths
+
+    paths = video_script_artifact_paths(
+        date="2026-06-28",
+        user="ramsay",
+        slug="Source Backed Angle",
+        reports_root=tmp_path,
+    )
+
+    assert paths["json"] == tmp_path / "ramsay" / "video-scripts" / "2026-06-28-source-backed-angle.json"
+    assert paths["markdown"] == tmp_path / "ramsay" / "video-scripts" / "2026-06-28-source-backed-angle.md"
+
+    for kwargs in (
+        {"date": "../../users", "user": "ramsay", "slug": "story"},
+        {"date": "2026-06-28", "user": "../ramsay", "slug": "story"},
+        {"date": "2026-06-28", "user": "ramsay", "slug": "../story"},
+    ):
+        try:
+            video_script_artifact_paths(reports_root=tmp_path, **kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe video script artifact path was accepted")
+
+
 def test_video_scripts_module_has_no_provider_slack_runner_or_posting_imports():
     source = Path("orchestrator/video_scripts.py").read_text()
     tree = ast.parse(source)
@@ -132,7 +248,7 @@ def test_video_scripts_module_has_no_provider_slack_runner_or_posting_imports():
         "send_newsletter",
         "chat.postMessage",
         "post_to_platforms",
-        "generate_video",
+        "generate_video(",
         "flyctl",
     }
 

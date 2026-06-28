@@ -965,9 +965,9 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 21 Task 17, video script package service.
-  Feature 18 Tasks 7-10, Feature 20 Tasks 11-15, and Feature 21 Task 16 are
-  complete locally/cross-repo.
+- Current next task: Feature 21 Task 18, wire #mp-posts video command and
+  angle handoff. Feature 18 Tasks 7-10, Feature 20 Tasks 11-15, and Feature 21
+  Tasks 16-17 are complete locally/cross-repo.
   Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
@@ -1063,6 +1063,17 @@ place instead of deleting the column.
   Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q`
   -> 5 passed; `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q`
   -> 11 passed.
+- Feature 21 Task 17 status: implemented locally. Added deterministic
+  `generate_video_script_package()` and safe `video_script_artifact_paths()`
+  under gitignored `reports/<user>/video-scripts/YYYY-MM-DD-<slug>.{json,md}`.
+  The service produces one selected 30/45/60 second Slack-ready package with
+  hook, spoken script, shot list, captions, source URLs, claim-to-source
+  evidence, AI-assisted/manual-publish labels, and risk labels. Weak or missing
+  evidence returns a degraded package with follow-up research recommendation
+  and no fabricated claim evidence. Verification:
+  `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q` -> 9 passed;
+  `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q`
+  -> 15 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, or TTS/video
   provider call has been run for this feature slice. Rabbit Hole edits were
