@@ -21,7 +21,7 @@ Any of these = automatic REVISE verdict:
 - Rhetorical question used as a transition device
 - Summary or conclusion closing (wrapping up the thought neatly)
 - mindpattern as the grammatical subject of any main clause
-- Any product pitch for the automation system ("powered by MindPattern", "built with MindPattern", "MindPattern found this", "built with my autonomous pipeline"). NOTE: Builder transparency ("I run 12 agents", "my pipeline flagged this", "my morning cron") is ENCOURAGED and must NOT be flagged.
+- Any product pitch for the automation system ("powered by MindPattern", "built with MindPattern", "MindPattern found this", "built with my autonomous pipeline"). Approved builder-detail boundary: practitioner transparency is allowed only when it teaches a source-backed builder/operator lesson, for example "in my own research workflow", "I reviewed the source mix", "I checked my codebase/configs", "tools I rely on", or "this changed how I triage sources". Flag agent counts, cron/pipeline flexing, automated-infrastructure flexing, or product-demo framing as credibility.
 - Multiple findings stacked as evidence (the brief said ONE thing)
 - Chronological walkthrough of events ("First... Then... Finally...")
 - Any snappy triad ("Simple. Powerful. Effective.")

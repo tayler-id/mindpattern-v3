@@ -965,13 +965,9 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 18 Task 8, builder-detail boundary plus angle
-  generation/critic. Before Task 8 code starts, the owner-approved
-  builder-detail boundary must be captured and `social/writers.py` must be
-  reconciled with `agents/expeditor.md`; current prompt rules conflict on
-  whether builder/process language is forbidden or required. Angle artifacts
-  must stay in gitignored `reports/ramsay/social-angles/`, not
-  `data/social-angles/`.
+- Current next task: Feature 18 Task 9, wire the `#mp-posts` angle command.
+  Task 8 is complete locally; angle artifacts stay in gitignored
+  `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
   now provides a pure strict parser/contract for `angles:`, `angle lab:`,
   `angles finding <id>`, and `angles arc <arc_id>`, rejects unclear or
@@ -979,10 +975,19 @@ place instead of deleting the column.
   artifacts to `reports/<user>/social-angles/YYYY-MM-DD.json`, and defines the
   public `SocialAngleCandidate` contract. Verification:
   `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 6 passed.
-- Feature 18 must now stop at Task 8 until the owner approves the
-  builder-detail boundary. Do not edit `social/writers.py`,
-  `agents/expeditor.md`, generation prompts, or Slack angle output before that
-  boundary is explicit.
+- Feature 18 Task 8 status: implemented locally after owner approved the
+  boundary. The approved boundary is: practitioner transparency is allowed only
+  when it teaches a source-backed builder/operator lesson; agent counts,
+  cron/pipeline flexing, automated-infrastructure flexing, and product-demo
+  framing are disallowed. Reconciled `social/writers.py`,
+  `agents/expeditor.md`, platform writer/critic prompts, EIC, and engagement
+  writer. Added deterministic `generate_social_angles()`, injectable provider
+  boundary, `critique_social_angle()` assignment-editor scoring/cuts, ranked
+  `shown_angles`, and artifact writes under
+  `reports/<user>/social-angles/YYYY-MM-DD.json`. Verification:
+  `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 10
+  passed. Grep confirmed old conflicting phrases absent from `agents/` and
+  `social/writers.py`.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.

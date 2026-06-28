@@ -55,7 +55,7 @@ These represent factual, attribution, or reputational risks. Any single hit = au
 - **Banned phrases**: Any phrase from the banned phrases list ("In today's ever-evolving...", etc.)
 - **Summary/conclusion closing**: "In conclusion", "In summary", "In essence"
 - **mindpattern as grammatical subject**: "mindpattern found..." (it's a tool, not a person)
-- **Product pitch self-reference**: Any mention of "powered by MindPattern", "built with MindPattern", "MindPattern found this", "MindPattern's agents", "try MindPattern", "built with my autonomous pipeline", or any phrasing that reads like an ad or product demo. NOTE: Builder transparency ("I run 12 agents", "my pipeline flagged this", "my morning cron caught this") is ENCOURAGED and must NOT be flagged. The line: practitioner sharing their setup = good. Product pitch = kill.
+- **Product pitch self-reference**: Any mention of "powered by MindPattern", "built with MindPattern", "MindPattern found this", "MindPattern's agents", "try MindPattern", "built with my autonomous pipeline", or any phrasing that reads like an ad or product demo. Also flag agent counts, cron/pipeline flexing, automated-infrastructure flexing, or process details used as credibility. Approved builder-detail boundary: good practitioner transparency teaches a source-backed builder/operator lesson, for example "in my own research workflow", "I reviewed the source mix", "I checked my codebase/configs", "tools I rely on", or "this changed how I triage sources". The line: practitioner lesson = good. Product demo = kill.
 - **Multiple findings stacked**: More than 2 distinct findings listed without a connecting thread
 
 ### Style Warnings (dock points, do NOT auto-fail)
@@ -67,11 +67,19 @@ These are minor style issues. Note them in revision_notes and dock the relevant 
 - **Snappy triads**: "Simple. Powerful. Effective." pattern — minor style preference, not a quality issue
 - **Broetry**: One sentence per line, double-spaced — dock structural_variation score
 
-## Builder Detail Check
+## Approved Builder-Detail Boundary
 
-After kill switch checks, verify that at least one platform draft includes a specific builder detail — something like "I run 12 agents", "my pipeline flagged this", "my morning cron caught this", or any concrete infrastructure reference that establishes practitioner credibility. If NO draft includes a builder detail, flag for revision with the note: "Missing builder detail. Best-performing posts include at least one specific infrastructure reference (e.g., 'I run X agents', 'my pipeline does Y'). Add one to increase engagement."
+After kill switch checks, verify that any builder detail follows the approved
+builder-detail boundary: it must teach a source-backed builder/operator lesson,
+not flex the system. Good examples include "in my own research workflow",
+"I reviewed the source mix", "I checked my codebase/configs", "tools I rely on",
+or "this changed how I triage sources".
 
-This is NOT an automatic FAIL, but it should be noted in revision_notes and the framing_authenticity score should be docked by 1-2 points.
+Do not require a builder detail. If a draft has no natural practitioner detail
+but still has a clear source-backed angle, do not dock it. If a draft uses agent
+counts, cron/pipeline flexing, automated-infrastructure flexing, or
+product-demo framing as credibility, fail it under the product-pitch kill
+switch.
 
 ## Evaluation Process
 
@@ -80,7 +88,7 @@ This is NOT an automatic FAIL, but it should be noted in revision_notes and the 
 3. Read all 3 platform drafts from `data/social-drafts/`
 4. Check if art exists at the provided path(s)
 5. Run kill switch checks on ALL drafts (any hit = automatic FAIL)
-6. Run builder detail check on ALL drafts (missing = flag for revision, dock framing_authenticity)
+6. Run the approved builder-detail boundary on ALL drafts (bad infrastructure flex = FAIL; missing builder detail is not a failure)
 7. Score each of the 6 rubric dimensions
 8. Run cross-platform consistency checks
 9. Calculate composite quality_score

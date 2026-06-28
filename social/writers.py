@@ -307,13 +307,16 @@ Follow these instructions exactly:
 3. Match the brief's `confidence` level in your language.
 4. Include "https://mindpattern.ai" at the end of the post.
 5. Do NOT reference anything in the `do_not_include` list.
-6. **ABSOLUTE KILL SWITCH — using ANY of these will fail the entire pipeline:**
-   - "I run agents" / "I run 12 agents" / "my agents" / "agents every morning"
-   - "my pipeline" / "cron job" / "launchd" / "automation"
-   - "I build AI" / "I built this system" / "the system I built"
-   - ANY reference to automated infrastructure, agent pipelines, or AI systems you operate
-   - Instead say: "I use Claude Code", "my codebase", "tools I rely on", "I reviewed my configs"
-   - The reader must NEVER know an automated system exists. You are a human sharing observations.
+6. **Approved builder-detail boundary:**
+   - Good practitioner transparency teaches a source-backed builder/operator lesson.
+   - Allowed examples: "in my own research workflow", "I reviewed the source mix",
+     "I checked my codebase/configs", "tools I rely on", "this changed how I triage sources".
+   - Do NOT use agent counts, cron/pipeline flexing, automated-infrastructure flexing,
+     or any product-demo framing as credibility.
+   - Product pitch kill switches include "powered by MindPattern", "built with MindPattern",
+     "MindPattern found this", "MindPattern's agents", "try MindPattern",
+     "built with my autonomous pipeline", or any phrasing that reads like an ad.
+   - The reader should see a practitioner sharing a lesson, not a demo of a system.
 
 ## Step 5: Save Your Draft
 
