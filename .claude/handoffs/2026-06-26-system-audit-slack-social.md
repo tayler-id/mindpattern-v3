@@ -125,6 +125,119 @@ Still not done until explicitly run:
   4. confirm `draft` waits for approval and does not post by itself.
 - Optional Social Ideas Desk remains deferred and social-only.
 
+## Features 17, 18, 20, and 21 Spec Draft - 2026-06-28
+
+Created the spec and dependency-ordered implementation plan for the next
+feature bundle:
+
+- Feature 17: Narrative Arc Builder
+- Feature 18: Social Angle Lab
+- Feature 20: Audio Morning Briefing
+- Feature 21: Short-Form Video Script Mode
+
+Primary files:
+
+- `docs/runbooks/2026-06-28-features-17-18-20-21-media-arcs-runbook.md`
+- `docs/runbooks/2026-06-28-features-17-18-20-21-media-arcs-implementation-plan.md`
+
+Scope decisions captured in the runbook:
+
+- Feature 20 is not a dashboard feature. It should generate audio from the
+  newsletter/research pipeline in MindPattern v3 and render it on the public
+  Rabbit Hole site at `/Users/taylerramsay/Projects/mindpattern-rabbit-hole`.
+- Feature 21 starts as Slack-ready video script packages with source evidence,
+  captions, shot lists, and manual-publish labels. Actual MP4 generation is
+  optional and requires explicit approval for provider/dependency choices.
+- Feature 18 must use the existing Slack-bot-first social workflow. It can hand
+  selected angles to the existing approval-gated social draft path, but it must
+  not auto-post.
+- Feature 17 creates source-backed narrative arc artifacts for synthesis,
+  social angles, audio, and video scripts. It should not force newsletter story
+  selection or require Slack approval before the daily newsletter runs.
+
+Research sources checked for the spec include official/current docs for OpenAI
+TTS/video APIs, Slack external file uploads, Vercel Blob and Next.js route
+handlers/static assets, C2PA/c2patool provenance, OWASP LLM Top 10, Microsoft
+GraphRAG, Graphiti, Remotion, and FFmpeg. Agent Reach was checked with
+`agent-reach doctor --json` during this planning pass.
+
+The new-feature ideas table now has a persistent `Done` column. Rows 17, 18,
+20, and 21 are marked `No - spec ready`; row 24 Ask Follow-Up is marked `Yes`
+with local/CI evidence; row 25 Social Ideas Desk remains `Deferred`.
+
+Planning follow-up: the implementation plan now includes phase checkpoints and
+fixes the dependency order so Social Angle Lab wires `draft <n>` first, while
+`video angle <n>` is handled later in the Feature 21 video-script phase after
+the video package service exists.
+
+Owner follow-up on 2026-06-28: add an Opus 4.8 execution gate. The runbook and
+implementation plan now require a run/review with Opus 4.8 before substantial
+implementation continues, unless Tayler explicitly approves continuing in a
+non-Opus execution environment.
+
+No implementation, tests, deploy, full pipeline run, Vercel change, Fly change,
+schema change, or provider dependency install was performed for Features 17,
+18, 20, or 21 in this spec pass.
+
+## Features 17/18/20/21 Opus 4.8 Approval Gate - 2026-06-28
+
+Task 0 (Opus 4.8 runbook/plan review gate) is complete. Reviewed by Opus 4.8
+(`claude-opus-4-8[1m]`) acting purely as an approval gate; no feature code was
+implemented, nothing was committed, and no deploy/pipeline/schema/dependency
+action was taken.
+
+Verdict: **APPROVED TO CONTINUE**, conditional on the required edits below being
+made before the specific tasks they gate.
+
+Evidence reviewed:
+
+- Runbook and implementation plan read in full.
+- Hard requirements verified at the spec level: F17 enrichment-only; F18 Angle
+  Critic reads as a skeptical assigning editor (focus, why-now, audience value,
+  evidence strength, tension, specificity, Tayler fit, risk calibration, hard
+  kill switches), not a generic ranker; F20 publishes to the Rabbit Hole site
+  through the v3 public read-only API, not the old dashboard UI; F21 is
+  Slack-script-only with MP4/provider work owner-gated.
+- Task 2 foundation slice (`orchestrator/media_contracts.py` +
+  `tests/test_media_artifact_contracts.py`) judged acceptable; redaction,
+  date/slug/path validation, and traversal guards are solid.
+  `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py -q`
+  -> 6 passed.
+
+Conditional required edits (binding before the gated task):
+
+1. F17 enrichment-only must be made enforceable. Arcs may be injected ONLY into
+   synthesis pass 2 / narrative context (runner.py:1356), NEVER into
+   `_balance_story_candidates()` (runner.py:1196) or pass-1 story selection
+   ("Select exactly 5 stories", runner.py:1234). Add a regression test asserting
+   the pass-1 selected story set is identical with and without arcs for the same
+   fixtures. Gates Tasks 4-6.
+2. F18 writer/expeditor conflict is a hard deadlock, not a soft disagreement:
+   `social/writers.py:310-316` makes "I run 12 agents" / "my pipeline" an
+   absolute pipeline-failing kill switch, while `agents/expeditor.md:70-72`
+   flags-for-revision any draft that lacks one of those exact strings. The two
+   prompts contradict on identical tokens, so live `#mp-posts` likely already
+   loops or fails. Capture an explicit owner-approved boundary (hide-infra vs.
+   show-builder-credibility) and reconcile both prompts + tests BEFORE Task 8.
+3. F18 angle artifacts must be pinned under gitignored
+   `reports/ramsay/social-angles/`. `data/social-angles/` is NOT gitignored
+   (proven: tracked `data/social-drafts/eic-topic.json`), so the `data/` option
+   would commit angle content. Resolve the runbook's "data/ vs reports/"
+   ambiguity in favor of the ignored path or add an explicit `.gitignore` entry.
+
+Non-blocking notes for implementers:
+
+- Generated audio/arc/video artifacts under `reports/` are already safe
+  (`.gitignore` line 25 ignores `reports/`). Keep all generated media there.
+- F20's "first adapter = OpenAI TTS" introduces a paid third-party provider and
+  new credentials — a departure from the subscription-only posture. The dry-run
+  MVP must be fully functional with deterministic output and no OpenAI
+  dependency; live TTS stays owner-gated. Consider local macOS `say` as a
+  zero-cost local TTS option for dev/dry-run.
+- `dashboard/routes/api.py` is the public API layer, not the dashboard viewer
+  UI; adding read-only audio/arc endpoints there satisfies the "not the
+  dashboard" requirement. Do not build a viewer UI in the dashboard for F20.
+
 ## System Map
 
 MindPattern v3 is a Python 3.14 autonomous daily research pipeline.
@@ -679,39 +792,42 @@ Important caveats:
 These are new product/platform ideas, not repairs. They assume the broken
 source, newsletter quality, and Slack approval paths are stabilized first.
 
-| # | New feature | What it adds | Why it matters | Likely systems | Effort / Risk | Success signal |
-|---|---|---|---|---|---|---|
-| 1 | Slack Social Ideas Desk | A dedicated Slack command that shows social post ideas with draft/save/revise/reject/follow-up actions. | Turns Slack into a social planning room without touching newsletter story selection or sending. | `slack_bot`, `memory.db`, `reports`, social drafts | M / Med | User can review social post ideas, create drafts, and request follow-up from one Slack thread. |
-| 2 | Topic Watchlists | User-defined topics like "agent security", "AI IDEs", "MCP", or "SaaS disruption" with custom depth and priority. | Lets the system intentionally track what matters instead of only reacting to feeds. | `memory`, `preflight`, dashboard | M / Low | Watchlist topics appear with coverage and freshness scores. |
-| 3 | Trend Radar Dashboard | Visual map of rising topics, sources, companies, people, and tools over 7/30/90 days. | Makes research direction visible and helps spot momentum before it becomes obvious. | dashboard, embeddings, `run_quality` | L / Med | Dashboard shows trend clusters and velocity. |
-| 4 | Opportunity Brief Generator | Converts research into "what to build / sell / write / test next" briefs. | Moves beyond newsletter summarization into actionable strategy. | `orchestrator`, memory, dashboard | M / Med | Each issue can produce 3-5 opportunity briefs. |
-| 5 | Personal AI Research Assistant Chat | Ask questions over findings, newsletters, source archive, and vault memory. | Turns the archive into an interactive product instead of static history. | dashboard, embeddings, reports | L / Med | User can ask "what did we learn about MCP security this month?" |
-| 6 | Story Lifecycle Tracker | Tracks a story from first signal to follow-up coverage, newsletter inclusion, social draft, and user feedback. | Prevents repeated stale coverage while preserving valuable follow-ups. | memory, reports, social | M / Med | Each major story has first-seen, used-in, and follow-up history. |
-| 7 | Audience Feedback Portal | Lightweight page where readers can rate stories, request more/less, and submit topic requests. | Creates structured reader feedback instead of relying only on email replies. | dashboard, feedback tables | M / Low | Feedback records flow into preferences. |
-| 8 | Reader Segment Editions | Generate optional editions for builder, founder, investor, or security-reader emphasis. | Lets one research run serve multiple audiences without diluting the main issue. | newsletter synthesis, preferences | L / Med | Same findings produce multiple distinct issue variants. |
-| 9 | Weekly Strategy Memo | A Friday memo that synthesizes the week's patterns, not just daily stories. | Adds higher-level value and avoids daily-only short-termism. | reports, synthesis, memory | M / Low | Weekly memo cites the week's strongest evidence. |
-| 10 | "Why This Matters" Cards | For each major story, generate a concise card: what happened, why now, who cares, what to do. | Makes content easier to reuse in Slack, social, and dashboard. | newsletter, dashboard, social | M / Low | Cards generated for top stories every day. |
-| 11 | Source Trust Ledger | Tracks source reliability, freshness, uniqueness, and historical usefulness. | Helps the system prefer strong sources and explain why weak ones were downgraded. | preflight, memory, dashboard | M / Low | Top sources have trust/novelty scores. |
-| 12 | Company/Product Tracker | Follow specific companies, repos, products, and standards over time. | Useful for recurring intelligence on important players. | preflight, memory graph | M / Low | Dashboard shows timeline per company/product. |
-| 13 | GitHub Project Radar | Dedicated view for fast-rising repos, maintainers, funding, releases, and adoption signals. | Converts GitHub data into a real discovery product. | preflight GitHub, dashboard | M / Low | Radar highlights new projects before mainstream coverage. |
-| 14 | MCP/Agent Tool Registry | Searchable registry of tools, MCP servers, CLIs, install commands, health, and use cases. | Builds on the platform's existing agent-tool focus and makes it reusable. | dashboard, memory, agent-reach | M / Med | User can search "best YouTube transcript tools" and get vetted options. |
-| 15 | Build Recipe Generator | Converts "Skill of the Day" style findings into step-by-step implementation recipes. | Makes the newsletter directly useful to builders. | skill-finder, newsletter, dashboard | M / Low | Recipes include steps, prerequisites, and source links. |
-| 16 | Experiment Backlog | Auto-generates product/code experiments from research and stores them as candidate tickets. | Bridges research into actual building work. | harness, memory, dashboard | M / Med | Findings can create ranked experiment cards. |
-| 17 | Narrative Arc Builder | Tracks multi-day arcs like "AI IDEs consolidate" or "agent governance becomes a category." | Produces deeper analysis than isolated daily items. | memory graph, synthesis | L / Med | Issues can include recurring arcs with evidence trails. |
-| 18 | Social Angle Lab | For any story, generate multiple social angles: contrarian, builder lesson, market take, tactical tip. | Gives the Slack bot richer choices without auto-posting. | Slack bot, social writers | M / Low | `#mp-posts` can ask for angle variants. |
-| 19 | Content Swipe File | Saves strongest hooks, openers, titles, analogies, and post formats from past successful content. | Improves voice and speed over time. | memory, social, dashboard | M / Low | Bot can reuse proven structures without copying old content. |
-| 20 | Audio Morning Briefing | Generate a short spoken briefing from the daily issue or top research. | Adds a useful consumption mode for mornings. | newsletter, TTS provider, dashboard | M / Med | User can play a 3-5 minute briefing. |
-| 21 | Short-Form Video Script Mode | Converts a selected story into a 30-60 second video script and shot list. | Expands content output beyond newsletter and text social. | Slack bot, social writers | M / Low | Slack returns script, caption, and B-roll notes. |
-| 22 | Newsletter Section A/B Lab | Test alternate section ordering, titles, or framing against user/reader feedback. | Lets quality improve from evidence, not taste alone. | newsletter, feedback, evaluator | L / Med | Version metrics show which framing performs better. |
-| 23 | Personal Knowledge Graph Explorer | Browse entities, topics, sources, and story relationships from the vault/database. | Makes the accumulated research legible. | memory graph, dashboard | L / Med | User can navigate from topic to stories to sources. |
-| 24 | "Ask Follow-Up" Research Button | From a newsletter story or Slack draft, trigger a deeper follow-up research run. | Lets human curiosity steer the next layer of research. | Slack bot, orchestrator agents | M / Med | One Slack command launches scoped follow-up and returns findings. |
-| 25 | Slack Social Ideas Desk | A dedicated Slack command that shows social post ideas with draft/save/revise/reject/follow-up actions. | Turns Slack into a social planning room without touching newsletter story selection or sending. | Slack bot, memory, reports, social drafts | M / Med | User can review social post ideas, create drafts, and request follow-up from one Slack thread. |
-| 26 | Competitive Landscape Maps | For a topic, produce a market map of companies, tools, categories, and open-source projects. | Useful for strategy and product opportunity discovery. | preflight, synthesis, dashboard | L / Med | Topic page shows category map with sources. |
-| 27 | Decision Journal | Track editorial/product decisions made from the research and whether they paid off. | Closes the loop between insight and action. | vault, dashboard, memory | M / Low | Decisions link to source evidence and later outcomes. |
-| 28 | Public Collections | Curated public pages like "Best AI agent tools this month" or "MCP security brief." | Turns private research into shareable assets. | dashboard, reports | M / Med | Collection page can be published from selected findings. |
-| 29 | Sponsor/Partner Match Finder | Finds companies/tools that match newsletter themes and audience. | Creates monetization/business-development options without changing editorial flow. | research agents, dashboard | M / Med | Weekly list of relevant sponsor/partner leads. |
-| 30 | Personal Engagement CRM | Track people engaged with on Bluesky/LinkedIn, conversation history, follow-ups, and outcomes. | Makes engagement strategic instead of one-off replies. | social engagement, memory, dashboard | M / Med | Contact timeline shows replies, topics, and next actions. |
-| 31 | Research API / Webhooks | Expose selected findings, cards, and briefs to other tools through API/webhooks. | Lets MindPattern become infrastructure for other workflows. | FastAPI dashboard, auth, memory | L / High | Authenticated endpoint returns current findings/cards. |
+Keep the `Done` column in this table. Future agents should update the value in
+place instead of deleting the column.
+
+| # | Done | New feature | What it adds | Why it matters | Likely systems | Effort / Risk | Success signal |
+|---|---|---|---|---|---|---|---|
+| 1 | No | Slack Social Ideas Desk | A dedicated Slack command that shows social post ideas with draft/save/revise/reject/follow-up actions. | Turns Slack into a social planning room without touching newsletter story selection or sending. | `slack_bot`, `memory.db`, `reports`, social drafts | M / Med | User can review social post ideas, create drafts, and request follow-up from one Slack thread. |
+| 2 | No | Topic Watchlists | User-defined topics like "agent security", "AI IDEs", "MCP", or "SaaS disruption" with custom depth and priority. | Lets the system intentionally track what matters instead of only reacting to feeds. | `memory`, `preflight`, dashboard | M / Low | Watchlist topics appear with coverage and freshness scores. |
+| 3 | No | Trend Radar Dashboard | Visual map of rising topics, sources, companies, people, and tools over 7/30/90 days. | Makes research direction visible and helps spot momentum before it becomes obvious. | dashboard, embeddings, `run_quality` | L / Med | Dashboard shows trend clusters and velocity. |
+| 4 | No | Opportunity Brief Generator | Converts research into "what to build / sell / write / test next" briefs. | Moves beyond newsletter summarization into actionable strategy. | `orchestrator`, memory, dashboard | M / Med | Each issue can produce 3-5 opportunity briefs. |
+| 5 | No | Personal AI Research Assistant Chat | Ask questions over findings, newsletters, source archive, and vault memory. | Turns the archive into an interactive product instead of static history. | dashboard, embeddings, reports | L / Med | User can ask "what did we learn about MCP security this month?" |
+| 6 | No | Story Lifecycle Tracker | Tracks a story from first signal to follow-up coverage, newsletter inclusion, social draft, and user feedback. | Prevents repeated stale coverage while preserving valuable follow-ups. | memory, reports, social | M / Med | Each major story has first-seen, used-in, and follow-up history. |
+| 7 | No | Audience Feedback Portal | Lightweight page where readers can rate stories, request more/less, and submit topic requests. | Creates structured reader feedback instead of relying only on email replies. | dashboard, feedback tables | M / Low | Feedback records flow into preferences. |
+| 8 | No | Reader Segment Editions | Generate optional editions for builder, founder, investor, or security-reader emphasis. | Lets one research run serve multiple audiences without diluting the main issue. | newsletter synthesis, preferences | L / Med | Same findings produce multiple distinct issue variants. |
+| 9 | No | Weekly Strategy Memo | A Friday memo that synthesizes the week's patterns, not just daily stories. | Adds higher-level value and avoids daily-only short-termism. | reports, synthesis, memory | M / Low | Weekly memo cites the week's strongest evidence. |
+| 10 | No | "Why This Matters" Cards | For each major story, generate a concise card: what happened, why now, who cares, what to do. | Makes content easier to reuse in Slack, social, and dashboard. | newsletter, dashboard, social | M / Low | Cards generated for top stories every day. |
+| 11 | No | Source Trust Ledger | Tracks source reliability, freshness, uniqueness, and historical usefulness. | Helps the system prefer strong sources and explain why weak ones were downgraded. | preflight, memory, dashboard | M / Low | Top sources have trust/novelty scores. |
+| 12 | No | Company/Product Tracker | Follow specific companies, repos, products, and standards over time. | Useful for recurring intelligence on important players. | preflight, memory graph | M / Low | Dashboard shows timeline per company/product. |
+| 13 | No | GitHub Project Radar | Dedicated view for fast-rising repos, maintainers, funding, releases, and adoption signals. | Converts GitHub data into a real discovery product. | preflight GitHub, dashboard | M / Low | Radar highlights new projects before mainstream coverage. |
+| 14 | No | MCP/Agent Tool Registry | Searchable registry of tools, MCP servers, CLIs, install commands, health, and use cases. | Builds on the platform's existing agent-tool focus and makes it reusable. | dashboard, memory, agent-reach | M / Med | User can search "best YouTube transcript tools" and get vetted options. |
+| 15 | No | Build Recipe Generator | Converts "Skill of the Day" style findings into step-by-step implementation recipes. | Makes the newsletter directly useful to builders. | skill-finder, newsletter, dashboard | M / Low | Recipes include steps, prerequisites, and source links. |
+| 16 | No | Experiment Backlog | Auto-generates product/code experiments from research and stores them as candidate tickets. | Bridges research into actual building work. | harness, memory, dashboard | M / Med | Findings can create ranked experiment cards. |
+| 17 | No - spec ready | Narrative Arc Builder | Tracks multi-day arcs like "AI IDEs consolidate" or "agent governance becomes a category." | Produces deeper analysis than isolated daily items. | memory graph, synthesis | L / Med | Issues can include recurring arcs with evidence trails. |
+| 18 | No - spec ready | Social Angle Lab | For any story, generate multiple social angles: contrarian, builder lesson, market take, tactical tip. | Gives the Slack bot richer choices without auto-posting. | Slack bot, social writers | M / Low | `#mp-posts` can ask for angle variants. |
+| 19 | No | Content Swipe File | Saves strongest hooks, openers, titles, analogies, and post formats from past successful content. | Improves voice and speed over time. | memory, social, dashboard | M / Low | Bot can reuse proven structures without copying old content. |
+| 20 | No - spec ready | Audio Morning Briefing | Generate a short spoken briefing from the daily issue or top research and publish it to the Rabbit Hole website, not the old dashboard. | Adds a useful consumption mode for mornings. | newsletter, TTS provider, v3 API, Rabbit Hole site | M / Med | User can play a 3-5 minute briefing on the public site. |
+| 21 | No - spec ready | Short-Form Video Script Mode | Converts a selected story into a 30-60 second video script and shot list, then posts the package to Slack for manual social publishing. | Expands content output beyond newsletter and text social without auto-posting. | Slack bot, social writers, optional media provider | M / Low | Slack returns script, caption, B-roll notes, source links, and manual-publish labels. |
+| 22 | No | Newsletter Section A/B Lab | Test alternate section ordering, titles, or framing against user/reader feedback. | Lets quality improve from evidence, not taste alone. | newsletter, feedback, evaluator | L / Med | Version metrics show which framing performs better. |
+| 23 | No | Personal Knowledge Graph Explorer | Browse entities, topics, sources, and story relationships from the vault/database. | Makes the accumulated research legible. | memory graph, dashboard | L / Med | User can navigate from topic to stories to sources. |
+| 24 | Yes | "Ask Follow-Up" Research Button | From a newsletter story or Slack draft, trigger a deeper follow-up research run. | Lets human curiosity steer the next layer of research. | Slack bot, orchestrator agents | M / Med | Implemented locally/CI: `#mp-briefing` and draft threads accept follow-up, four focused agents fan out, and `cover`/`draft`/`archive`/`ignore` actions are tested. Live smoke remains owner-approved. |
+| 25 | Deferred | Slack Social Ideas Desk | A dedicated Slack command that shows social post ideas with draft/save/revise/reject/follow-up actions. | Turns Slack into a social planning room without touching newsletter story selection or sending. | Slack bot, memory, reports, social drafts | M / Med | User can review social post ideas, create drafts, and request follow-up from one Slack thread. |
+| 26 | No | Competitive Landscape Maps | For a topic, produce a market map of companies, tools, categories, and open-source projects. | Useful for strategy and product opportunity discovery. | preflight, synthesis, dashboard | L / Med | Topic page shows category map with sources. |
+| 27 | No | Decision Journal | Track editorial/product decisions made from the research and whether they paid off. | Closes the loop between insight and action. | vault, dashboard, memory | M / Low | Decisions link to source evidence and later outcomes. |
+| 28 | No | Public Collections | Curated public pages like "Best AI agent tools this month" or "MCP security brief." | Turns private research into shareable assets. | dashboard, reports | M / Med | Collection page can be published from selected findings. |
+| 29 | No | Sponsor/Partner Match Finder | Finds companies/tools that match newsletter themes and audience. | Creates monetization/business-development options without changing editorial flow. | research agents, dashboard | M / Med | Weekly list of relevant sponsor/partner leads. |
+| 30 | No | Personal Engagement CRM | Track people engaged with on Bluesky/LinkedIn, conversation history, follow-ups, and outcomes. | Makes engagement strategic instead of one-off replies. | social engagement, memory, dashboard | M / Med | Contact timeline shows replies, topics, and next actions. |
+| 31 | No | Research API / Webhooks | Expose selected findings, cards, and briefs to other tools through API/webhooks. | Lets MindPattern become infrastructure for other workflows. | FastAPI dashboard, auth, memory | L / High | Authenticated endpoint returns current findings/cards. |
 
 ## Mixed Repair and Improvement Backlog
 
