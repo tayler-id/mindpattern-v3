@@ -965,8 +965,9 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 18 Task 9, wire the `#mp-posts` angle command.
-  Task 8 is complete locally; angle artifacts stay in gitignored
+- Current next task: Feature 18 Task 10, wire selected social angle handoff to
+  the existing approval-gated `#mp-posts` draft flow. Task 9 is complete
+  locally; angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
   now provides a pure strict parser/contract for `angles:`, `angle lab:`,
@@ -988,6 +989,14 @@ place instead of deleting the column.
   `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 10
   passed. Grep confirmed old conflicting phrases absent from `agents/` and
   `social/writers.py`.
+- Feature 18 Task 9 status: implemented locally. `#mp-posts` now intercepts
+  Social Angle Lab commands before URL/idea handling, runs deterministic angle
+  generation, and posts ranked candidates in-thread with source/artifact
+  evidence and an explicit "No live post" label. Vague or invalid angle
+  commands reply with guidance and do not fall through to the social pipeline.
+  Verification: `.venv/bin/python3 -m pytest tests/test_slack_bot.py::TestPostsAngleCommand -q`
+  -> 3 passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 94
+  passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.

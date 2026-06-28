@@ -518,6 +518,112 @@ class TestPostsEditFlow:
         assert "Skipped. Nothing posted." in messages[-1]
 
 
+class TestPostsAngleCommand:
+    """#mp-posts Social Angle Lab commands should not run/post drafts."""
+
+    @staticmethod
+    def _handler():
+        from slack_bot.handlers.posts import PostsHandler
+
+        client = MagicMock()
+        handler = PostsHandler(
+            client=client,
+            channel_id="C_POSTS",
+            owner_user_id="U_OWNER",
+        )
+        handler.react = MagicMock()
+        handler._run_and_approve = MagicMock()
+        handler._handle_url = MagicMock()
+        handler._handle_idea = MagicMock()
+        return handler, client
+
+    def test_angles_url_posts_ranked_variants_without_pipeline_or_posting(self):
+        handler, client = self._handler()
+        result = {
+            "status": "completed",
+            "mode": "dry_run",
+            "shown_angles": [
+                {
+                    "angle_id": "angle_1",
+                    "angle_type": "builder_lesson",
+                    "platform": "linkedin",
+                    "hook": "What source reliability changes in my own research workflow.",
+                    "thesis": "Source reliability matters before drafting.",
+                    "source_urls": ["https://example.com/story"],
+                    "score": 8.4,
+                    "verdict": "keep",
+                    "risk_note": "Source-backed.",
+                    "kill_switches": [],
+                },
+                {
+                    "angle_id": "angle_2",
+                    "angle_type": "contrarian_take",
+                    "platform": "bluesky",
+                    "hook": "The issue is reliability, not reach.",
+                    "thesis": "More sources do not automatically mean better sources.",
+                    "source_urls": ["https://example.com/story"],
+                    "score": 7.6,
+                    "verdict": "revise",
+                    "risk_note": "Tighten why-now.",
+                    "kill_switches": [],
+                },
+            ],
+            "summary": {"generated_count": 3, "shown_count": 2, "rejected_count": 1},
+            "artifact": "/tmp/social-angles.json",
+            "error": None,
+        }
+
+        with patch("slack_bot.handlers.posts.generate_social_angles", return_value=result) as generate:
+            handler.handle({
+                "text": "angles: https://example.com/story",
+                "ts": "123.456",
+            })
+
+        generate.assert_called_once()
+        handler._run_and_approve.assert_not_called()
+        handler._handle_url.assert_not_called()
+        handler._handle_idea.assert_not_called()
+        handler.react.assert_called_once_with("dart", "123.456")
+
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "Social Angle Lab" in text
+        assert "angle_1" in text
+        assert "builder_lesson" in text
+        assert "draft <n>" not in text
+        assert "No live post" in text
+        assert "https://example.com/story" in text
+
+    def test_vague_angle_command_replies_error_and_does_not_fall_through(self):
+        handler, client = self._handler()
+
+        handler.handle({"text": "angles: more", "ts": "123.456"})
+
+        handler._run_and_approve.assert_not_called()
+        handler._handle_url.assert_not_called()
+        handler._handle_idea.assert_not_called()
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "specific" in text.lower()
+
+    def test_angle_command_reports_no_draftable_angles_visibly(self):
+        handler, client = self._handler()
+        result = {
+            "status": "completed",
+            "mode": "dry_run",
+            "shown_angles": [],
+            "summary": {"generated_count": 6, "shown_count": 0, "rejected_count": 6},
+            "artifact": "/tmp/social-angles.json",
+            "error": None,
+        }
+
+        with patch("slack_bot.handlers.posts.generate_social_angles", return_value=result):
+            handler.handle({"text": "angles: no source yet", "ts": "123.456"})
+
+        handler._run_and_approve.assert_not_called()
+        text = client.chat_postMessage.call_args.kwargs["text"]
+        assert "No draftable angles" in text
+        assert "source" in text.lower()
+
+
 class TestSkillsTipsEditFlow:
     """#mp-skills and #mp-tips must support safe draft edits."""
 

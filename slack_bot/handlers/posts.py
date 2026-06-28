@@ -27,6 +27,7 @@ from slack_bot.handlers.followup import (
     handle_followup_action_reply,
     handle_followup_reply,
 )
+from orchestrator.social_angles import generate_social_angles, parse_social_angle_request
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,18 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 # Add project root to path so we can import pipeline modules
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _angle_source_context(request: dict) -> dict:
+    """Build minimal source context for the pure angle generator."""
+    source_urls = []
+    if request.get("url"):
+        source_urls.append(request["url"])
+    return {
+        "title": request.get("query_preview") or request.get("query") or "Social angle",
+        "summary": "Slack Social Angle Lab request.",
+        "source_urls": source_urls,
+    }
 
 
 class PostsHandler(BaseHandler):
@@ -56,6 +69,11 @@ class PostsHandler(BaseHandler):
                 "then post drafts back for your approval.",
                 thread_ts=ts,
             )
+            return
+
+        angle_request = parse_social_angle_request(text, channel_type="posts")
+        if angle_request is not None:
+            self._handle_angle_request(angle_request, ts)
             return
 
         # Extract URLs from the message
@@ -99,6 +117,69 @@ class PostsHandler(BaseHandler):
             thread_ts=ts,
         )
         self._run_and_approve(topic, ts)
+
+    def _handle_angle_request(self, request: dict, ts: str) -> None:
+        """Handle Social Angle Lab commands without running/posting drafts."""
+        if request.get("error"):
+            self.reply(request["error"], thread_ts=ts)
+            return
+
+        self.react("dart", ts)
+        result = generate_social_angles(
+            request,
+            date=datetime.now().strftime("%Y-%m-%d"),
+            user="ramsay",
+            reports_root=PROJECT_ROOT / "reports",
+            dry_run=True,
+            source_context=_angle_source_context(request),
+        )
+        self.reply(self._format_angle_result(result), thread_ts=ts)
+
+    def _format_angle_result(self, result: dict) -> str:
+        """Format ranked social angles for Slack review."""
+        status = result.get("status", "unknown")
+        summary = result.get("summary") or {}
+        shown = result.get("shown_angles") or []
+        lines = [
+            f"*Social Angle Lab*: {status}",
+            (
+                "No live post. These are angle candidates only; the normal "
+                "social approval loop is not running."
+            ),
+            (
+                f"Generated {summary.get('generated_count', 0)}; "
+                f"showing {summary.get('shown_count', 0)}; "
+                f"rejected {summary.get('rejected_count', 0)}."
+            ),
+        ]
+        if result.get("error"):
+            lines.append(f"Error: {result['error']}")
+            return "\n".join(lines)
+
+        if not shown:
+            lines.extend([
+                "",
+                "No draftable angles. Add a source URL, finding ID, or narrative arc with evidence before drafting.",
+            ])
+        else:
+            lines.extend(["", "*Ranked angles:*"])
+            for idx, angle in enumerate(shown[:6], 1):
+                sources = ", ".join(angle.get("source_urls") or [])
+                lines.append(
+                    f"{idx}. `{angle.get('angle_id', f'angle_{idx}')}` "
+                    f"{angle.get('angle_type', 'angle')} for "
+                    f"{angle.get('platform', 'social')} "
+                    f"({angle.get('verdict', 'unknown')}, score {angle.get('score', 0)})\n"
+                    f"   Hook: {angle.get('hook', '')}\n"
+                    f"   Thesis: {angle.get('thesis', '')}\n"
+                    f"   Risk: {angle.get('risk_note', '')}"
+                )
+                if sources:
+                    lines.append(f"   Sources: {sources}")
+
+        if result.get("artifact"):
+            lines.append(f"Artifact: `{result['artifact']}`")
+        return "\n".join(lines)
 
     def _handle_idea(self, idea: str, ts: str) -> None:
         """Handle a text idea — use the idea directly as the topic."""
