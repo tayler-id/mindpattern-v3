@@ -965,12 +965,24 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 18 Task 7, social angle contract/parser. Before
-  Task 8, the owner-approved builder-detail boundary must be captured and
-  `social/writers.py` must be reconciled with `agents/expeditor.md`; current
-  prompt rules conflict on whether builder/process language is forbidden or
-  required. Angle artifacts must stay in gitignored
-  `reports/ramsay/social-angles/`, not `data/social-angles/`.
+- Current next task: Feature 18 Task 8, builder-detail boundary plus angle
+  generation/critic. Before Task 8 code starts, the owner-approved
+  builder-detail boundary must be captured and `social/writers.py` must be
+  reconciled with `agents/expeditor.md`; current prompt rules conflict on
+  whether builder/process language is forbidden or required. Angle artifacts
+  must stay in gitignored `reports/ramsay/social-angles/`, not
+  `data/social-angles/`.
+- Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
+  now provides a pure strict parser/contract for `angles:`, `angle lab:`,
+  `angles finding <id>`, and `angles arc <arc_id>`, rejects unclear or
+  newsletter-control commands, redacts sensitive request previews, pins angle
+  artifacts to `reports/<user>/social-angles/YYYY-MM-DD.json`, and defines the
+  public `SocialAngleCandidate` contract. Verification:
+  `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 6 passed.
+- Feature 18 must now stop at Task 8 until the owner approves the
+  builder-detail boundary. Do not edit `social/writers.py`,
+  `agents/expeditor.md`, generation prompts, or Slack angle output before that
+  boundary is explicit.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.
