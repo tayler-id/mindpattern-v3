@@ -965,8 +965,8 @@ place instead of deleting the column.
   -> 12 passed; combined focused suite
   `.venv/bin/python3 -m pytest tests/test_media_artifact_contracts.py tests/test_narrative_arcs.py tests/test_runner.py::TestPhaseSynthesis tests/test_evaluator.py -q`
   -> 34 passed.
-- Current next task: Feature 20 Task 11, audio script builder. Feature 18
-  Tasks 7-10 are complete locally. Angle artifacts stay in gitignored
+- Current next task: Feature 20 Task 12, TTS provider boundary. Feature 18
+  Tasks 7-10 and Feature 20 Task 11 are complete locally. Angle artifacts stay in gitignored
   `reports/ramsay/social-angles/`, not `data/social-angles/`.
 - Feature 18 Task 7 status: implemented locally. `orchestrator/social_angles.py`
   now provides a pure strict parser/contract for `angles:`, `angle lab:`,
@@ -1004,6 +1004,15 @@ place instead of deleting the column.
   `.venv/bin/python3 -m pytest tests/test_social_angle_lab.py -q` -> 12
   passed; `.venv/bin/python3 -m pytest tests/test_slack_bot.py -q` -> 96
   passed.
+- Feature 20 Task 11 status: implemented locally. Added pure
+  `orchestrator/audio_briefing.py` script builder that converts report markdown
+  into spoken prose, transcript markdown, source notes, hashes, and
+  AI-generated/manual-publish labels. It strips tables, fenced code, raw URLs,
+  and markdown noise from spoken script; preserves markdown source links in show
+  notes; and marks visible quality-floor degraded reports as degraded.
+  Verification: `.venv/bin/python3 -m pytest tests/test_audio_briefing.py -q`
+  -> 4 passed; `.venv/bin/python3 -m pytest tests/test_audio_briefing.py tests/test_media_artifact_contracts.py -q`
+  -> 10 passed.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, TTS/video
   provider call, or Rabbit Hole repo edit has been run for this feature slice.
