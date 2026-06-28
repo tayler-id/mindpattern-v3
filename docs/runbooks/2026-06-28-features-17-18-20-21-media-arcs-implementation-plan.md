@@ -90,7 +90,7 @@ of deleting the column.
 | 17 | 21 | Implement video script package service | Yes | 2026-06-28: extended `orchestrator/video_scripts.py` with deterministic `generate_video_script_package()` and safe `video_script_artifact_paths()` under gitignored `reports/<user>/video-scripts/YYYY-MM-DD-<slug>.{json,md}`. The service produces one selected 30/45/60 second Slack-ready package with hook, spoken script, shot list, captions, source URLs, claim-to-source evidence, AI-assisted/manual-publish labels, and risk labels. Weak or missing evidence returns a degraded package with follow-up research recommendation and no fabricated claim evidence. Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py -q` -> 9 passed; `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_media_artifact_contracts.py -q` -> 15 passed. |
 | 18 | 21 | Wire #mp-posts video command and angle handoff | Yes | 2026-06-28: `#mp-posts` now intercepts `video script: <topic/url>`, `video finding <id>`, `video arc <id>`, and `video angle <n>` before URL/idea fallback. Direct video commands generate phone-readable Slack script packages with manual-publish labels and safe artifacts; `video angle <n>` works only as a reply after a Social Angle Lab result and uses the selected angle evidence. Finding/arc evidence lookup is read-only and degrades if local evidence is unavailable. Verification: `.venv/bin/python3 -m pytest tests/test_video_scripts.py tests/test_slack_bot.py -q` -> 109 passed. |
 | 19 | 21 | Add Slack file upload helper | Yes | 2026-06-28: added `slack_bot/files.py` external upload helper using Slack's current `files.getUploadURLExternal` -> raw-byte upload -> `files.completeUploadExternal` sequence. The helper requires a parent `thread_ts`, uses `channel_id`, never calls legacy `files.upload`, surfaces missing `files:write`, and keeps auth inside the Slack client. Network/upload is injectable and fully mocked in tests. Verification: `.venv/bin/python3 -m pytest tests/test_slack_files.py tests/test_video_scripts.py -q` -> 15 passed. |
-| 20 | All | Safety regression suite | No | Proves no live social post, newsletter send, full pipeline, deploy, or provider call in tests. |
+| 20 | All | Safety regression suite | Yes | 2026-06-28: added `tests/test_media_feature_safety.py` with cross-feature guards for forbidden outbound/deploy/posting markers, Slack video dry paths, unclear Social Angle Lab replies, mocked Slack file upload boundaries, and public-output redaction. Verification: `.venv/bin/python3 -m pytest tests/test_media_feature_safety.py tests/test_narrative_arcs.py tests/test_social_angle_lab.py tests/test_audio_briefing.py tests/test_video_scripts.py tests/test_social.py tests/test_runner.py::TestDryRunPhases -q` -> 96 passed, 1 Starlette/httpx deprecation warning. |
 | 21 | All | Docs, handoff, Graphify, commits | No | Update Done evidence, run Graphify, commit verified phases. |
 | 22 | Optional | Owner-approved live smoke | Deferred | Requires explicit Fly/Slack/Vercel approval. |
 
@@ -140,7 +140,7 @@ checkpoint is also complete.
 
 ### Checkpoint: Release Hygiene after Tasks 20-21
 
-- [ ] Cross-feature safety regressions pass.
+- [x] Cross-feature safety regressions pass.
 - [ ] Done columns and handoff evidence are updated in place.
 - [ ] Graphify is refreshed and checked.
 - [ ] v3 and Rabbit Hole dirty files are reported.

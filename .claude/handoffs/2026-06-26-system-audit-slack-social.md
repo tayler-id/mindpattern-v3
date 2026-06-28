@@ -1094,6 +1094,15 @@ place instead of deleting the column.
   so tests make no Slack/network calls. Verification:
   `.venv/bin/python3 -m pytest tests/test_slack_files.py tests/test_video_scripts.py -q`
   -> 15 passed.
+- Task 20 safety regression status: implemented locally. Added
+  `tests/test_media_feature_safety.py` to scan new media modules for forbidden
+  outbound/deploy/posting markers, verify Slack video dry paths do not post,
+  upload, or run the social pipeline, verify unclear Social Angle Lab replies
+  change no state, verify Slack file upload tests use the mocked raw-upload
+  boundary, and verify public media output redacts Slack mentions, email, and
+  token-shaped data. Verification:
+  `.venv/bin/python3 -m pytest tests/test_media_feature_safety.py tests/test_narrative_arcs.py tests/test_social_angle_lab.py tests/test_audio_briefing.py tests/test_video_scripts.py tests/test_social.py tests/test_runner.py::TestDryRunPhases -q`
+  -> 96 passed, 1 Starlette/httpx deprecation warning.
 - No full daily pipeline, Fly deploy, Vercel deploy, Slack live smoke,
   newsletter send, social post, schema change, dependency install, or TTS/video
   provider call has been run for this feature slice. Rabbit Hole edits were
