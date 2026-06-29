@@ -511,3 +511,28 @@ def test_feed_endpoint_wraps_findings_for_wire(client):
 
     assert client.get("/api/feed?user=../ramsay").status_code == 200
     assert client.get("/api/feed?user=../ramsay").json()["items"] == []
+
+
+def test_structured_issue_endpoints_parse_public_report(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("structured issue endpoints are verified locally before deploy")
+
+    listing = client.get("/api/issues?user=ramsay")
+    assert listing.status_code == 200
+    issues = listing.json()
+    assert issues
+    assert {"date", "title", "filename", "structured_url"} <= set(issues[0])
+
+    detail = client.get("/api/issues/2026-06-10/structured?user=ramsay")
+    assert detail.status_code == 200
+    issue = detail.json()
+    assert issue["date"] == "2026-06-10"
+    assert issue["slug"] == "2026-06-10"
+    assert issue["provenance"]["generated_by"] == "mindpattern.site_content.issue_splitter"
+    assert "sections" in issue
+    assert "story_units" in issue
+    assert "entities" in issue
+    assert "source_trail" in issue
+
+    assert client.get("/api/issues/2026-99-99/structured?user=ramsay").status_code == 404
+    assert client.get("/api/issues/2026-06-10/structured?user=../ramsay").status_code == 404

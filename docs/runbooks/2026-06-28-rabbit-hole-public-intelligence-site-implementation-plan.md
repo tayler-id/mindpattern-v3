@@ -122,10 +122,10 @@ Keep the `Done` column. Future agents should update this table in place.
 | 3 | 1 | Add semantic `/api/related/{id}` | Yes | Implemented stored-embedding semantic related endpoint with self-exclusion, score/reason fields, unsupported-mode 400, and missing-embedding empty result. Verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q` -> 18 passed. |
 | 4 | 1 | Add `/api/feed` compatibility wrapper | Yes | Implemented forward-compatible feed wrapper over public findings with `items`, `total`, `limit`, `offset`, `kind`, ranks, target URLs. Verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q` -> 18 passed; auth allowlist verified with `tests/test_auth_middleware.py` -> 16 passed. |
 | 5 | 2 | Add public story artifact contracts | No | Not started. |
-| 5A | 2 | Add structured issue artifact contracts | No | Not started. |
-| 5B | 2 | Add newsletter splitter and entity linker | No | Not started. |
+| 5A | 2 | Add structured issue artifact contracts | Yes | Added pure `orchestrator/site_content.py` contracts for structured issues, sections, story units, source refs, entity refs, claim evidence placeholders, and provenance. Verification: `.venv/bin/python3 -m pytest tests/test_site_issue_contracts.py -q` -> 4 passed. |
+| 5B | 2 | Add newsletter splitter and entity linker | Partial | Deterministic markdown splitter now extracts sections, story units, source refs, and simple public entity refs. Finding/arc linking is still unresolved and intentionally not fabricated. Verification: `tests/test_site_issue_contracts.py` -> 4 passed. |
 | 5C | 2 | Add historical newsletter backfill normalizer | No | Not started. |
-| 5D | 2 | Add provenance and JSON-LD-ready graph metadata contracts | No | Not started. |
+| 5D | 2 | Add provenance and JSON-LD-ready graph metadata contracts | Partial | Structured issue output includes provenance, redaction status, source refs, entity refs, and claim evidence placeholders. Story/entity/source/arc metadata contracts still need broader fixture coverage. Verification: `tests/test_site_issue_contracts.py` -> 4 passed. |
 | 6 | 2 | Add confidence gate and safety tests | No | Not started. |
 | 7 | 2 | Add deterministic candidate selector | No | Not started. |
 | 8 | 2 | Add deterministic story generator | No | Not started. |
@@ -133,7 +133,7 @@ Keep the `Done` column. Future agents should update this table in place.
 | 10 | 2 | Add post-newsletter runner hook | No | Not started. |
 | 11 | 3 | Expose public story APIs | No | Not started. |
 | 12 | 3 | Add story API contract fixtures | No | Not started. |
-| 12A | 3 | Expose structured issue/entity/source APIs | No | Not started. |
+| 12A | 3 | Expose structured issue/entity/source APIs | Partial | Added public `/api/issues` and `/api/issues/{date}/structured` from canonical newsletter reports. Entity and source detail APIs remain pending. Verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q` -> 19 passed; auth middleware -> 16 passed. |
 | 12B | 3 | Add structured public graph API fixtures | No | Not started. |
 | 13 | 4 | Add Rabbit Hole story types/helpers | No | Not started. |
 | 14 | 4 | Build `/s/[slug]` story page | No | Not started. |

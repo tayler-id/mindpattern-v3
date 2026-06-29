@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from dashboard.auth import require_auth
 from orchestrator.audio_briefing import audio_artifact_paths
+from orchestrator.site_content import build_structured_issue
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -1029,6 +1030,66 @@ async def search_reports(
             break
 
     return results
+
+
+def _report_file_for_date(*, date: str, user: str) -> Path | None:
+    if _valid_run_date(date) is None or _safe_user(user) is None:
+        return None
+    reports_dir = REPORTS_DIR / user
+    if not reports_dir.exists():
+        return None
+    matches = list(reports_dir.glob(f"{date}*.md"))
+    if not matches:
+        return None
+    target = matches[0]
+    for match in matches:
+        if "debug" not in match.name and "stderr" not in match.name:
+            target = match
+            break
+    try:
+        target.resolve().relative_to(reports_dir.resolve())
+    except ValueError:
+        return None
+    return target
+
+
+@router.get("/api/issues")
+async def list_structured_issues(user: str = Query("ramsay")):
+    """Public: list newsletter issues with structured API links."""
+    if _safe_user(user) is None:
+        return []
+    reports = await list_reports(user=user)
+    return [
+        {
+            "date": report["date"],
+            "filename": report["filename"],
+            "title": report["title"],
+            "subtitle": report.get("subtitle", ""),
+            "structured_url": f"/api/issues/{report['date']}/structured?user={user}",
+        }
+        for report in reports
+    ]
+
+
+@router.get("/api/issues/{date}/structured")
+async def get_structured_issue(date: str, user: str = Query("ramsay")):
+    """Public: deterministic issue -> sections/story units/source graph."""
+    target = _report_file_for_date(date=date, user=user)
+    if target is None:
+        return JSONResponse(status_code=404, content={"error": "Issue not found"})
+
+    text = target.read_text(errors="replace")
+    lines = text.strip().split("\n")
+    title = lines[0].lstrip("# ").strip() if lines else target.stem
+    try:
+        return build_structured_issue(
+            date=validate_run_date(date),
+            user=user,
+            title=title,
+            content=text,
+        )
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Issue not found"})
 
 
 @router.get("/api/reports/{date}")
