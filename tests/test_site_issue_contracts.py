@@ -85,6 +85,25 @@ def test_build_structured_issue_creates_story_units_for_h2_only_sections():
     assert issue["story_units"][0]["source_refs"][0]["domain"] == "openai.com"
 
 
+def test_build_structured_issue_filters_sentence_noise_from_entities():
+    issue = build_structured_issue(
+        date="2026-06-28",
+        user="ramsay",
+        title="Briefing",
+        content=(
+            "# Briefing\n\n"
+            "## Top Stories\n\n"
+            "**OpenAI and Anthropic shipped agent updates.** And Because The New Work "
+            "made OpenAI Codex and Claude Code more important.\n"
+        ),
+    )
+
+    names = {entity["name"] for entity in issue["entities"]}
+    assert {"OpenAI", "Anthropic", "OpenAI Codex", "Claude Code"} <= names
+    assert {"And", "Because", "The", "New", "Work"} & names == set()
+    assert "And Because The New Work" not in names
+
+
 def test_structured_issue_redacts_private_data():
     issue = build_structured_issue(
         date="2026-06-28",

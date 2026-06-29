@@ -1176,12 +1176,17 @@ place instead of deleting the column.
   - v3 exposes public read APIs for `/api/finding/{id}`,
     `/api/related/{id}`, `/api/feed`, `/api/issues`, and
     `/api/issues/{date}/structured`.
+  - v3 now also exposes `/api/entities/{slug}` as a dynamic read model over
+    canonical newsletter reports. It validates slugs/users and returns only
+    source-backed story excerpts, source refs, issue dates, and provenance.
   - Rabbit Hole Wire prefers the new v3 feed and falls back to the old findings
     path until the backend is deployed.
   - Rabbit Hole `/f/[id]` uses real semantic related findings instead of
     same-section placeholder relatedness.
   - Rabbit Hole `/source/[domain]` renders source trails with domain validation
     and JSON-LD.
+  - Rabbit Hole `/e/[slug]` renders dynamic entity trails with safe slug
+    validation, entity JSON-LD, newsletter story links, and source links.
   - Rabbit Hole briefing pages render a structured `Thread summary` above the
     full canonical newsletter post, preserving the complete blog-style issue.
   - Ungrounded chat is no longer the primary workflow; `POST /api/chat` returns
@@ -1190,23 +1195,32 @@ place instead of deleting the column.
   - v3 focused suite after API/splitter work:
     `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py tests/test_site_issue_contracts.py tests/test_runner.py::TestDryRunPhases -q`
     -> 44 passed, 1 known Starlette/httpx deprecation warning.
+  - Entity API/splitter focused suite:
+    `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py tests/test_site_issue_contracts.py -q`
+    -> 42 passed, 1 known Starlette/httpx deprecation warning.
   - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and
-    `pnpm build` passed after both Rabbit Hole commits.
+    `pnpm build` passed after both Rabbit Hole commits and again after adding
+    `/e/[slug]`.
   - Local HTTP smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
     `127.0.0.1:3010`: `/`, `/f/13776`, `/briefings/2026-06-10`, and
     `/source/techcrunch.com` returned 200; v3 `/api/feed`,
     `/api/related/13776`, and `/api/issues/2026-06-10/structured` returned
     200; `POST /api/chat` returned 410.
-  - Closeout hygiene: `git diff --check` passed. `graphify update .` rebuilt
-    7,383 nodes, 11,848 edges, and 444 communities; HTML viz was skipped by the
-    5,000-node default limit. `graphify check-update .` passed.
+  - Entity HTTP smoke: v3 `/api/entities/openai?user=ramsay&limit=5` returned
+    200 with `kind=entity`, `slug=openai`, story units, and source trail; built
+    Rabbit Hole production server `/e/openai` returned 200 and rendered entity,
+    newsletter story, and source trail labels.
+  - Closeout hygiene: `git diff --check` passed. Latest `graphify update .`
+    rebuilt 7,389 nodes, 11,866 edges, and 442 communities; HTML viz was
+    skipped by the 5,000-node default limit. `graphify check-update .` passed.
 - Important limitations still open:
   - Public story artifacts, `/s/[slug]`, deterministic site content generation,
     confidence gating, post-newsletter hook, historical backfill, and public
     story APIs are not implemented yet.
-  - `/source/[domain]` exists, but `/e/[slug]` entity pages are not implemented.
-    The current issue entity extractor is intentionally MVP/noisy and must be
-    improved before public canonical entity pages.
+  - `/source/[domain]` and `/e/[slug]` exist. The entity extractor now filters
+    obvious sentence noise, but public entity quality still needs a real alias
+    map/type classifier before this should be treated as a complete knowledge
+    graph.
   - Structured issue output currently links sections/story units/sources and
     carries provenance, but finding IDs, arc IDs, and claim-evidence linking are
     placeholders.

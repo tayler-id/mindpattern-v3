@@ -265,6 +265,14 @@ def _create_contract_reports(reports_dir):
                 "Fixture report content mentioning agents for contract search.\n"
             )
         (user_dir / report["filename"]).write_text(text)
+    (user_dir / "2026-06-29.md").write_text(
+        "# Entity API Fixture\n\n"
+        "## Agent Platforms\n\n"
+        "**OpenAI and Anthropic shipped agent updates.** "
+        "OpenAI Codex and Claude Code matter here. "
+        "And Because The New Work should not become entity pages. "
+        "Source: [OpenAI](https://openai.com/news/agents).\n"
+    )
 
 
 def _create_contract_audio(reports_dir):
@@ -536,3 +544,24 @@ def test_structured_issue_endpoints_parse_public_report(client):
 
     assert client.get("/api/issues/2026-99-99/structured?user=ramsay").status_code == 404
     assert client.get("/api/issues/2026-06-10/structured?user=../ramsay").status_code == 404
+
+
+def test_entity_endpoint_returns_source_backed_issue_story_units(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("entity endpoint is verified locally before deploy")
+
+    resp = client.get("/api/entities/openai?user=ramsay&limit=5")
+    assert resp.status_code == 200
+    entity = resp.json()
+    assert entity["kind"] == "entity"
+    assert entity["slug"] == "openai"
+    assert entity["name"] == "OpenAI"
+    assert entity["confidence"] == "source-backed"
+    assert entity["total"] >= 1
+    assert entity["story_units"][0]["issue_date"] == "2026-06-29"
+    assert entity["story_units"][0]["target_url"] == "/briefings/2026-06-29"
+    assert entity["story_units"][0]["source_refs"][0]["domain"] == "openai.com"
+    assert "openai.com" in {source["domain"] for source in entity["source_trail"]}
+
+    assert client.get("/api/entities/and?user=ramsay").status_code == 404
+    assert client.get("/api/entities/openai?user=../ramsay").status_code == 404

@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from dashboard.auth import require_auth
 from orchestrator.audio_briefing import audio_artifact_paths
-from orchestrator.site_content import build_structured_issue
+from orchestrator.site_content import build_structured_issue, normalize_slug
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -1053,6 +1053,25 @@ def _report_file_for_date(*, date: str, user: str) -> Path | None:
     return target
 
 
+def _structured_issue_from_report_file(*, date: str, user: str) -> dict | None:
+    target = _report_file_for_date(date=date, user=user)
+    if target is None:
+        return None
+
+    text = target.read_text(errors="replace")
+    lines = text.strip().split("\n")
+    title = lines[0].lstrip("# ").strip() if lines else target.stem
+    try:
+        return build_structured_issue(
+            date=validate_run_date(date),
+            user=user,
+            title=title,
+            content=text,
+        )
+    except ValueError:
+        return None
+
+
 @router.get("/api/issues")
 async def list_structured_issues(user: str = Query("ramsay")):
     """Public: list newsletter issues with structured API links."""
@@ -1074,22 +1093,94 @@ async def list_structured_issues(user: str = Query("ramsay")):
 @router.get("/api/issues/{date}/structured")
 async def get_structured_issue(date: str, user: str = Query("ramsay")):
     """Public: deterministic issue -> sections/story units/source graph."""
-    target = _report_file_for_date(date=date, user=user)
-    if target is None:
+    issue = _structured_issue_from_report_file(date=date, user=user)
+    if issue is None:
         return JSONResponse(status_code=404, content={"error": "Issue not found"})
+    return issue
 
-    text = target.read_text(errors="replace")
-    lines = text.strip().split("\n")
-    title = lines[0].lstrip("# ").strip() if lines else target.stem
+
+@router.get("/api/entities/{slug}")
+async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(20, ge=1, le=50)):
+    """Public: dynamic entity page data from structured newsletter issues."""
+    if _safe_user(user) is None:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
     try:
-        return build_structured_issue(
-            date=validate_run_date(date),
-            user=user,
-            title=title,
-            content=text,
-        )
+        entity_slug = normalize_slug(slug)
     except ValueError:
-        return JSONResponse(status_code=404, content={"error": "Issue not found"})
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+
+    reports = await list_reports(user=user)
+    story_units: list[dict] = []
+    source_by_url: dict[str, dict] = {}
+    issue_dates: list[str] = []
+    entity_name = ""
+    seen_story_ids: set[str] = set()
+
+    for report in reports:
+        date = report.get("date")
+        if not date or date in issue_dates:
+            continue
+        issue = _structured_issue_from_report_file(date=date, user=user)
+        if issue is None:
+            continue
+
+        entity = next(
+            (item for item in issue["entities"] if item.get("slug") == entity_slug),
+            None,
+        )
+        if entity is None:
+            continue
+        entity_name = entity_name or entity.get("name", "")
+        issue_dates.append(date)
+
+        for story in issue["story_units"]:
+            if entity_slug not in story.get("entity_ids", []):
+                continue
+            if story["id"] in seen_story_ids:
+                continue
+            seen_story_ids.add(story["id"])
+            public_story = {
+                "id": story["id"],
+                "slug": story["slug"],
+                "issue_date": story["issue_date"],
+                "issue_title": issue["title"],
+                "section_id": story["section_id"],
+                "title": story["title"],
+                "summary": story["summary"],
+                "source_refs": story["source_refs"],
+                "arc_ids": story.get("arc_ids", []),
+                "finding_ids": story.get("finding_ids", []),
+                "target_url": f"/briefings/{story['issue_date']}",
+            }
+            story_units.append(public_story)
+            for source in story["source_refs"]:
+                source_by_url.setdefault(source["url"], source)
+            if len(story_units) >= limit:
+                break
+        if len(story_units) >= limit:
+            break
+
+    if not story_units:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+
+    return {
+        "kind": "entity",
+        "slug": entity_slug,
+        "name": entity_name or entity_slug.replace("-", " ").title(),
+        "user": user,
+        "confidence": "source-backed",
+        "story_units": story_units,
+        "source_trail": list(source_by_url.values()),
+        "issue_dates": issue_dates,
+        "total": len(story_units),
+        "limit": limit,
+        "provenance": {
+            "generated_by": "mindpattern.site_content.entity_reader",
+            "source_issue_dates": issue_dates,
+            "redaction_status": "passed",
+            "ai_generated": False,
+        },
+    }
 
 
 @router.get("/api/reports/{date}")

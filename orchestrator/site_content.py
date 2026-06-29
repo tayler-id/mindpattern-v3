@@ -26,11 +26,93 @@ _ENTITY_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z
 _COMMON_ENTITIES = {
     "AI",
     "API",
+    "Briefing",
     "Daily Briefing",
     "MindPattern Daily Briefing",
     "Opening",
     "See",
+    "Top Stories",
     "Why",
+}
+_ENTITY_STOPWORDS = {
+    "a",
+    "about",
+    "add",
+    "after",
+    "all",
+    "also",
+    "an",
+    "and",
+    "because",
+    "before",
+    "below",
+    "both",
+    "but",
+    "by",
+    "day",
+    "default",
+    "delete",
+    "every",
+    "for",
+    "from",
+    "here",
+    "his",
+    "how",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "january",
+    "just",
+    "june",
+    "less",
+    "let",
+    "live",
+    "long",
+    "make",
+    "may",
+    "more",
+    "move",
+    "new",
+    "neither",
+    "not",
+    "now",
+    "on",
+    "open",
+    "overall",
+    "pair",
+    "patch",
+    "prefer",
+    "pull",
+    "put",
+    "quick",
+    "read",
+    "real",
+    "reply",
+    "route",
+    "see",
+    "single",
+    "source",
+    "stories",
+    "story",
+    "stop",
+    "the",
+    "these",
+    "this",
+    "to",
+    "today",
+    "top",
+    "two",
+    "use",
+    "via",
+    "want",
+    "why",
+    "wire",
+    "with",
+    "work",
+    "you",
+    "your",
 }
 
 
@@ -84,7 +166,7 @@ def _extract_entities(text: str) -> list[dict[str, Any]]:
     entities: dict[str, dict[str, Any]] = {}
     for match in _ENTITY_RE.findall(text):
         name = re.sub(r"\s+", " ", match).strip()
-        if len(name) < 3 or name in _COMMON_ENTITIES:
+        if not _is_entity_candidate(name):
             continue
         slug = normalize_artifact_slug(name)
         entities[slug] = {
@@ -94,6 +176,46 @@ def _extract_entities(text: str) -> list[dict[str, Any]]:
             "kind": "unknown",
         }
     return sorted(entities.values(), key=lambda item: item["name"].lower())
+
+
+def _is_entity_candidate(name: str) -> bool:
+    if len(name) < 3 or name in _COMMON_ENTITIES:
+        return False
+
+    tokens = name.split()
+    if len(tokens) > 5:
+        return False
+
+    lower_tokens = [token.lower() for token in tokens]
+    if name.lower() in _ENTITY_STOPWORDS:
+        return False
+
+    meaningful = [
+        token
+        for token, lower in zip(tokens, lower_tokens)
+        if lower not in _ENTITY_STOPWORDS
+    ]
+    if not meaningful:
+        return False
+
+    stopword_ratio = (len(tokens) - len(meaningful)) / len(tokens)
+    if len(tokens) > 1 and stopword_ratio >= 0.5:
+        return False
+
+    if len(tokens) == 1:
+        token = tokens[0]
+        lower = lower_tokens[0]
+        if lower in {"ai", "api"}:
+            return False
+        if token.isupper():
+            return len(token) >= 2
+        return (
+            len(token) >= 4
+            or any(char.isupper() for char in token[1:])
+            or any(char.isdigit() for char in token)
+        )
+
+    return True
 
 
 def _redaction_status(original: str, redacted: str) -> str:
