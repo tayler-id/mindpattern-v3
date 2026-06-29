@@ -1164,3 +1164,54 @@ place instead of deleting the column.
 - Release gates remain: no full daily pipeline, newsletter send, live social
   post, Fly deploy, Vercel deploy, schema change, dependency install, provider
   enablement, or production indexing change without explicit owner approval.
+- Implementation branch status:
+  - v3 branch: `feature/rabbit-hole-public-intelligence-site`.
+  - Rabbit Hole branch: `feature/rabbit-hole-public-intelligence-site`.
+  - v3 commits made: `ca6a2a7 feat: add public graph read APIs`,
+    `ca1b088 feat: add structured issue API`, and
+    `290bed4 fix: split h2 briefing sections into story units`.
+  - Rabbit Hole commits made: `744c4a5 feat: wire public graph experience` and
+    `73c9758 feat: show briefing issue graph`.
+- Current shipped-local behavior:
+  - v3 exposes public read APIs for `/api/finding/{id}`,
+    `/api/related/{id}`, `/api/feed`, `/api/issues`, and
+    `/api/issues/{date}/structured`.
+  - Rabbit Hole Wire prefers the new v3 feed and falls back to the old findings
+    path until the backend is deployed.
+  - Rabbit Hole `/f/[id]` uses real semantic related findings instead of
+    same-section placeholder relatedness.
+  - Rabbit Hole `/source/[domain]` renders source trails with domain validation
+    and JSON-LD.
+  - Rabbit Hole briefing pages render a structured `Thread summary` above the
+    full canonical newsletter post, preserving the complete blog-style issue.
+  - Ungrounded chat is no longer the primary workflow; `POST /api/chat` returns
+    410 while graph-backed chat is not ready.
+- Verification completed locally:
+  - v3 focused suite after API/splitter work:
+    `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py tests/test_site_issue_contracts.py tests/test_runner.py::TestDryRunPhases -q`
+    -> 44 passed, 1 known Starlette/httpx deprecation warning.
+  - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and
+    `pnpm build` passed after both Rabbit Hole commits.
+  - Local HTTP smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: `/`, `/f/13776`, `/briefings/2026-06-10`, and
+    `/source/techcrunch.com` returned 200; v3 `/api/feed`,
+    `/api/related/13776`, and `/api/issues/2026-06-10/structured` returned
+    200; `POST /api/chat` returned 410.
+  - Closeout hygiene: `git diff --check` passed. `graphify update .` rebuilt
+    7,383 nodes, 11,848 edges, and 444 communities; HTML viz was skipped by the
+    5,000-node default limit. `graphify check-update .` passed.
+- Important limitations still open:
+  - Public story artifacts, `/s/[slug]`, deterministic site content generation,
+    confidence gating, post-newsletter hook, historical backfill, and public
+    story APIs are not implemented yet.
+  - `/source/[domain]` exists, but `/e/[slug]` entity pages are not implemented.
+    The current issue entity extractor is intentionally MVP/noisy and must be
+    improved before public canonical entity pages.
+  - Structured issue output currently links sections/story units/sources and
+    carries provenance, but finding IDs, arc IDs, and claim-evidence linking are
+    placeholders.
+  - No real browser/mobile visual smoke was run because no browser MCP was
+    exposed in this session; only HTTP smoke and build checks were completed.
+  - No Fly deploy, Vercel deploy, production smoke, full daily pipeline,
+    newsletter send, live social post, schema change, dependency install, or
+    provider call was run.

@@ -122,8 +122,8 @@ Keep the `Done` column. Future agents should update this table in place.
 | 3 | 1 | Add semantic `/api/related/{id}` | Yes | Implemented stored-embedding semantic related endpoint with self-exclusion, score/reason fields, unsupported-mode 400, and missing-embedding empty result. Verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q` -> 18 passed. |
 | 4 | 1 | Add `/api/feed` compatibility wrapper | Yes | Implemented forward-compatible feed wrapper over public findings with `items`, `total`, `limit`, `offset`, `kind`, ranks, target URLs. Verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q` -> 18 passed; auth allowlist verified with `tests/test_auth_middleware.py` -> 16 passed. |
 | 5 | 2 | Add public story artifact contracts | No | Not started. |
-| 5A | 2 | Add structured issue artifact contracts | Yes | Added pure `orchestrator/site_content.py` contracts for structured issues, sections, story units, source refs, entity refs, claim evidence placeholders, and provenance. Verification: `.venv/bin/python3 -m pytest tests/test_site_issue_contracts.py -q` -> 4 passed. |
-| 5B | 2 | Add newsletter splitter and entity linker | Partial | Deterministic markdown splitter now extracts sections, story units, source refs, and simple public entity refs. Finding/arc linking is still unresolved and intentionally not fabricated. Verification: `tests/test_site_issue_contracts.py` -> 4 passed. |
+| 5A | 2 | Add structured issue artifact contracts | Yes | Added pure `orchestrator/site_content.py` contracts for structured issues, sections, story units, source refs, entity refs, claim evidence placeholders, and provenance. Verification: `.venv/bin/python3 -m pytest tests/test_site_issue_contracts.py -q` -> 5 passed. |
+| 5B | 2 | Add newsletter splitter and entity linker | Partial | Deterministic markdown splitter extracts sections, H2-only issue story units, source refs, and simple public entity refs. Entity extraction is intentionally MVP/noisy and finding/arc linking is unresolved rather than fabricated. Verification: `tests/test_site_issue_contracts.py` -> 5 passed. |
 | 5C | 2 | Add historical newsletter backfill normalizer | No | Not started. |
 | 5D | 2 | Add provenance and JSON-LD-ready graph metadata contracts | Partial | Structured issue output includes provenance, redaction status, source refs, entity refs, and claim evidence placeholders. Story/entity/source/arc metadata contracts still need broader fixture coverage. Verification: `tests/test_site_issue_contracts.py` -> 4 passed. |
 | 6 | 2 | Add confidence gate and safety tests | No | Not started. |
@@ -135,20 +135,20 @@ Keep the `Done` column. Future agents should update this table in place.
 | 12 | 3 | Add story API contract fixtures | No | Not started. |
 | 12A | 3 | Expose structured issue/entity/source APIs | Partial | Added public `/api/issues` and `/api/issues/{date}/structured` from canonical newsletter reports. Entity and source detail APIs remain pending. Verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q` -> 19 passed; auth middleware -> 16 passed. |
 | 12B | 3 | Add structured public graph API fixtures | No | Not started. |
-| 13 | 4 | Add Rabbit Hole story types/helpers | No | Not started. |
+| 13 | 4 | Add Rabbit Hole story types/helpers | Yes | Added Rabbit Hole API types/helpers for feed, related findings, structured issues, source trails, and single-finding fallback compatibility. Verification: Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and `pnpm build` passed. |
 | 14 | 4 | Build `/s/[slug]` story page | No | Not started. |
-| 14A | 4 | Build dynamic `/e/[slug]` and `/source/[domain]` pages | No | Not started. |
-| 15 | 4 | Replace `/f/[id]` placeholder relatedness | No | Not started. |
-| 16 | 4 | Upgrade Wire to story/feed rows | No | Not started. |
-| 16A | 4 | Replace or hide broken chat-first entry points | No | Not started. |
+| 14A | 4 | Build dynamic `/e/[slug]` and `/source/[domain]` pages | Partial | Implemented `/source/[domain]` with safe domain validation, source JSON-LD, source stats, and related findings. `/e/[slug]` entity pages remain pending because entity extraction is not yet clean enough for public canonical entity pages. Local smoke: `/source/techcrunch.com` -> 200. |
+| 15 | 4 | Replace `/f/[id]` placeholder relatedness | Yes | `/f/[id]` now fetches `/api/finding/{id}` and `/api/related/{id}` through the Rabbit Hole API proxy/helpers, and the Rabbit Hole component uses semantic related items instead of fake same-section relatedness. Local smoke: `/f/13776` -> 200 and renders source/related trail. |
+| 16 | 4 | Upgrade Wire to story/feed rows | Partial | Wire now prefers v3 `/api/feed` and falls back to older findings API until backend production deploy happens. Story-feed artifacts are pending, so rows still point to finding pages. Local smoke: `/` -> 200 and renders real feed counts/items. |
+| 16A | 4 | Replace or hide broken chat-first entry points | Yes | Disabled the ungrounded chat API with a 410 response and kept the primary UX on Wire/Briefings. Local smoke: `POST /api/chat` -> 410 with disabled-chat message. |
 | 17 | 4 | Add briefing-to-story modules | No | Not started. |
-| 17A | 4 | Add structured issue graph modules | No | Not started. |
+| 17A | 4 | Add structured issue graph modules | Partial | Briefing pages now call `/api/issues/{date}/structured` and render a `Thread summary` graph module above the complete canonical markdown post. Source links work; entity links are held as text until `/e/[slug]` is safe. Local smoke: `/briefings/2026-06-10` -> 200 and renders thread summary plus full newsletter. |
 | 17B | 4 | Standardize canonical newsletter post template | No | Not started. |
 | 18 | 5 | Add public arc modules/pages | No | Not started. |
 | 19 | 5 | Add media/provenance cross-links | No | Not started. |
 | 20 | 5 | Add SEO/GEO metadata pass | No | Not started. |
-| 21 | 6 | Add browser smoke checks | No | Not started. |
-| 22 | 6 | Run Graphify, docs, handoff | No | Not started. |
+| 21 | 6 | Add browser smoke checks | Partial | Local HTTP smoke completed because no browser MCP is exposed in this session: `/`, `/f/13776`, `/briefings/2026-06-10`, `/source/techcrunch.com` -> 200; v3 `/api/feed`, `/api/related/13776`, `/api/issues/2026-06-10/structured` -> 200; `POST /api/chat` -> 410. Full visual/mobile browser smoke remains pending before production release. |
+| 22 | 6 | Run Graphify, docs, handoff | Yes | Updated Done table and handoff with committed branches, local smoke, verification, and remaining blockers. `git diff --check` passed. `graphify update .` rebuilt 7,383 nodes, 11,848 edges, 444 communities; HTML viz skipped due 5,000-node default. `graphify check-update .` passed. |
 | 23 | 6 | Owner-approved live deploy/smoke | Deferred | Requires explicit owner approval. |
 
 ## Phase 0: Baseline and Product Guardrails
