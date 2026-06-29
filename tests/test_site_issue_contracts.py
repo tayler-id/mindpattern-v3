@@ -3,9 +3,11 @@ import json
 import pytest
 
 from orchestrator.site_content import (
+    build_public_story,
     build_structured_issue,
     issue_artifact_path,
     normalize_slug,
+    story_artifact_path,
 )
 
 
@@ -119,6 +121,39 @@ def test_structured_issue_redacts_private_data():
     assert issue["provenance"]["redaction_status"] == "redacted"
 
 
+def test_build_public_story_requires_sources_and_keeps_provenance():
+    issue = build_structured_issue(
+        date="2026-06-28",
+        user="ramsay",
+        title="Briefing",
+        content=SAMPLE_REPORT,
+    )
+
+    story = build_public_story(issue=issue, story_unit=issue["story_units"][0])
+    assert story is not None
+    assert story["kind"] == "story"
+    assert story["slug"] == "2026-06-28-openai-ships-agent-tools"
+    assert story["target_url"] == "/s/2026-06-28-openai-ships-agent-tools"
+    assert story["issue_url"] == "/briefings/2026-06-28"
+    assert story["confidence"] == "source-backed"
+    assert story["source_refs"][0]["domain"] == "openai.com"
+    assert story["entity_refs"][0]["slug"]
+    assert story["provenance"]["generated_by"] == "mindpattern.site_content.public_story"
+    assert story["provenance"]["ai_generated"] is False
+    assert story["json_ld_ready"] is True
+
+    no_source_issue = build_structured_issue(
+        date="2026-06-28",
+        user="ramsay",
+        title="Briefing",
+        content="# Briefing\n\n## Notes\n\nThis has no cited source.\n",
+    )
+    assert build_public_story(
+        issue=no_source_issue,
+        story_unit=no_source_issue["story_units"][0],
+    ) is None
+
+
 def test_issue_artifact_path_stays_under_reports_root(tmp_path):
     path = issue_artifact_path(
         date="2026-06-28",
@@ -131,6 +166,27 @@ def test_issue_artifact_path_stays_under_reports_root(tmp_path):
         issue_artifact_path(date="../2026-06-28", user="ramsay", reports_root=tmp_path)
     with pytest.raises(ValueError):
         issue_artifact_path(date="2026-06-28", user="../ramsay", reports_root=tmp_path)
+
+
+def test_story_artifact_path_stays_under_reports_root(tmp_path):
+    path = story_artifact_path(
+        slug="2026-06-28-openai-ships-agent-tools",
+        user="ramsay",
+        reports_root=tmp_path / "reports",
+    )
+    assert (
+        path
+        == tmp_path
+        / "reports"
+        / "ramsay"
+        / "site-stories"
+        / "2026-06-28-openai-ships-agent-tools.json"
+    )
+
+    with pytest.raises(ValueError):
+        story_artifact_path(slug="../secret", user="ramsay", reports_root=tmp_path)
+    with pytest.raises(ValueError):
+        story_artifact_path(slug="2026-06-28-story", user="../ramsay", reports_root=tmp_path)
 
 
 def test_normalize_slug_rejects_empty_or_path_like_values():

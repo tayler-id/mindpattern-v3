@@ -141,6 +141,20 @@ def issue_artifact_path(*, date: str, user: str, reports_root: Path) -> Path:
     return path
 
 
+def story_artifact_path(*, slug: str, user: str, reports_root: Path) -> Path:
+    """Return a safe artifact path for a public story JSON artifact."""
+    if not _SAFE_USER_RE.fullmatch(user or ""):
+        raise ValueError("user must be a safe path segment")
+    story_slug = normalize_slug(slug)
+    base = reports_root.resolve()
+    path = (base / user / "site-stories" / f"{story_slug}.json").resolve()
+    try:
+        path.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("story artifact path escapes reports root") from exc
+    return path
+
+
 def _source_refs(text: str) -> list[dict[str, str]]:
     refs: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -216,6 +230,79 @@ def _is_entity_candidate(name: str) -> bool:
         )
 
     return True
+
+
+def build_public_story(*, issue: dict[str, Any], story_unit: dict[str, Any]) -> dict[str, Any] | None:
+    """Build a public story artifact from a structured issue story unit.
+
+    The MVP publishes only source-backed story units. Sections without source
+    evidence remain available inside the canonical briefing but do not get a
+    standalone `/s` page.
+    """
+    source_refs = story_unit.get("source_refs") or []
+    if not source_refs:
+        return None
+
+    issue_date = validate_run_date(str(story_unit["issue_date"]))
+    story_id = normalize_slug(str(story_unit["id"]))
+    entity_by_id = {entity["id"]: entity for entity in issue.get("entities", [])}
+    entity_refs = [
+        entity_by_id[entity_id]
+        for entity_id in story_unit.get("entity_ids", [])
+        if entity_id in entity_by_id
+    ]
+
+    related_paths: list[dict[str, Any]] = []
+    for peer in issue.get("story_units", []):
+        if peer.get("id") == story_unit.get("id") or not peer.get("source_refs"):
+            continue
+        peer_slug = normalize_slug(str(peer["id"]))
+        related_paths.append({
+            "kind": "story",
+            "id": peer["id"],
+            "slug": peer_slug,
+            "title": peer["title"],
+            "summary": peer.get("summary", ""),
+            "target_url": f"/s/{peer_slug}",
+            "relationship": "same_issue",
+            "reason": "Appears in the same canonical MindPattern briefing.",
+        })
+        if len(related_paths) >= 6:
+            break
+
+    return {
+        "kind": "story",
+        "id": story_id,
+        "slug": story_id,
+        "story_unit_id": story_unit["id"],
+        "issue_date": issue_date,
+        "issue_title": issue["title"],
+        "issue_url": f"/briefings/{issue_date}",
+        "section_id": story_unit["section_id"],
+        "title": story_unit["title"],
+        "summary": story_unit.get("summary", ""),
+        "body_excerpt": story_unit.get("body_excerpt", story_unit.get("summary", "")),
+        "source_refs": source_refs,
+        "entity_refs": entity_refs,
+        "finding_ids": story_unit.get("finding_ids", []),
+        "arc_ids": story_unit.get("arc_ids", []),
+        "related_paths": related_paths,
+        "target_url": f"/s/{story_id}",
+        "confidence": "source-backed",
+        "labels": ["source-backed", "canonical briefing excerpt"],
+        "json_ld_ready": True,
+        "claim_evidence": story_unit.get("claim_evidence", []),
+        "provenance": {
+            "generated_by": "mindpattern.site_content.public_story",
+            "generated_at": issue.get("generated_at"),
+            "input_artifacts": issue.get("provenance", {}).get("input_artifacts", []),
+            "source_issue_dates": [issue_date],
+            "source_story_unit_id": story_unit["id"],
+            "redaction_status": issue.get("provenance", {}).get("redaction_status", "passed"),
+            "ai_generated": False,
+            "human_approved": False,
+        },
+    }
 
 
 def _redaction_status(original: str, redacted: str) -> str:

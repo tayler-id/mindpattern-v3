@@ -30,8 +30,10 @@ def configured(monkeypatch):
 class TestPublicRoutes:
     def test_contract_endpoints_open(self, client):
         for path in ("/api/stats?user=ramsay", "/api/findings?user=ramsay&limit=1",
-                     "/api/reports?user=ramsay", "/healthz"):
+                     "/api/reports?user=ramsay", "/api/stories?user=ramsay&limit=1",
+                     "/healthz"):
             assert client.get(path).status_code == 200, path
+        assert client.get("/api/stories/2026-06-29-agent-platforms?user=ramsay").status_code != 401
 
     def test_public_prefix_does_not_allow_post(self, client):
         assert client.post("/api/findings").status_code == 401

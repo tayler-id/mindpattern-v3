@@ -546,6 +546,35 @@ def test_structured_issue_endpoints_parse_public_report(client):
     assert client.get("/api/issues/2026-06-10/structured?user=../ramsay").status_code == 404
 
 
+def test_story_endpoints_return_source_backed_public_stories(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("story endpoints are verified locally before deploy")
+
+    listing = client.get("/api/stories?user=ramsay&limit=5")
+    assert listing.status_code == 200
+    body = listing.json()
+    assert body["kind"] == "stories"
+    assert body["items"]
+    assert body["items"][0]["kind"] == "story"
+    assert body["items"][0]["target_url"].startswith("/s/")
+    assert body["items"][0]["source_refs"]
+    assert body["items"][0]["confidence"] == "source-backed"
+
+    detail = client.get("/api/stories/2026-06-29-agent-platforms?user=ramsay")
+    assert detail.status_code == 200
+    story = detail.json()
+    assert story["kind"] == "story"
+    assert story["slug"] == "2026-06-29-agent-platforms"
+    assert story["title"] == "Agent Platforms"
+    assert story["source_refs"][0]["domain"] == "openai.com"
+    assert story["issue_url"] == "/briefings/2026-06-29"
+    assert story["provenance"]["ai_generated"] is False
+
+    assert client.get("/api/stories/2026-06-29-missing?user=ramsay").status_code == 404
+    assert client.get("/api/stories/%2E%2E%2Fsecret?user=ramsay").status_code == 404
+    assert client.get("/api/stories/2026-06-29-agent-platforms?user=../ramsay").status_code == 404
+
+
 def test_entity_endpoint_returns_source_backed_issue_story_units(client):
     if os.environ.get("MP_CONTRACT_LIVE") == "1":
         pytest.skip("entity endpoint is verified locally before deploy")

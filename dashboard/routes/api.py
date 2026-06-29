@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from dashboard.auth import require_auth
 from orchestrator.audio_briefing import audio_artifact_paths
-from orchestrator.site_content import build_structured_issue, normalize_slug
+from orchestrator.site_content import build_public_story, build_structured_issue, normalize_slug
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -1097,6 +1097,86 @@ async def get_structured_issue(date: str, user: str = Query("ramsay")):
     if issue is None:
         return JSONResponse(status_code=404, content={"error": "Issue not found"})
     return issue
+
+
+def _story_date_from_slug(slug: str) -> str | None:
+    candidate = slug[:10] if len(slug) >= 10 else ""
+    return _valid_run_date(candidate)
+
+
+async def _iter_structured_issues(user: str):
+    reports = await list_reports(user=user)
+    seen_dates: set[str] = set()
+    for report in reports:
+        date = report.get("date")
+        if not date or date in seen_dates:
+            continue
+        seen_dates.add(date)
+        issue = _structured_issue_from_report_file(date=date, user=user)
+        if issue is not None:
+            yield issue
+
+
+def _story_from_issue(issue: dict, story_slug: str) -> dict | None:
+    for story_unit in issue.get("story_units", []):
+        try:
+            if normalize_slug(str(story_unit.get("id"))) != story_slug:
+                continue
+        except ValueError:
+            continue
+        return build_public_story(issue=issue, story_unit=story_unit)
+    return None
+
+
+@router.get("/api/stories")
+async def list_public_stories(
+    user: str = Query("ramsay"),
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+):
+    """Public: source-backed story pages derived from canonical newsletter issues."""
+    if _safe_user(user) is None:
+        return {"kind": "stories", "items": [], "total": 0, "limit": limit, "offset": offset}
+
+    stories: list[dict] = []
+    async for issue in _iter_structured_issues(user):
+        for story_unit in issue.get("story_units", []):
+            story = build_public_story(issue=issue, story_unit=story_unit)
+            if story is not None:
+                stories.append(story)
+
+    return {
+        "kind": "stories",
+        "items": stories[offset: offset + limit],
+        "total": len(stories),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/api/stories/{slug}")
+async def get_public_story(slug: str, user: str = Query("ramsay")):
+    """Public: one source-backed story page by stable story slug."""
+    if _safe_user(user) is None:
+        return JSONResponse(status_code=404, content={"error": "Story not found"})
+    try:
+        story_slug = normalize_slug(slug)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Story not found"})
+
+    story_date = _story_date_from_slug(story_slug)
+    if story_date is not None:
+        issue = _structured_issue_from_report_file(date=story_date, user=user)
+        story = _story_from_issue(issue, story_slug) if issue is not None else None
+        if story is not None:
+            return story
+        return JSONResponse(status_code=404, content={"error": "Story not found"})
+
+    async for issue in _iter_structured_issues(user):
+        story = _story_from_issue(issue, story_slug)
+        if story is not None:
+            return story
+    return JSONResponse(status_code=404, content={"error": "Story not found"})
 
 
 @router.get("/api/entities/{slug}")

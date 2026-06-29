@@ -1229,3 +1229,63 @@ place instead of deleting the column.
   - No Fly deploy, Vercel deploy, production smoke, full daily pipeline,
     newsletter send, live social post, schema change, dependency install, or
     provider call was run.
+
+## Rabbit Hole Public Story Slice - 2026-06-28
+
+- Continued the Rabbit Hole Public Intelligence Site MVP on the
+  `feature/rabbit-hole-public-intelligence-site` branch in both repos.
+- v3 backend additions:
+  - Added safe public story contracts in `orchestrator/site_content.py`:
+    `story_artifact_path()` and `build_public_story()`.
+  - Public story output is derived from canonical structured newsletter issues,
+    not freeform AI prose. It is suppressed when a story unit has no source
+    refs.
+  - Story output includes source refs, entity refs, issue links, related story
+    paths, `source-backed` confidence, JSON-LD-ready metadata, and provenance.
+  - Added public read-only APIs: `GET /api/stories` and
+    `GET /api/stories/{slug}`. They validate user/slug/date input and return
+    safe 404s for missing, unsafe, or traversal-shaped requests.
+  - `/api/stories` is now in the public auth allowlist.
+- Rabbit Hole additions:
+  - Added `PublicStory`, `StoriesResponse`, `getStories()`, and `getStory()`
+    to the site API/type layer.
+  - Added dynamic `/s/[slug]` public story pages with safe slug validation,
+    Article JSON-LD, source trail, entity links, related paths, confidence
+    labels, and provenance.
+  - Briefing `Thread summary` story units now link to `/s/<story-id>` when the
+    unit has source refs, while keeping the full canonical newsletter post
+    below.
+- Verification completed for this slice:
+  - v3:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_contracts.py -q` ->
+    8 passed.
+  - v3:
+    `.venv/bin/python3 -m pytest tests/test_api_contract.py::test_story_endpoints_return_source_backed_public_stories -q`
+    -> 1 passed, 1 known Starlette/httpx warning.
+  - v3:
+    `.venv/bin/python3 -m pytest tests/test_auth_middleware.py::TestPublicRoutes::test_contract_endpoints_open -q`
+    -> 1 passed, 1 known Starlette/httpx warning.
+  - v3 combined:
+    `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py tests/test_site_issue_contracts.py -q`
+    -> 45 passed, 1 known Starlette/httpx warning.
+  - Rabbit Hole: `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`,
+    and `pnpm build` passed.
+  - Local HTTP smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: v3 `/api/stories?user=ramsay&limit=3` -> 200;
+    v3 `/api/stories/2026-06-28-agents?user=ramsay` -> 200; Rabbit Hole
+    `/s/2026-06-28-agents` -> 200; Rabbit Hole `/briefings/2026-06-28` -> 200
+    and included the story link.
+  - Graphify: `graphify update .` rebuilt 7,403 nodes, 11,906 edges, and
+    463 communities; HTML viz skipped due the 5,000-node default.
+    `graphify check-update .` passed.
+- Current limitations:
+  - Persisted `reports/<user>/site-stories/` story artifacts and historical
+    backfill are still pending. The current story API is a dynamic read model
+    over canonical newsletter issues.
+  - Wire still primarily uses finding/feed rows. Briefing story units now link
+    to `/s`, but story-first Wire rows need the deterministic content engine.
+  - Entity extraction is useful enough for MVP linking but still noisy on real
+    newsletters. Do not treat it as a complete high-confidence KG until alias
+    mapping and type classification are added.
+  - Full visual/mobile browser smoke and Vercel production deploy remain
+    pending release-gate work.
