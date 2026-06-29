@@ -1252,6 +1252,10 @@ place instead of deleting the column.
   - Added dynamic `/s/[slug]` public story pages with safe slug validation,
     Article JSON-LD, source trail, entity links, related paths, confidence
     labels, and provenance.
+  - Added `StoryWireRow` and changed normal Wire views to prefer v3
+    `/api/stories`, so the homepage and latest view now open source-backed
+    `/s/<slug>` pages first. Existing feed/findings fallback remains if stories
+    are unavailable; topics still uses finding rows.
   - Briefing `Thread summary` story units now link to `/s/<story-id>` when the
     unit has source refs, while keeping the full canonical newsletter post
     below.
@@ -1275,6 +1279,10 @@ place instead of deleting the column.
     v3 `/api/stories/2026-06-28-agents?user=ramsay` -> 200; Rabbit Hole
     `/s/2026-06-28-agents` -> 200; Rabbit Hole `/briefings/2026-06-28` -> 200
     and included the story link.
+  - After story-first Wire: Rabbit Hole `/` -> 200 and rendered
+    `/s/2026-06-28-agents` plus `source-backed`; `/?view=latest` -> 200 and
+    rendered `/s/2026-06-28-agents`; `/?view=topics` -> 200 and rendered `/f/`
+    fallback rows.
   - Graphify: `graphify update .` rebuilt 7,403 nodes, 11,906 edges, and
     463 communities; HTML viz skipped due the 5,000-node default.
     `graphify check-update .` passed.
@@ -1282,8 +1290,9 @@ place instead of deleting the column.
   - Persisted `reports/<user>/site-stories/` story artifacts and historical
     backfill are still pending. The current story API is a dynamic read model
     over canonical newsletter issues.
-  - Wire still primarily uses finding/feed rows. Briefing story units now link
-    to `/s`, but story-first Wire rows need the deterministic content engine.
+  - Wire normal/latest views now use dynamic source-backed stories. The
+    deterministic content engine is still needed for richer editorial story
+    artifacts, true story ranking, and persisted story backfill.
   - Entity extraction is useful enough for MVP linking but still noisy on real
     newsletters. Do not treat it as a complete high-confidence KG until alias
     mapping and type classification are added.
