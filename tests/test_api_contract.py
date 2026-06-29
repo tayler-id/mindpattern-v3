@@ -116,6 +116,16 @@ def _create_contract_db(db_path):
                 finding_id INTEGER PRIMARY KEY,
                 embedding BLOB
             );
+            CREATE TABLE entity_graph (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_a TEXT NOT NULL,
+                entity_a_type TEXT,
+                relationship TEXT NOT NULL,
+                entity_b TEXT NOT NULL,
+                entity_b_type TEXT,
+                finding_id INTEGER,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
             CREATE TABLE sources (
                 id INTEGER PRIMARY KEY,
                 url_domain TEXT,
@@ -156,6 +166,35 @@ def _create_contract_db(db_path):
 
         for item in _load_fixture("findings_limit_5") + _load_fixture("search_q_ai_limit_3"):
             _insert_finding(conn, item)
+        _insert_finding(
+            conn,
+            {
+                "id": 990_001,
+                "run_date": "2026-06-20",
+                "agent": "fixture-agent",
+                "title": "OpenAI corpus entity fixture",
+                "summary": "Stored corpus finding about OpenAI agent infrastructure.",
+                "importance": "high",
+                "category": "corpus",
+                "source_url": "https://openai.com/news/corpus",
+                "source_name": "OpenAI",
+                "created_at": "2026-06-20T00:00:00",
+            },
+        )
+        conn.execute(
+            """INSERT INTO entity_graph
+               (entity_a, entity_a_type, relationship, entity_b, entity_b_type, finding_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "OpenAI",
+                "company",
+                "powers",
+                "Agent infrastructure",
+                "topic",
+                990_001,
+                "2026-06-20T00:00:00",
+            ),
+        )
         for item in _load_fixture("search_q_ai_limit_3"):
             conn.execute(
                 "INSERT OR REPLACE INTO findings_embeddings (finding_id, embedding) VALUES (?, ?)",
@@ -272,6 +311,103 @@ def _create_contract_reports(reports_dir):
         "OpenAI Codex and Claude Code matter here. "
         "And Because The New Work should not become entity pages. "
         "Source: [OpenAI](https://openai.com/news/agents).\n"
+    )
+    (user_dir / "2026-06-30.md").write_text(
+        "# Story Graph Fixture\n\n"
+        "## Agent Reliability\n\n"
+        "**OpenAI hardened agent runtime reliability.** "
+        "OpenAI Codex changed the reliability path for agent builders. "
+        "Source: [OpenAI](https://openai.com/news/agents).\n"
+    )
+    site_story_dir = user_dir / "site-stories"
+    site_story_dir.mkdir(parents=True)
+    (site_story_dir / "2026-06-29-openai-agent-runtime-reliability.json").write_text(
+        json.dumps(
+            {
+                "kind": "story",
+                "id": "2026-06-29-openai-agent-runtime-reliability",
+                "slug": "2026-06-29-openai-agent-runtime-reliability",
+                "status": "published",
+                "issue_date": "2026-06-29",
+                "title": "OpenAI agent runtime reliability becomes the control plane",
+                "dek": "A source-backed site story artifact, not a raw newsletter section.",
+                "summary": "OpenAI Codex changed the reliability path for agent builders.",
+                "take": "Agent runtime reliability is becoming infrastructure buyers can evaluate.",
+                "why_now": "The signal appeared in the 2026-06-29 research corpus.",
+                "body_markdown": (
+                    "OpenAI Codex changed the reliability path for agent builders.\n\n"
+                    "The public story artifact keeps the source trail and graph edges attached."
+                ),
+                "source_refs": [
+                    {
+                        "url": "https://openai.com/news/agents",
+                        "domain": "openai.com",
+                        "title": "OpenAI",
+                    }
+                ],
+                "entity_refs": [
+                    {"id": "openai", "slug": "openai", "name": "OpenAI", "kind": "unknown"}
+                ],
+                "finding_ids": [990001],
+                "arc_ids": [],
+                "graph_connectors": {
+                    "issue_date": "2026-06-29",
+                    "source_urls": ["https://openai.com/news/agents"],
+                    "source_domains": ["openai.com"],
+                    "entity_ids": ["openai"],
+                    "topic_terms": ["agent", "runtime", "reliability"],
+                    "finding_ids": [990001],
+                    "arc_ids": [],
+                },
+                "graph_edges": [
+                    {
+                        "kind": "source_domain",
+                        "relationship": "cites_source_domain",
+                        "id": "openai.com",
+                        "label": "openai.com",
+                        "target_url": "/source/openai.com",
+                        "evidence": "2026-06-29-openai-agent-runtime-reliability",
+                    }
+                ],
+                "related_paths": [],
+                "target_url": "/s/2026-06-29-openai-agent-runtime-reliability",
+                "confidence": "high",
+                "labels": ["AI-assisted", "source-backed", "public"],
+                "json_ld_ready": True,
+                "claim_evidence": [
+                    {
+                        "claim": "OpenAI Codex changed the reliability path for agent builders.",
+                        "source_url": "https://openai.com/news/agents",
+                        "finding_id": 990001,
+                    }
+                ],
+                "provenance": {
+                    "generated_by": "mindpattern.site_content.story_engine",
+                    "generated_at": "2026-06-29T12:00:00+00:00",
+                    "input_artifacts": ["reports/ramsay/2026-06-29.md"],
+                    "source_finding_ids": [990001],
+                    "source_issue_dates": ["2026-06-29"],
+                    "redaction_status": "passed",
+                    "ai_generated": True,
+                    "human_approved": False,
+                },
+            }
+        )
+    )
+    (site_story_dir / "2026-06-29-draft-raw-newsletter-chunk.json").write_text(
+        json.dumps(
+            {
+                "kind": "story",
+                "id": "2026-06-29-draft-raw-newsletter-chunk",
+                "slug": "2026-06-29-draft-raw-newsletter-chunk",
+                "status": "draft",
+                "issue_date": "2026-06-29",
+                "title": "Top 5 Stories Today",
+                "summary": "This draft must not be publicly listed.",
+                "source_refs": [],
+                "target_url": "/s/2026-06-29-draft-raw-newsletter-chunk",
+            }
+        )
     )
 
 
@@ -558,21 +694,37 @@ def test_story_endpoints_return_source_backed_public_stories(client):
     assert body["items"][0]["kind"] == "story"
     assert body["items"][0]["target_url"].startswith("/s/")
     assert body["items"][0]["source_refs"]
-    assert body["items"][0]["confidence"] == "source-backed"
+    assert body["items"][0]["confidence"] == "high"
+    assert body["items"][0]["status"] == "published"
+    assert "Top 5 Stories Today" not in {item["title"] for item in body["items"]}
 
-    detail = client.get("/api/stories/2026-06-29-agent-platforms?user=ramsay")
+    detail = client.get("/api/stories/2026-06-29-openai-agent-runtime-reliability?user=ramsay")
     assert detail.status_code == 200
     story = detail.json()
     assert story["kind"] == "story"
-    assert story["slug"] == "2026-06-29-agent-platforms"
-    assert story["title"] == "Agent Platforms"
+    assert story["slug"] == "2026-06-29-openai-agent-runtime-reliability"
+    assert story["title"] == "OpenAI agent runtime reliability becomes the control plane"
+    assert story["dek"] == "A source-backed site story artifact, not a raw newsletter section."
+    assert story["summary"].startswith("OpenAI Codex changed")
+    assert story["body_markdown"].startswith("OpenAI Codex changed")
     assert story["source_refs"][0]["domain"] == "openai.com"
-    assert story["issue_url"] == "/briefings/2026-06-29"
-    assert story["provenance"]["ai_generated"] is False
+    assert story["graph_connectors"]["source_domains"] == ["openai.com"]
+    assert "openai" in story["graph_connectors"]["entity_ids"]
+    assert "source" not in story["graph_connectors"]["topic_terms"]
+    assert {edge["kind"] for edge in story["graph_edges"]} >= {"source_domain"}
+    assert story["related_paths"] == []
+    assert story["provenance"]["generated_by"] == "mindpattern.site_content.story_engine"
+    assert story["provenance"]["ai_generated"] is True
 
+    assert client.get(
+        "/api/stories/2026-06-29-openai-and-anthropic-shipped-agent-updates?user=ramsay"
+    ).status_code == 404
+    assert client.get("/api/stories/2026-06-29-draft-raw-newsletter-chunk?user=ramsay").status_code == 404
     assert client.get("/api/stories/2026-06-29-missing?user=ramsay").status_code == 404
     assert client.get("/api/stories/%2E%2E%2Fsecret?user=ramsay").status_code == 404
-    assert client.get("/api/stories/2026-06-29-agent-platforms?user=../ramsay").status_code == 404
+    assert client.get(
+        "/api/stories/2026-06-29-openai-agent-runtime-reliability?user=../ramsay"
+    ).status_code == 404
 
 
 def test_entity_endpoint_returns_source_backed_issue_story_units(client):
@@ -587,9 +739,17 @@ def test_entity_endpoint_returns_source_backed_issue_story_units(client):
     assert entity["name"] == "OpenAI"
     assert entity["confidence"] == "source-backed"
     assert entity["total"] >= 1
-    assert entity["story_units"][0]["issue_date"] == "2026-06-29"
-    assert entity["story_units"][0]["target_url"] == "/briefings/2026-06-29"
-    assert entity["story_units"][0]["source_refs"][0]["domain"] == "openai.com"
+    newsletter_story = next(
+        story for story in entity["story_units"] if story["issue_date"] == "2026-06-29"
+    )
+    assert newsletter_story["target_url"] == "/briefings/2026-06-29"
+    assert newsletter_story["source_refs"][0]["domain"] == "openai.com"
+    assert entity["findings"][0]["target_url"].startswith("/f/")
+    assert any(finding["id"] == 990_001 for finding in entity["findings"])
+    assert any(rel["source"] == "entity_graph" for rel in entity["relationships"])
+    assert "entity_graph" in entity["graph_sources"]
+    assert "findings_text" in entity["graph_sources"]
+    assert entity["provenance"]["generated_by"] == "mindpattern.site_content.entity_reader+corpus_graph"
     assert "openai.com" in {source["domain"] for source in entity["source_trail"]}
 
     assert client.get("/api/entities/and?user=ramsay").status_code == 404

@@ -11,6 +11,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import numpy as np
 from fastapi import APIRouter, Query, Depends
@@ -66,6 +67,21 @@ def _strip_pii_dict(d: dict, fields: list[str]) -> dict:
 
 _USER_RE = re.compile(r"^[a-z0-9_-]+$")
 _ARC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+_PUBLIC_ENTITY_SLUG_BLOCKLIST = {
+    "and",
+    "because",
+    "but",
+    "for",
+    "from",
+    "into",
+    "not",
+    "source",
+    "story",
+    "that",
+    "the",
+    "this",
+    "with",
+}
 
 
 def _safe_user(user: str) -> Optional[str]:
@@ -247,6 +263,225 @@ def _public_finding(row: sqlite3.Row | dict, *, kind: str = "finding") -> dict:
 
 def _finding_not_found() -> JSONResponse:
     return JSONResponse(status_code=404, content={"error": "Finding not found"})
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _source_ref_from_finding(item: dict) -> dict | None:
+    source_url = redact_sensitive_text(item.get("source_url") or "")
+    if not source_url.startswith(("http://", "https://")):
+        return None
+    parsed = urlparse(source_url)
+    domain = re.sub(r"^www\.", "", parsed.netloc.lower())
+    if not domain:
+        return None
+    return {
+        "url": source_url,
+        "domain": domain,
+        "title": redact_sensitive_text(item.get("source_name") or domain),
+    }
+
+
+def _entity_slug_expr(column: str) -> str:
+    return f"lower(replace(replace({column}, ' ', '-'), '_', '-'))"
+
+
+def _entity_search_pattern(entity_slug: str) -> str:
+    tokens = [token for token in entity_slug.split("-") if token]
+    return "%" + "%".join(tokens) + "%"
+
+
+def _safe_entity_slug(name: str) -> str:
+    try:
+        return normalize_slug(name)
+    except ValueError:
+        return "unknown"
+
+
+def _public_corpus_entity(user: str, entity_slug: str, *, limit: int) -> dict:
+    conn = get_memory_db(user)
+    if conn is None:
+        return {
+            "name": entity_slug.replace("-", " ").title(),
+            "relationships": [],
+            "findings": [],
+            "source_trail": [],
+            "kg_entities": [],
+            "graph_sources": [],
+        }
+
+    try:
+        entity_name = entity_slug.replace("-", " ").title()
+        graph_sources: set[str] = set()
+        relationships: list[dict] = []
+        finding_ids: set[int] = set()
+        kg_entities: list[dict] = []
+
+        if _table_exists(conn, "kg_entities") and _table_exists(conn, "kg_entity_aliases"):
+            kg_rows = conn.execute(
+                f"""
+                SELECT DISTINCT e.id, e.canonical_name, e.entity_type, e.description,
+                       e.mention_count, e.importance, e.first_seen, e.last_seen
+                FROM kg_entities e
+                LEFT JOIN kg_entity_aliases a ON a.entity_id = e.id
+                WHERE {_entity_slug_expr("e.canonical_name")} = ?
+                   OR {_entity_slug_expr("a.alias")} = ?
+                ORDER BY e.importance DESC, e.mention_count DESC
+                LIMIT 5
+                """,
+                (entity_slug, entity_slug),
+            ).fetchall()
+            for row in kg_rows:
+                graph_sources.add("kg_entities")
+                kg_entity = {
+                    "id": int(row["id"]),
+                    "name": redact_sensitive_text(row["canonical_name"]),
+                    "kind": redact_sensitive_text(row["entity_type"] or "Other"),
+                    "description": redact_sensitive_text(row["description"] or ""),
+                    "mention_count": int(row["mention_count"] or 0),
+                    "importance": float(row["importance"] or 0.0),
+                    "first_seen": _valid_date(row["first_seen"]) or "",
+                    "last_seen": _valid_date(row["last_seen"]) or "",
+                }
+                kg_entities.append(kg_entity)
+                entity_name = kg_entity["name"] or entity_name
+
+                if _table_exists(conn, "kg_edges"):
+                    edge_rows = conn.execute(
+                        """
+                        SELECT edge.id, edge.predicate, edge.fact_text, edge.fact_type,
+                               edge.confidence, edge.finding_id,
+                               subject.canonical_name AS subject_name,
+                               object.canonical_name AS object_name,
+                               subject.entity_type AS subject_type,
+                               object.entity_type AS object_type
+                        FROM kg_edges edge
+                        JOIN kg_entities subject ON subject.id = edge.subject_id
+                        JOIN kg_entities object ON object.id = edge.object_id
+                        WHERE edge.invalid_at IS NULL
+                          AND (edge.subject_id = ? OR edge.object_id = ?)
+                        ORDER BY edge.confidence DESC, edge.id DESC
+                        LIMIT 40
+                        """,
+                        (kg_entity["id"], kg_entity["id"]),
+                    ).fetchall()
+                    for edge in edge_rows:
+                        graph_sources.add("kg_edges")
+                        finding_id = edge["finding_id"]
+                        if finding_id is not None:
+                            finding_ids.add(int(finding_id))
+                        relationships.append({
+                            "source": "kg_edges",
+                            "relationship": redact_sensitive_text(edge["predicate"]),
+                            "entity_a": redact_sensitive_text(edge["subject_name"]),
+                            "entity_a_type": redact_sensitive_text(edge["subject_type"] or ""),
+                            "entity_b": redact_sensitive_text(edge["object_name"]),
+                            "entity_b_type": redact_sensitive_text(edge["object_type"] or ""),
+                            "fact_text": redact_sensitive_text(edge["fact_text"] or ""),
+                            "fact_type": redact_sensitive_text(edge["fact_type"] or "Fact"),
+                            "confidence": float(edge["confidence"] or 0.0),
+                            "finding_id": int(finding_id) if finding_id is not None else None,
+                            "target_url": f"/f/{finding_id}" if finding_id is not None else "",
+                        })
+
+        if _table_exists(conn, "entity_graph"):
+            rows = conn.execute(
+                f"""
+                SELECT entity_a, entity_a_type, relationship, entity_b, entity_b_type,
+                       finding_id, created_at
+                FROM entity_graph
+                WHERE {_entity_slug_expr("entity_a")} = ?
+                   OR {_entity_slug_expr("entity_b")} = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 100
+                """,
+                (entity_slug, entity_slug),
+            ).fetchall()
+            for row in rows:
+                graph_sources.add("entity_graph")
+                a_slug = _safe_entity_slug(row["entity_a"])
+                matched_a = a_slug == entity_slug
+                entity_name = redact_sensitive_text(row["entity_a"] if matched_a else row["entity_b"])
+                related_name = redact_sensitive_text(row["entity_b"] if matched_a else row["entity_a"])
+                related_type = redact_sensitive_text(row["entity_b_type"] if matched_a else row["entity_a_type"] or "")
+                finding_id = row["finding_id"]
+                if finding_id is not None:
+                    finding_ids.add(int(finding_id))
+                relationships.append({
+                    "source": "entity_graph",
+                    "relationship": redact_sensitive_text(row["relationship"]),
+                    "related_entity": related_name,
+                    "related_entity_slug": _safe_entity_slug(related_name),
+                    "related_entity_type": related_type,
+                    "finding_id": int(finding_id) if finding_id is not None else None,
+                    "target_url": f"/f/{finding_id}" if finding_id is not None else "",
+                    "created_at": redact_sensitive_text(row["created_at"] or ""),
+                })
+
+        findings_by_id: dict[int, dict] = {}
+        if finding_ids:
+            placeholders = ",".join("?" for _ in finding_ids)
+            rows = conn.execute(
+                f"""
+                SELECT id, run_date, agent, title, summary, importance, category,
+                       source_url, source_name, created_at
+                FROM findings
+                WHERE id IN ({placeholders})
+                ORDER BY run_date DESC, created_at DESC
+                LIMIT ?
+                """,
+                [*finding_ids, limit],
+            ).fetchall()
+            for row in rows:
+                public = _public_finding(row)
+                public["target_url"] = f"/f/{public['id']}"
+                public["relationship"] = "entity_graph_provenance"
+                findings_by_id[public["id"]] = public
+
+        if len(findings_by_id) < limit and _table_exists(conn, "findings"):
+            pattern = _entity_search_pattern(entity_slug)
+            rows = conn.execute(
+                """
+                SELECT id, run_date, agent, title, summary, importance, category,
+                       source_url, source_name, created_at
+                FROM findings
+                WHERE lower(title || ' ' || COALESCE(summary, '')) LIKE ?
+                ORDER BY run_date DESC, created_at DESC
+                LIMIT ?
+                """,
+                (pattern, limit),
+            ).fetchall()
+            for row in rows:
+                graph_sources.add("findings_text")
+                public = _public_finding(row)
+                public["target_url"] = f"/f/{public['id']}"
+                public["relationship"] = "entity_text_match"
+                findings_by_id.setdefault(public["id"], public)
+                if len(findings_by_id) >= limit:
+                    break
+
+        source_by_url: dict[str, dict] = {}
+        for finding in findings_by_id.values():
+            source = _source_ref_from_finding(finding)
+            if source is not None:
+                source_by_url.setdefault(source["url"], source)
+
+        return {
+            "name": entity_name,
+            "relationships": relationships[:limit],
+            "findings": list(findings_by_id.values())[:limit],
+            "source_trail": list(source_by_url.values())[:limit],
+            "kg_entities": kg_entities,
+            "graph_sources": sorted(graph_sources),
+        }
+    finally:
+        conn.close()
 
 
 # ── Public endpoints (no auth) ──────────────────────────────────
@@ -1124,8 +1359,413 @@ def _story_from_issue(issue: dict, story_slug: str) -> dict | None:
                 continue
         except ValueError:
             continue
-        return build_public_story(issue=issue, story_unit=story_unit)
+            return build_public_story(issue=issue, story_unit=story_unit)
     return None
+
+
+def _public_story_files(user: str) -> list[Path]:
+    base = (REPORTS_DIR / user / "site-stories").resolve()
+    try:
+        base.relative_to(REPORTS_DIR.resolve())
+    except ValueError:
+        return []
+    if not base.exists():
+        return []
+    files = [path for path in base.rglob("*.json") if path.is_file()]
+    return sorted(files, key=lambda path: path.as_posix(), reverse=True)
+
+
+def _public_story_source_refs(items: list[dict]) -> list[dict]:
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        source_url = redact_sensitive_text(str(item.get("url", "")))
+        if not source_url.startswith(("http://", "https://")) or source_url in seen:
+            continue
+        parsed = urlparse(source_url)
+        domain = redact_sensitive_text(str(item.get("domain") or parsed.netloc.lower().removeprefix("www.")))
+        if not domain:
+            continue
+        seen.add(source_url)
+        refs.append({
+            "url": source_url,
+            "domain": domain,
+            "title": redact_sensitive_text(str(item.get("title") or domain)),
+        })
+    return refs
+
+
+def _public_story_entity_refs(items: list[dict]) -> list[dict]:
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw_slug = str(item.get("slug") or item.get("id") or "")
+        try:
+            slug = normalize_slug(raw_slug)
+        except ValueError:
+            continue
+        if slug in seen:
+            continue
+        seen.add(slug)
+        refs.append({
+            "id": slug,
+            "slug": slug,
+            "name": redact_sensitive_text(str(item.get("name") or slug.replace("-", " ").title())),
+            "kind": redact_sensitive_text(str(item.get("kind") or "unknown")),
+        })
+    return refs
+
+
+def _public_story_edges(items: list[dict]) -> list[dict]:
+    edges: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        target_url = redact_sensitive_text(str(item.get("target_url") or ""))
+        if target_url and not target_url.startswith(("/", "http://", "https://")):
+            target_url = ""
+        edges.append({
+            "kind": redact_sensitive_text(str(item.get("kind") or "")),
+            "relationship": redact_sensitive_text(str(item.get("relationship") or "")),
+            "id": redact_sensitive_text(str(item.get("id") or "")),
+            "label": redact_sensitive_text(str(item.get("label") or "")),
+            "target_url": target_url,
+            "evidence": redact_sensitive_text(str(item.get("evidence") or "")),
+        })
+    return edges
+
+
+def _public_story_claim_evidence(items: list[dict]) -> list[dict]:
+    evidence: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        source_url = redact_sensitive_text(str(item.get("source_url") or ""))
+        if source_url and not source_url.startswith(("http://", "https://")):
+            source_url = ""
+        finding_id = item.get("finding_id")
+        evidence.append({
+            "claim": redact_sensitive_text(str(item.get("claim") or "")),
+            "source_url": source_url,
+            "finding_id": int(finding_id) if str(finding_id).isdigit() else None,
+        })
+    return [item for item in evidence if item["claim"] or item["source_url"] or item["finding_id"] is not None]
+
+
+def _public_story_provenance(item: dict) -> dict:
+    provenance = item.get("provenance") if isinstance(item.get("provenance"), dict) else {}
+    input_artifacts = []
+    for artifact in provenance.get("input_artifacts") or []:
+        artifact_text = redact_sensitive_text(str(artifact))
+        if artifact_text.startswith("reports/"):
+            input_artifacts.append(artifact_text)
+    source_finding_ids = [
+        int(finding_id)
+        for finding_id in provenance.get("source_finding_ids") or []
+        if str(finding_id).isdigit()
+    ]
+    source_issue_dates = [
+        date
+        for date in (str(value) for value in provenance.get("source_issue_dates") or [])
+        if _valid_run_date(date)
+    ]
+    return {
+        "generated_by": redact_sensitive_text(str(provenance.get("generated_by") or "")),
+        "generated_at": redact_sensitive_text(str(provenance.get("generated_at") or "")),
+        "input_artifacts": input_artifacts,
+        "source_finding_ids": source_finding_ids,
+        "source_issue_dates": source_issue_dates,
+        "redaction_status": redact_sensitive_text(str(provenance.get("redaction_status") or "passed")),
+        "ai_generated": bool(provenance.get("ai_generated")),
+        "human_approved": bool(provenance.get("human_approved")),
+    }
+
+
+def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    if item.get("status") != "published" or item.get("confidence") != "high":
+        return None
+    try:
+        slug = normalize_slug(str(item.get("slug") or fallback_slug))
+    except ValueError:
+        return None
+
+    source_refs = _public_story_source_refs(item.get("source_refs") or item.get("source_trail") or [])
+    claim_evidence = _public_story_claim_evidence(item.get("claim_evidence") or [])
+    if not source_refs or not claim_evidence:
+        return None
+
+    issue_date = _valid_run_date(str(item.get("issue_date") or item.get("date") or "")) or ""
+    title = redact_sensitive_text(str(item.get("title") or "")).strip()
+    if not title:
+        return None
+
+    finding_ids = [
+        int(finding_id)
+        for finding_id in item.get("finding_ids") or item.get("primary_finding_ids") or []
+        if str(finding_id).isdigit()
+    ]
+    graph_connectors = item.get("graph_connectors") if isinstance(item.get("graph_connectors"), dict) else {}
+    graph_connectors = {
+        "issue_date": issue_date,
+        "source_urls": [source["url"] for source in source_refs],
+        "source_domains": sorted({source["domain"] for source in source_refs}),
+        "entity_ids": [
+            entity["id"]
+            for entity in _public_story_entity_refs(item.get("entity_refs") or item.get("entities") or [])
+        ],
+        "topic_terms": [
+            redact_sensitive_text(str(term))
+            for term in graph_connectors.get("topic_terms", [])
+            if str(term)
+        ][:16],
+        "finding_ids": finding_ids,
+        "arc_ids": [redact_sensitive_text(str(arc_id)) for arc_id in item.get("arc_ids", []) if str(arc_id)],
+    }
+
+    body_markdown = redact_sensitive_text(str(item.get("body_markdown") or item.get("body") or item.get("take") or ""))
+    summary = redact_sensitive_text(str(item.get("summary") or item.get("dek") or item.get("take") or ""))
+
+    return {
+        "kind": "story",
+        "id": slug,
+        "slug": slug,
+        "status": "published",
+        "issue_date": issue_date,
+        "date": issue_date,
+        "title": title,
+        "dek": redact_sensitive_text(str(item.get("dek") or "")),
+        "summary": summary,
+        "take": redact_sensitive_text(str(item.get("take") or "")),
+        "why_now": redact_sensitive_text(str(item.get("why_now") or "")),
+        "body_excerpt": summary,
+        "body_markdown": body_markdown or summary,
+        "source_refs": source_refs,
+        "source_trail": source_refs,
+        "entity_refs": _public_story_entity_refs(item.get("entity_refs") or item.get("entities") or []),
+        "finding_ids": finding_ids,
+        "primary_finding_ids": finding_ids,
+        "supporting_finding_ids": [
+            int(finding_id)
+            for finding_id in item.get("supporting_finding_ids", [])
+            if str(finding_id).isdigit()
+        ],
+        "arc_ids": graph_connectors["arc_ids"],
+        "graph_connectors": graph_connectors,
+        "graph_edges": _public_story_edges(item.get("graph_edges") or []),
+        "related_paths": [
+            related
+            for related in item.get("related_paths", [])
+            if isinstance(related, dict) and str(related.get("target_url", "")).startswith(("/", "http://", "https://"))
+        ],
+        "target_url": f"/s/{slug}",
+        "confidence": "high",
+        "labels": [redact_sensitive_text(str(label)) for label in item.get("labels", []) if str(label)],
+        "json_ld_ready": bool(item.get("json_ld_ready", True)),
+        "claim_evidence": claim_evidence,
+        "provenance": _public_story_provenance(item),
+    }
+
+
+def _load_public_story_file(path: Path) -> dict | None:
+    try:
+        path.resolve().relative_to((REPORTS_DIR).resolve())
+    except ValueError:
+        return None
+    try:
+        item = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return _public_story_artifact(item, fallback_slug=path.stem)
+
+
+async def _all_public_stories(user: str, *, max_items: int | None = None) -> list[dict]:
+    stories: list[dict] = []
+    for path in _public_story_files(user):
+        story = _load_public_story_file(path)
+        if story is None:
+            continue
+        stories.append(story)
+        if max_items is not None and len(stories) >= max_items:
+            break
+    stories.sort(key=lambda story: (story.get("issue_date", ""), story.get("slug", "")), reverse=True)
+    return stories
+
+
+def _story_connector_set(story: dict, key: str) -> set:
+    values = story.get("graph_connectors", {}).get(key, [])
+    return {str(value) for value in values if str(value)}
+
+
+def _story_entity_labels(story: dict) -> dict[str, str]:
+    return {
+        str(entity["id"]): str(entity["name"])
+        for entity in story.get("entity_refs", [])
+        if entity.get("id") and entity.get("name")
+    }
+
+
+def _source_ref_by_url(story: dict) -> dict[str, dict]:
+    return {
+        str(source["url"]): source
+        for source in story.get("source_refs", [])
+        if source.get("url")
+    }
+
+
+def _related_path_from_graph(source: dict, candidate: dict) -> dict | None:
+    source_urls = _story_connector_set(source, "source_urls")
+    candidate_urls = _story_connector_set(candidate, "source_urls")
+    source_domains = _story_connector_set(source, "source_domains")
+    candidate_domains = _story_connector_set(candidate, "source_domains")
+    source_entities = _story_connector_set(source, "entity_ids")
+    candidate_entities = _story_connector_set(candidate, "entity_ids")
+    source_topics = _story_connector_set(source, "topic_terms")
+    candidate_topics = _story_connector_set(candidate, "topic_terms")
+    source_findings = _story_connector_set(source, "finding_ids")
+    candidate_findings = _story_connector_set(candidate, "finding_ids")
+    source_arcs = _story_connector_set(source, "arc_ids")
+    candidate_arcs = _story_connector_set(candidate, "arc_ids")
+
+    shared_urls = sorted(source_urls & candidate_urls)
+    shared_domains = sorted(source_domains & candidate_domains)
+    shared_entities = sorted(source_entities & candidate_entities)
+    shared_topics = sorted(source_topics & candidate_topics)
+    shared_findings = sorted(source_findings & candidate_findings)
+    shared_arcs = sorted(source_arcs & candidate_arcs)
+
+    if len(shared_topics) < 2:
+        shared_topics = []
+
+    if not any([shared_urls, shared_domains, shared_entities, shared_topics, shared_findings, shared_arcs]):
+        return None
+
+    evidence_edges: list[dict] = []
+    relationships: list[str] = []
+    reason_parts: list[str] = []
+    score = 0.0
+    source_refs = _source_ref_by_url(source)
+    entity_labels = _story_entity_labels(source) | _story_entity_labels(candidate)
+
+    if shared_urls:
+        relationships.append("shared_source_url")
+        score += 6 * len(shared_urls)
+        labels: list[str] = []
+        for url in shared_urls[:3]:
+            ref = source_refs.get(url, {})
+            label = ref.get("title") or ref.get("domain") or url
+            labels.append(label)
+            evidence_edges.append({
+                "kind": "source_url",
+                "relationship": "shared_source_url",
+                "id": url,
+                "label": label,
+                "target_url": url,
+            })
+        reason_parts.append(f"same source URL: {', '.join(labels)}")
+
+    if shared_domains:
+        relationships.append("shared_source_domain")
+        score += 3 * len(shared_domains)
+        for domain in shared_domains[:3]:
+            evidence_edges.append({
+                "kind": "source_domain",
+                "relationship": "shared_source_domain",
+                "id": domain,
+                "label": domain,
+                "target_url": f"/source/{domain}",
+            })
+        reason_parts.append(f"same source domain: {', '.join(shared_domains[:3])}")
+
+    if shared_entities:
+        relationships.append("shared_entity")
+        score += 4 * len(shared_entities)
+        labels = [entity_labels.get(entity_id, entity_id) for entity_id in shared_entities[:4]]
+        for entity_id, label in zip(shared_entities[:4], labels):
+            evidence_edges.append({
+                "kind": "entity",
+                "relationship": "shared_entity",
+                "id": entity_id,
+                "label": label,
+                "target_url": f"/e/{entity_id}",
+            })
+        reason_parts.append(f"same entities: {', '.join(labels)}")
+
+    if shared_topics:
+        relationships.append("shared_topic")
+        score += 1.5 * len(shared_topics)
+        for topic in shared_topics[:5]:
+            evidence_edges.append({
+                "kind": "topic",
+                "relationship": "shared_topic",
+                "id": topic,
+                "label": topic,
+                "target_url": "",
+            })
+        reason_parts.append(f"same topic terms: {', '.join(shared_topics[:5])}")
+
+    if shared_findings:
+        relationships.append("shared_finding")
+        score += 5 * len(shared_findings)
+        for finding_id in shared_findings[:3]:
+            evidence_edges.append({
+                "kind": "finding",
+                "relationship": "shared_finding",
+                "id": finding_id,
+                "label": f"Finding {finding_id}",
+                "target_url": f"/f/{finding_id}",
+            })
+        reason_parts.append(f"same findings: {', '.join(shared_findings[:3])}")
+
+    if shared_arcs:
+        relationships.append("shared_arc")
+        score += 5 * len(shared_arcs)
+        for arc_id in shared_arcs[:3]:
+            evidence_edges.append({
+                "kind": "arc",
+                "relationship": "shared_arc",
+                "id": arc_id,
+                "label": arc_id,
+                "target_url": "",
+            })
+        reason_parts.append(f"same narrative arcs: {', '.join(shared_arcs[:3])}")
+
+    return {
+        "kind": "story",
+        "id": candidate["id"],
+        "slug": candidate["slug"],
+        "title": candidate["title"],
+        "summary": candidate.get("summary", ""),
+        "issue_date": candidate["issue_date"],
+        "target_url": candidate["target_url"],
+        "relationship": "+".join(relationships),
+        "reason": "Graph match: " + "; ".join(reason_parts),
+        "score": round(score, 2),
+        "evidence_edges": evidence_edges[:10],
+    }
+
+
+def _story_with_graph_related(story: dict, stories: list[dict], *, limit: int = 8) -> dict:
+    related_paths = []
+    for candidate in stories:
+        if candidate.get("slug") == story.get("slug"):
+            continue
+        related = _related_path_from_graph(story, candidate)
+        if related is not None:
+            related_paths.append(related)
+
+    related_paths.sort(
+        key=lambda item: (item["score"], item.get("issue_date", "")),
+        reverse=True,
+    )
+    enriched = dict(story)
+    enriched["related_paths"] = related_paths[:limit]
+    return enriched
 
 
 @router.get("/api/stories")
@@ -1134,16 +1774,11 @@ async def list_public_stories(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
 ):
-    """Public: source-backed story pages derived from canonical newsletter issues."""
+    """Public: published Rabbit Hole site-story artifacts only."""
     if _safe_user(user) is None:
         return {"kind": "stories", "items": [], "total": 0, "limit": limit, "offset": offset}
 
-    stories: list[dict] = []
-    async for issue in _iter_structured_issues(user):
-        for story_unit in issue.get("story_units", []):
-            story = build_public_story(issue=issue, story_unit=story_unit)
-            if story is not None:
-                stories.append(story)
+    stories = await _all_public_stories(user, max_items=offset + limit)
 
     return {
         "kind": "stories",
@@ -1156,7 +1791,7 @@ async def list_public_stories(
 
 @router.get("/api/stories/{slug}")
 async def get_public_story(slug: str, user: str = Query("ramsay")):
-    """Public: one source-backed story page by stable story slug."""
+    """Public: one published Rabbit Hole site-story artifact by slug."""
     if _safe_user(user) is None:
         return JSONResponse(status_code=404, content={"error": "Story not found"})
     try:
@@ -1164,16 +1799,10 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     except ValueError:
         return JSONResponse(status_code=404, content={"error": "Story not found"})
 
-    story_date = _story_date_from_slug(story_slug)
-    if story_date is not None:
-        issue = _structured_issue_from_report_file(date=story_date, user=user)
-        story = _story_from_issue(issue, story_slug) if issue is not None else None
-        if story is not None:
-            return story
-        return JSONResponse(status_code=404, content={"error": "Story not found"})
-
-    async for issue in _iter_structured_issues(user):
-        story = _story_from_issue(issue, story_slug)
+    for path in _public_story_files(user):
+        if path.stem != story_slug:
+            continue
+        story = _load_public_story_file(path)
         if story is not None:
             return story
     return JSONResponse(status_code=404, content={"error": "Story not found"})
@@ -1181,14 +1810,17 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
 
 @router.get("/api/entities/{slug}")
 async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(20, ge=1, le=50)):
-    """Public: dynamic entity page data from structured newsletter issues."""
+    """Public: dynamic entity page data from newsletters plus existing corpus graph."""
     if _safe_user(user) is None:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
     try:
         entity_slug = normalize_slug(slug)
     except ValueError:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
+    if entity_slug in _PUBLIC_ENTITY_SLUG_BLOCKLIST or len(entity_slug) < 4:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
 
+    corpus = _public_corpus_entity(user, entity_slug, limit=limit)
     reports = await list_reports(user=user)
     story_units: list[dict] = []
     source_by_url: dict[str, dict] = {}
@@ -1240,23 +1872,34 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         if len(story_units) >= limit:
             break
 
-    if not story_units:
+    for source in corpus["source_trail"]:
+        source_by_url.setdefault(source["url"], source)
+
+    if not story_units and not corpus["findings"] and not corpus["relationships"] and not corpus["kg_entities"]:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
+
+    graph_sources = sorted({"newsletter_issues"} if story_units else set())
+    graph_sources = sorted(set(graph_sources) | set(corpus["graph_sources"]))
 
     return {
         "kind": "entity",
         "slug": entity_slug,
-        "name": entity_name or entity_slug.replace("-", " ").title(),
+        "name": entity_name or corpus["name"] or entity_slug.replace("-", " ").title(),
         "user": user,
-        "confidence": "source-backed",
+        "confidence": "source-backed" if story_units or corpus["source_trail"] else "corpus-backed",
         "story_units": story_units,
+        "findings": corpus["findings"],
+        "relationships": corpus["relationships"],
+        "kg_entities": corpus["kg_entities"],
         "source_trail": list(source_by_url.values()),
         "issue_dates": issue_dates,
-        "total": len(story_units),
+        "graph_sources": graph_sources,
+        "total": len(story_units) + len(corpus["findings"]) + len(corpus["relationships"]),
         "limit": limit,
         "provenance": {
-            "generated_by": "mindpattern.site_content.entity_reader",
+            "generated_by": "mindpattern.site_content.entity_reader+corpus_graph",
             "source_issue_dates": issue_dates,
+            "graph_sources": graph_sources,
             "redaction_status": "passed",
             "ai_generated": False,
         },

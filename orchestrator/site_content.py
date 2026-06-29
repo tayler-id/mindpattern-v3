@@ -22,6 +22,7 @@ from orchestrator.media_contracts import (
 _SAFE_USER_RE = re.compile(r"^[a-z0-9_-]+$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+_BOLD_LEAD_RE = re.compile(r"^\s*(?:[-*]\s*)?\*\*(.+?)\*\*\s*(.*)$")
 _ENTITY_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,}))*\b")
 _COMMON_ENTITIES = {
     "AI",
@@ -33,6 +34,28 @@ _COMMON_ENTITIES = {
     "See",
     "Top Stories",
     "Why",
+}
+_SECTION_CONTAINER_TITLES = {
+    "top 5 stories today",
+    "top stories",
+}
+_GENERIC_SECTION_TITLES = _SECTION_CONTAINER_TITLES | {
+    "agents",
+    "hot projects & oss",
+    "hot projects and oss",
+    "infrastructure & architecture",
+    "infrastructure and architecture",
+    "market moves",
+    "models",
+    "policy & governance",
+    "policy and governance",
+    "research",
+    "saas disruption",
+    "security",
+    "skills of the day",
+    "tools & developer experience",
+    "tools and developer experience",
+    "vibe coding",
 }
 _ENTITY_STOPWORDS = {
     "a",
@@ -114,6 +137,39 @@ _ENTITY_STOPWORDS = {
     "you",
     "your",
 }
+_TOPIC_STOPWORDS = _ENTITY_STOPWORDS | {
+    "briefing",
+    "canonical",
+    "cited",
+    "citation",
+    "citations",
+    "cites",
+    "com",
+    "content",
+    "daily",
+    "domain",
+    "domains",
+    "example",
+    "fixture",
+    "http",
+    "https",
+    "link",
+    "links",
+    "mindpattern",
+    "news",
+    "newsletter",
+    "report",
+    "reports",
+    "said",
+    "says",
+    "source",
+    "sources",
+    "story",
+    "thread",
+    "url",
+    "urls",
+    "www",
+}
 
 
 def normalize_slug(value: str, *, max_length: int = 96) -> str:
@@ -125,6 +181,13 @@ def normalize_slug(value: str, *, max_length: int = 96) -> str:
     if slug == "artifact":
         raise ValueError("slug must contain at least one alphanumeric character")
     return slug
+
+
+def _title_slug(value: str, *, max_length: int = 96) -> str:
+    """Create a slug from editorial title text that may contain punctuation."""
+    title = re.sub(r"[\\/]+", " ", str(value or ""))
+    title = re.sub(r"\s+", " ", title).strip()
+    return normalize_slug(title, max_length=max_length)
 
 
 def issue_artifact_path(*, date: str, user: str, reports_root: Path) -> Path:
@@ -192,6 +255,70 @@ def _extract_entities(text: str) -> list[dict[str, Any]]:
     return sorted(entities.values(), key=lambda item: item["name"].lower())
 
 
+def _normalize_topic_token(token: str) -> str:
+    token = token.lower().strip("-_")
+    if len(token) > 5 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _topic_terms(text: str, *, limit: int = 16) -> list[str]:
+    cleaned = re.sub(r"\[[^\]]+\]\((https?://[^)\s]+)\)", " ", text)
+    cleaned = re.sub(r"https?://\S+", " ", cleaned)
+    counts: dict[str, int] = {}
+    for raw in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", cleaned):
+        term = _normalize_topic_token(raw)
+        if len(term) < 4 or term in _TOPIC_STOPWORDS or term.isdigit():
+            continue
+        counts[term] = counts.get(term, 0) + 1
+    ranked = sorted(counts, key=lambda term: (-counts[term], term))
+    return ranked[:limit]
+
+
+def _plain_summary(text: str, *, limit: int = 280) -> str:
+    plain = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"\1", text)
+    plain = re.sub(r"\*\*(.*?)\*\*", r"\1", plain)
+    plain = re.sub(r"`([^`]+)`", r"\1", plain)
+    plain = re.sub(r"https?://\S+", "", plain)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    if len(plain) > limit:
+        return plain[: limit - 3].rstrip() + "..."
+    return plain
+
+
+def _is_section_container_title(title: str) -> bool:
+    normalized = re.sub(r"\s+", " ", title).strip().lower()
+    return normalized in _SECTION_CONTAINER_TITLES
+
+
+def _is_generic_section_title(title: str) -> bool:
+    normalized = re.sub(r"\s+", " ", title).strip().lower()
+    return normalized in _GENERIC_SECTION_TITLES
+
+
+def _clean_story_title(title: str) -> str:
+    title = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", title)
+    title = re.sub(r"\s+", " ", title).strip()
+    return title.strip("*_ ")
+
+
+def _promote_bold_lead_title(title: str, body: str) -> tuple[str, str]:
+    if not _is_section_container_title(title):
+        return title, body
+    match = re.match(r"^\s*\*\*(.+?)\*\*\s*(.*)$", body, flags=re.S)
+    if not match:
+        return title, body
+    promoted = _clean_story_title(match.group(1))
+    if len(promoted) < 8:
+        return title, body
+    rest = match.group(2).strip()
+    return promoted, rest or body
+
+
 def _is_entity_candidate(name: str) -> bool:
     if len(name) < 3 or name in _COMMON_ENTITIES:
         return False
@@ -232,6 +359,118 @@ def _is_entity_candidate(name: str) -> bool:
     return True
 
 
+def _story_graph_connectors(
+    *,
+    issue_date: str,
+    source_refs: list[dict[str, str]],
+    entity_refs: list[dict[str, Any]],
+    topic_terms: list[str],
+    finding_ids: list[Any],
+    arc_ids: list[Any],
+) -> dict[str, Any]:
+    return {
+        "issue_date": issue_date,
+        "source_urls": sorted({source["url"] for source in source_refs if source.get("url")}),
+        "source_domains": sorted({source["domain"] for source in source_refs if source.get("domain")}),
+        "entity_ids": sorted({entity["id"] for entity in entity_refs if entity.get("id")}),
+        "topic_terms": sorted({term for term in topic_terms if term}),
+        "finding_ids": [int(finding_id) for finding_id in finding_ids if str(finding_id).isdigit()],
+        "arc_ids": sorted({str(arc_id) for arc_id in arc_ids if str(arc_id)}),
+    }
+
+
+def _story_graph_edges(
+    *,
+    story_id: str,
+    issue_date: str,
+    issue_title: str,
+    source_refs: list[dict[str, str]],
+    entity_refs: list[dict[str, Any]],
+    topic_terms: list[str],
+    finding_ids: list[int],
+    arc_ids: list[str],
+) -> list[dict[str, Any]]:
+    edges: list[dict[str, Any]] = [
+        {
+            "kind": "issue",
+            "relationship": "part_of_issue",
+            "id": issue_date,
+            "label": issue_title,
+            "target_url": f"/briefings/{issue_date}",
+            "evidence": story_id,
+        }
+    ]
+
+    seen_domains: set[str] = set()
+    for source in source_refs:
+        url = source.get("url")
+        domain = source.get("domain")
+        if url:
+            edges.append({
+                "kind": "source_url",
+                "relationship": "cites_source_url",
+                "id": url,
+                "label": source.get("title") or domain or url,
+                "target_url": url,
+                "evidence": story_id,
+            })
+        if domain and domain not in seen_domains:
+            seen_domains.add(domain)
+            edges.append({
+                "kind": "source_domain",
+                "relationship": "cites_source_domain",
+                "id": domain,
+                "label": domain,
+                "target_url": f"/source/{domain}",
+                "evidence": story_id,
+            })
+
+    for entity in entity_refs:
+        slug = entity.get("slug") or entity.get("id")
+        if not slug:
+            continue
+        edges.append({
+            "kind": "entity",
+            "relationship": "mentions_entity",
+            "id": entity["id"],
+            "label": entity["name"],
+            "target_url": f"/e/{slug}",
+            "evidence": story_id,
+        })
+
+    for term in topic_terms[:12]:
+        edges.append({
+            "kind": "topic",
+            "relationship": "has_topic",
+            "id": term,
+            "label": term,
+            "target_url": "",
+            "evidence": story_id,
+        })
+
+    for finding_id in finding_ids:
+        edges.append({
+            "kind": "finding",
+            "relationship": "derived_from_finding",
+            "id": str(finding_id),
+            "label": f"Finding {finding_id}",
+            "target_url": f"/f/{finding_id}",
+            "evidence": story_id,
+        })
+
+    for arc_id in arc_ids:
+        edges.append({
+            "kind": "arc",
+            "relationship": "part_of_arc",
+            "id": arc_id,
+            "label": arc_id,
+            "target_url": "",
+            "evidence": story_id,
+        })
+
+    return edges
+
+
 def build_public_story(*, issue: dict[str, Any], story_unit: dict[str, Any]) -> dict[str, Any] | None:
     """Build a public story artifact from a structured issue story unit.
 
@@ -252,23 +491,29 @@ def build_public_story(*, issue: dict[str, Any], story_unit: dict[str, Any]) -> 
         if entity_id in entity_by_id
     ]
 
-    related_paths: list[dict[str, Any]] = []
-    for peer in issue.get("story_units", []):
-        if peer.get("id") == story_unit.get("id") or not peer.get("source_refs"):
-            continue
-        peer_slug = normalize_slug(str(peer["id"]))
-        related_paths.append({
-            "kind": "story",
-            "id": peer["id"],
-            "slug": peer_slug,
-            "title": peer["title"],
-            "summary": peer.get("summary", ""),
-            "target_url": f"/s/{peer_slug}",
-            "relationship": "same_issue",
-            "reason": "Appears in the same canonical MindPattern briefing.",
-        })
-        if len(related_paths) >= 6:
-            break
+    finding_ids = story_unit.get("finding_ids", [])
+    arc_ids = story_unit.get("arc_ids", [])
+    topic_terms = story_unit.get("topic_terms") or _topic_terms(
+        f"{story_unit.get('title', '')}\n{story_unit.get('summary', '')}"
+    )
+    graph_connectors = _story_graph_connectors(
+        issue_date=issue_date,
+        source_refs=source_refs,
+        entity_refs=entity_refs,
+        topic_terms=topic_terms,
+        finding_ids=finding_ids,
+        arc_ids=arc_ids,
+    )
+    graph_edges = _story_graph_edges(
+        story_id=story_id,
+        issue_date=issue_date,
+        issue_title=issue["title"],
+        source_refs=source_refs,
+        entity_refs=entity_refs,
+        topic_terms=graph_connectors["topic_terms"],
+        finding_ids=graph_connectors["finding_ids"],
+        arc_ids=graph_connectors["arc_ids"],
+    )
 
     return {
         "kind": "story",
@@ -282,11 +527,14 @@ def build_public_story(*, issue: dict[str, Any], story_unit: dict[str, Any]) -> 
         "title": story_unit["title"],
         "summary": story_unit.get("summary", ""),
         "body_excerpt": story_unit.get("body_excerpt", story_unit.get("summary", "")),
+        "body_markdown": story_unit.get("body_markdown", story_unit.get("summary", "")),
         "source_refs": source_refs,
         "entity_refs": entity_refs,
-        "finding_ids": story_unit.get("finding_ids", []),
-        "arc_ids": story_unit.get("arc_ids", []),
-        "related_paths": related_paths,
+        "finding_ids": graph_connectors["finding_ids"],
+        "arc_ids": graph_connectors["arc_ids"],
+        "graph_connectors": graph_connectors,
+        "graph_edges": graph_edges,
+        "related_paths": [],
         "target_url": f"/s/{story_id}",
         "confidence": "source-backed",
         "labels": ["source-backed", "canonical briefing excerpt"],
@@ -310,7 +558,7 @@ def _redaction_status(original: str, redacted: str) -> str:
 
 
 def _new_section(title: str, index: int) -> dict[str, Any]:
-    slug = normalize_slug(title)
+    slug = _title_slug(title)
     return {
         "id": slug,
         "slug": slug,
@@ -330,13 +578,13 @@ def _story_unit(
     order: int,
 ) -> dict[str, Any]:
     body = redact_sensitive_text("\n".join(body_lines).strip())
-    title_safe = redact_sensitive_text(title)
-    slug = normalize_slug(title)
-    sources = _source_refs(body)
+    title, body = _promote_bold_lead_title(title, body)
+    title_safe = redact_sensitive_text(_clean_story_title(title))
+    slug = _title_slug(title_safe)
+    sources = _source_refs(f"{title}\n{body}")
     entities = _extract_entities(f"{title_safe}\n{body}")
-    summary = re.sub(r"\s+", " ", body).strip()
-    if len(summary) > 240:
-        summary = summary[:237].rstrip() + "..."
+    topics = _topic_terms(f"{title_safe}\n{body}")
+    summary = _plain_summary(body)
     return {
         "id": f"{date}-{slug}",
         "slug": slug,
@@ -345,13 +593,71 @@ def _story_unit(
         "title": title_safe,
         "summary": summary,
         "body_excerpt": summary,
+        "body_markdown": body,
         "finding_ids": [],
         "entity_ids": [entity["id"] for entity in entities],
+        "topic_terms": topics,
         "source_refs": sources,
         "arc_ids": [],
         "claim_evidence": [],
         "order": order,
-    }
+}
+
+
+def _section_story_units(
+    *,
+    date: str,
+    section: dict[str, Any],
+    body_lines: list[str],
+    start_order: int,
+) -> list[dict[str, Any]]:
+    units: list[dict[str, Any]] = []
+    current_title: str | None = None
+    current_lines: list[str] = []
+
+    def flush_current() -> None:
+        nonlocal current_title, current_lines
+        if current_title is None:
+            return
+        story = _story_unit(
+            date=date,
+            section_id=section["id"],
+            title=current_title,
+            body_lines=current_lines,
+            order=start_order + len(units),
+        )
+        units.append(story)
+        current_title = None
+        current_lines = []
+
+    for line in body_lines:
+        match = _BOLD_LEAD_RE.match(line)
+        if match:
+            flush_current()
+            current_title = match.group(1).strip()
+            rest = match.group(2).strip()
+            current_lines = [rest] if rest else []
+            continue
+        if current_title is not None:
+            current_lines.append(line)
+
+    flush_current()
+
+    if units:
+        return units
+    if _is_generic_section_title(section["title"]):
+        return []
+    if not re.sub(r"\s+", " ", "\n".join(body_lines)).strip():
+        return []
+    return [
+        _story_unit(
+            date=date,
+            section_id=section["id"],
+            title=section["title"],
+            body_lines=body_lines,
+            order=start_order,
+        )
+    ]
 
 
 def build_structured_issue(
@@ -404,15 +710,14 @@ def build_structured_issue(
         summary = re.sub(r"\s+", " ", "\n".join(section_intro_lines)).strip()
         current_section["summary"] = summary[:240]
         if not current_section["story_unit_ids"] and summary:
-            story = _story_unit(
+            section_stories = _section_story_units(
                 date=date,
-                section_id=current_section["id"],
-                title=current_section["title"],
+                section=current_section,
                 body_lines=section_intro_lines,
-                order=len(stories) + 1,
+                start_order=len(stories) + 1,
             )
-            stories.append(story)
-            current_section["story_unit_ids"].append(story["id"])
+            stories.extend(section_stories)
+            current_section["story_unit_ids"].extend(story["id"] for story in section_stories)
         section_intro_lines = []
 
     for line in lines:

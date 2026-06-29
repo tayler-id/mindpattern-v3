@@ -1298,3 +1298,50 @@ place instead of deleting the column.
     mapping and type classification are added.
   - Full visual/mobile browser smoke and Vercel production deploy remain
     pending release-gate work.
+
+## Rabbit Hole Corrective Product Boundary - 2026-06-29
+
+- Owner review rejected the parser-first public story UX after local screenshot
+  smoke. The visible failures were product-level, not cosmetic:
+  - Homepage/story surfaces showed newsletter section/container headings such
+    as `Top 5 Stories Today` and `Security` as public story titles.
+  - Story pages exposed raw markdown syntax such as `**bold**` and markdown
+    links.
+  - Related paths exposed internal connector labels such as
+    `shared_source_domain+shared_entity+shared_topic`.
+  - Topic extraction included source/link/domain noise.
+  - The UI implied a tiny limited slice was the graph, while the owner expects
+    dynamic access to the existing large corpus/entity graph.
+- Corrected source-of-truth docs were added:
+  - `docs/runbooks/2026-06-29-rabbit-hole-content-engine-corrected-spec.md`
+  - `docs/runbooks/2026-06-29-rabbit-hole-content-engine-corrected-implementation-plan.md`
+- New product boundary:
+  - Structured newsletter issue/story-unit output remains useful for canonical
+    briefings and graph input.
+  - Structured issue story units are **not** public site-native stories.
+  - `/api/stories` must be backed by published site-story artifacts written by
+    a Rabbit Hole content engine under `reports/<user>/site-stories/`, not by
+    raw newsletter splitter output.
+  - Rabbit Hole homepage must not prefer parser-derived story rows until that
+    artifact-backed API exists and passes browser smoke.
+- Phase 0 correction started on 2026-06-29:
+  - Rabbit Hole homepage was patched locally to stop importing `getStories()`
+    and `StoryWireRow`; normal Wire views now use `/api/feed`/finding fallback
+    again.
+  - v3 `/api/stories` was changed to read published high-confidence
+    `reports/<user>/site-stories/` JSON artifacts only. It no longer exposes
+    structured issue story units or raw parser chunks as public stories.
+  - Rabbit Hole `/e/[slug]` was patched locally to show corpus findings and
+    graph evidence first instead of rendering newsletter parser story units.
+  - Verification completed before commit:
+    `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py tests/test_site_issue_contracts.py -q`
+    -> 49 passed, 1 Starlette/httpx warning; Rabbit Hole `pnpm lint`,
+    `pnpm exec tsc --noEmit --incremental false`, and `pnpm build` passed.
+    Local smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: `/`, `/e/openai`, `/api/stories?user=ramsay&limit=5`,
+    and `/api/issues/2026-06-10/structured?user=ramsay` all returned 200.
+    `rg "Top 5 Stories Today|shared_source|SHARED SOURCE|\\*\\*|\\[.*\\]\\("`
+    returned no matches for `/tmp/rh-home.html` or `/tmp/rh-entity.html`.
+  - Graphify after corrective v3 changes: `graphify update .` rebuilt 7,515
+    nodes, 12,080 edges, 430 communities, with HTML viz skipped above the
+    5,000-node default; `graphify check-update .` passed.

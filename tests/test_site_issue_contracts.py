@@ -82,9 +82,99 @@ def test_build_structured_issue_creates_story_units_for_h2_only_sections():
         ),
     )
 
-    assert [story["title"] for story in issue["story_units"]] == ["Top Stories", "Security"]
-    assert issue["sections"][0]["story_unit_ids"] == ["2026-06-28-top-stories"]
+    assert [story["title"] for story in issue["story_units"]] == [
+        "OpenAI ships agent tools.",
+        "Linux kernel patch lands.",
+    ]
+    assert issue["sections"][0]["story_unit_ids"] == ["2026-06-28-openai-ships-agent-tools"]
     assert issue["story_units"][0]["source_refs"][0]["domain"] == "openai.com"
+
+
+def test_structured_issue_promotes_container_section_bold_leads_to_story_titles():
+    issue = build_structured_issue(
+        date="2026-06-17",
+        user="ramsay",
+        title="Briefing",
+        content=(
+            "# Briefing\n\n"
+            "## Top 5 Stories Today\n\n"
+            "**1. Loop engineering gets a name.** Addy Osmani wrote about "
+            "[loop engineering](https://addyo.substack.com/p/loop-engineering).\n"
+        ),
+    )
+
+    story = issue["story_units"][0]
+    assert story["title"] == "1. Loop engineering gets a name."
+    assert story["slug"] == "1-loop-engineering-gets-a-name"
+    assert story["id"] == "2026-06-17-1-loop-engineering-gets-a-name"
+    assert story["summary"].startswith("Addy Osmani wrote")
+    assert "Top 5 Stories Today" not in story["title"]
+
+
+def test_structured_issue_splits_generic_sections_into_bold_lead_stories():
+    issue = build_structured_issue(
+        date="2026-06-17",
+        user="ramsay",
+        title="Briefing",
+        content=(
+            "# Briefing\n\n"
+            "## Security\n\n"
+            "**cPanel Zero-Day Weaponized Within 24 Hours.** "
+            "The first story cites [Wiz](https://wiz.io/blog/cpanel-zero-day).\n\n"
+            "**Bleeding Llama: Your Ollama Server Is Leaking Memory.** "
+            "The second story cites [Cyera](https://www.cyera.com/research/bleeding-llama).\n\n"
+            "**GitHub RCE CVE-2026-3854.** "
+            "The third story cites [Wiz Research](https://www.wiz.io/blog/github-rce-vulnerability-cve-2026-3854).\n"
+        ),
+    )
+
+    titles = [story["title"] for story in issue["story_units"]]
+    assert titles == [
+        "cPanel Zero-Day Weaponized Within 24 Hours.",
+        "Bleeding Llama: Your Ollama Server Is Leaking Memory.",
+        "GitHub RCE CVE-2026-3854.",
+    ]
+    assert "Security" not in titles
+    assert issue["story_units"][0]["summary"].startswith("The first story cites")
+    assert issue["story_units"][1]["source_refs"][0]["domain"] == "cyera.com"
+
+
+def test_structured_issue_topic_terms_exclude_source_and_url_noise():
+    issue = build_structured_issue(
+        date="2026-06-17",
+        user="ramsay",
+        title="Briefing",
+        content=(
+            "# Briefing\n\n"
+            "## Security\n\n"
+            "**Agent runtime isolation improves.** "
+            "The story cites [Primary Source](https://example.com/security/source). "
+            "Source: https://example.com/another-link\n"
+        ),
+    )
+
+    topics = set(issue["story_units"][0]["topic_terms"])
+    assert {"agent", "runtime", "isolation", "improv"} & topics
+    assert {"source", "sources", "primary", "example", "https", "url", "link"} & topics == set()
+
+
+def test_structured_issue_allows_slashes_in_story_titles_without_path_slugs():
+    issue = build_structured_issue(
+        date="2026-06-17",
+        user="ramsay",
+        title="Briefing",
+        content=(
+            "# Briefing\n\n"
+            "## Security\n\n"
+            "**cPanel/WHM zero-day lands.** "
+            "The story cites [Wiz](https://wiz.io/blog/cpanel-zero-day).\n"
+        ),
+    )
+
+    story = issue["story_units"][0]
+    assert story["title"] == "cPanel/WHM zero-day lands."
+    assert story["slug"] == "cpanel-whm-zero-day-lands"
+    assert "/" not in story["id"]
 
 
 def test_build_structured_issue_filters_sentence_noise_from_entities():
@@ -138,6 +228,16 @@ def test_build_public_story_requires_sources_and_keeps_provenance():
     assert story["confidence"] == "source-backed"
     assert story["source_refs"][0]["domain"] == "openai.com"
     assert story["entity_refs"][0]["slug"]
+    assert story["graph_connectors"]["source_domains"] == ["openai.com"]
+    assert "openai" in story["graph_connectors"]["entity_ids"]
+    assert {edge["kind"] for edge in story["graph_edges"]} >= {"issue", "source_url", "source_domain", "entity"}
+    assert {edge["relationship"] for edge in story["graph_edges"]} >= {
+        "part_of_issue",
+        "cites_source_url",
+        "cites_source_domain",
+        "mentions_entity",
+    }
+    assert story["related_paths"] == []
     assert story["provenance"]["generated_by"] == "mindpattern.site_content.public_story"
     assert story["provenance"]["ai_generated"] is False
     assert story["json_ld_ready"] is True
