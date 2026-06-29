@@ -225,6 +225,29 @@ def get_memory_db(user_id: str = "ramsay") -> Optional[sqlite3.Connection]:
     return conn
 
 
+def _public_finding(row: sqlite3.Row | dict, *, kind: str = "finding") -> dict:
+    """Whitelist fields for public finding-shaped API responses."""
+    item = dict(row)
+    public = {
+        "kind": kind,
+        "id": int(item.get("id") or 0),
+        "run_date": _valid_date(item.get("run_date")) or "",
+        "agent": item.get("agent") or "",
+        "title": item.get("title") or "",
+        "summary": item.get("summary") or "",
+        "importance": item.get("importance") or "",
+        "category": item.get("category") or "",
+        "source_url": item.get("source_url") or "",
+        "source_name": item.get("source_name") or "",
+        "created_at": item.get("created_at") or "",
+    }
+    return _strip_pii_dict(public, ["title", "summary"])
+
+
+def _finding_not_found() -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "Finding not found"})
+
+
 # ── Public endpoints (no auth) ──────────────────────────────────
 
 
@@ -288,6 +311,177 @@ async def get_findings(
         ]
 
         return items
+    finally:
+        conn.close()
+
+
+@router.get("/api/finding/{finding_id}")
+async def get_finding(
+    finding_id: int,
+    user: str = Query("ramsay"),
+):
+    """Public: one finding by ID with whitelisted fields only."""
+    conn = get_memory_db(user)
+    if conn is None:
+        return _finding_not_found()
+
+    try:
+        row = conn.execute(
+            """
+            SELECT id, run_date, agent, title, summary, importance, category,
+                   source_url, source_name, created_at
+            FROM findings
+            WHERE id = ?
+            """,
+            (finding_id,),
+        ).fetchone()
+        if row is None:
+            return _finding_not_found()
+        return _public_finding(row)
+    finally:
+        conn.close()
+
+
+@router.get("/api/related/{finding_id}")
+async def get_related_findings(
+    finding_id: int,
+    mode: str = Query("semantic"),
+    limit: int = Query(10, ge=0, le=50),
+    user: str = Query("ramsay"),
+):
+    """Public: source finding's related findings over stored embeddings."""
+    if mode not in {"semantic", "blended"}:
+        return JSONResponse(status_code=400, content={"error": "Unsupported related mode"})
+
+    conn = get_memory_db(user)
+    if conn is None:
+        return _finding_not_found()
+
+    try:
+        source = conn.execute(
+            """
+            SELECT f.id, f.title, e.embedding
+            FROM findings f
+            LEFT JOIN findings_embeddings e ON e.finding_id = f.id
+            WHERE f.id = ?
+            """,
+            (finding_id,),
+        ).fetchone()
+        if source is None:
+            return _finding_not_found()
+        if source["embedding"] is None or limit == 0:
+            return {
+                "kind": "related",
+                "finding_id": finding_id,
+                "mode": "semantic",
+                "items": [],
+                "total": 0,
+            }
+
+        source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+        rows = conn.execute(
+            """
+            SELECT f.id, f.run_date, f.agent, f.title, f.summary, f.importance,
+                   f.category, f.source_url, f.source_name, f.created_at, e.embedding
+            FROM findings f
+            JOIN findings_embeddings e ON e.finding_id = f.id
+            WHERE f.id != ?
+            """,
+            (finding_id,),
+        ).fetchall()
+
+        scored = []
+        for row in rows:
+            emb = np.array(_deserialize_f32(row["embedding"]), dtype=np.float32)
+            score = float(np.dot(source_vec, emb))
+            public = _public_finding(row)
+            public.update({
+                "score": round(max(0.0, score), 4),
+                "similarity": round(max(0.0, score), 4),
+                "mode": "semantic",
+                "relationship": "semantic_similarity",
+                "reason": "Embedding similarity over stored MindPattern findings.",
+                "target_url": f"/f/{public['id']}",
+            })
+            scored.append(public)
+
+        scored.sort(key=lambda item: (-item["score"], item["id"]))
+        items = scored[:limit]
+        return {
+            "kind": "related",
+            "finding_id": finding_id,
+            "mode": "semantic",
+            "items": items,
+            "total": len(items),
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/api/feed")
+async def get_feed(
+    limit: int = Query(50, ge=0, le=200),
+    offset: int = Query(0, ge=0),
+    since: str = Query(None),
+    date: str = Query(None),
+    user: str = Query("ramsay"),
+):
+    """Public: forward-compatible Wire feed wrapper over public findings."""
+    conn = get_memory_db(user)
+    if conn is None:
+        return {
+            "kind": "feed",
+            "items": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    try:
+        where_clauses: list[str] = []
+        params: list = []
+        date_val = _valid_date(date)
+        since_val = _valid_date(since)
+        if date_val:
+            where_clauses.append("run_date = ?")
+            params.append(date_val)
+        elif since_val:
+            where_clauses.append("run_date >= ?")
+            params.append(since_val)
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM findings WHERE {where_sql}",
+            params,
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""
+            SELECT id, run_date, agent, title, summary, importance, category,
+                   source_url, source_name, created_at
+            FROM findings
+            WHERE {where_sql}
+            ORDER BY run_date DESC, created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            params + [limit, offset],
+        ).fetchall()
+        items = []
+        for idx, row in enumerate(rows, start=offset + 1):
+            item = _public_finding(row)
+            item.update({
+                "rank": idx,
+                "target_type": "finding",
+                "target_id": str(item["id"]),
+                "target_url": f"/f/{item['id']}",
+                "confidence": "source-backed",
+            })
+            items.append(item)
+        return {
+            "kind": "feed",
+            "items": items,
+            "total": int(total),
+            "limit": limit,
+            "offset": offset,
+        }
     finally:
         conn.close()
 

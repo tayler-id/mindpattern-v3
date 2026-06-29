@@ -4,7 +4,8 @@ Generate a token: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 Store hash: API_TOKEN_HASH env var = hashlib.sha256(token.encode()).hexdigest()
 
 Public endpoints (no auth): GET /api/findings, /api/sources, /api/patterns,
-/api/skills, /api/stats, /api/reports, /api/audio-briefings, /healthz
+/api/finding, /api/related, /api/feed, /api/skills, /api/stats, /api/reports,
+/api/audio-briefings, /healthz
 Private endpoints (auth required): everything else under /api/
 """
 
@@ -36,6 +37,9 @@ async def require_auth(credentials: HTTPAuthorizationCredentials = Depends(secur
 # vercel-mindpattern site (tests/test_api_contract.py) — public reads only.
 PUBLIC_PREFIXES = [
     "/api/search",
+    "/api/finding",
+    "/api/related",
+    "/api/feed",
     "/api/findings",
     "/api/stats",
     "/api/patterns",

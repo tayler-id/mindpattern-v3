@@ -1133,3 +1133,34 @@ place instead of deleting the column.
 - Do not remove approval gates to force posting.
 - Do not change dedup thresholds broadly until duplicate examples are measured
   with URLs, titles, and semantic similarity.
+
+## Rabbit Hole Public Intelligence Site MVP - 2026-06-28
+
+- Goal started: implement and release the Rabbit Hole Public Intelligence Site
+  MVP, replacing the broken/not-useful chat-first experience with a
+  source-backed public intelligence site.
+- Primary docs:
+  `docs/runbooks/2026-06-28-rabbit-hole-public-intelligence-site-spec.md` and
+  `docs/runbooks/2026-06-28-rabbit-hole-public-intelligence-site-implementation-plan.md`.
+- Product direction locked in docs: content-first, archive-first, not
+  dashboard-first and not chat-first. The full newsletter remains a canonical
+  blog-style briefing page, while a structured issue graph powers entity,
+  source, finding, story, and arc routes.
+- Research-backed decisions added to docs: JSON/JSON-LD-ready artifact-first
+  storage, W3C-style provenance, typed graph relationships, historical
+  newsletter backfill, and dynamic templates instead of hand-built entity pages.
+- Task 0 baseline:
+  - v3 dirty before implementation: `data/ramsay/**`,
+    `data/social-drafts/eic-topic.json`, `run-launchd.sh`,
+    `tests/test_launchd_wrapper.py`, plus the new Rabbit Hole spec/plan docs.
+  - Rabbit Hole dirty before implementation: `src/components/story/rabbit-hole.tsx`,
+    `src/components/wire/wire-row.tsx`, `src/lib/sections.ts`, and untracked
+    `docs/specs/2026-06-26-backend-{plan-tasks,spec}.md`.
+  - Baseline verification: `.venv/bin/python3 -m pytest tests/test_api_contract.py -q`
+    -> 15 passed; `.venv/bin/python3 -m pytest tests/test_runner.py::TestDryRunPhases -q`
+    -> 4 passed; Rabbit Hole `pnpm lint` -> 0 errors, 2 pre-existing warnings
+    (`src/app/api/chat/route.ts`, `src/components/explore/explore-tabs.tsx`);
+    Rabbit Hole `pnpm exec tsc --noEmit --incremental false` -> passed.
+- Release gates remain: no full daily pipeline, newsletter send, live social
+  post, Fly deploy, Vercel deploy, schema change, dependency install, provider
+  enablement, or production indexing change without explicit owner approval.

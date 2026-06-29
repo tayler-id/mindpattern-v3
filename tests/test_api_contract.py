@@ -450,3 +450,64 @@ def test_audio_briefing_endpoints_reject_unsafe_or_missing_artifacts(client):
     assert client.get("/api/audio-briefings/2026-06-27?user=ramsay").status_code == 404
     assert client.get("/api/audio-briefings/2026-06-28/file?user=../ramsay").status_code == 404
     assert client.get("/api/audio-briefings/2026-06-27/transcript?user=ramsay").status_code == 404
+
+
+def test_single_finding_endpoint_returns_public_finding(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("new graph endpoints are verified locally before deploy")
+
+    resp = client.get("/api/finding/13776?user=ramsay")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == 13776
+    assert body["title"].startswith("Cerebras IPO")
+    assert body["source_url"].startswith("https://")
+    assert body["kind"] == "finding"
+
+    assert client.get("/api/finding/999999?user=ramsay").status_code == 404
+    assert client.get("/api/finding/13776?user=../ramsay").status_code == 404
+
+
+def test_related_endpoint_returns_semantic_neighbors(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("new graph endpoints are verified locally before deploy")
+
+    resp = client.get("/api/related/7063?mode=semantic&limit=2&user=ramsay")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["finding_id"] == 7063
+    assert body["mode"] == "semantic"
+    assert body["total"] == 2
+    assert [item["id"] for item in body["items"]] == [4257, 129]
+    assert all(item["id"] != 7063 for item in body["items"])
+    assert all(item["kind"] == "finding" for item in body["items"])
+    assert all(item["relationship"] == "semantic_similarity" for item in body["items"])
+    assert all(isinstance(item["score"], float) for item in body["items"])
+    assert all(item["reason"] for item in body["items"])
+
+    missing_embedding = client.get("/api/related/13776?mode=semantic&user=ramsay")
+    assert missing_embedding.status_code == 200
+    assert missing_embedding.json()["items"] == []
+    assert client.get("/api/related/7063?mode=graph&user=ramsay").status_code == 400
+    assert client.get("/api/related/7063?mode=semantic&user=../ramsay").status_code == 404
+
+
+def test_feed_endpoint_wraps_findings_for_wire(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("new graph endpoints are verified locally before deploy")
+
+    resp = client.get("/api/feed?limit=3&offset=0&user=ramsay")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "feed"
+    assert body["limit"] == 3
+    assert body["offset"] == 0
+    assert body["total"] >= 3
+    assert len(body["items"]) == 3
+    assert body["items"][0]["kind"] == "finding"
+    assert body["items"][0]["rank"] == 1
+    assert body["items"][0]["target_url"].startswith("/f/")
+    assert "source_url" in body["items"][0]
+
+    assert client.get("/api/feed?user=../ramsay").status_code == 200
+    assert client.get("/api/feed?user=../ramsay").json()["items"] == []
