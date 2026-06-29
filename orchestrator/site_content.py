@@ -194,6 +194,16 @@ def build_structured_issue(
             return
         summary = re.sub(r"\s+", " ", "\n".join(section_intro_lines)).strip()
         current_section["summary"] = summary[:240]
+        if not current_section["story_unit_ids"] and summary:
+            story = _story_unit(
+                date=date,
+                section_id=current_section["id"],
+                title=current_section["title"],
+                body_lines=section_intro_lines,
+                order=len(stories) + 1,
+            )
+            stories.append(story)
+            current_section["story_unit_ids"].append(story["id"])
         section_intro_lines = []
 
     for line in lines:

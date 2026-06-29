@@ -66,6 +66,25 @@ def test_build_structured_issue_splits_sections_story_units_sources_and_entities
     assert {"OpenAI", "Anthropic", "Claude Code", "Cerebras"} <= entity_names
 
 
+def test_build_structured_issue_creates_story_units_for_h2_only_sections():
+    issue = build_structured_issue(
+        date="2026-06-28",
+        user="ramsay",
+        title="Briefing",
+        content=(
+            "# Briefing\n\n"
+            "## Top Stories\n\n"
+            "**OpenAI ships agent tools.** The story cites [OpenAI](https://openai.com/news).\n\n"
+            "## Security\n\n"
+            "**Linux kernel patch lands.** The story cites [Ars](https://arstechnica.com/security).\n"
+        ),
+    )
+
+    assert [story["title"] for story in issue["story_units"]] == ["Top Stories", "Security"]
+    assert issue["sections"][0]["story_unit_ids"] == ["2026-06-28-top-stories"]
+    assert issue["story_units"][0]["source_refs"][0]["domain"] == "openai.com"
+
+
 def test_structured_issue_redacts_private_data():
     issue = build_structured_issue(
         date="2026-06-28",
