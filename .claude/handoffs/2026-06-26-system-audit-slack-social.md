@@ -1531,3 +1531,49 @@ place instead of deleting the column.
   - Live editorial/provider integration requires explicit owner approval before
     any Claude/OpenAI/provider calls.
   - Production release gate; no Vercel or Fly deploy has been run.
+
+## Rabbit Hole Newsletter Archive Cleanup - 2026-07-01
+
+- Owner reported that newsletter archive entries and briefing pages still felt
+  truncated after the content-machine slice.
+- Root cause found:
+  - v3 `/api/reports` was picking some non-canonical/placeholder report files
+    and surfacing assistant preamble text such as `Now let me write...`.
+  - Prompt-error placeholder reports such as `Prompt is too long` could appear
+    as archive content.
+  - Rabbit Hole `/briefings` had a clamped preview and could serve stale
+    statically built archive metadata.
+- v3 fix:
+  - Added report-cleaning helpers in `dashboard/routes/api.py`.
+  - `/api/reports` now groups reports by date, prefers exact canonical
+    `YYYY-MM-DD.md` files, skips debug/stderr/tiny/prompt-error/placeholder
+    content, strips assistant preambles, and returns `word_count` plus
+    `content_status`.
+  - `/api/reports/{date}` now returns cleaned canonical markdown and rejects
+    unusable placeholder reports instead of serving them as newsletters.
+  - Added regression coverage in `tests/test_api_contract.py`.
+- Rabbit Hole fix:
+  - `src/app/(app)/briefings/page.tsx` now forces dynamic rendering for the
+    archive page.
+  - Removed the archive preview CSS clamp so newsletter summaries are not
+    artificially cut off in the list.
+- Commit scope:
+  - v3 cleanup commit message: `fix: clean public briefing archive reports`.
+  - Rabbit Hole cleanup commit message:
+    `fix: render live briefing archive previews`.
+- Verification:
+  - v3 focused report tests:
+    `.venv/bin/python3 -m pytest 'tests/test_api_contract.py::test_report_archive_uses_clean_canonical_newsletters' 'tests/test_api_contract.py::test_endpoint_contract[reports]' 'tests/test_api_contract.py::test_endpoint_contract[reports_single]' 'tests/test_api_contract.py::test_structured_issue_endpoints_parse_public_report' -q`
+    -> 4 passed, 1 known Starlette/httpx warning.
+  - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and
+    `pnpm build` passed after the archive change.
+  - Local smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: `/briefings` and `/briefings/2026-02-20` returned 200.
+    Scans found no `Prompt is too long`, no `Now let me write`, no
+    `2026-02-19`, and no `line-clamp-2`; `/briefings/2026-02-20` rendered the
+    canonical title and `4,864` words.
+- Important remaining issue:
+  - This cleanup does not rewrite damaged historical source markdown. At least
+    one older report still contains legacy body-level duplication/corruption
+    inside the canonical file. That should be handled by the pending historical
+    structured issue backfill/audit, not silently hidden in the renderer.

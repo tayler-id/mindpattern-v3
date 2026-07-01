@@ -319,6 +319,18 @@ def _create_contract_reports(reports_dir):
         "OpenAI Codex changed the reliability path for agent builders. "
         "Source: [OpenAI](https://openai.com/news/agents).\n"
     )
+    (user_dir / "2026-06-10-dry-run.md").write_text(
+        "# Dry-Run Report — 2026-06-10\n\nThis is a dry-run placeholder.\n"
+    )
+    (user_dir / "2026-02-20.md").write_text(
+        "Now let me write the complete newsletter report.\n\n"
+        "# Ramsay Research Agent — February 20, 2026\n\n"
+        "This is the full public briefing intro, not an assistant preamble.\n\n"
+        "## Top 5 Stories Today\n\n"
+        "**A real story title.** "
+        + "Full body sentence. " * 220
+    )
+    (user_dir / "2026-02-18.md").write_text("Prompt is too long")
     site_story_dir = user_dir / "site-stories"
     site_story_dir.mkdir(parents=True)
     (site_story_dir / "2026-06-29-openai-agent-runtime-reliability.json").write_text(
@@ -680,6 +692,31 @@ def test_structured_issue_endpoints_parse_public_report(client):
 
     assert client.get("/api/issues/2026-99-99/structured?user=ramsay").status_code == 404
     assert client.get("/api/issues/2026-06-10/structured?user=../ramsay").status_code == 404
+
+
+def test_report_archive_uses_clean_canonical_newsletters(client):
+    if os.environ.get("MP_CONTRACT_LIVE") == "1":
+        pytest.skip("archive cleaning is verified locally before deploy")
+
+    listing = client.get("/api/reports?user=ramsay")
+    assert listing.status_code == 200
+    reports = listing.json()
+    titles_by_date = {report["date"]: report["title"] for report in reports}
+    files_by_date = {report["date"]: report["filename"] for report in reports}
+
+    assert files_by_date["2026-06-10"] == "2026-06-10.md"
+    assert titles_by_date["2026-02-20"] == "Ramsay Research Agent — February 20, 2026"
+    assert "2026-02-18" not in titles_by_date
+    assert not any("Dry-Run Report" in report["title"] for report in reports)
+    assert not any("Prompt is too long" in report["title"] for report in reports)
+
+    detail = client.get("/api/reports/2026-02-20?user=ramsay")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["title"] == "Ramsay Research Agent — February 20, 2026"
+    assert body["content"].startswith("# Ramsay Research Agent")
+    assert "Now let me write" not in body["content"]
+    assert "Full body sentence." in body["content"]
 
 
 def test_story_endpoints_return_source_backed_public_stories(client):

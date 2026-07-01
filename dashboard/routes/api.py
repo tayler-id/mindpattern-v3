@@ -48,6 +48,18 @@ _EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 _PHONE_RE = re.compile(
     r"(\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}"
 )
+_REPORT_HEADING_RE = re.compile(r"^#\s+(.+?)\s*$")
+_REPORT_BAD_LINE_RE = re.compile(
+    r"^(?:"
+    r"now\b.*(?:write|newsletter|report|final output)|"
+    r"let me\b.*(?:write|newsletter|report)|"
+    r"prompt is too long|"
+    r"dry-run report|"
+    r"this is a dry-run placeholder"
+    r")\.?$",
+    re.IGNORECASE,
+)
+_MIN_PUBLIC_REPORT_BYTES = 1_000
 
 
 def _valid_date(s: Optional[str]) -> Optional[str]:
@@ -110,6 +122,112 @@ def _valid_run_date(s: Optional[str]) -> Optional[str]:
         return validate_run_date(s)
     except ValueError:
         return None
+
+
+def _strip_inline_markdown(text: str) -> str:
+    """Remove common inline markdown markers from public report metadata."""
+    cleaned = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    cleaned = re.sub(r"[*_`]+", "", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _is_bad_report_line(line: str) -> bool:
+    return bool(_REPORT_BAD_LINE_RE.match(_strip_inline_markdown(line).strip()))
+
+
+def _clean_report_markdown(text: str) -> str:
+    """Drop assistant preamble before the canonical newsletter heading."""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return ""
+
+    lines = normalized.split("\n")
+    first_nonempty = next((i for i, line in enumerate(lines) if line.strip()), 0)
+    heading_index = None
+    for i, line in enumerate(lines[:25]):
+        match = _REPORT_HEADING_RE.match(line.strip())
+        if match and not _is_bad_report_line(match.group(1)):
+            heading_index = i
+            break
+
+    if heading_index is not None and heading_index > first_nonempty:
+        leading = [line.strip() for line in lines[first_nonempty:heading_index] if line.strip()]
+        if leading and all(_is_bad_report_line(line) or line == "---" for line in leading):
+            return "\n".join(lines[heading_index:]).strip()
+
+    while lines and lines[0].strip() and _is_bad_report_line(lines[0].strip()):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _report_title_from_content(*, content: str, date: str, fallback_name: str) -> str:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = _REPORT_HEADING_RE.match(stripped)
+        title = match.group(1).strip() if match else stripped
+        title = _strip_inline_markdown(title)
+        if title and not _is_bad_report_line(title):
+            return title
+
+    try:
+        formatted = datetime.strptime(date, "%Y-%m-%d").strftime("%B %-d, %Y")
+    except ValueError:
+        formatted = date
+    except TypeError:
+        formatted = fallback_name
+    return f"Ramsay Research Agent — {formatted}"
+
+
+def _report_subtitle_from_content(*, content: str, title: str) -> str:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped in {"---", "***"}:
+            continue
+        if stripped.startswith("#"):
+            continue
+        candidate = _strip_inline_markdown(stripped)
+        if not candidate or candidate == title or _is_bad_report_line(candidate):
+            continue
+        if candidate.lower().startswith(("top 5 stories", "breaking news", "security")):
+            continue
+        return candidate
+    return ""
+
+
+def _is_public_report_content(content: str) -> bool:
+    if len(content.encode("utf-8")) < _MIN_PUBLIC_REPORT_BYTES:
+        return False
+    first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
+    if first_line and _is_bad_report_line(first_line):
+        return False
+    return True
+
+
+def _report_file_rank(path: Path, date: str) -> tuple[int, int, int, str]:
+    name = path.name.lower()
+    exact = 0 if path.name == f"{date}.md" else 1
+    generated = 1 if any(token in name for token in ("dry-run", "debug", "stderr")) else 0
+    size_rank = -path.stat().st_size
+    return (exact, generated, size_rank, path.name)
+
+
+def _report_metadata(path: Path, date: str) -> dict | None:
+    text = path.read_text(errors="replace")
+    content = _clean_report_markdown(text)
+    if not _is_public_report_content(content):
+        return None
+    title = _report_title_from_content(content=content, date=date, fallback_name=path.stem)
+    return {
+        "date": date,
+        "filename": path.name,
+        "title": title,
+        "subtitle": _report_subtitle_from_content(content=content, title=title),
+        "size": path.stat().st_size,
+        "word_count": len(content.split()),
+        "content_status": "cleaned" if content != text.strip() else "full",
+    }
 
 
 def _public_narrative_arc(arc: dict) -> dict:
@@ -1274,7 +1392,7 @@ async def list_reports(user: str = Query("ramsay")):
     if not reports_dir.exists():
         return []
 
-    reports = []
+    by_date: dict[str, Path] = {}
     for f in sorted(reports_dir.glob("*.md"), reverse=True):
         name = f.stem
         # Extract date from filename (YYYY-MM-DD or YYYY-MM-DD-HHMMSS)
@@ -1282,25 +1400,17 @@ async def list_reports(user: str = Query("ramsay")):
         if not date_match:
             continue
         date_str = date_match.group(1)
+        if any(token in f.name.lower() for token in ("debug", "stderr")):
+            continue
+        current = by_date.get(date_str)
+        if current is None or _report_file_rank(f, date_str) < _report_file_rank(current, date_str):
+            by_date[date_str] = f
 
-        # Read first few lines for title/summary
-        text = f.read_text(errors="replace")
-        lines = text.strip().split("\n")
-        title = lines[0].lstrip("# ").strip() if lines else name
-        subtitle = ""
-        for line in lines[1:5]:
-            line = line.strip()
-            if line and not line.startswith("#") and not line.startswith("---"):
-                subtitle = line.lstrip("## ").strip()
-                break
-
-        reports.append({
-            "date": date_str,
-            "filename": f.name,
-            "title": title,
-            "subtitle": subtitle,
-            "size": f.stat().st_size,
-        })
+    reports = []
+    for date_str, path in sorted(by_date.items(), reverse=True):
+        report = _report_metadata(path, date_str)
+        if report is not None:
+            reports.append(report)
 
     return reports
 
@@ -1359,14 +1469,15 @@ def _report_file_for_date(*, date: str, user: str) -> Path | None:
     reports_dir = REPORTS_DIR / user
     if not reports_dir.exists():
         return None
-    matches = list(reports_dir.glob(f"{date}*.md"))
+    matches = [
+        path
+        for path in reports_dir.glob(f"{date}*.md")
+        if not any(token in path.name.lower() for token in ("debug", "stderr"))
+    ]
     if not matches:
         return None
+    matches.sort(key=lambda path: _report_file_rank(path, date))
     target = matches[0]
-    for match in matches:
-        if "debug" not in match.name and "stderr" not in match.name:
-            target = match
-            break
     try:
         target.resolve().relative_to(reports_dir.resolve())
     except ValueError:
@@ -1379,9 +1490,10 @@ def _structured_issue_from_report_file(*, date: str, user: str) -> dict | None:
     if target is None:
         return None
 
-    text = target.read_text(errors="replace")
-    lines = text.strip().split("\n")
-    title = lines[0].lstrip("# ").strip() if lines else target.stem
+    text = _clean_report_markdown(target.read_text(errors="replace"))
+    if not _is_public_report_content(text):
+        return None
+    title = _report_title_from_content(content=text, date=date, fallback_name=target.stem)
     try:
         return build_structured_issue(
             date=validate_run_date(date),
@@ -2152,21 +2264,14 @@ async def get_report(date: str, user: str = Query("ramsay")):
     if not reports_dir.exists():
         return None
 
-    # Find file matching date prefix
-    matches = list(reports_dir.glob(f"{date}*.md"))
-    if not matches:
+    target = _report_file_for_date(date=date, user=user)
+    if target is None:
         return None
 
-    # Use the first match (or the one without debug/stderr suffix)
-    target = matches[0]
-    for m in matches:
-        if "debug" not in m.name and "stderr" not in m.name:
-            target = m
-            break
-
-    text = target.read_text(errors="replace")
-    lines = text.strip().split("\n")
-    title = lines[0].lstrip("# ").strip() if lines else target.stem
+    text = _clean_report_markdown(target.read_text(errors="replace"))
+    if not _is_public_report_content(text):
+        return None
+    title = _report_title_from_content(content=text, date=date, fallback_name=target.stem)
 
     return {
         "date": date,
