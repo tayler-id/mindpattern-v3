@@ -1386,3 +1386,57 @@ place instead of deleting the column.
 - Next step is an implementation goal using the 2026-06-30 spec and plan. Do
   not implement directly from the older 2026-06-29 plan without reconciling it
   with this content-machine spec.
+
+## Rabbit Hole Real Content Machine Implementation - 2026-07-01
+
+- Active implementation goal is on branch
+  `feature/rabbit-hole-public-intelligence-site`.
+- Phase 1 is committed locally in `6d77939`:
+  - Added site artifact contracts/writers in `orchestrator/site_content.py`.
+  - Added strict public site-story gate so `/api/stories` reads only
+    published, high-confidence `reports/<user>/site-stories/YYYY-MM-DD/*.json`
+    artifacts.
+  - Added `/api/site/runs/{date}` and `/api/site/corpus/{date}`.
+- Phase 2 is implemented locally and ready for the next commit:
+  - Added `orchestrator/site_graph.py` as the public-safe corpus graph read
+    model.
+  - Added `GET /api/entities?q=&limit=&offset=` for the full corpus entity
+    index.
+  - Hardened `GET /api/entities/{slug}` with graph counts, pagination,
+    source trail, graph relationships, and public-safe provenance while
+    preserving existing newsletter/story keys.
+  - Added `GET /api/entities/{slug}/neighbors`.
+  - Added `GET /api/sources/{domain}`.
+  - Added compatible `GET /api/findings/{id}` and upgraded legacy
+    `GET /api/finding/{id}` with source refs, entities, related paths, and
+    provenance.
+  - Added deterministic blended related paths via
+    `GET /api/related/{id}?mode=blended`, using evidence-backed connectors
+    with reader-facing labels/reasons. The scorer handles shared entity, exact
+    source URL, source domain, semantic neighbor, same-arc hook, shared topic,
+    research-window/newsletter context, policy dependency, stack layer, threat
+    pattern, actor role, contrast, update, recurring source cluster, and
+    follow-up signals. Topic tokenization ignores URLs, source domains,
+    generic newsletter labels, and section labels.
+- Local corpus inventory recorded in the implementation plan only as public-safe
+  counts:
+  - `data/ramsay/memory.db` is 49M.
+  - Present tables counted: `findings=15428`,
+    `findings_embeddings=15307`, `entity_graph=4192`, `sources=1991`.
+  - Local `kg_entities`, `kg_entity_aliases`, `kg_edges`, and
+    `kg_communities` are absent in this DB.
+  - `reports/ramsay` has 154 markdown reports.
+  - Local `site-*`, arcs, followups, audio, and video-script artifact dirs were
+    absent at checked depth.
+- Verification completed for Phase 2:
+  - `.venv/bin/python3 -m pytest tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py -q`
+    -> 10 passed, 1 known Starlette/httpx warning.
+  - `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py -q`
+    -> 37 passed, 1 known Starlette/httpx warning.
+- Still pending for the full goal:
+  - Phase 3 content-machine core: graph pack fixtures, deterministic candidate
+    selector, fake expert loop, story generator, confidence gate, artifact
+    writer, and dry-run command.
+  - Phase 4 safe runner hook/trace integration.
+  - Phase 5 Rabbit Hole frontend wiring to the new content-machine contracts.
+  - Phase 6 Graphify, browser smoke, commits/push, and release gate.

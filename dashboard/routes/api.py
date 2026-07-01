@@ -27,6 +27,7 @@ from orchestrator.site_content import (
     sanitize_site_artifact,
     site_artifact_path,
 )
+from orchestrator.site_graph import CorpusGraphReadModel
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -247,6 +248,13 @@ def get_memory_db(user_id: str = "ramsay") -> Optional[sqlite3.Connection]:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def _open_graph_model(user: str) -> tuple[sqlite3.Connection, CorpusGraphReadModel] | None:
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    return conn, CorpusGraphReadModel(conn)
 
 
 def _public_finding(row: sqlite3.Row | dict, *, kind: str = "finding") -> dict:
@@ -564,11 +572,17 @@ async def get_finding(
     user: str = Query("ramsay"),
 ):
     """Public: one finding by ID with whitelisted fields only."""
-    conn = get_memory_db(user)
-    if conn is None:
+    opened = _open_graph_model(user)
+    if opened is None:
         return _finding_not_found()
-
+    conn, model = opened
     try:
+        graph_finding = model.get_finding(finding_id)
+        if graph_finding is not None:
+            related = model.get_related_paths_for_finding(finding_id, limit=5)
+            graph_finding["related_paths"] = related["items"] if related else []
+            return graph_finding
+
         row = conn.execute(
             """
             SELECT id, run_date, agent, title, summary, importance, category,
@@ -585,6 +599,15 @@ async def get_finding(
         conn.close()
 
 
+@router.get("/api/findings/{finding_id}")
+async def get_finding_detail(
+    finding_id: int,
+    user: str = Query("ramsay"),
+):
+    """Public: first-class finding page data with graph links."""
+    return await get_finding(finding_id=finding_id, user=user)
+
+
 @router.get("/api/related/{finding_id}")
 async def get_related_findings(
     finding_id: int,
@@ -596,11 +619,18 @@ async def get_related_findings(
     if mode not in {"semantic", "blended"}:
         return JSONResponse(status_code=400, content={"error": "Unsupported related mode"})
 
-    conn = get_memory_db(user)
-    if conn is None:
+    opened = _open_graph_model(user)
+    if opened is None:
         return _finding_not_found()
 
+    conn, model = opened
     try:
+        if mode == "blended":
+            blended = model.get_related_paths_for_finding(finding_id, limit=limit)
+            if blended is None:
+                return _finding_not_found()
+            return blended
+
         source = conn.execute(
             """
             SELECT f.id, f.title, e.embedding
@@ -657,6 +687,34 @@ async def get_related_findings(
             "items": items,
             "total": len(items),
         }
+    finally:
+        conn.close()
+
+
+@router.get("/api/entities")
+async def list_entities(
+    q: str = Query(""),
+    limit: int = Query(50, ge=0, le=200),
+    offset: int = Query(0, ge=0),
+    user: str = Query("ramsay"),
+):
+    """Public: paginated corpus entity index for dynamic entity pages."""
+    opened = _open_graph_model(user)
+    if opened is None:
+        return {
+            "kind": "entities",
+            "status": "missing",
+            "items": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "has_more": False,
+            "graph_sources": [],
+            "degraded_reasons": ["missing memory database"],
+        }
+    conn, model = opened
+    try:
+        return model.list_entities(q=q, limit=limit, offset=offset)
     finally:
         conn.close()
 
@@ -769,6 +827,27 @@ async def get_sources(
         items = [dict(r) for r in rows]
 
         return items
+    finally:
+        conn.close()
+
+
+@router.get("/api/sources/{domain}")
+async def get_source_detail(
+    domain: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: str = Query("ramsay"),
+):
+    """Public: one source-domain page with linked findings and entities."""
+    opened = _open_graph_model(user)
+    if opened is None:
+        return JSONResponse(status_code=404, content={"error": "Source not found"})
+    conn, model = opened
+    try:
+        source = model.get_source(domain, limit=limit, offset=offset)
+        if source.get("status") == "missing":
+            return JSONResponse(status_code=404, content={"error": "Source not found"})
+        return source
     finally:
         conn.close()
 
@@ -1876,6 +1955,35 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     return JSONResponse(status_code=404, content={"error": "Story not found"})
 
 
+@router.get("/api/entities/{slug}/neighbors")
+async def get_entity_neighbors(
+    slug: str,
+    user: str = Query("ramsay"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Public: neighboring entities with evidence edges."""
+    if _safe_user(user) is None:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+    try:
+        entity_slug = normalize_slug(slug)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+    if entity_slug in _PUBLIC_ENTITY_SLUG_BLOCKLIST or len(entity_slug) < 4:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+
+    opened = _open_graph_model(user)
+    if opened is None:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+    conn, model = opened
+    try:
+        neighbors = model.get_entity_neighbors(entity_slug, limit=limit)
+        if not neighbors.get("items"):
+            return JSONResponse(status_code=404, content={"error": "Entity not found"})
+        return neighbors
+    finally:
+        conn.close()
+
+
 @router.get("/api/entities/{slug}")
 async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(20, ge=1, le=50)):
     """Public: dynamic entity page data from newsletters plus existing corpus graph."""
@@ -1887,6 +1995,15 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
     if entity_slug in _PUBLIC_ENTITY_SLUG_BLOCKLIST or len(entity_slug) < 4:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
+
+    graph_detail: dict | None = None
+    opened = _open_graph_model(user)
+    if opened is not None:
+        conn, model = opened
+        try:
+            graph_detail = model.get_entity(entity_slug, limit=limit, offset=0)
+        finally:
+            conn.close()
 
     corpus = _public_corpus_entity(user, entity_slug, limit=limit)
     reports = await list_reports(user=user)
@@ -1940,29 +2057,79 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         if len(story_units) >= limit:
             break
 
+    if graph_detail:
+        for source in graph_detail.get("source_trail", []):
+            source_by_url.setdefault(source["url"], source)
     for source in corpus["source_trail"]:
         source_by_url.setdefault(source["url"], source)
 
-    if not story_units and not corpus["findings"] and not corpus["relationships"] and not corpus["kg_entities"]:
+    graph_findings = graph_detail.get("findings", []) if graph_detail else []
+    graph_relationships = graph_detail.get("relationships", []) if graph_detail else []
+    graph_counts = graph_detail.get("counts", {}) if graph_detail else {}
+    graph_pagination = graph_detail.get("pagination", {}) if graph_detail else {}
+    graph_sources_from_model = graph_detail.get("graph_sources", []) if graph_detail else []
+
+    findings_by_id: dict[int, dict] = {}
+    for finding in graph_findings + corpus["findings"]:
+        finding_id = finding.get("id")
+        if finding_id is None:
+            continue
+        findings_by_id.setdefault(int(finding_id), finding)
+    merged_findings = list(findings_by_id.values())[:limit]
+
+    relationship_keys: set[tuple] = set()
+    merged_relationships: list[dict] = []
+    for relationship in graph_relationships + corpus["relationships"]:
+        key = (
+            relationship.get("source"),
+            relationship.get("relationship"),
+            relationship.get("finding_id"),
+            relationship.get("related_entity")
+            or relationship.get("entity_b")
+            or relationship.get("entity_a"),
+        )
+        if key in relationship_keys:
+            continue
+        relationship_keys.add(key)
+        merged_relationships.append(relationship)
+
+    if not story_units and not merged_findings and not merged_relationships and not corpus["kg_entities"]:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
 
     graph_sources = sorted({"newsletter_issues"} if story_units else set())
-    graph_sources = sorted(set(graph_sources) | set(corpus["graph_sources"]))
+    graph_sources = sorted(set(graph_sources) | set(corpus["graph_sources"]) | set(graph_sources_from_model))
+    source_trail = list(source_by_url.values())
+    counts = {
+        "story_units": len(story_units),
+        "findings": max(len(merged_findings), int(graph_counts.get("findings") or 0)),
+        "relationships": max(len(merged_relationships), int(graph_counts.get("relationships") or 0)),
+        "sources": max(len(source_trail), int(graph_counts.get("sources") or 0)),
+    }
 
     return {
         "kind": "entity",
         "slug": entity_slug,
-        "name": entity_name or corpus["name"] or entity_slug.replace("-", " ").title(),
+        "name": entity_name
+        or (graph_detail or {}).get("name")
+        or corpus["name"]
+        or entity_slug.replace("-", " ").title(),
         "user": user,
-        "confidence": "source-backed" if story_units or corpus["source_trail"] else "corpus-backed",
+        "status": "ready",
+        "confidence": "source-backed" if story_units or source_trail else "corpus-backed",
+        "counts": counts,
+        "pagination": {
+            "limit": int(graph_pagination.get("limit") or limit),
+            "offset": int(graph_pagination.get("offset") or 0),
+            "has_more": bool(graph_pagination.get("has_more")),
+        },
         "story_units": story_units,
-        "findings": corpus["findings"],
-        "relationships": corpus["relationships"],
+        "findings": merged_findings,
+        "relationships": merged_relationships,
         "kg_entities": corpus["kg_entities"],
-        "source_trail": list(source_by_url.values()),
+        "source_trail": source_trail,
         "issue_dates": issue_dates,
         "graph_sources": graph_sources,
-        "total": len(story_units) + len(corpus["findings"]) + len(corpus["relationships"]),
+        "total": len(story_units) + len(merged_findings) + len(merged_relationships),
         "limit": limit,
         "provenance": {
             "generated_by": "mindpattern.site_content.entity_reader+corpus_graph",
