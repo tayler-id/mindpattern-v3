@@ -1345,3 +1345,44 @@ place instead of deleting the column.
   - Graphify after corrective v3 changes: `graphify update .` rebuilt 7,515
     nodes, 12,080 edges, 430 communities, with HTML viz skipped above the
     5,000-node default; `graphify check-update .` passed.
+
+## Rabbit Hole Real Content Machine Spec - 2026-06-30
+
+- Owner clarified that Rabbit Hole still does not meet the product intent:
+  the site must be powered by a backend content machine, not shallow links,
+  parser chunks, same-newsletter relatedness, or a limited entity slice.
+- Added draft spec:
+  `docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-spec.md`.
+- Added draft implementation plan:
+  `docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-implementation-plan.md`.
+- Key spec direction:
+  - v3/backend creates site-native public intelligence artifacts; Rabbit Hole
+    renders those artifacts.
+  - Every newsletter remains a complete canonical briefing page and is split
+    into graph input, not treated as a public story-writing engine.
+  - Dynamic entity/source/finding/arc templates must cover the real corpus,
+    including the existing large entity set, with pagination and public-safe
+    totals.
+  - Related paths must use multiple evidence-backed connectors: entity, source,
+    semantic, arc, update, contrast, actor role, threat pattern, stack layer,
+    policy dependency, follow-up thread, and briefing context.
+  - A dedicated site-content pipeline writes ledgers, corpus inventories,
+    candidates, graph packs, public site stories, optional dossiers, and
+    collections under gitignored `reports/<user>/site-*` paths.
+  - Expert/editorial roles are explicit: Assignment Editor, Graph Cartographer,
+    Domain Expert, Skeptic/Fact Checker, Narrative Editor, Source Librarian,
+    GEO/Agent-Web Editor, and Website Publisher.
+  - Public publishing requires high confidence, redaction, source evidence,
+    claim evidence, graph evidence, readable public copy, and no raw markdown or
+    generic newsletter section titles.
+- Verification for this spec pass:
+  - `git diff --check -- docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-spec.md`
+    passed.
+  - `git diff --check -- docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-implementation-plan.md`
+    passed.
+  - Section audit confirmed the spec contains Objective, Commands, Project
+    Structure, Code Style, Testing Strategy, Boundaries, Success Criteria, and
+    Open Questions.
+- Next step is an implementation goal using the 2026-06-30 spec and plan. Do
+  not implement directly from the older 2026-06-29 plan without reconciling it
+  with this content-machine spec.
