@@ -1672,3 +1672,47 @@ place instead of deleting the column.
   - No Vercel production deploy has been run.
   - No full daily pipeline, Fly deploy, provider call, schema change,
     Slack/email/social action, or live model call was run.
+
+## Rabbit Hole Story Detail Truncation Fix - 2026-07-01
+
+- Owner reported that newsletter/story pages still looked truncated.
+- Root cause:
+  - Canonical `/api/reports/{date}` and `/briefings/{date}` were serving full
+    newsletter markdown.
+  - The broken surface was `/api/stories` and `/s/<slug>` for archive-derived
+    story units. The API only returned AI-written `site-stories` artifacts; if
+    no artifact existed, the dynamic story route 404'd. The visible story page
+    also fell back to the 280-character `summary`, which made a real article
+    look like a clipped preview.
+- Backend change:
+  - AI-written published `reports/<user>/site-stories/.../*.json` artifacts
+    still win.
+  - If no artifact exists, `/api/stories/{slug}` now builds a source-backed
+    dynamic archive story from the structured newsletter issue.
+  - `/api/stories` merges published AI artifacts with dynamic source-backed
+    newsletter story units, deduping by slug/story unit.
+  - Dynamic archive stories are labeled `confidence: source-backed`,
+    `provenance.ai_generated: false`, and include full `body_markdown`.
+- Rabbit Hole change:
+  - `/s/<slug>` no longer renders `summary` as the header body. It renders
+    `dek` only when an actual deck exists, then the full `Story` body below.
+- Verification:
+  - Focused backend regression:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_contracts.py::test_build_public_story_requires_sources_and_keeps_provenance tests/test_api_contract.py::test_story_endpoints_return_source_backed_public_stories tests/test_api_contract.py::test_structured_issue_endpoints_parse_public_report -q`
+    -> 3 passed, 1 known Starlette/httpx warning.
+  - Broader backend safety run:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_backfill.py tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_experts.py tests/test_site_content_api.py tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py tests/test_api_contract.py tests/test_auth_middleware.py tests/test_runner.py::TestSiteContentPhase tests/test_runner.py::TestDryRunPhases -q`
+    -> 82 passed, 1 known Starlette/httpx warning.
+  - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and
+    `pnpm build` passed.
+  - Local smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: dynamic `/api/stories/<newsletter-derived-slug>` returned
+    200 with `body_markdown` length greater than `summary`; `/s/<same-slug>`
+    returned 200 and rendered the full Story section rather than a clipped
+    summary header.
+- Still true:
+  - Feed cards may still use short previews by design. Detail pages and
+    canonical briefing pages should not use those previews as article bodies.
+  - No Vercel production deploy has been run.
+  - No full daily pipeline, Fly deploy, provider call, schema change,
+    Slack/email/social action, or live model call was run.

@@ -310,7 +310,8 @@ def _create_contract_reports(reports_dir):
         "**OpenAI and Anthropic shipped agent updates.** "
         "OpenAI Codex and Claude Code matter here. "
         "And Because The New Work should not become entity pages. "
-        "Source: [OpenAI](https://openai.com/news/agents).\n"
+        + "Full dynamic story body. " * 80
+        + "Source: [OpenAI](https://openai.com/news/agents).\n"
     )
     (user_dir / "2026-06-30.md").write_text(
         "# Story Graph Fixture\n\n"
@@ -746,9 +747,11 @@ def test_story_endpoints_return_source_backed_public_stories(client):
     assert body["items"][0]["kind"] == "story"
     assert body["items"][0]["target_url"].startswith("/s/")
     assert body["items"][0]["source_refs"]
-    assert body["items"][0]["confidence"] == "high"
     assert body["items"][0]["status"] == "published"
     assert "Top 5 Stories Today" not in {item["title"] for item in body["items"]}
+    assert "2026-06-30-openai-hardened-agent-runtime-reliability" in {
+        item["slug"] for item in body["items"]
+    }
 
     detail = client.get("/api/stories/2026-06-29-openai-agent-runtime-reliability?user=ramsay")
     assert detail.status_code == 200
@@ -768,9 +771,20 @@ def test_story_endpoints_return_source_backed_public_stories(client):
     assert story["provenance"]["generated_by"] == "mindpattern.site_content.story_engine"
     assert story["provenance"]["ai_generated"] is True
 
-    assert client.get(
+    dynamic_detail = client.get(
         "/api/stories/2026-06-29-openai-and-anthropic-shipped-agent-updates?user=ramsay"
-    ).status_code == 404
+    )
+    assert dynamic_detail.status_code == 200
+    dynamic_story = dynamic_detail.json()
+    assert dynamic_story["kind"] == "story"
+    assert dynamic_story["status"] == "published"
+    assert dynamic_story["confidence"] == "source-backed"
+    assert dynamic_story["title"] == "OpenAI and Anthropic shipped agent updates."
+    assert "Full dynamic story body." in dynamic_story["body_markdown"]
+    assert len(dynamic_story["body_markdown"]) > len(dynamic_story["summary"])
+    assert dynamic_story["source_refs"][0]["domain"] == "openai.com"
+    assert dynamic_story["provenance"]["ai_generated"] is False
+
     assert client.get("/api/stories/2026-06-29-draft-raw-newsletter-chunk?user=ramsay").status_code == 404
     assert client.get("/api/stories/2026-06-29-missing?user=ramsay").status_code == 404
     assert client.get("/api/stories/%2E%2E%2Fsecret?user=ramsay").status_code == 404

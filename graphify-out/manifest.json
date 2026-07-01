@@ -65,8 +65,8 @@
     "semantic_hash": ""
   },
   "dashboard/routes/api.py": {
-    "mtime": 1782940886.4723032,
-    "ast_hash": "c794ba98e6ccb27608b985615e898dbb",
+    "mtime": 1782941614.2599807,
+    "ast_hash": "ea10372658f142aa0db6652bab94289a",
     "semantic_hash": ""
   },
   "dashboard/routes/editors_desk.py": {
@@ -980,8 +980,8 @@
     "semantic_hash": ""
   },
   "tests/test_api_contract.py": {
-    "mtime": 1782940854.0852983,
-    "ast_hash": "e91e91c4b6cbaf0d031b5f1490a697c1",
+    "mtime": 1782941650.9558568,
+    "ast_hash": "b0f9f597eac4370c08a12382f02d3272",
     "semantic_hash": ""
   },
   "tests/test_approval.py": {
@@ -2255,8 +2255,8 @@
     "semantic_hash": ""
   },
   "orchestrator/site_content.py": {
-    "mtime": 1782940272.6517136,
-    "ast_hash": "9eb1352f9eaeeb233040ca481cfc2d84",
+    "mtime": 1782941573.121655,
+    "ast_hash": "4151cb6113a2d0dd056224bcbf41acf0",
     "semantic_hash": ""
   },
   "tests/test_site_issue_contracts.py": {
@@ -2350,8 +2350,8 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-implementation-plan.md": {
-    "mtime": 1782941153.3723629,
-    "ast_hash": "d353a1afe381726ce9aae0e3d37d7d58",
+    "mtime": 1782941988.4015255,
+    "ast_hash": "f1f2dbc386caef76012b21d0f1dd4300",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-spec.md": {

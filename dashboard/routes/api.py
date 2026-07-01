@@ -1620,6 +1620,16 @@ def _story_from_issue(issue: dict, story_slug: str) -> dict | None:
     return None
 
 
+def _story_from_structured_issue_slug(*, story_slug: str, user: str) -> dict | None:
+    date = _story_date_from_slug(story_slug)
+    if date is None:
+        return None
+    issue = _structured_issue_from_report_file(date=date, user=user)
+    if issue is None:
+        return None
+    return _story_from_issue(issue, story_slug)
+
+
 def _public_story_files(user: str) -> list[Path]:
     base = (REPORTS_DIR / user / "site-stories").resolve()
     try:
@@ -1857,13 +1867,40 @@ def _load_public_story_file(path: Path) -> dict | None:
 
 async def _all_public_stories(user: str, *, max_items: int | None = None) -> list[dict]:
     stories: list[dict] = []
+    covered_story_units: set[str] = set()
+    seen_slugs: set[str] = set()
     for path in _public_story_files(user):
         story = _load_public_story_file(path)
         if story is None:
             continue
+        seen_slugs.add(str(story.get("slug") or ""))
+        if story.get("story_unit_id"):
+            covered_story_units.add(str(story["story_unit_id"]))
         stories.append(story)
-        if max_items is not None and len(stories) >= max_items:
+
+    dynamic_count = 0
+    for date in _structured_issue_dates(user=user):
+        issue = _structured_issue_from_report_file(date=date, user=user)
+        if issue is None:
+            continue
+        for story_unit in issue.get("story_units", []):
+            story_unit_id = str(story_unit.get("id") or "")
+            if story_unit_id in covered_story_units:
+                continue
+            story = build_public_story(issue=issue, story_unit=story_unit)
+            if story is None:
+                continue
+            slug = str(story.get("slug") or "")
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+            stories.append(story)
+            dynamic_count += 1
+            if max_items is not None and dynamic_count >= max_items:
+                break
+        if max_items is not None and dynamic_count >= max_items:
             break
+
     stories.sort(key=lambda story: (story.get("issue_date", ""), story.get("slug", "")), reverse=True)
     return stories
 
@@ -2116,7 +2153,12 @@ async def list_public_stories(
 
 @router.get("/api/stories/{slug}")
 async def get_public_story(slug: str, user: str = Query("ramsay")):
-    """Public: one published Rabbit Hole site-story artifact by slug."""
+    """Public: one published Rabbit Hole story by slug.
+
+    AI-written site-story artifacts win when present. Source-backed structured
+    newsletter story units are the dynamic fallback, so the public site can
+    read the full archive without requiring hand-built JSON for every story.
+    """
     if _safe_user(user) is None:
         return JSONResponse(status_code=404, content={"error": "Story not found"})
     try:
@@ -2130,6 +2172,9 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
         story = _load_public_story_file(path)
         if story is not None:
             return story
+    story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
+    if story is not None:
+        return story
     return JSONResponse(status_code=404, content={"error": "Story not found"})
 
 
