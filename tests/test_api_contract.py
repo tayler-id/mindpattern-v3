@@ -339,6 +339,7 @@ def _create_contract_reports(reports_dir):
                 "kind": "story",
                 "id": "2026-06-29-openai-agent-runtime-reliability",
                 "slug": "2026-06-29-openai-agent-runtime-reliability",
+                "story_unit_id": "2026-06-29-openai-and-anthropic-shipped-agent-updates",
                 "status": "published",
                 "issue_date": "2026-06-29",
                 "title": "OpenAI agent runtime reliability becomes the control plane",
@@ -399,6 +400,7 @@ def _create_contract_reports(reports_dir):
                     "input_artifacts": ["reports/ramsay/2026-06-29.md"],
                     "source_finding_ids": [990001],
                     "source_issue_dates": ["2026-06-29"],
+                    "source_story_unit_id": "2026-06-29-openai-and-anthropic-shipped-agent-updates",
                     "redaction_status": "passed",
                     "ai_generated": True,
                     "human_approved": False,
@@ -689,6 +691,19 @@ def test_structured_issue_endpoints_parse_public_report(client):
     assert "story_units" in issue
     assert "entities" in issue
     assert "source_trail" in issue
+    assert "published_story_refs" in issue
+
+    enriched = client.get("/api/issues/2026-06-29/structured?user=ramsay")
+    assert enriched.status_code == 200
+    enriched_issue = enriched.json()
+    published_refs = {
+        ref["story_unit_id"]: ref
+        for ref in enriched_issue["published_story_refs"]
+    }
+    story_unit_id = "2026-06-29-openai-and-anthropic-shipped-agent-updates"
+    assert published_refs[story_unit_id]["target_url"] == "/s/2026-06-29-openai-agent-runtime-reliability"
+    story = next(item for item in enriched_issue["story_units"] if item["id"] == story_unit_id)
+    assert story["published_story"]["target_url"] == "/s/2026-06-29-openai-agent-runtime-reliability"
 
     assert client.get("/api/issues/2026-99-99/structured?user=ramsay").status_code == 404
     assert client.get("/api/issues/2026-06-10/structured?user=../ramsay").status_code == 404

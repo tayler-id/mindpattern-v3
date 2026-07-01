@@ -1522,6 +1522,54 @@ def _structured_issue_from_report_file(*, date: str, user: str) -> dict | None:
         return None
 
 
+def _published_story_refs_for_issue(*, date: str, user: str) -> list[dict]:
+    refs: list[dict] = []
+    seen_story_units: set[str] = set()
+    for path in _public_story_files(user):
+        story = _load_public_story_file(path)
+        if story is None or story.get("issue_date") != date:
+            continue
+        story_unit_id = str(
+            story.get("story_unit_id")
+            or story.get("provenance", {}).get("source_story_unit_id")
+            or ""
+        ).strip()
+        if not story_unit_id or story_unit_id in seen_story_units:
+            continue
+        seen_story_units.add(story_unit_id)
+        refs.append(
+            {
+                "story_unit_id": story_unit_id,
+                "slug": story["slug"],
+                "title": story["title"],
+                "target_url": story["target_url"],
+                "confidence": story["confidence"],
+                "source_domains": story.get("graph_connectors", {}).get("source_domains", []),
+                "entity_ids": story.get("graph_connectors", {}).get("entity_ids", []),
+            }
+        )
+    return sorted(refs, key=lambda item: item["story_unit_id"])
+
+
+def _enrich_issue_with_published_stories(*, issue: dict, user: str) -> dict:
+    refs = _published_story_refs_for_issue(date=issue["date"], user=user)
+    refs_by_story_unit = {ref["story_unit_id"]: ref for ref in refs}
+    enriched = dict(issue)
+    enriched["published_story_refs"] = refs
+    enriched["story_units"] = [
+        {
+            **story,
+            **(
+                {"published_story": refs_by_story_unit[story["id"]]}
+                if story.get("id") in refs_by_story_unit
+                else {}
+            ),
+        }
+        for story in issue.get("story_units", [])
+    ]
+    return enriched
+
+
 @router.get("/api/issues")
 async def list_structured_issues(user: str = Query("ramsay")):
     """Public: list newsletter issues with structured API links."""
@@ -1546,7 +1594,7 @@ async def get_structured_issue(date: str, user: str = Query("ramsay")):
     issue = _structured_issue_from_report_file(date=date, user=user)
     if issue is None:
         return JSONResponse(status_code=404, content={"error": "Issue not found"})
-    return issue
+    return _enrich_issue_with_published_stories(issue=issue, user=user)
 
 
 def _story_date_from_slug(slug: str) -> str | None:
@@ -1568,7 +1616,7 @@ def _story_from_issue(issue: dict, story_slug: str) -> dict | None:
                 continue
         except ValueError:
             continue
-            return build_public_story(issue=issue, story_unit=story_unit)
+        return build_public_story(issue=issue, story_unit=story_unit)
     return None
 
 
@@ -1682,12 +1730,14 @@ def _public_story_provenance(item: dict) -> dict:
         for date in (str(value) for value in provenance.get("source_issue_dates") or [])
         if _valid_run_date(date)
     ]
+    source_story_unit_id = redact_sensitive_text(str(provenance.get("source_story_unit_id") or ""))
     return {
         "generated_by": redact_sensitive_text(str(provenance.get("generated_by") or "")),
         "generated_at": redact_sensitive_text(str(provenance.get("generated_at") or "")),
         "input_artifacts": input_artifacts,
         "source_finding_ids": source_finding_ids,
         "source_issue_dates": source_issue_dates,
+        "source_story_unit_id": source_story_unit_id,
         "redaction_status": redact_sensitive_text(str(provenance.get("redaction_status") or "passed")),
         "ai_generated": bool(provenance.get("ai_generated")),
         "human_approved": bool(provenance.get("human_approved")),
@@ -1720,6 +1770,10 @@ def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
     title = redact_sensitive_text(str(item.get("title") or "")).strip()
     if not title:
         return None
+    raw_provenance = item.get("provenance") if isinstance(item.get("provenance"), dict) else {}
+    story_unit_id = redact_sensitive_text(
+        str(item.get("story_unit_id") or raw_provenance.get("source_story_unit_id") or "")
+    )
 
     finding_ids = [
         int(finding_id)
@@ -1751,6 +1805,7 @@ def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
         "kind": "story",
         "id": slug,
         "slug": slug,
+        "story_unit_id": story_unit_id,
         "status": "published",
         "issue_date": issue_date,
         "date": issue_date,

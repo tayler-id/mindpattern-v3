@@ -1625,3 +1625,50 @@ place instead of deleting the column.
     can identify damaged/degraded items without hiding them.
   - No full daily pipeline, Fly deploy, Vercel deploy, provider call, schema
     change, Slack/email/social action, or live model call was run.
+
+## Rabbit Hole Briefing Graph Trail - 2026-07-01
+
+- Completed Task 29 from the Rabbit Hole Real Content Machine plan.
+- Backend changes:
+  - `/api/issues/{date}/structured` now enriches structured issues with
+    `published_story_refs`.
+  - Matching `story_units` receive `published_story` only when a real published
+    high-confidence site-story artifact maps to the story unit via
+    `story_unit_id` or `provenance.source_story_unit_id`.
+  - `_public_story_artifact` now preserves `story_unit_id` and
+    `provenance.source_story_unit_id`.
+  - Fixed `_story_from_issue`; its fallback `build_public_story` return was
+    accidentally unreachable under a `continue`.
+- Rabbit Hole changes:
+  - `/briefings/[date]` now fetches `getStructuredIssue(date)` alongside the
+    canonical report/audio/list data.
+  - The full newsletter remains the primary article body. Graph enrichment is
+    rendered below it as a `Graph trail` section with story paths, ranked
+    source-backed entities, and source links.
+  - Story path rows link to `/s/...` only when `published_story` exists. Rows
+    without a published artifact are plain text, so the site no longer invents
+    story routes.
+  - The entity chip list is ranked from source-backed story-unit occurrence and
+    filters generic parser noise such as `agent`, `models`, `architecture`, and
+    similar labels.
+- Verification:
+  - Focused backend contract:
+    `.venv/bin/python3 -m pytest tests/test_api_contract.py::test_structured_issue_endpoints_parse_public_report tests/test_api_contract.py::test_story_endpoints_return_source_backed_public_stories tests/test_api_contract.py::test_entity_endpoint_returns_source_backed_issue_story_units -q`
+    -> 3 passed, 1 known Starlette/httpx warning.
+  - Broader backend safety run:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_backfill.py tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_experts.py tests/test_site_content_api.py tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py tests/test_api_contract.py tests/test_auth_middleware.py tests/test_runner.py::TestSiteContentPhase tests/test_runner.py::TestDryRunPhases -q`
+    -> 82 passed, 1 known Starlette/httpx warning.
+  - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and
+    `pnpm build` passed.
+  - Local smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: `/api/issues/2026-06-29/structured` -> 200;
+    `/briefings/2026-06-29` -> 200 and rendered `Graph trail`, `Story paths`,
+    `/source/theverge.com`, and `/e/openai`. Scan found no `SHARED SOURCE`,
+    `shared_source`, `shared_entity`, `Loading related signals`, `line-clamp-2`,
+    `Now let me write`, or `Prompt is too long`.
+  - `graphify update .` -> 7,796 nodes, 12,793 edges, 468 communities;
+    `graphify check-update .` passed.
+- Still true:
+  - No Vercel production deploy has been run.
+  - No full daily pipeline, Fly deploy, provider call, schema change,
+    Slack/email/social action, or live model call was run.
