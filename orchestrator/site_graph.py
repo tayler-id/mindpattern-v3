@@ -628,7 +628,7 @@ class CorpusGraphReadModel:
                             {
                                 "kind": "source_domain",
                                 "domain": domain,
-                                "target_url": f"/sources/{domain}",
+                                "target_url": f"/source/{domain}",
                             }
                             for domain in shared_domains[:2]
                         ],

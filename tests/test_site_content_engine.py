@@ -101,9 +101,11 @@ def test_dry_run_writes_ledger_corpus_pack_candidate_and_story(tmp_path):
         user="ramsay",
         reports_root=reports_root,
     )
+    arc_path = reports_root / "ramsay" / "arcs" / "2026-07-01.json"
 
     for path in (run_path, corpus_path, candidate_path, pack_path, story_path, weak_story_path):
         assert path.exists(), path
+    assert arc_path.exists()
 
     story = json.loads(story_path.read_text())
     assert story["kind"] == "site_story"
@@ -129,3 +131,7 @@ def test_dry_run_writes_ledger_corpus_pack_candidate_and_story(tmp_path):
     assert corpus["kind"] == "site_corpus"
     assert corpus["counts"]["candidate_cases"] >= 7
     assert corpus["counts"]["published_stories"] == 1
+
+    arcs = json.loads(arc_path.read_text())
+    assert arcs["arcs"][0]["id"] == "agent-runtime-control-plane"
+    assert arcs["arcs"][0]["evidence"][0]["finding_id"] == 101

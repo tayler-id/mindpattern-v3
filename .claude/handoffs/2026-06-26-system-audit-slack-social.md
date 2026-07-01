@@ -1452,7 +1452,45 @@ place instead of deleting the column.
     -> 69 passed, 1 known Starlette/httpx warning.
   - `.venv/bin/python3 tools/site-content-dry-run.py --date 2026-07-01 --user ramsay --reports-root /private/tmp/mp-site-content-smoke`
     -> completed, 18 fixture artifacts written under the temp reports root.
+- Rabbit Hole frontend wiring implemented locally:
+  - `src/lib/types.ts` now models site-native story fields, graph edges,
+    source details, related connectors, first-class finding entities, and
+    narrative arcs.
+  - `src/lib/api.ts` now uses first-class v3 graph endpoints:
+    `/api/findings/{id}`, `/api/sources/{domain}`, and blended
+    `/api/related/{id}?mode=blended`.
+  - Homepage prefers published `/api/stories` artifacts and falls back to feed
+    findings when no site stories exist.
+  - `/s/<slug>` renders generated story fields: `dek`, `take`, `why_now`,
+    graph trail, related paths, claim evidence, source trail, entity refs,
+    provenance, and JSON-LD.
+  - `/source/<domain>` uses backend source detail rather than scanning the
+    findings list.
+  - `/e/<slug>` displays backend counts/pagination so a limited page is not
+    presented as the whole graph.
+  - `/f/<id>` uses blended related paths in the client drill-down.
+  - Added `/arc/[id]?date=YYYY-MM-DD` for narrative arc evidence pages.
+- Verification completed for frontend wiring:
+  - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`,
+    and `pnpm build` passed.
+  - Fixture dry-run was also written to local ignored `reports/` so smoke could
+    exercise a real generated story and arc artifact.
+  - Local smoke with v3 on `127.0.0.1:8010` and Rabbit Hole on
+    `127.0.0.1:3010`: backend `/api/stories?user=ramsay&limit=5` -> 200;
+    frontend `/`, `/s/openai-agent-runtime-reliability`, `/e/openai`,
+    `/source/openai.com`, `/f/101`, and
+    `/arc/agent-runtime-control-plane?date=2026-07-01` -> 200.
+  - Briefing archive routes also stayed live: `/briefings` -> 200 and
+    `/briefings/2026-06-17` -> 200. The canonical newsletter pages remain
+    separate from site-native story generation.
+  - HTML scan across those pages found no `Top 5 Stories Today`, no raw `**`
+    markdown, no `SHARED SOURCE`, no `shared_source`, and no `shared_entity`
+    internal labels.
+- Graphify completed for the v3 backend after this slice:
+  - `graphify update .` rebuilt 7,742 nodes, 12,587 edges, and 452
+    communities. HTML visualization was skipped because the graph exceeds the
+    5,000-node default.
+  - `graphify check-update .` passed.
 - Still pending for the full goal:
   - Phase 4 safe runner hook/trace integration.
-  - Phase 5 Rabbit Hole frontend wiring to the new content-machine contracts.
-  - Phase 6 Graphify, browser smoke, commits/push, and release gate.
+  - Phase 6 commits/push and release gate.

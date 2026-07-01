@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from orchestrator.arcs import narrative_arcs_artifact_path
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from orchestrator.site_content import (
     is_publishable_site_story,
@@ -373,6 +374,13 @@ def run_site_content_dry_run(
     )
     artifacts_written.append(_artifact_ref(corpus_path, reports_root))
 
+    arc_payload = _fixture_arc_payload(cases, date=run_date, user=user)
+    if arc_payload["arcs"]:
+        arc_path = narrative_arcs_artifact_path(date=run_date, user=user, reports_root=reports_root)
+        arc_path.parent.mkdir(parents=True, exist_ok=True)
+        arc_path.write_text(json.dumps(sanitize_site_artifact(arc_payload), indent=2, sort_keys=True) + "\n")
+        artifacts_written.append(_artifact_ref(arc_path, reports_root))
+
     ledger = {
         "kind": "site_run",
         "date": run_date,
@@ -625,6 +633,80 @@ def _is_generic_title(title: str) -> bool:
 
 def _artifact_ref(path: Path, reports_root: Path) -> str:
     try:
-        return f"reports/{path.relative_to(reports_root).as_posix()}"
+        return f"reports/{path.resolve().relative_to(reports_root.resolve()).as_posix()}"
     except ValueError:
         return path.name
+
+
+def _fixture_arc_payload(cases: list[dict[str, Any]], *, date: str, user: str) -> dict[str, Any]:
+    arcs: dict[str, dict[str, Any]] = {}
+    for case in cases:
+        primary = _public_finding(case.get("primary_finding") or {})
+        evidence = []
+        if primary and primary.get("source_url"):
+            evidence.append(
+                {
+                    "finding_id": primary.get("id"),
+                    "run_date": primary.get("run_date") or date,
+                    "agent": primary.get("agent") or "",
+                    "title": primary.get("title") or "",
+                    "summary": primary.get("summary") or "",
+                    "source_url": primary.get("source_url") or "",
+                    "source_name": primary.get("source_name") or "",
+                }
+            )
+        for arc_id_raw in case.get("arc_ids") or []:
+            arc_id = normalize_slug(str(arc_id_raw))
+            arc = arcs.setdefault(
+                arc_id,
+                {
+                    "id": arc_id,
+                    "title": arc_id.replace("-", " ").title(),
+                    "summary": redact_sensitive_text(str(case.get("why_now") or "")),
+                    "status": "active",
+                    "first_seen": date,
+                    "last_seen": date,
+                    "evidence": [],
+                    "scores": {
+                        "recurrence": 0.5,
+                        "velocity": 0.5,
+                        "source_diversity": 0.5,
+                        "freshness": 1.0,
+                        "confidence": 0.8,
+                    },
+                },
+            )
+            arc["evidence"].extend(evidence)
+
+    public_arcs = []
+    for arc in arcs.values():
+        evidence = arc["evidence"]
+        domains = {
+            urlparse(str(item.get("source_url") or "")).netloc.lower().removeprefix("www.")
+            for item in evidence
+            if item.get("source_url")
+        }
+        agents = {str(item.get("agent") or "") for item in evidence if item.get("agent")}
+        dates = {str(item.get("run_date") or "") for item in evidence if item.get("run_date")}
+        arc.update(
+            {
+                "evidence_count": len(evidence),
+                "date_count": max(1, len(dates)),
+                "source_domain_count": len(domains),
+                "agent_count": len(agents),
+            }
+        )
+        public_arcs.append(arc)
+
+    return {
+        "date": date,
+        "user": user,
+        "arcs": sorted(public_arcs, key=lambda item: item["id"]),
+        "rejected": [],
+        "summary": {
+            "accepted_count": len(public_arcs),
+            "rejected_count": 0,
+            "input_count": len(cases),
+            "candidate_count": len(public_arcs),
+        },
+    }
