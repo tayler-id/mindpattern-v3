@@ -1,0 +1,144 @@
+{
+  "date": "2026-07-01",
+  "user": "ramsay",
+  "cases": [
+    {
+      "id": "openai-agent-runtime-reliability",
+      "type": "finding_story",
+      "status": "ready",
+      "importance": "high",
+      "why_now": "OpenAI made runtime reliability visible as buyer-facing agent infrastructure on July 1.",
+      "primary_finding": {
+        "kind": "finding",
+        "id": 101,
+        "run_date": "2026-07-01",
+        "agent": "fixture-agent",
+        "title": "OpenAI agent runtime reliability",
+        "summary": "OpenAI made agent runtime reliability a buyer-visible benchmark.",
+        "importance": "high",
+        "category": "agents",
+        "source_url": "https://openai.com/news/agents",
+        "source_name": "OpenAI",
+        "target_url": "/f/101",
+        "source_refs": [
+          {
+            "url": "https://openai.com/news/agents",
+            "domain": "openai.com",
+            "title": "OpenAI"
+          }
+        ]
+      },
+      "entities": [
+        {
+          "id": "openai",
+          "slug": "openai",
+          "name": "OpenAI",
+          "kind": "Company",
+          "target_url": "/e/openai"
+        },
+        {
+          "id": "agent-runtime",
+          "slug": "agent-runtime",
+          "name": "Agent Runtime",
+          "kind": "Technology",
+          "target_url": "/e/agent-runtime"
+        }
+      ],
+      "source_refs": [
+        {
+          "url": "https://openai.com/news/agents",
+          "domain": "openai.com",
+          "title": "OpenAI"
+        }
+      ],
+      "graph_edges": [
+        {
+          "kind": "entity",
+          "relationship": "shared_entity",
+          "id": "openai",
+          "label": "OpenAI",
+          "target_url": "/e/openai",
+          "evidence": "finding:101"
+        }
+      ],
+      "related_paths": [
+        {
+          "id": 102,
+          "kind": "finding",
+          "title": "Anthropic agent runtime reliability",
+          "target_url": "/f/102",
+          "connector_labels": ["Shared entity", "Semantic neighbor"],
+          "reason": "Related by shared entity and semantic neighbor.",
+          "connectors": [
+            {
+              "kind": "shared_entity",
+              "label": "Shared entity",
+              "evidence": [{"kind": "entity", "id": "agent-runtime", "target_url": "/e/agent-runtime"}]
+            }
+          ]
+        }
+      ],
+      "arc_ids": ["agent-runtime-control-plane"]
+    },
+    {
+      "id": "agent-runtime-control-plane-update",
+      "type": "arc_update",
+      "status": "ready",
+      "importance": "high",
+      "why_now": "The same runtime-reliability arc appeared across two independent sources."
+    },
+    {
+      "id": "openai-entity-dossier",
+      "type": "entity_dossier",
+      "status": "ready",
+      "importance": "medium",
+      "why_now": "OpenAI recurs across model, agent, and policy findings."
+    },
+    {
+      "id": "openai-source-watch",
+      "type": "source_watch",
+      "status": "ready",
+      "importance": "medium",
+      "why_now": "The source trail recurred in high-signal agent coverage."
+    },
+    {
+      "id": "openai-anthropic-runtime-contrast",
+      "type": "contrast_pair",
+      "status": "ready",
+      "importance": "medium",
+      "why_now": "Two model providers framed runtime reliability differently."
+    },
+    {
+      "id": "weak-parser-chunk",
+      "type": "weak_input",
+      "status": "weak",
+      "importance": "low",
+      "why_now": "",
+      "primary_finding": {
+        "kind": "finding",
+        "id": 103,
+        "run_date": "2026-07-01",
+        "agent": "fixture-agent",
+        "title": "Top 5 Stories Today",
+        "summary": "A parser-like newsletter container without usable source evidence.",
+        "importance": "low",
+        "category": "source",
+        "source_url": "",
+        "source_name": "",
+        "target_url": "/f/103",
+        "source_refs": []
+      },
+      "entities": [],
+      "source_refs": [],
+      "graph_edges": [],
+      "related_paths": []
+    },
+    {
+      "id": "agent-runtime-followup",
+      "type": "followup_update",
+      "status": "ready",
+      "importance": "medium",
+      "why_now": "Follow-up research connected the runtime reliability story to deployment risk."
+    }
+  ]
+}

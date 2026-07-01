@@ -1433,10 +1433,26 @@ place instead of deleting the column.
     -> 10 passed, 1 known Starlette/httpx warning.
   - `.venv/bin/python3 -m pytest tests/test_api_contract.py tests/test_auth_middleware.py -q`
     -> 37 passed, 1 known Starlette/httpx warning.
+- Phase 3 deterministic content-machine core is implemented locally and ready
+  for commit:
+  - Added `tests/fixtures/site_content/graph_pack_cases.json` with public-safe
+    cases for finding story, arc update, entity dossier, source watch, contrast
+    pair, weak input, and follow-up update.
+  - Added `orchestrator/site_content_engine.py` with fixture loading,
+    candidate selection, graph-pack building, deterministic story generation,
+    confidence gate, and dry-run artifact writer.
+  - Added `orchestrator/site_experts.py` with explicit fake expert roles and
+    fail-closed fallback when live provider config is absent.
+  - Added `tools/site-content-dry-run.py`, a focused fixture-mode command that
+    does not import `run.py` or call the full daily pipeline.
+  - Dry-run smoke wrote only to `/private/tmp/mp-site-content-smoke`:
+    one generated high-confidence story and one degraded weak story.
+- Verification completed for Phase 3:
+  - `.venv/bin/python3 -m pytest tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_experts.py tests/test_site_content_api.py tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py tests/test_api_contract.py tests/test_auth_middleware.py -q`
+    -> 69 passed, 1 known Starlette/httpx warning.
+  - `.venv/bin/python3 tools/site-content-dry-run.py --date 2026-07-01 --user ramsay --reports-root /private/tmp/mp-site-content-smoke`
+    -> completed, 18 fixture artifacts written under the temp reports root.
 - Still pending for the full goal:
-  - Phase 3 content-machine core: graph pack fixtures, deterministic candidate
-    selector, fake expert loop, story generator, confidence gate, artifact
-    writer, and dry-run command.
   - Phase 4 safe runner hook/trace integration.
   - Phase 5 Rabbit Hole frontend wiring to the new content-machine contracts.
   - Phase 6 Graphify, browser smoke, commits/push, and release gate.
