@@ -1473,6 +1473,15 @@ place instead of deleting the column.
     presented as the whole graph.
   - `/f/<id>` uses blended related paths in the client drill-down.
   - Added `/arc/[id]?date=YYYY-MM-DD` for narrative arc evidence pages.
+  - Corrective fix after owner testing: canonical `/briefings/<date>` pages no
+    longer render the parser-derived `IssueThreadSummary` above the report.
+    That block line-clamped story snippets and made full newsletters look
+    truncated. The full newsletter markdown now appears directly after the
+    header/audio. Proper briefing graph enrichment remains pending.
+  - Corrective fix after owner testing: the client related-path loader no
+    longer cancels itself when loading state changes, so `Loading related
+    signals...` should resolve to related items, an empty state, or an
+    unavailable state.
 - Verification completed for frontend wiring:
   - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`,
     and `pnpm build` passed.
@@ -1488,6 +1497,9 @@ place instead of deleting the column.
   - Briefing archive routes also stayed live: `/briefings` -> 200 and
     `/briefings/2026-06-17` -> 200. The canonical newsletter pages remain
     separate from site-native story generation.
+  - After removing `IssueThreadSummary`, `/briefings/2026-06-17` rendered the
+    full report ending (`How This Newsletter Learns From You` and reply
+    footer) without the top `Thread summary` block.
   - HTML scan across those pages found no `Top 5 Stories Today`, no raw `**`
     markdown, no `SHARED SOURCE`, no `shared_source`, and no `shared_entity`
     internal labels.
@@ -1496,6 +1508,10 @@ place instead of deleting the column.
     communities. HTML visualization was skipped because the graph exceeds the
     5,000-node default.
   - `graphify check-update .` passed.
+- Pushed closeout commits:
+  - v3 `feature/rabbit-hole-public-intelligence-site` through `03abb1c`.
+  - Rabbit Hole `feature/rabbit-hole-public-intelligence-site` through
+    `43ba3b9`.
 - Still pending for the full goal:
   - Phase 4 safe runner hook/trace integration.
-  - Phase 6 commits/push and release gate.
+  - Production release gate; no Vercel or Fly deploy has been run.
