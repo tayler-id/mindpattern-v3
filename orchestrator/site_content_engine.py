@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -22,6 +23,7 @@ from orchestrator.site_content import (
     write_site_artifact,
 )
 from orchestrator.site_experts import run_site_expert_loop
+from orchestrator.site_graph import CorpusGraphReadModel
 
 _GENERIC_PUBLIC_TITLES = {
     "top 5 stories today",
@@ -416,6 +418,264 @@ def run_site_content_dry_run(
     ledger["artifacts_written"] = artifacts_written
     run_path.write_text(json.dumps(sanitize_site_artifact(ledger), indent=2, sort_keys=True) + "\n")
     return ledger
+
+
+def run_site_content_for_date(
+    *,
+    date: str,
+    user: str,
+    reports_root: Path,
+    conn: sqlite3.Connection,
+    max_stories: int = 5,
+) -> dict[str, Any]:
+    """Run the deterministic content machine against a public-safe corpus read model."""
+    run_date = validate_run_date(date)
+    graph = CorpusGraphReadModel(conn)
+    cases = _candidate_cases_from_corpus(conn, graph, date=run_date, limit=max(10, max_stories * 3))
+    selection = select_content_candidates(cases, date=run_date)
+    selected = selection["selected"][:max_stories]
+    selected_ids = {item["id"] for item in selected}
+    artifacts_written: list[str] = []
+    published_count = 0
+    degraded_count = 0
+    graph_pack_count = 0
+
+    for case in cases:
+        candidate_id = normalize_slug(str(case.get("id") or "candidate"))
+        if candidate_id not in selected_ids:
+            continue
+
+        candidate_record = _candidate_record(case, date=run_date)
+        candidate_path = write_site_artifact(
+            kind="site_candidate",
+            user=user,
+            reports_root=reports_root,
+            date=run_date,
+            slug=candidate_id,
+            artifact=candidate_record,
+        )
+        artifacts_written.append(_artifact_ref(candidate_path, reports_root))
+
+        graph_pack = build_graph_pack(case, date=run_date, user=user)
+        pack_path = write_site_artifact(
+            kind="site_graph_pack",
+            user=user,
+            reports_root=reports_root,
+            date=run_date,
+            slug=candidate_id,
+            artifact=graph_pack,
+        )
+        artifacts_written.append(_artifact_ref(pack_path, reports_root))
+        graph_pack_count += 1
+
+        expert_results = run_site_expert_loop(graph_pack, context={"date": run_date, "user": user})
+        story = generate_site_story(graph_pack, expert_results=expert_results)
+        story_path = write_site_artifact(
+            kind="site_story",
+            user=user,
+            reports_root=reports_root,
+            date=run_date,
+            slug=candidate_id,
+            artifact=story,
+        )
+        artifacts_written.append(_artifact_ref(story_path, reports_root))
+        if story.get("status") == "published":
+            published_count += 1
+        else:
+            degraded_count += 1
+
+    corpus = {
+        "kind": "site_corpus",
+        "date": run_date,
+        "user": user,
+        "status": "ready" if cases else "degraded",
+        "counts": {
+            "findings": len(cases),
+            "selected_candidates": len(selected),
+            "rejected_candidates": len(selection["rejected"]),
+            "graph_packs": graph_pack_count,
+            "published_stories": published_count,
+            "degraded_stories": degraded_count,
+        },
+        "coverage": {
+            "source": "corpus",
+            "has_embeddings": _table_has_rows(conn, "findings_embeddings"),
+            "has_arcs": False,
+        },
+        "provenance": {
+            "generated_by": "mindpattern.site_content_engine.corpus_run",
+            "redaction_status": "passed",
+        },
+    }
+    corpus_path = write_site_artifact(
+        kind="site_corpus",
+        user=user,
+        reports_root=reports_root,
+        date=run_date,
+        artifact=corpus,
+    )
+    artifacts_written.append(_artifact_ref(corpus_path, reports_root))
+
+    ledger = {
+        "kind": "site_run",
+        "date": run_date,
+        "user": user,
+        "status": "completed" if cases else "degraded",
+        "mode": "corpus_deterministic",
+        "inputs_scanned": {
+            "findings": len(cases),
+            "max_stories": max_stories,
+        },
+        "candidates_considered": len(cases),
+        "selected_candidates": [item["id"] for item in selected],
+        "graph_packs_built": graph_pack_count,
+        "generated_story_count": published_count,
+        "degraded_story_count": degraded_count,
+        "rejections": selection["rejected"],
+        "artifacts_written": artifacts_written,
+        "redaction_status": "passed",
+        "provenance": {
+            "generated_by": "mindpattern.site_content_engine.corpus_run",
+            "provider": "deterministic",
+            "newsletter_mutated": False,
+        },
+    }
+    run_path = write_site_artifact(
+        kind="site_run",
+        user=user,
+        reports_root=reports_root,
+        date=run_date,
+        artifact=ledger,
+    )
+    artifacts_written.append(_artifact_ref(run_path, reports_root))
+    ledger["artifacts_written"] = artifacts_written
+    run_path.write_text(json.dumps(sanitize_site_artifact(ledger), indent=2, sort_keys=True) + "\n")
+    return sanitize_site_artifact(ledger)
+
+
+def _candidate_cases_from_corpus(
+    conn: sqlite3.Connection,
+    graph: CorpusGraphReadModel,
+    *,
+    date: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if not _table_has_rows(conn, "findings"):
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, run_date, agent, title, summary, importance, category,
+               source_url, source_name, created_at
+        FROM findings
+        WHERE run_date = ?
+          AND COALESCE(source_url, '') LIKE 'http%'
+          AND COALESCE(title, '') != ''
+          AND COALESCE(summary, '') != ''
+        ORDER BY
+          CASE lower(COALESCE(importance, ''))
+            WHEN 'critical' THEN 0
+            WHEN 'high' THEN 1
+            WHEN 'medium' THEN 2
+            ELSE 3
+          END,
+          created_at DESC,
+          id DESC
+        LIMIT ?
+        """,
+        (date, limit),
+    ).fetchall()
+    cases: list[dict[str, Any]] = []
+    for row in rows:
+        finding = _public_finding(dict(row))
+        if _is_generic_title(str(finding.get("title") or "")):
+            continue
+        detail = graph.get_finding(int(finding["id"])) or finding
+        related = graph.get_related_paths_for_finding(int(finding["id"]), limit=5) or {}
+        source_refs = list(finding.get("source_refs") or [])
+        entity_refs = list(detail.get("entities") or [])
+        graph_edges = _graph_edges_for_corpus_case(
+            primary=finding,
+            source_refs=source_refs,
+            entity_refs=entity_refs,
+        )
+        cases.append(
+            sanitize_site_artifact(
+                {
+                    "id": normalize_slug(str(finding["title"])),
+                    "type": "finding_story",
+                    "importance": finding.get("importance") or "medium",
+                    "why_now": _why_now_for_finding(finding),
+                    "primary_finding": finding,
+                    "source_refs": source_refs,
+                    "entities": entity_refs,
+                    "graph_edges": graph_edges,
+                    "related_paths": list(related.get("items") or []),
+                    "arc_ids": [],
+                }
+            )
+        )
+    return cases
+
+
+def _graph_edges_for_corpus_case(
+    *,
+    primary: dict[str, Any],
+    source_refs: list[dict[str, str]],
+    entity_refs: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    edges: list[dict[str, str]] = []
+    finding_id = str(primary.get("id") or "")
+    evidence = redact_sensitive_text(str(primary.get("summary") or primary.get("title") or ""))[:240]
+    for source in source_refs[:2]:
+        domain = str(source.get("domain") or "")
+        if not domain:
+            continue
+        edges.append(
+            {
+                "kind": "source_evidence",
+                "relationship": "reported_by",
+                "id": domain,
+                "label": source.get("title") or domain,
+                "target_url": f"/source/{domain}",
+                "evidence": evidence,
+            }
+        )
+    for entity in entity_refs[:4]:
+        slug = str(entity.get("slug") or entity.get("id") or "")
+        if not slug:
+            continue
+        edges.append(
+            {
+                "kind": "entity_evidence",
+                "relationship": "mentions",
+                "id": slug,
+                "label": str(entity.get("name") or slug),
+                "target_url": f"/e/{slug}",
+                "evidence": f"Finding {finding_id} mentions {entity.get('name') or slug}.",
+            }
+        )
+    return edges
+
+
+def _why_now_for_finding(finding: dict[str, Any]) -> str:
+    source = finding.get("source_name") or (finding.get("source_refs") or [{}])[0].get("domain") or "the source trail"
+    return (
+        f"This entered the {finding.get('run_date')} research corpus from {source} "
+        "and has enough source evidence to become a public Rabbit Hole story."
+    )
+
+
+def _table_has_rows(conn: sqlite3.Connection, table_name: str) -> bool:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table_name):
+        return False
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        (table_name,),
+    ).fetchone()
+    if row is None:
+        return False
+    count = conn.execute(f"SELECT 1 FROM {table_name} LIMIT 1").fetchone()
+    return count is not None
 
 
 def _candidate_record(case: dict[str, Any], *, date: str) -> dict[str, Any]:

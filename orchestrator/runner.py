@@ -95,6 +95,19 @@ def _source_health_for_trace(preflight_data: dict) -> dict:
     return trace_health
 
 
+def _site_content_trace_payload(result: dict) -> dict:
+    """Compact site-content status for traces without artifact paths or raw text."""
+    return {
+        "status": result.get("status", "unknown"),
+        "mode": result.get("mode", ""),
+        "inputs_scanned": result.get("inputs_scanned", {}),
+        "candidates_considered": result.get("candidates_considered", 0),
+        "generated_story_count": result.get("generated_story_count", 0),
+        "degraded_story_count": result.get("degraded_story_count", 0),
+        "artifacts_written": len(result.get("artifacts_written") or []),
+    }
+
+
 def _assess_agent_coverage(agent_results: list) -> dict:
     """Summarize research agent coverage before storage/dedup side effects."""
     target = max(13, len(agent_results))
@@ -665,6 +678,7 @@ class ResearchPipeline:
             Phase.RESEARCH: self._phase_research,
             Phase.SYNTHESIS: self._phase_synthesis,
             Phase.DELIVER: self._phase_deliver,
+            Phase.SITE_CONTENT: self._phase_site_content,
             Phase.LEARN: self._phase_learn,
             Phase.SOCIAL: self._phase_social,
             Phase.ENGAGEMENT: self._phase_engagement,
@@ -1687,6 +1701,61 @@ class ResearchPipeline:
                 logger.warning(f"Subscriber broadcast failed (non-critical): {e}")
 
         return result
+
+    def _phase_site_content(self) -> dict:
+        """Phase 5.5: Generate Rabbit Hole site artifacts after newsletter delivery."""
+        if os.environ.get("MP_SITE_CONTENT_DISABLED") == "1":
+            logger.info("MP_SITE_CONTENT_DISABLED=1: skipping site_content phase")
+            return {
+                "skipped": True,
+                "phase": "site_content",
+                "reason": "MP_SITE_CONTENT_DISABLED=1",
+            }
+
+        try:
+            max_stories = int(os.environ.get("MP_SITE_CONTENT_MAX_STORIES", "5"))
+        except ValueError:
+            max_stories = 5
+        max_stories = max(1, min(max_stories, 10))
+
+        try:
+            from .site_content_engine import run_site_content_for_date
+
+            log_event(
+                self.traces_conn,
+                self.traces_run_id,
+                "site_content_started",
+                json.dumps({"mode": "corpus_deterministic", "max_stories": max_stories}),
+            )
+            result = run_site_content_for_date(
+                date=self.date_str,
+                user=self.user_id,
+                reports_root=PROJECT_ROOT / "reports",
+                conn=self.db,
+                max_stories=max_stories,
+            )
+            log_event(
+                self.traces_conn,
+                self.traces_run_id,
+                "site_content_completed",
+                json.dumps(_site_content_trace_payload(result)),
+            )
+            return result
+        except Exception as e:
+            result = {
+                "phase": "site_content",
+                "status": "failed",
+                "mode": "corpus_deterministic",
+                "error": f"{type(e).__name__}: {e}",
+            }
+            logger.warning("Site content phase failed open: %s", result["error"])
+            log_event(
+                self.traces_conn,
+                self.traces_run_id,
+                "site_content_failed",
+                json.dumps(_site_content_trace_payload(result)),
+            )
+            return result
 
     def _phase_learn(self) -> dict:
         """Phase 6: Learn (Python + one Sonnet call)."""

@@ -1508,10 +1508,26 @@ place instead of deleting the column.
     communities. HTML visualization was skipped because the graph exceeds the
     5,000-node default.
   - `graphify check-update .` passed.
+- Phase 4 partial implementation completed:
+  - Added skippable `site_content` runner phase after `deliver` and before
+    `learn`; it calls deterministic corpus generation, writes ignored
+    `reports/<user>/site-*` artifacts, and fails open so newsletter delivery
+    remains autonomous.
+  - Added compact trace events: `site_content_started`,
+    `site_content_completed`, and `site_content_failed`. Payloads contain
+    status/counts only, not raw stories or artifact paths.
+  - Added corpus-backed deterministic content generation from public-safe
+    `findings`/`entity_graph` evidence, separate from the fixture-only dry run.
+  - Verification:
+    `.venv/bin/python3 -m pytest tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_experts.py tests/test_site_content_api.py tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py tests/test_api_contract.py tests/test_auth_middleware.py tests/test_runner.py::TestSiteContentPhase tests/test_runner.py::TestDryRunPhases -q`
+    -> 78 passed, 1 known Starlette/httpx warning.
 - Pushed closeout commits:
   - v3 `feature/rabbit-hole-public-intelligence-site` through `03abb1c`.
   - Rabbit Hole `feature/rabbit-hole-public-intelligence-site` through
     `43ba3b9`.
 - Still pending for the full goal:
-  - Phase 4 safe runner hook/trace integration.
+  - Historical structured issue backfill audit and high-confidence historical
+    seed generation.
+  - Live editorial/provider integration requires explicit owner approval before
+    any Claude/OpenAI/provider calls.
   - Production release gate; no Vercel or Fly deploy has been run.

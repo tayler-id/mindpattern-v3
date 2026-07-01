@@ -370,7 +370,7 @@ class TestPipelineInit:
         """Every non-terminal, non-COMPLETED/FAILED phase has a handler."""
         expected_phases = {
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
-            Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
+            Phase.DELIVER, Phase.SITE_CONTENT, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
             Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
         }
         for phase in expected_phases:
@@ -1652,6 +1652,87 @@ class TestDryRunPhases:
         }
         mock_sync.assert_not_called()
 
+    def test_dry_run_site_content_skips_engine(self, pipeline):
+        pipeline.dry_run = True
+
+        with patch("orchestrator.site_content_engine.run_site_content_for_date") as mock_run:
+            result = pipeline._get_phase_handler(Phase.SITE_CONTENT)()
+
+        assert result == {"dry_run": True, "skipped": True, "phase": "site_content"}
+        mock_run.assert_not_called()
+
+
+class TestSiteContentPhase:
+    """Site-content generation is post-newsletter enrichment and fail-open."""
+
+    def test_site_content_phase_runs_engine_and_logs_compact_trace(self, pipeline, tmp_path):
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("orchestrator.site_content_engine.run_site_content_for_date") as mock_run,
+        ):
+            mock_run.return_value = {
+                "kind": "site_run",
+                "date": pipeline.date_str,
+                "status": "completed",
+                "mode": "corpus_deterministic",
+                "inputs_scanned": {"findings": 2},
+                "candidates_considered": 2,
+                "generated_story_count": 1,
+                "degraded_story_count": 0,
+                "artifacts_written": ["reports/ramsay/site-runs/2026-05-01.json"],
+            }
+
+            result = pipeline._phase_site_content()
+
+        assert result["status"] == "completed"
+        assert result["generated_story_count"] == 1
+        mock_run.assert_called_once()
+        call = mock_run.call_args.kwargs
+        assert call["date"] == pipeline.date_str
+        assert call["user"] == pipeline.user_id
+        assert call["reports_root"] == tmp_path / "reports"
+        assert call["conn"] is pipeline.db
+
+        row = pipeline.traces_conn.execute(
+            "SELECT payload FROM events WHERE event_type = 'site_content_completed'"
+        ).fetchone()
+        assert row is not None
+        payload = json.loads(row["payload"])
+        assert payload["status"] == "completed"
+        assert payload["artifacts_written"] == 1
+        assert "reports/ramsay/site-runs/2026-05-01.json" not in row["payload"]
+
+    def test_site_content_phase_can_be_disabled(self, pipeline, monkeypatch):
+        monkeypatch.setenv("MP_SITE_CONTENT_DISABLED", "1")
+
+        with patch("orchestrator.site_content_engine.run_site_content_for_date") as mock_run:
+            result = pipeline._phase_site_content()
+
+        assert result == {
+            "skipped": True,
+            "phase": "site_content",
+            "reason": "MP_SITE_CONTENT_DISABLED=1",
+        }
+        mock_run.assert_not_called()
+
+    def test_site_content_phase_failure_returns_failed_without_raising(self, pipeline):
+        with patch(
+            "orchestrator.site_content_engine.run_site_content_for_date",
+            side_effect=RuntimeError("content engine unavailable"),
+        ):
+            result = pipeline._phase_site_content()
+
+        assert result["status"] == "failed"
+        assert result["phase"] == "site_content"
+        assert "content engine unavailable" in result["error"]
+
+        row = pipeline.traces_conn.execute(
+            "SELECT payload FROM events WHERE event_type = 'site_content_failed'"
+        ).fetchone()
+        assert row is not None
+        payload = json.loads(row["payload"])
+        assert payload["status"] == "failed"
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 3. Pipeline.run() — full pipeline execution
@@ -1670,6 +1751,7 @@ class TestPipelineRun:
             Phase.RESEARCH: {"findings_stored": 10},
             Phase.SYNTHESIS: {"word_count": 4000},
             Phase.DELIVER: {"success": True},
+            Phase.SITE_CONTENT: {"status": "completed", "generated_story_count": 1},
             Phase.LEARN: {"quality": {"overall_score": 0.85}},
             Phase.SOCIAL: {"posts": []},
             Phase.ENGAGEMENT: {"replies_posted": 0},

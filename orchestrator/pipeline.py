@@ -16,6 +16,7 @@ class Phase(enum.Enum):
     RESEARCH = "research"
     SYNTHESIS = "synthesis"
     DELIVER = "deliver"
+    SITE_CONTENT = "site_content"
     LEARN = "learn"
     SOCIAL = "social"
     ENGAGEMENT = "engagement"
@@ -33,6 +34,7 @@ PHASE_ORDER = [
     Phase.RESEARCH,
     Phase.SYNTHESIS,
     Phase.DELIVER,
+    Phase.SITE_CONTENT,
     Phase.LEARN,
     Phase.SOCIAL,
     Phase.ENGAGEMENT,
@@ -50,7 +52,7 @@ CRITICAL_PHASES = {Phase.RESEARCH, Phase.SYNTHESIS}
 # Which phases are skippable (pipeline continues if they fail)
 SKIPPABLE_PHASES = {
     Phase.INIT, Phase.TREND_SCAN, Phase.DELIVER,
-    Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
+    Phase.SITE_CONTENT, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
     Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
 }
 

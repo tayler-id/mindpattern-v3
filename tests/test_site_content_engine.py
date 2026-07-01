@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from pathlib import Path
 
 from orchestrator.site_content import is_publishable_site_story, site_artifact_path
@@ -6,6 +7,7 @@ from orchestrator.site_content_engine import (
     build_graph_pack,
     load_fixture_cases,
     run_site_content_dry_run,
+    run_site_content_for_date,
     select_content_candidates,
 )
 
@@ -135,3 +137,132 @@ def test_dry_run_writes_ledger_corpus_pack_candidate_and_story(tmp_path):
     arcs = json.loads(arc_path.read_text())
     assert arcs["arcs"][0]["id"] == "agent-runtime-control-plane"
     assert arcs["arcs"][0]["evidence"][0]["finding_id"] == 101
+
+
+def test_corpus_run_writes_site_story_from_public_findings(tmp_path):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE findings (
+            id INTEGER PRIMARY KEY,
+            run_date TEXT,
+            agent TEXT,
+            title TEXT,
+            summary TEXT,
+            importance TEXT,
+            category TEXT,
+            source_url TEXT,
+            source_name TEXT,
+            created_at TEXT
+        );
+        CREATE TABLE entity_graph (
+            entity_a TEXT,
+            entity_a_type TEXT,
+            entity_b TEXT,
+            entity_b_type TEXT,
+            relationship TEXT,
+            strength REAL,
+            evidence TEXT,
+            finding_id INTEGER,
+            run_date TEXT
+        );
+        """
+    )
+    conn.executemany(
+        """
+        INSERT INTO findings (
+            id, run_date, agent, title, summary, importance, category,
+            source_url, source_name, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                501,
+                "2026-07-01",
+                "agents-researcher",
+                "OpenAI runtime control plane outage changes agent deployment risk",
+                "OpenAI published runtime controls after an outage exposed reliability dependencies for agent builders.",
+                "high",
+                "agents",
+                "https://openai.com/news/agent-runtime",
+                "OpenAI",
+                "2026-07-01T08:00:00",
+            ),
+            (
+                502,
+                "2026-07-01",
+                "infra-researcher",
+                "Agent runtime observability becomes required for production deployments",
+                "Teams are adding tracing, retries, and fallback controls around long-running agent jobs.",
+                "medium",
+                "infrastructure",
+                "https://example.com/agent-observability",
+                "Example Research",
+                "2026-07-01T09:00:00",
+            ),
+        ],
+    )
+    conn.execute(
+        """
+        INSERT INTO entity_graph (
+            entity_a, entity_a_type, entity_b, entity_b_type, relationship,
+            strength, evidence, finding_id, run_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "OpenAI",
+            "company",
+            "Agent runtime",
+            "topic",
+            "operates",
+            0.9,
+            "Source-backed finding links OpenAI to agent runtime controls.",
+            501,
+            "2026-07-01",
+        ),
+    )
+    conn.commit()
+
+    reports_root = tmp_path / "reports"
+    result = run_site_content_for_date(
+        date="2026-07-01",
+        user="ramsay",
+        reports_root=reports_root,
+        conn=conn,
+        max_stories=2,
+    )
+
+    assert result["status"] == "completed"
+    assert result["mode"] == "corpus_deterministic"
+    assert result["inputs_scanned"]["findings"] == 2
+    assert result["generated_story_count"] >= 1
+    assert result["degraded_story_count"] == 0
+    assert result["provenance"]["newsletter_mutated"] is False
+
+    story_path = site_artifact_path(
+        kind="site_story",
+        date="2026-07-01",
+        slug="openai-runtime-control-plane-outage-changes-agent-deployment-risk",
+        user="ramsay",
+        reports_root=reports_root,
+    )
+    pack_path = site_artifact_path(
+        kind="site_graph_pack",
+        date="2026-07-01",
+        slug="openai-runtime-control-plane-outage-changes-agent-deployment-risk",
+        user="ramsay",
+        reports_root=reports_root,
+    )
+    assert story_path.exists()
+    assert pack_path.exists()
+
+    story = json.loads(story_path.read_text())
+    assert story["status"] == "published"
+    assert story["confidence"] == "high"
+    assert story["primary_finding_ids"] == [501]
+    assert story["source_refs"][0]["domain"] == "openai.com"
+    assert story["entity_refs"]
+    assert story["graph_edges"]
+    assert story["claim_evidence"]
+    assert is_publishable_site_story(story)
