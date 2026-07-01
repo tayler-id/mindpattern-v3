@@ -1461,6 +1461,9 @@ place instead of deleting the column.
     `/api/related/{id}?mode=blended`.
   - Homepage prefers published `/api/stories` artifacts and falls back to feed
     findings when no site stories exist.
+  - Follow-up correction: the homepage now keeps `/api/feed`/finding rows under
+    published site stories, so a single high-confidence generated artifact does
+    not collapse the Wire to one item.
   - `/s/<slug>` renders generated story fields: `dek`, `take`, `why_now`,
     graph trail, related paths, claim evidence, source trail, entity refs,
     provenance, and JSON-LD.
@@ -1480,6 +1483,8 @@ place instead of deleting the column.
     frontend `/`, `/s/openai-agent-runtime-reliability`, `/e/openai`,
     `/source/openai.com`, `/f/101`, and
     `/arc/agent-runtime-control-plane?date=2026-07-01` -> 200.
+  - Homepage smoke after the Wire-population correction rendered
+    `/s/openai-agent-runtime-reliability` followed by normal `/f/...` rows.
   - Briefing archive routes also stayed live: `/briefings` -> 200 and
     `/briefings/2026-06-17` -> 200. The canonical newsletter pages remain
     separate from site-native story generation.
