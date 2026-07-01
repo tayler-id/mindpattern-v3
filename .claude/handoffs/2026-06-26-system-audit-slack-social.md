@@ -1670,6 +1670,9 @@ place instead of deleting the column.
     `graphify check-update .` passed.
 - Still true:
   - No Vercel production deploy has been run.
+  - Release gate is ready but requires explicit owner approval before production
+    Vercel deploy of the pushed Rabbit Hole
+    `feature/rabbit-hole-public-intelligence-site` branch.
   - No full daily pipeline, Fly deploy, provider call, schema change,
     Slack/email/social action, or live model call was run.
 
