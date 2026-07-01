@@ -186,13 +186,15 @@ def test_build_structured_issue_filters_sentence_noise_from_entities():
             "# Briefing\n\n"
             "## Top Stories\n\n"
             "**OpenAI and Anthropic shipped agent updates.** And Because The New Work "
-            "made OpenAI Codex and Claude Code more important.\n"
+            "made OpenAI Codex and Claude Code more important. That is what they said "
+            "it was worth.\n"
         ),
     )
 
     names = {entity["name"] for entity in issue["entities"]}
     assert {"OpenAI", "Anthropic", "OpenAI Codex", "Claude Code"} <= names
     assert {"And", "Because", "The", "New", "Work"} & names == set()
+    assert {"That", "What", "They", "Worth"} & names == set()
     assert "And Because The New Work" not in names
 
 

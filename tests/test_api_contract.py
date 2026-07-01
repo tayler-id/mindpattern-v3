@@ -320,6 +320,17 @@ def _create_contract_reports(reports_dir):
         "OpenAI Codex changed the reliability path for agent builders. "
         "Source: [OpenAI](https://openai.com/news/agents).\n"
     )
+    (user_dir / "2026-07-01.md").write_text(
+        "# Story Pagination Fixture\n\n"
+        "## Runtime Buyers\n\n"
+        "**Runtime buyers got a new benchmark.** "
+        "The first pagination fixture keeps a full source trail. "
+        "Source: [Runtime Source](https://example.com/runtime-buyers).\n\n"
+        "## Agent Memory\n\n"
+        "**Agent memory moved into the product surface.** "
+        "The second pagination fixture should count even when it is not on the first page. "
+        "Source: [Memory Source](https://example.com/agent-memory).\n"
+    )
     (user_dir / "2026-06-10-dry-run.md").write_text(
         "# Dry-Run Report — 2026-06-10\n\nThis is a dry-run placeholder.\n"
     )
@@ -743,6 +754,10 @@ def test_story_endpoints_return_source_backed_public_stories(client):
     assert listing.status_code == 200
     body = listing.json()
     assert body["kind"] == "stories"
+    assert body["limit"] == 5
+    assert body["offset"] == 0
+    assert body["total"] > len(body["items"])
+    assert body["has_more"] is True
     assert body["items"]
     assert body["items"][0]["kind"] == "story"
     assert body["items"][0]["target_url"].startswith("/s/")
@@ -752,6 +767,13 @@ def test_story_endpoints_return_source_backed_public_stories(client):
     assert "2026-06-30-openai-hardened-agent-runtime-reliability" in {
         item["slug"] for item in body["items"]
     }
+
+    first_page = client.get("/api/stories?user=ramsay&limit=1")
+    assert first_page.status_code == 200
+    first_page_body = first_page.json()
+    assert len(first_page_body["items"]) == 1
+    assert first_page_body["total"] == body["total"]
+    assert first_page_body["has_more"] is True
 
     detail = client.get("/api/stories/2026-06-29-openai-agent-runtime-reliability?user=ramsay")
     assert detail.status_code == 200

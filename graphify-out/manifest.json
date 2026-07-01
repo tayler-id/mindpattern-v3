@@ -65,8 +65,8 @@
     "semantic_hash": ""
   },
   "dashboard/routes/api.py": {
-    "mtime": 1782941614.2599807,
-    "ast_hash": "ea10372658f142aa0db6652bab94289a",
+    "mtime": 1782942296.8044946,
+    "ast_hash": "d8357ca784426e59732f064e134866b1",
     "semantic_hash": ""
   },
   "dashboard/routes/editors_desk.py": {
@@ -980,8 +980,8 @@
     "semantic_hash": ""
   },
   "tests/test_api_contract.py": {
-    "mtime": 1782941650.9558568,
-    "ast_hash": "b0f9f597eac4370c08a12382f02d3272",
+    "mtime": 1782942277.0492704,
+    "ast_hash": "e86d321dc8088b61576f9dab8b56a167",
     "semantic_hash": ""
   },
   "tests/test_approval.py": {
@@ -2255,13 +2255,13 @@
     "semantic_hash": ""
   },
   "orchestrator/site_content.py": {
-    "mtime": 1782941573.121655,
-    "ast_hash": "4151cb6113a2d0dd056224bcbf41acf0",
+    "mtime": 1782942460.4043198,
+    "ast_hash": "1e2f8cc9a1876dfec1521edf1899145e",
     "semantic_hash": ""
   },
   "tests/test_site_issue_contracts.py": {
-    "mtime": 1782700942.566518,
-    "ast_hash": "00aa73ba6be1af3cb441776272b80b44",
+    "mtime": 1782942418.7425253,
+    "ast_hash": "4e0ec928c5f414a4630e736969d63bf9",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-28-rabbit-hole-public-intelligence-site-implementation-plan.md": {
@@ -2350,8 +2350,8 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-implementation-plan.md": {
-    "mtime": 1782941988.4015255,
-    "ast_hash": "f1f2dbc386caef76012b21d0f1dd4300",
+    "mtime": 1782942584.9399557,
+    "ast_hash": "648a2fd1fe632b58095137d1b38809cb",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-spec.md": {

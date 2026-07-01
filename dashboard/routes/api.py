@@ -1865,7 +1865,7 @@ def _load_public_story_file(path: Path) -> dict | None:
     return _public_story_artifact(item, fallback_slug=path.stem)
 
 
-async def _all_public_stories(user: str, *, max_items: int | None = None) -> list[dict]:
+async def _all_public_stories(user: str) -> list[dict]:
     stories: list[dict] = []
     covered_story_units: set[str] = set()
     seen_slugs: set[str] = set()
@@ -1878,7 +1878,6 @@ async def _all_public_stories(user: str, *, max_items: int | None = None) -> lis
             covered_story_units.add(str(story["story_unit_id"]))
         stories.append(story)
 
-    dynamic_count = 0
     for date in _structured_issue_dates(user=user):
         issue = _structured_issue_from_report_file(date=date, user=user)
         if issue is None:
@@ -1895,11 +1894,6 @@ async def _all_public_stories(user: str, *, max_items: int | None = None) -> lis
                 continue
             seen_slugs.add(slug)
             stories.append(story)
-            dynamic_count += 1
-            if max_items is not None and dynamic_count >= max_items:
-                break
-        if max_items is not None and dynamic_count >= max_items:
-            break
 
     stories.sort(key=lambda story: (story.get("issue_date", ""), story.get("slug", "")), reverse=True)
     return stories
@@ -2136,18 +2130,27 @@ async def list_public_stories(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
 ):
-    """Public: published Rabbit Hole site-story artifacts only."""
+    """Public: published Rabbit Hole stories with full pagination metadata."""
     if _safe_user(user) is None:
-        return {"kind": "stories", "items": [], "total": 0, "limit": limit, "offset": offset}
+        return {
+            "kind": "stories",
+            "items": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+            "has_more": False,
+        }
 
-    stories = await _all_public_stories(user, max_items=offset + limit)
+    stories = await _all_public_stories(user)
+    total = len(stories)
 
     return {
         "kind": "stories",
         "items": stories[offset: offset + limit],
-        "total": len(stories),
+        "total": total,
         "limit": limit,
         "offset": offset,
+        "has_more": offset + limit < total,
     }
 
 

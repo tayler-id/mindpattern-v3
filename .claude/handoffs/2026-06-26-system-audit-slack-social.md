@@ -1716,3 +1716,35 @@ place instead of deleting the column.
   - No Vercel production deploy has been run.
   - No full daily pipeline, Fly deploy, provider call, schema change,
     Slack/email/social action, or live model call was run.
+
+## Rabbit Hole Story Count and Entity Noise Fix - 2026-07-01
+
+- Follow-up corrective work after local smoke:
+  - `/api/stories` was building only enough dynamic archive stories for the
+    requested page and then returning `total=len(loaded)`. That could make the
+    public site imply the corpus was much smaller than it is.
+  - The endpoint now builds the complete public story set, slices by
+    `limit/offset`, and returns `has_more`.
+  - Local smoke `GET /api/stories?user=ramsay&limit=1` returned one item with
+    `total=3976` and `has_more=true`.
+- Graph trail cleanup:
+  - Backend structured-issue entity extraction now filters standalone filler
+    entities `that`, `what`, `they`, and `worth`.
+  - Rabbit Hole briefing graph display also blocks those slugs defensively so
+    old cached/generated structured issues do not show them as public chips.
+  - Local smoke `/briefings/2026-06-29` still rendered the full newsletter
+    ending plus `Graph trail`, but no longer linked `/e/that`, `/e/what`,
+    `/e/they`, or `/e/worth`.
+- Verification:
+  - Focused backend:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_contracts.py::test_build_structured_issue_filters_sentence_noise_from_entities tests/test_api_contract.py::test_story_endpoints_return_source_backed_public_stories tests/test_api_contract.py::test_structured_issue_endpoints_parse_public_report -q`
+    -> 3 passed, 1 known Starlette/httpx warning.
+  - Broader backend:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_backfill.py tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_experts.py tests/test_site_content_api.py tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py tests/test_api_contract.py tests/test_auth_middleware.py tests/test_runner.py::TestSiteContentPhase tests/test_runner.py::TestDryRunPhases -q`
+    -> 82 passed, 1 known Starlette/httpx warning.
+  - Rabbit Hole `pnpm lint`, `pnpm exec tsc --noEmit --incremental false`, and
+    `pnpm build` passed.
+- Still true:
+  - No Vercel production deploy has been run.
+  - No full daily pipeline, Fly deploy, provider call, schema change,
+    Slack/email/social action, or live model call was run.
