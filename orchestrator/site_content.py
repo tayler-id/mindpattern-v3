@@ -25,6 +25,18 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _BOLD_LEAD_RE = re.compile(r"^\s*(?:[-*]\s*)?\*\*(.+?)\*\*\s*(.*)$")
 _ENTITY_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})(?:\s+(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,}))*\b")
+_REPORT_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:$|[-_].*)")
+_BACKFILL_BAD_LINE_RE = re.compile(
+    r"^(?:"
+    r"now\b.*(?:write|newsletter|report|final output)|"
+    r"let me\b.*(?:write|newsletter|report)|"
+    r"prompt is too long|"
+    r"dry-run report|"
+    r"this is a dry-run placeholder"
+    r")\.?$",
+    re.IGNORECASE,
+)
+_MIN_BACKFILL_REPORT_BYTES = 80
 _COMMON_ENTITIES = {
     "AI",
     "API",
@@ -200,6 +212,9 @@ _SITE_ARTIFACT_LAYOUTS = {
     "site_candidate": ("site-candidates", "date_slug"),
     "site_graph_pack": ("site-graph-packs", "date_slug"),
     "site_story": ("site-stories", "date_slug"),
+    "site_issue": ("site-issues", "date"),
+    "site_issue_backfill": ("site-issue-backfills", "date"),
+    "site_historical_seed": ("site-historical-seeds", "date"),
     "entity_dossier": ("site-dossiers/entities", "slug"),
     "source_dossier": ("site-dossiers/sources", "slug"),
     "site_collection": ("site-collections", "date_slug"),
@@ -939,3 +954,287 @@ def build_structured_issue(
             "human_approved": False,
         },
     }
+
+
+def run_site_issue_backfill(
+    *,
+    date: str,
+    user: str,
+    reports_root: Path,
+    source_dates: list[str] | None = None,
+    max_reports: int | None = None,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    """Normalize historical newsletters into structured issue artifacts.
+
+    The backfill is intentionally evidence-only. It extracts story units,
+    source links, topic terms, and text-derived entity refs from canonical
+    newsletter markdown. It does not attempt to guess missing finding IDs or
+    graph DB matches.
+    """
+    run_date = validate_run_date(date)
+    if not _SAFE_USER_RE.fullmatch(user or ""):
+        raise ValueError("user must be a safe path segment")
+    if max_reports is not None and max_reports < 1:
+        raise ValueError("max_reports must be positive")
+
+    generated = generated_at or f"{run_date}T00:00:00+00:00"
+    reports_dir = (reports_root / user).resolve()
+    requested_dates = {validate_run_date(item) for item in source_dates or []}
+
+    report_records = _historical_report_records(reports_dir=reports_dir, source_dates=requested_dates)
+    selected_records, skipped = _select_canonical_report_records(report_records)
+    if max_reports is not None:
+        overflow = selected_records[max_reports:]
+        selected_records = selected_records[:max_reports]
+        skipped.extend(
+            _skipped_report_record(record, reason="outside_max_reports")
+            for record in overflow
+        )
+
+    parsed: list[dict[str, Any]] = []
+    degraded: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    redacted_count = 0
+    story_unit_count = 0
+    source_ref_count = 0
+
+    for record in selected_records:
+        path = record["path"]
+        issue_date = record["date"]
+        raw = path.read_text(errors="replace")
+        content = _clean_backfill_report_markdown(raw)
+        if not _is_backfillable_report_content(content):
+            skipped.append(_skipped_report_record(record, reason="placeholder_or_too_small"))
+            continue
+
+        title = _backfill_report_title(content=content, date=issue_date)
+        issue = build_structured_issue(
+            date=issue_date,
+            user=user,
+            title=title,
+            content=content,
+            generated_at=generated,
+        )
+        issue_path = issue_artifact_path(
+            date=issue_date,
+            user=user,
+            reports_root=reports_root,
+        )
+        issue_path.parent.mkdir(parents=True, exist_ok=True)
+        issue_path.write_text(json.dumps(sanitize_site_artifact(issue), indent=2, sort_keys=True) + "\n")
+
+        story_units = list(issue.get("story_units") or [])
+        story_unit_count += len(story_units)
+        source_ref_count += len(issue.get("source_trail") or [])
+        redaction_status = issue.get("provenance", {}).get("redaction_status")
+        if redaction_status != "passed":
+            redacted_count += 1
+
+        degraded_reasons = _issue_degraded_reasons(issue)
+        if degraded_reasons:
+            degraded.append(
+                {
+                    "date": issue_date,
+                    "filename": path.name,
+                    "reasons": degraded_reasons,
+                    "story_unit_count": len(story_units),
+                    "source_ref_count": len(issue.get("source_trail") or []),
+                }
+            )
+
+        for story in story_units:
+            missing = []
+            if not story.get("finding_ids"):
+                missing.append("finding_match")
+            if not story.get("source_refs"):
+                missing.append("source_match")
+            if not story.get("entity_ids"):
+                missing.append("entity_match")
+            if missing:
+                unresolved.append(
+                    {
+                        "date": issue_date,
+                        "story_unit_id": story.get("id"),
+                        "title": story.get("title"),
+                        "missing": missing,
+                        "reason": "no_deterministic_existing_match",
+                    }
+                )
+
+        parsed.append(
+            {
+                "date": issue_date,
+                "filename": path.name,
+                "issue_artifact": _reports_relative_ref(issue_path, reports_root),
+                "story_unit_count": len(story_units),
+                "source_ref_count": len(issue.get("source_trail") or []),
+                "entity_count": len(issue.get("entities") or []),
+                "redaction_status": redaction_status,
+                "degraded_reasons": degraded_reasons,
+            }
+        )
+
+    audit = {
+        "kind": "site_issue_backfill",
+        "date": run_date,
+        "user": user,
+        "status": "completed" if parsed else "degraded",
+        "counts": {
+            "reports_seen": len(report_records),
+            "parsed": len(parsed),
+            "skipped": len(skipped),
+            "redacted": redacted_count,
+            "degraded": len(degraded),
+            "unresolved": len(unresolved),
+            "story_units": story_unit_count,
+            "source_refs": source_ref_count,
+        },
+        "parsed": sorted(parsed, key=lambda item: item["date"]),
+        "skipped": sorted(skipped, key=lambda item: (item.get("date") or "", item.get("filename") or "")),
+        "degraded": sorted(degraded, key=lambda item: item["date"]),
+        "unresolved": sorted(
+            unresolved,
+            key=lambda item: (item.get("date") or "", item.get("story_unit_id") or ""),
+        ),
+        "provenance": {
+            "generated_by": "mindpattern.site_content.issue_backfill",
+            "generated_at": generated,
+            "provider": "deterministic",
+            "input_artifacts": [
+                f"reports/{user}/{record['path'].name}"
+                for record in sorted(report_records, key=lambda item: item["path"].name)
+            ],
+            "redaction_status": "passed",
+            "ai_generated": False,
+            "human_approved": False,
+            "finding_match_policy": "do_not_fabricate_missing_matches",
+        },
+    }
+    write_site_artifact(
+        kind="site_issue_backfill",
+        user=user,
+        reports_root=reports_root,
+        date=run_date,
+        artifact=audit,
+    )
+    return sanitize_site_artifact(audit)
+
+
+def _historical_report_records(
+    *,
+    reports_dir: Path,
+    source_dates: set[str],
+) -> list[dict[str, Any]]:
+    if not reports_dir.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for path in sorted(reports_dir.glob("*.md")):
+        match = _REPORT_DATE_RE.match(path.stem)
+        if not match:
+            continue
+        report_date = match.group(1)
+        if source_dates and report_date not in source_dates:
+            continue
+        records.append({"date": report_date, "path": path})
+    return records
+
+
+def _select_canonical_report_records(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    by_date: dict[str, dict[str, Any]] = {}
+    skipped: list[dict[str, Any]] = []
+    for record in records:
+        path = record["path"]
+        if any(token in path.name.lower() for token in ("debug", "stderr")):
+            skipped.append(_skipped_report_record(record, reason="debug_report"))
+            continue
+        current = by_date.get(record["date"])
+        if current is None or _historical_report_rank(record) < _historical_report_rank(current):
+            if current is not None:
+                skipped.append(_skipped_report_record(current, reason="non_canonical_variant"))
+            by_date[record["date"]] = record
+        else:
+            skipped.append(_skipped_report_record(record, reason="non_canonical_variant"))
+    return (
+        sorted(by_date.values(), key=lambda item: item["date"]),
+        skipped,
+    )
+
+
+def _historical_report_rank(record: dict[str, Any]) -> tuple[int, int, int, str]:
+    path = record["path"]
+    date = record["date"]
+    name = path.name.lower()
+    exact = 0 if path.name == f"{date}.md" else 1
+    generated = 1 if any(token in name for token in ("dry-run", "debug", "stderr")) else 0
+    return (exact, generated, -path.stat().st_size, path.name)
+
+
+def _skipped_report_record(record: dict[str, Any], *, reason: str) -> dict[str, Any]:
+    path = record["path"]
+    return {
+        "date": record.get("date"),
+        "filename": path.name,
+        "reason": reason,
+        "size": path.stat().st_size if path.exists() else 0,
+    }
+
+
+def _clean_backfill_report_markdown(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return ""
+    lines = normalized.split("\n")
+    while lines and _is_bad_backfill_line(lines[0]):
+        lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _is_backfillable_report_content(content: str) -> bool:
+    if len(content.encode("utf-8")) < _MIN_BACKFILL_REPORT_BYTES:
+        return False
+    first = next((line.strip() for line in content.splitlines() if line.strip()), "")
+    return not _is_bad_backfill_line(first)
+
+
+def _is_bad_backfill_line(line: str) -> bool:
+    stripped = re.sub(r"[*_`#]+", "", line).strip()
+    stripped = re.sub(r"\s+", " ", stripped)
+    return bool(_BACKFILL_BAD_LINE_RE.match(stripped))
+
+
+def _backfill_report_title(*, content: str, date: str) -> str:
+    for line in content.splitlines():
+        match = _HEADING_RE.match(line.strip())
+        if not match:
+            continue
+        title = _clean_story_title(match.group(2))
+        if title and not _is_bad_backfill_line(title):
+            return title
+    formatted = datetime.strptime(date, "%Y-%m-%d").strftime("%B %d, %Y")
+    return f"Ramsay Research Agent — {formatted}"
+
+
+def _issue_degraded_reasons(issue: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    story_units = list(issue.get("story_units") or [])
+    if not story_units:
+        reasons.append("no_story_units")
+    if not issue.get("source_trail"):
+        reasons.append("no_source_refs")
+    if not any(story.get("source_refs") for story in story_units):
+        reasons.append("no_source_backed_story_units")
+    if issue.get("provenance", {}).get("redaction_status") != "passed":
+        reasons.append("redacted_content")
+    return reasons
+
+
+def _reports_relative_ref(path: Path, reports_root: Path) -> str:
+    try:
+        return f"reports/{path.resolve().relative_to(reports_root.resolve()).as_posix()}"
+    except ValueError:
+        return path.name

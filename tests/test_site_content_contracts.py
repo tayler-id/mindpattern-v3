@@ -34,6 +34,18 @@ def test_site_artifact_path_supports_all_content_machine_artifacts(tmp_path):
             root / "ramsay" / "site-stories" / "2026-07-01" / "openai-agent-runtime.json",
         ),
         (
+            {"kind": "site_issue", "date": "2026-07-01"},
+            root / "ramsay" / "site-issues" / "2026-07-01.json",
+        ),
+        (
+            {"kind": "site_issue_backfill", "date": "2026-07-01"},
+            root / "ramsay" / "site-issue-backfills" / "2026-07-01.json",
+        ),
+        (
+            {"kind": "site_historical_seed", "date": "2026-07-01"},
+            root / "ramsay" / "site-historical-seeds" / "2026-07-01.json",
+        ),
+        (
             {"kind": "entity_dossier", "slug": "OpenAI"},
             root / "ramsay" / "site-dossiers" / "entities" / "openai.json",
         ),

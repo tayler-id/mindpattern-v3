@@ -17,9 +17,11 @@ from urllib.parse import urlparse
 from orchestrator.arcs import narrative_arcs_artifact_path
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from orchestrator.site_content import (
+    build_public_story,
     is_publishable_site_story,
     normalize_slug,
     sanitize_site_artifact,
+    site_artifact_path,
     write_site_artifact,
 )
 from orchestrator.site_experts import run_site_expert_loop
@@ -551,6 +553,351 @@ def run_site_content_for_date(
     ledger["artifacts_written"] = artifacts_written
     run_path.write_text(json.dumps(sanitize_site_artifact(ledger), indent=2, sort_keys=True) + "\n")
     return sanitize_site_artifact(ledger)
+
+
+def run_historical_site_seed_generation(
+    *,
+    date: str,
+    user: str,
+    reports_root: Path,
+    source_dates: list[str] | None = None,
+    max_stories: int = 5,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    """Generate a small public historical seed from audited site issues."""
+    run_date = validate_run_date(date)
+    if max_stories < 1:
+        raise ValueError("max_stories must be positive")
+    generated = generated_at or f"{run_date}T00:00:00+00:00"
+    requested_dates = {validate_run_date(item) for item in source_dates or []}
+    audit_path = site_artifact_path(
+        kind="site_issue_backfill",
+        date=run_date,
+        user=user,
+        reports_root=reports_root,
+    )
+    if not audit_path.exists():
+        ledger = _historical_seed_ledger(
+            run_date=run_date,
+            user=user,
+            generated_at=generated,
+            status="degraded",
+            degraded_reasons=["missing_backfill_audit"],
+            decisions=[],
+            artifacts_written=[],
+            issues_scanned=0,
+        )
+        write_site_artifact(
+            kind="site_historical_seed",
+            user=user,
+            reports_root=reports_root,
+            date=run_date,
+            artifact=ledger,
+        )
+        return sanitize_site_artifact(ledger)
+
+    audit = json.loads(audit_path.read_text())
+    parsed_records = [
+        record
+        for record in audit.get("parsed") or []
+        if not requested_dates or record.get("date") in requested_dates
+    ]
+    decisions: list[dict[str, Any]] = []
+    artifacts_written: list[str] = []
+    published_count = 0
+    graph_pack_count = 0
+    issues_scanned = 0
+
+    for record in parsed_records:
+        issue_date = validate_run_date(str(record.get("date") or ""))
+        issue_path = site_artifact_path(
+            kind="site_issue",
+            date=issue_date,
+            user=user,
+            reports_root=reports_root,
+        )
+        if not issue_path.exists():
+            decisions.append(
+                {
+                    "id": issue_date,
+                    "issue_date": issue_date,
+                    "action": "skipped",
+                    "reasons": ["missing_structured_issue_artifact"],
+                }
+            )
+            continue
+        issue = json.loads(issue_path.read_text())
+        issues_scanned += 1
+
+        for story_unit in issue.get("story_units") or []:
+            candidate_id = normalize_slug(str(story_unit.get("id") or story_unit.get("title") or "story"))
+            graph_pack = _historical_graph_pack(
+                issue=issue,
+                story_unit=story_unit,
+                user=user,
+                generated_at=generated,
+            )
+            pack_path = write_site_artifact(
+                kind="site_graph_pack",
+                user=user,
+                reports_root=reports_root,
+                date=issue_date,
+                slug=candidate_id,
+                artifact=graph_pack,
+            )
+            artifacts_written.append(_artifact_ref(pack_path, reports_root))
+            graph_pack_count += 1
+
+            story = _historical_site_story_from_graph_pack(graph_pack, generated_at=generated)
+            if story.get("status") == "published" and published_count < max_stories:
+                story_path = write_site_artifact(
+                    kind="site_story",
+                    user=user,
+                    reports_root=reports_root,
+                    date=issue_date,
+                    slug=candidate_id,
+                    artifact=story,
+                )
+                artifacts_written.append(_artifact_ref(story_path, reports_root))
+                published_count += 1
+                decisions.append(
+                    {
+                        "id": candidate_id,
+                        "issue_date": issue_date,
+                        "story_unit_id": story_unit.get("id"),
+                        "action": "published",
+                        "reasons": [],
+                        "graph_pack_artifact": _artifact_ref(pack_path, reports_root),
+                        "story_artifact": _artifact_ref(story_path, reports_root),
+                    }
+                )
+                continue
+
+            if story.get("status") == "published":
+                decisions.append(
+                    {
+                        "id": candidate_id,
+                        "issue_date": issue_date,
+                        "story_unit_id": story_unit.get("id"),
+                        "action": "skipped",
+                        "reasons": ["max_stories_reached"],
+                        "graph_pack_artifact": _artifact_ref(pack_path, reports_root),
+                    }
+                )
+                continue
+
+            decisions.append(
+                {
+                    "id": candidate_id,
+                    "issue_date": issue_date,
+                    "story_unit_id": story_unit.get("id"),
+                    "action": "degraded",
+                    "reasons": story.get("rejection_reasons") or graph_pack.get("degraded_reasons") or [],
+                    "graph_pack_artifact": _artifact_ref(pack_path, reports_root),
+                }
+            )
+
+    ledger = _historical_seed_ledger(
+        run_date=run_date,
+        user=user,
+        generated_at=generated,
+        status="completed" if issues_scanned else "degraded",
+        degraded_reasons=[] if issues_scanned else ["no_audited_issues"],
+        decisions=decisions,
+        artifacts_written=artifacts_written,
+        issues_scanned=issues_scanned,
+        graph_pack_count=graph_pack_count,
+    )
+    seed_path = write_site_artifact(
+        kind="site_historical_seed",
+        user=user,
+        reports_root=reports_root,
+        date=run_date,
+        artifact=ledger,
+    )
+    artifacts_written.append(_artifact_ref(seed_path, reports_root))
+    ledger["artifacts_written"] = artifacts_written
+    seed_path.write_text(json.dumps(sanitize_site_artifact(ledger), indent=2, sort_keys=True) + "\n")
+    return sanitize_site_artifact(ledger)
+
+
+def _historical_graph_pack(
+    *,
+    issue: dict[str, Any],
+    story_unit: dict[str, Any],
+    user: str,
+    generated_at: str,
+) -> dict[str, Any]:
+    issue_date = validate_run_date(str(issue.get("date") or story_unit.get("issue_date") or ""))
+    candidate_id = normalize_slug(str(story_unit.get("id") or story_unit.get("title") or "story"))
+    public_story = build_public_story(issue=issue, story_unit=story_unit)
+    degraded_reasons: list[str] = []
+    if public_story is None:
+        degraded_reasons.append("missing_source_evidence")
+        source_refs: list[dict[str, Any]] = []
+        entity_refs: list[dict[str, Any]] = []
+        graph_edges: list[dict[str, Any]] = []
+    else:
+        source_refs = list(public_story.get("source_refs") or [])
+        entity_refs = list(public_story.get("entity_refs") or [])
+        graph_edges = list(public_story.get("graph_edges") or [])
+
+    if issue.get("provenance", {}).get("redaction_status") != "passed":
+        degraded_reasons.append("redaction_not_passed")
+    if _is_generic_title(str(story_unit.get("title") or "")):
+        degraded_reasons.append("generic_section_title")
+
+    summary = redact_sensitive_text(str(story_unit.get("summary") or story_unit.get("title") or ""))
+    claim_evidence = []
+    if summary and source_refs:
+        claim_evidence.append(
+            {
+                "claim": summary,
+                "source_url": source_refs[0]["url"],
+                "finding_id": None,
+                "issue_story_unit_id": story_unit.get("id"),
+            }
+        )
+
+    return sanitize_site_artifact(
+        {
+            "kind": "site_graph_pack",
+            "id": candidate_id,
+            "candidate_id": candidate_id,
+            "candidate_type": "historical_issue_story",
+            "date": issue_date,
+            "user": user,
+            "status": "degraded" if degraded_reasons else "ready",
+            "degraded_reasons": sorted(set(degraded_reasons)),
+            "why_now": (
+                "This canonical newsletter story is being backfilled into Rabbit Hole "
+                "so the public archive has source-backed graph paths."
+            ),
+            "primary_evidence": [
+                {
+                    "kind": "issue_story_unit",
+                    "id": story_unit.get("id"),
+                    "issue_date": issue_date,
+                    "title": story_unit.get("title"),
+                    "summary": summary,
+                    "target_url": f"/briefings/{issue_date}",
+                }
+            ],
+            "source_refs": source_refs,
+            "entity_refs": entity_refs,
+            "graph_edges": graph_edges,
+            "semantic_neighbors": [],
+            "narrative_arcs": [],
+            "historical_occurrences": [],
+            "related_public_stories": [],
+            "contrasts": [],
+            "related_paths": [],
+            "claim_evidence_candidates": claim_evidence,
+            "story_body_markdown": story_unit.get("body_markdown", ""),
+            "provenance": {
+                "generated_by": "mindpattern.site_content_engine.historical_graph_pack",
+                "generated_at": generated_at,
+                "provider": "deterministic",
+                "input_artifacts": [f"reports/{user}/site-issues/{issue_date}.json"],
+                "source_issue_dates": [issue_date],
+                "source_story_unit_id": story_unit.get("id"),
+                "redaction_status": issue.get("provenance", {}).get("redaction_status", "passed"),
+            },
+        }
+    )
+
+
+def _historical_site_story_from_graph_pack(
+    graph_pack: dict[str, Any],
+    *,
+    generated_at: str,
+) -> dict[str, Any]:
+    candidate_id = normalize_slug(str(graph_pack.get("candidate_id") or "historical-story"))
+    issue_date = validate_run_date(str(graph_pack.get("date") or ""))
+    evidence = (graph_pack.get("primary_evidence") or [{}])[0]
+    title = redact_sensitive_text(str(evidence.get("title") or candidate_id.replace("-", " ").title()))
+    summary = redact_sensitive_text(str(evidence.get("summary") or title))
+    story = {
+        "kind": "site_story",
+        "id": candidate_id,
+        "slug": candidate_id,
+        "status": "published",
+        "confidence": "high",
+        "issue_date": issue_date,
+        "title": title,
+        "dek": "A source-backed story from the canonical MindPattern archive.",
+        "take": summary,
+        "why_now": str(graph_pack.get("why_now") or ""),
+        "body_markdown": redact_sensitive_text(str(graph_pack.get("story_body_markdown") or summary)),
+        "source_refs": list(graph_pack.get("source_refs") or []),
+        "entity_refs": list(graph_pack.get("entity_refs") or []),
+        "primary_finding_ids": [],
+        "supporting_finding_ids": [],
+        "arc_ids": [],
+        "graph_edges": list(graph_pack.get("graph_edges") or []),
+        "related_paths": list(graph_pack.get("related_paths") or []),
+        "claim_evidence": list(graph_pack.get("claim_evidence_candidates") or []),
+        "provenance": {
+            "generated_by": "mindpattern.site_content_engine.historical_seed",
+            "generated_at": generated_at,
+            "input_artifacts": graph_pack.get("provenance", {}).get("input_artifacts", []),
+            "source_finding_ids": [],
+            "source_issue_dates": [issue_date],
+            "redaction_status": graph_pack.get("provenance", {}).get("redaction_status", "passed"),
+            "ai_generated": False,
+            "human_approved": False,
+        },
+        "json_ld_ready": True,
+    }
+    gate = evaluate_site_story_confidence(story)
+    if graph_pack.get("status") == "degraded" or not gate["publishable"]:
+        story["status"] = "degraded"
+        story["confidence"] = "degraded"
+        story["json_ld_ready"] = False
+        story["rejection_reasons"] = sorted(set(graph_pack.get("degraded_reasons") or []) | set(gate["reasons"]))
+    return sanitize_site_artifact(story)
+
+
+def _historical_seed_ledger(
+    *,
+    run_date: str,
+    user: str,
+    generated_at: str,
+    status: str,
+    degraded_reasons: list[str],
+    decisions: list[dict[str, Any]],
+    artifacts_written: list[str],
+    issues_scanned: int,
+    graph_pack_count: int = 0,
+) -> dict[str, Any]:
+    counts = {
+        "issues_scanned": issues_scanned,
+        "candidates_considered": len([item for item in decisions if item.get("story_unit_id")]),
+        "published": len([item for item in decisions if item.get("action") == "published"]),
+        "drafted": len([item for item in decisions if item.get("action") == "drafted"]),
+        "degraded": len([item for item in decisions if item.get("action") == "degraded"]),
+        "skipped": len([item for item in decisions if item.get("action") == "skipped"]),
+        "graph_packs": graph_pack_count,
+    }
+    return sanitize_site_artifact(
+        {
+            "kind": "site_historical_seed",
+            "date": run_date,
+            "user": user,
+            "status": status,
+            "degraded_reasons": degraded_reasons,
+            "counts": counts,
+            "decisions": decisions,
+            "artifacts_written": artifacts_written,
+            "provenance": {
+                "generated_by": "mindpattern.site_content_engine.historical_seed",
+                "generated_at": generated_at,
+                "provider": "deterministic",
+                "newsletter_mutated": False,
+                "selection_policy": "publish_only_high_confidence_source_backed_candidates",
+            },
+        }
+    )
 
 
 def _candidate_cases_from_corpus(

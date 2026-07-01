@@ -60,6 +60,7 @@ _REPORT_BAD_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 _MIN_PUBLIC_REPORT_BYTES = 1_000
+_MIN_STRUCTURED_REPORT_BYTES = 80
 
 
 def _valid_date(s: Optional[str]) -> Optional[str]:
@@ -196,8 +197,8 @@ def _report_subtitle_from_content(*, content: str, title: str) -> str:
     return ""
 
 
-def _is_public_report_content(content: str) -> bool:
-    if len(content.encode("utf-8")) < _MIN_PUBLIC_REPORT_BYTES:
+def _is_public_report_content(content: str, *, min_bytes: int = _MIN_PUBLIC_REPORT_BYTES) -> bool:
+    if len(content.encode("utf-8")) < min_bytes:
         return False
     first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
     if first_line and _is_bad_report_line(first_line):
@@ -1485,13 +1486,29 @@ def _report_file_for_date(*, date: str, user: str) -> Path | None:
     return target
 
 
+def _structured_issue_dates(*, user: str) -> list[str]:
+    if _safe_user(user) is None:
+        return []
+    reports_dir = REPORTS_DIR / user
+    if not reports_dir.exists():
+        return []
+    dates: set[str] = set()
+    for path in reports_dir.glob("*.md"):
+        if any(token in path.name.lower() for token in ("debug", "stderr")):
+            continue
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", path.stem)
+        if match and _valid_run_date(match.group(1)):
+            dates.add(match.group(1))
+    return sorted(dates, reverse=True)
+
+
 def _structured_issue_from_report_file(*, date: str, user: str) -> dict | None:
     target = _report_file_for_date(date=date, user=user)
     if target is None:
         return None
 
     text = _clean_report_markdown(target.read_text(errors="replace"))
-    if not _is_public_report_content(text):
+    if not _is_public_report_content(text, min_bytes=_MIN_STRUCTURED_REPORT_BYTES):
         return None
     title = _report_title_from_content(content=text, date=date, fallback_name=target.stem)
     try:
@@ -1538,13 +1555,7 @@ def _story_date_from_slug(slug: str) -> str | None:
 
 
 async def _iter_structured_issues(user: str):
-    reports = await list_reports(user=user)
-    seen_dates: set[str] = set()
-    for report in reports:
-        date = report.get("date")
-        if not date or date in seen_dates:
-            continue
-        seen_dates.add(date)
+    for date in _structured_issue_dates(user=user):
         issue = _structured_issue_from_report_file(date=date, user=user)
         if issue is not None:
             yield issue
@@ -2118,16 +2129,14 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
             conn.close()
 
     corpus = _public_corpus_entity(user, entity_slug, limit=limit)
-    reports = await list_reports(user=user)
     story_units: list[dict] = []
     source_by_url: dict[str, dict] = {}
     issue_dates: list[str] = []
     entity_name = ""
     seen_story_ids: set[str] = set()
 
-    for report in reports:
-        date = report.get("date")
-        if not date or date in issue_dates:
+    for date in _structured_issue_dates(user=user):
+        if date in issue_dates:
             continue
         issue = _structured_issue_from_report_file(date=date, user=user)
         if issue is None:

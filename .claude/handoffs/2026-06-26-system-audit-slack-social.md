@@ -1526,8 +1526,6 @@ place instead of deleting the column.
   - Rabbit Hole `feature/rabbit-hole-public-intelligence-site` through
     `43ba3b9`.
 - Still pending for the full goal:
-  - Historical structured issue backfill audit and high-confidence historical
-    seed generation.
   - Live editorial/provider integration requires explicit owner approval before
     any Claude/OpenAI/provider calls.
   - Production release gate; no Vercel or Fly deploy has been run.
@@ -1575,5 +1573,55 @@ place instead of deleting the column.
 - Important remaining issue:
   - This cleanup does not rewrite damaged historical source markdown. At least
     one older report still contains legacy body-level duplication/corruption
-    inside the canonical file. That should be handled by the pending historical
-    structured issue backfill/audit, not silently hidden in the renderer.
+    inside the canonical file. That should be handled by a later historical
+    source repair/content cleanup pass, not silently hidden in the renderer.
+
+## Rabbit Hole Historical Backfill and Seed Slice - 2026-07-01
+
+- Completed the two previously pending Phase 4 backend tasks:
+  - Task 24: historical structured issue backfill audit.
+  - Task 25: high-confidence historical seed generation.
+- v3 additions:
+  - `run_site_issue_backfill` in `orchestrator/site_content.py`.
+  - New artifact kinds/paths for `site_issue`, `site_issue_backfill`, and
+    `site_historical_seed`.
+  - `run_historical_site_seed_generation` in
+    `orchestrator/site_content_engine.py`.
+  - `tools/site-issue-backfill.py` focused command. It does not import
+    `run.py`, does not run the daily pipeline, and writes only under the
+    selected reports root.
+  - `tests/test_site_issue_backfill.py` covering idempotent audit behavior,
+    no fabricated finding IDs, seed generation, and fail-closed missing-audit
+    behavior.
+- Behavior:
+  - Backfill reads canonical newsletter markdown, skips prompt-error/dry-run/
+    debug/non-canonical variants, writes `site-issues/<date>.json`, and writes
+    `site-issue-backfills/<run-date>.json`.
+  - Audit counts parsed, skipped, unresolved, redacted, degraded, story units,
+    and source refs.
+  - Missing finding/entity/source matches are recorded as unresolved. The code
+    does not invent finding IDs or graph matches.
+  - Historical seed generation requires the backfill audit first. It builds
+    internal graph packs from audited issues, publishes only high-confidence
+    source-backed `site_story` artifacts, and records published/degraded/
+    skipped decisions in `site-historical-seeds/<run-date>.json`.
+  - Degraded/medium historical candidates stay out of `/api/stories`; they are
+    represented only in internal ledger/graph-pack artifacts.
+- Verification:
+  - `.venv/bin/python3 -m pytest tests/test_site_issue_backfill.py tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_api.py -q`
+    -> 24 passed, 1 known Starlette/httpx warning.
+  - Broader backend safety run:
+    `.venv/bin/python3 -m pytest tests/test_site_issue_backfill.py tests/test_site_content_contracts.py tests/test_site_content_engine.py tests/test_site_content_confidence.py tests/test_site_content_experts.py tests/test_site_content_api.py tests/test_site_graph_read_model.py tests/test_site_graph_api.py tests/test_site_related_paths.py tests/test_api_contract.py tests/test_auth_middleware.py tests/test_runner.py::TestSiteContentPhase tests/test_runner.py::TestDryRunPhases -q`
+    -> 82 passed, 1 known Starlette/httpx warning.
+  - Temp CLI smoke:
+    `.venv/bin/python3 tools/site-issue-backfill.py --date 2026-07-01 --user ramsay --reports-root /private/tmp/mp-site-issue-backfill-smoke --seed`
+    -> backfill parsed 1 report, seed built 1 graph pack, published 1
+    high-confidence temp story.
+  - `graphify update .` -> 7,794 nodes, 12,787 edges, 463 communities;
+    `graphify check-update .` passed.
+- Still true:
+  - This does not repair corrupted prose inside old canonical markdown files.
+    It creates an audit trail and safe structured artifacts so a later cleanup
+    can identify damaged/degraded items without hiding them.
+  - No full daily pipeline, Fly deploy, Vercel deploy, provider call, schema
+    change, Slack/email/social action, or live model call was run.

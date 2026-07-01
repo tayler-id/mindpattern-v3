@@ -65,8 +65,8 @@
     "semantic_hash": ""
   },
   "dashboard/routes/api.py": {
-    "mtime": 1782932602.969381,
-    "ast_hash": "ef7ddc46ac40041472245107e84d962d",
+    "mtime": 1782940600.5636792,
+    "ast_hash": "5914be8650cc66b2aa058db350f14113",
     "semantic_hash": ""
   },
   "dashboard/routes/editors_desk.py": {
@@ -980,8 +980,8 @@
     "semantic_hash": ""
   },
   "tests/test_api_contract.py": {
-    "mtime": 1782701330.414908,
-    "ast_hash": "03cbb427a896b53449fdf95fedcc447e",
+    "mtime": 1782939430.4222198,
+    "ast_hash": "8d5cefc9cf0ffcee45cfb271778a2887",
     "semantic_hash": ""
   },
   "tests/test_approval.py": {
@@ -2255,8 +2255,8 @@
     "semantic_hash": ""
   },
   "orchestrator/site_content.py": {
-    "mtime": 1782931830.1759942,
-    "ast_hash": "4f361132efec3508245841506aff3707",
+    "mtime": 1782940272.6517136,
+    "ast_hash": "9eb1352f9eaeeb233040ca481cfc2d84",
     "semantic_hash": ""
   },
   "tests/test_site_issue_contracts.py": {
@@ -2285,8 +2285,8 @@
     "semantic_hash": ""
   },
   "orchestrator/site_content_engine.py": {
-    "mtime": 1782938877.093164,
-    "ast_hash": "ae5bc1c92181aea43a87c840b3e7bf77",
+    "mtime": 1782940339.9413128,
+    "ast_hash": "c0d5ae079dbfd687d44834040781a2b5",
     "semantic_hash": ""
   },
   "orchestrator/site_experts.py": {
@@ -2315,8 +2315,8 @@
     "semantic_hash": ""
   },
   "tests/test_site_content_contracts.py": {
-    "mtime": 1782931958.599725,
-    "ast_hash": "c5388e3e842c4c2a5348f06e525474e9",
+    "mtime": 1782940353.9370878,
+    "ast_hash": "123d8b199447a4a53f310f3b34d6281f",
     "semantic_hash": ""
   },
   "tests/test_site_content_engine.py": {
@@ -2350,13 +2350,23 @@
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-implementation-plan.md": {
-    "mtime": 1782939013.6173174,
-    "ast_hash": "9d899e7e4e3de6fd57b4fd54c383358b",
+    "mtime": 1782940471.1151962,
+    "ast_hash": "344903c423ee2e0c33a1d20acc874a32",
     "semantic_hash": ""
   },
   "docs/runbooks/2026-06-30-rabbit-hole-real-content-machine-spec.md": {
     "mtime": 1782868706.6326866,
     "ast_hash": "83d0c036b822a1a2d063913f02e22966",
+    "semantic_hash": ""
+  },
+  "tests/test_site_issue_backfill.py": {
+    "mtime": 1782940246.3253531,
+    "ast_hash": "75b7743036f453ee5c2305e00becad4a",
+    "semantic_hash": ""
+  },
+  "tools/site-issue-backfill.py": {
+    "mtime": 1782940402.6854782,
+    "ast_hash": "dbabc48df084f0bd9358da35d1201fe4",
     "semantic_hash": ""
   }
 }
