@@ -4,8 +4,8 @@ Generate a token: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 Store hash: API_TOKEN_HASH env var = hashlib.sha256(token.encode()).hexdigest()
 
 Public endpoints (no auth): GET /api/findings, /api/sources, /api/patterns,
-/api/finding, /api/related, /api/feed, /api/issues, /api/stories, /api/skills, /api/stats,
-/api/entities, /api/reports, /api/audio-briefings, /healthz
+/api/finding, /api/related, /api/feed, /api/issues, /api/stories, /api/site,
+/api/skills, /api/stats, /api/entities, /api/reports, /api/audio-briefings, /healthz
 Private endpoints (auth required): everything else under /api/
 """
 
@@ -42,6 +42,7 @@ PUBLIC_PREFIXES = [
     "/api/feed",
     "/api/issues",
     "/api/stories",
+    "/api/site",
     "/api/entities",
     "/api/findings",
     "/api/stats",

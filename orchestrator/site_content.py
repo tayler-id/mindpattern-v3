@@ -8,6 +8,7 @@ public graph-shaped data that Rabbit Hole can render.
 from __future__ import annotations
 
 import re
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -170,6 +171,39 @@ _TOPIC_STOPWORDS = _ENTITY_STOPWORDS | {
     "urls",
     "www",
 }
+_PRIVATE_ARTIFACT_KEYS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "cookie",
+    "database",
+    "db",
+    "password",
+    "private_memory",
+    "provider_token",
+    "raw_slack_body",
+    "secret",
+    "session",
+    "slack_body",
+    "slack_message",
+    "social-config",
+    "social_config",
+    "subscriber",
+    "subscriber_email",
+    "token",
+    "users",
+    "users_json",
+}
+_SITE_ARTIFACT_LAYOUTS = {
+    "site_run": ("site-runs", "date"),
+    "site_corpus": ("site-corpus", "date"),
+    "site_candidate": ("site-candidates", "date_slug"),
+    "site_graph_pack": ("site-graph-packs", "date_slug"),
+    "site_story": ("site-stories", "date_slug"),
+    "entity_dossier": ("site-dossiers/entities", "slug"),
+    "source_dossier": ("site-dossiers/sources", "slug"),
+    "site_collection": ("site-collections", "date_slug"),
+}
 
 
 def normalize_slug(value: str, *, max_length: int = 96) -> str:
@@ -216,6 +250,122 @@ def story_artifact_path(*, slug: str, user: str, reports_root: Path) -> Path:
     except ValueError as exc:
         raise ValueError("story artifact path escapes reports root") from exc
     return path
+
+
+def site_artifact_path(
+    *,
+    kind: str,
+    user: str,
+    reports_root: Path,
+    date: str | None = None,
+    slug: str | None = None,
+) -> Path:
+    """Return a safe path for a generated Rabbit Hole content-machine artifact."""
+    if not _SAFE_USER_RE.fullmatch(user or ""):
+        raise ValueError("user must be a safe path segment")
+    if kind not in _SITE_ARTIFACT_LAYOUTS:
+        raise ValueError("unknown site artifact kind")
+
+    directory, layout = _SITE_ARTIFACT_LAYOUTS[kind]
+    base = reports_root.resolve()
+
+    if layout == "date":
+        if not date:
+            raise ValueError("date is required for this artifact kind")
+        path = (base / user / directory / f"{validate_run_date(date)}.json").resolve()
+    elif layout == "slug":
+        if not slug:
+            raise ValueError("slug is required for this artifact kind")
+        artifact_slug = normalize_slug(slug)
+        path = (base / user / directory / f"{artifact_slug}.json").resolve()
+    else:
+        if not date:
+            raise ValueError("date is required for this artifact kind")
+        if not slug:
+            raise ValueError("slug is required for this artifact kind")
+        artifact_slug = normalize_slug(slug)
+        path = (base / user / directory / validate_run_date(date) / f"{artifact_slug}.json").resolve()
+
+    try:
+        path.relative_to(base)
+    except ValueError as exc:
+        raise ValueError("site artifact path escapes reports root") from exc
+    return path
+
+
+def _is_private_artifact_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9_]+", "_", key.lower()).strip("_")
+    return normalized in _PRIVATE_ARTIFACT_KEYS
+
+
+def _public_artifact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _public_artifact_value(item)
+            for key, item in value.items()
+            if isinstance(key, str) and not _is_private_artifact_key(key)
+        }
+    if isinstance(value, list):
+        return [_public_artifact_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_public_artifact_value(item) for item in value]
+    if isinstance(value, str):
+        return redact_sensitive_text(value)
+    return value
+
+
+def write_site_artifact(
+    *,
+    kind: str,
+    user: str,
+    reports_root: Path,
+    artifact: dict[str, Any],
+    date: str | None = None,
+    slug: str | None = None,
+) -> Path:
+    """Write a public-safe generated site artifact and return its safe path."""
+    path = site_artifact_path(
+        kind=kind,
+        user=user,
+        reports_root=reports_root,
+        date=date,
+        slug=slug,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    public_artifact = _public_artifact_value(artifact)
+    path.write_text(json.dumps(public_artifact, indent=2, sort_keys=True) + "\n")
+    return path
+
+
+def sanitize_site_artifact(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Return a public-safe artifact payload without writing it."""
+    public_artifact = _public_artifact_value(artifact)
+    return public_artifact if isinstance(public_artifact, dict) else {}
+
+
+def is_publishable_site_story(story: dict[str, Any]) -> bool:
+    """Return whether a site-story artifact is safe to expose as public content."""
+    if not isinstance(story, dict):
+        return False
+    title = str(story.get("title") or "").strip()
+    rendered_fields = "\n".join(
+        str(story.get(key) or "")
+        for key in ("title", "dek", "take", "why_now")
+    )
+    return (
+        story.get("kind") == "site_story"
+        and story.get("status") == "published"
+        and story.get("confidence") == "high"
+        and bool(title)
+        and not _is_generic_section_title(title)
+        and bool(str(story.get("why_now") or "").strip())
+        and bool(story.get("source_refs"))
+        and bool(story.get("claim_evidence"))
+        and bool(story.get("graph_edges"))
+        and story.get("provenance", {}).get("redaction_status") == "passed"
+        and "**" not in rendered_fields
+        and not re.search(r"\[[^\]]+\]\([^)]+\)", rendered_fields)
+    )
 
 
 def _source_refs(text: str) -> list[dict[str, str]]:

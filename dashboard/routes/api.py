@@ -19,7 +19,14 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from dashboard.auth import require_auth
 from orchestrator.audio_briefing import audio_artifact_paths
-from orchestrator.site_content import build_public_story, build_structured_issue, normalize_slug
+from orchestrator.site_content import (
+    build_public_story,
+    build_structured_issue,
+    is_publishable_site_story,
+    normalize_slug,
+    sanitize_site_artifact,
+    site_artifact_path,
+)
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -1490,6 +1497,13 @@ def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
         return None
     if item.get("status") != "published" or item.get("confidence") != "high":
         return None
+    gate_item = dict(item)
+    if gate_item.get("kind") == "story":
+        gate_item["kind"] = "site_story"
+    if not gate_item.get("source_refs") and item.get("source_trail"):
+        gate_item["source_refs"] = item.get("source_trail")
+    if not is_publishable_site_story(gate_item):
+        return None
     try:
         slug = normalize_slug(str(item.get("slug") or fallback_slug))
     except ValueError:
@@ -1766,6 +1780,60 @@ def _story_with_graph_related(story: dict, stories: list[dict], *, limit: int = 
     enriched = dict(story)
     enriched["related_paths"] = related_paths[:limit]
     return enriched
+
+
+def _load_site_artifact_response(
+    *,
+    kind: str,
+    date: str,
+    user: str,
+) -> dict | JSONResponse:
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return JSONResponse(status_code=404, content={"error": "Artifact not found"})
+    try:
+        path = site_artifact_path(
+            kind=kind,
+            user=safe_user,
+            date=date,
+            reports_root=REPORTS_DIR,
+        )
+        safe_date = validate_run_date(date)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Artifact not found"})
+
+    if not path.exists():
+        return {
+            "kind": kind,
+            "date": safe_date,
+            "status": "missing",
+            "provenance": {
+                "generated_by": "mindpattern.site_content.api",
+                "redaction_status": "passed",
+            },
+        }
+
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return JSONResponse(status_code=404, content={"error": "Artifact not found"})
+    public_payload = sanitize_site_artifact(payload)
+    public_payload.setdefault("kind", kind)
+    public_payload.setdefault("date", safe_date)
+    public_payload.setdefault("status", "unknown")
+    return public_payload
+
+
+@router.get("/api/site/runs/{date}")
+async def get_site_run_artifact(date: str, user: str = Query("ramsay")):
+    """Public: content-machine run ledger for one date."""
+    return _load_site_artifact_response(kind="site_run", date=date, user=user)
+
+
+@router.get("/api/site/corpus/{date}")
+async def get_site_corpus_artifact(date: str, user: str = Query("ramsay")):
+    """Public: content-machine corpus inventory for one date."""
+    return _load_site_artifact_response(kind="site_corpus", date=date, user=user)
 
 
 @router.get("/api/stories")
