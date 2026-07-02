@@ -39,6 +39,30 @@ def _flyctl_bin() -> str:
 FLYCTL = _flyctl_bin()
 
 
+def _fly_env() -> dict:
+    """Subprocess env for flyctl with the auth token bridged from config.
+
+    flyctl 0.4.x stopped reading the legacy ``access_token`` field in
+    ~/.fly/config.yml (auto-update, 2026-07), which silently broke sync with
+    "no access token available" while the stored token remained valid.
+    Passing it as FLY_API_TOKEN works on every flyctl version.
+    """
+    env = dict(os.environ)
+    if env.get("FLY_API_TOKEN") or env.get("FLY_ACCESS_TOKEN"):
+        return env
+    config_path = Path(os.path.expanduser("~/.fly/config.yml"))
+    try:
+        for line in config_path.read_text().splitlines():
+            if line.startswith("access_token:"):
+                token = line.split(":", 1)[1].strip().strip('"')
+                if token:
+                    env["FLY_API_TOKEN"] = token
+                break
+    except OSError:
+        pass
+    return env
+
+
 def sync_to_fly(
     user_id: str,
     data_dir: Path,
@@ -338,6 +362,7 @@ def upload_bundle(bundle_path: Path, remote_path: str, app_name: str) -> dict:
             capture_output=True,
             text=True,
             timeout=300,  # 5 minutes for large uploads
+            env=_fly_env(),
         )
 
         # flyctl sftp confirms with "bytes written" on success
@@ -373,6 +398,7 @@ def restart_app(app_name: str) -> dict:
             capture_output=True,
             text=True,
             timeout=30,
+            env=_fly_env(),
         )
 
         if list_result.returncode != 0:
@@ -395,6 +421,7 @@ def restart_app(app_name: str) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
+            env=_fly_env(),
         )
 
         if restart_result.returncode == 0:
@@ -443,6 +470,7 @@ def _wal_checkpoint(db_path: Path) -> dict:
             capture_output=True,
             text=True,
             timeout=30,
+            env=_fly_env(),
         )
         if result.returncode == 0:
             return {"success": True, "error": None}
@@ -470,6 +498,7 @@ def _fly_ssh(app_name: str, command: str) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
+            env=_fly_env(),
         )
 
         if result.returncode == 0:
@@ -496,6 +525,7 @@ def _fly_sftp_put(app_name: str, local_path: str, remote_path: str) -> bool:
             [FLYCTL, "ssh", "sftp", "shell", "-a", app_name],
             input=f'put "{local_path}" {remote_path}\n',
             capture_output=True, text=True, timeout=60,
+            env=_fly_env(),
         )
         return result.returncode == 0
     except Exception as e:

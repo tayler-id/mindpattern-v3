@@ -799,3 +799,25 @@ class TestBundleSiteArtifacts:
         assert f"reports/{user}/site-stories/2026-03-14/story-a.json" in names
         assert f"reports/{user}/site-dossiers/entities/openai.json" in names
         assert f"reports/{user}/arcs/2026-03-14.json" in names
+
+
+class TestFlyEnvBridge:
+    def test_fly_env_bridges_legacy_config_token(self, tmp_path, monkeypatch):
+        from orchestrator import sync as sync_mod
+
+        config = tmp_path / ".fly" / "config.yml"
+        config.parent.mkdir()
+        config.write_text("access_token: test-token-value\nauto_update: true\n")
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("FLY_API_TOKEN", raising=False)
+        monkeypatch.delenv("FLY_ACCESS_TOKEN", raising=False)
+
+        env = sync_mod._fly_env()
+        assert env["FLY_API_TOKEN"] == "test-token-value"
+
+    def test_fly_env_respects_existing_token(self, monkeypatch):
+        from orchestrator import sync as sync_mod
+
+        monkeypatch.setenv("FLY_API_TOKEN", "explicit")
+        env = sync_mod._fly_env()
+        assert env["FLY_API_TOKEN"] == "explicit"
