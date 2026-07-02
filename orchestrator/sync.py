@@ -137,6 +137,13 @@ def sync_to_fly(
     upload_result = upload_bundle(bundle_path, remote_bundle, app_name)
 
     if not upload_result["success"]:
+        log.warning(
+            "Single-shot upload failed (%s) — retrying via chunked upload",
+            upload_result.get("error"),
+        )
+        _fly_ssh(app_name, f"rm -f {remote_bundle}")
+        upload_result = upload_bundle_chunked(bundle_path, remote_bundle, app_name)
+    if not upload_result["success"]:
         bundle_path.unlink(missing_ok=True)
         return {
             "success": False,
