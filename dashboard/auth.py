@@ -91,7 +91,7 @@ async def enforce_auth(request: Request, call_next):
     if is_public_route(request.url.path) and request.method in ("GET", "HEAD"):
         return await call_next(request)
 
-    if request.url.path.startswith("/api/approvals") and _pipeline_secret_valid(
+    if request.url.path.startswith(("/api/approvals", "/api/sync/bundle")) and _pipeline_secret_valid(
         request.headers.get("X-Pipeline-Secret")
     ):
         return await call_next(request)

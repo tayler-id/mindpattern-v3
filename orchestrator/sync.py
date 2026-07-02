@@ -39,6 +39,79 @@ def _flyctl_bin() -> str:
 FLYCTL = _flyctl_bin()
 
 
+def _pipeline_secret() -> str:
+    """Shared secret for the HTTPS upload path (env, else local secret file)."""
+    secret = os.environ.get("MP_PIPELINE_SECRET", "").strip()
+    if secret:
+        return secret
+    try:
+        return (Path.home() / ".mindpattern-pipeline-secret").read_text().strip()
+    except OSError:
+        return ""
+
+
+def upload_bundle_http(
+    bundle_path: Path,
+    *,
+    user_id: str,
+    app_url: str = "https://mindpattern.fly.dev",
+    attempts: int = 3,
+) -> dict:
+    """POST the bundle to the app's /api/sync/bundle over Fly's HTTP edge.
+
+    No flyctl, no WireGuard: this rides the production anycast path with a
+    sha256 the server verifies before extracting. Preferred over sftp since
+    the 2026-07-02 tunnel truncation incident.
+    """
+    import hashlib
+    import http.client
+    import ssl
+    from urllib.parse import urlparse
+
+    secret = _pipeline_secret()
+    if not secret:
+        return {"success": False, "error": "no pipeline secret available"}
+
+    digest = hashlib.sha256()
+    size = 0
+    with open(bundle_path, "rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+            size += len(chunk)
+    sha256 = digest.hexdigest()
+
+    parsed = urlparse(app_url)
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        try:
+            conn = http.client.HTTPSConnection(
+                parsed.netloc, timeout=600, context=ssl.create_default_context()
+            )
+            with open(bundle_path, "rb") as body:
+                conn.request(
+                    "POST",
+                    f"/api/sync/bundle?user={user_id}",
+                    body=body,
+                    headers={
+                        "X-Pipeline-Secret": secret,
+                        "X-Bundle-Sha256": sha256,
+                        "Content-Length": str(size),
+                        "Content-Type": "application/gzip",
+                    },
+                )
+            response = conn.getresponse()
+            payload = response.read().decode("utf-8", "replace")
+            conn.close()
+            if response.status == 200:
+                return {"success": True, "bytes_uploaded": size, "sha256": sha256}
+            last_error = f"HTTP {response.status}: {payload[:200]}"
+            log.warning("HTTP sync upload attempt %d failed: %s", attempt, last_error)
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            log.warning("HTTP sync upload attempt %d failed: %s", attempt, last_error)
+    return {"success": False, "error": last_error}
+
+
 def _fly_env() -> dict:
     """Subprocess env for flyctl with the auth token bridged from config.
 
@@ -128,7 +201,40 @@ def sync_to_fly(
     with tarfile.open(bundle_path, "r:gz") as tf:
         files_included = len(tf.getnames())
 
-    # Step 3: Create remote directories
+    # Step 3: Preferred path — HTTPS upload straight to the app (the server
+    # verifies sha256 and extracts). Falls back to the sftp path only when
+    # the endpoint or secret is unavailable.
+    http_result = upload_bundle_http(bundle_path, user_id=user_id)
+    if http_result.get("success"):
+        bundle_path.unlink(missing_ok=True)
+        result = {
+            "success": True,
+            "bytes_uploaded": http_result["bytes_uploaded"],
+            "files_included": files_included,
+            "transport": "https",
+            "error": None,
+        }
+        if traces_conn:
+            try:
+                traces_conn.execute(
+                    "INSERT INTO events (pipeline_run_id, event_type, payload) VALUES (?, ?, ?)",
+                    (
+                        f"sync-{date_str}",
+                        "fly_sync",
+                        json.dumps({
+                            "user_id": user_id,
+                            "bytes_uploaded": result["bytes_uploaded"],
+                            "files_included": files_included,
+                            "transport": "https",
+                        }),
+                    ),
+                )
+                traces_conn.commit()
+            except Exception as e:
+                log.debug(f"Failed to log sync event: {e}")
+        return result
+    log.warning("HTTPS sync path unavailable (%s); falling back to sftp", http_result.get("error"))
+
     remote_base = f"/data/{user_id}"
     _fly_ssh(app_name, f"mkdir -p {remote_base} /data/reports/{user_id}/agents")
 
