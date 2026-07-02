@@ -1,0 +1,14 @@
+{
+  "expected_code": "unsupported_temporal_claim",
+  "expected_severity": "fail",
+  "allowed_urls": [
+    "https://openai.com/news/agents"
+  ],
+  "copy": {
+    "title": "OpenAI puts agent reliability on buyer scorecards",
+    "dek": "Reliability moves from demo polish to procurement proof.",
+    "take": "Runtime reliability is the control plane, and buyers won't trust autonomy without it.",
+    "why_now": "OpenAI made reliability a buyer-visible benchmark this week.",
+    "body_markdown": "OpenAI made runtime reliability visible to buyers, per OpenAI."
+  }
+}

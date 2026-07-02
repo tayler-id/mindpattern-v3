@@ -191,3 +191,52 @@ def test_run_claim_output_artifact_passes_the_full_quality_gate(tmp_path, monkey
     assert violates_voice_guide(public_text) is None
     gate = evaluate_site_story_confidence(artifact)
     assert gate["publishable"], gate["reasons"]
+
+
+def test_run_claim_lint_failure_is_retryable_without_writing_artifact(tmp_path, monkeypatch):
+    from orchestrator import site_backfill as bf_mod
+
+    story = {
+        "kind": "story",
+        "id": "2026-07-02-openai-ships-agent-controls",
+        "slug": "2026-07-02-openai-ships-agent-controls",
+        "issue_date": "2026-07-02",
+        "status": "published",
+        "confidence": "source-backed",
+        "title": "OpenAI ships agent controls",
+        "summary": "OpenAI released new controls.",
+        "body_markdown": "OpenAI released new controls with detail.",
+        "source_refs": [{"url": "https://openai.com/news/controls", "domain": "openai.com", "title": "OpenAI"}],
+        "entity_refs": [{"id": "openai", "slug": "openai", "name": "OpenAI", "kind": "company"}],
+        "graph_edges": [{"kind": "source_domain", "relationship": "cites_source_domain",
+                         "id": "openai.com", "label": "openai.com", "target_url": "/source/openai.com"}],
+        "claim_evidence": [],
+        "provenance": {"ai_generated": False, "redaction_status": "passed"},
+    }
+    monkeypatch.setattr(
+        bf_mod,
+        "backfill_targets",
+        lambda *, user, since, limit, reports_root=None: [story],
+    )
+    monkeypatch.setattr(
+        bf_mod,
+        "write_story_with_review",
+        lambda pack, experts: {
+            "title": "OpenAI puts agent controls on the buyer's scorecard",
+            "dek": "Controls become the procurement question for agent platforms.",
+            "take": "Controls are the new moat, and OpenAI knows it.",
+            "why_now": "The July 2 briefing cycle made controls visible.",
+            "body_markdown": "This robust copy must not be written.",
+        },
+    )
+
+    claim = bf_mod.claim_batch(user="ramsay", reports_root=tmp_path, size=1, agent="lint")
+    result = bf_mod.run_claim(user="ramsay", reports_root=tmp_path, claim_id=claim["claim_id"])
+
+    assert result["outcomes"] == {"failed": 1}
+    assert bf_mod._active_claims("ramsay", tmp_path) == {}
+    artifact_path = (
+        tmp_path / "ramsay" / "site-stories" / "2026-07-02"
+        / "2026-07-02-openai-ships-agent-controls.json"
+    )
+    assert not artifact_path.exists()

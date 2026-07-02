@@ -25,6 +25,7 @@ from orchestrator.site_content import (
     site_artifact_path,
     write_site_artifact,
 )
+from orchestrator.site_copy_lint import copy_allowed_urls_from_refs, hard_fail_issues, lint_site_copy
 from orchestrator.site_experts import run_site_expert_loop
 from orchestrator.site_writer import apply_story_copy
 from orchestrator.site_graph import CorpusGraphReadModel
@@ -181,6 +182,18 @@ def evaluate_site_story_confidence(
         reasons.append("stale_repeat_without_update")
     if skeptic_result.get("kill_switch"):
         reasons.append("skeptic_kill_switch")
+    lint_issues = hard_fail_issues(
+        lint_site_copy(
+            story,
+            allowed_urls=copy_allowed_urls_from_refs(story.get("source_refs")),
+            required_fields=("title", "dek", "why_now", "body_markdown"),
+            include_revise=False,
+        )
+    )
+    for issue in lint_issues:
+        reason = _copy_lint_reason(issue.code)
+        if reason not in reasons:
+            reasons.append(reason)
 
     publishable = not reasons and is_publishable_site_story(story)
     return {
@@ -188,6 +201,12 @@ def evaluate_site_story_confidence(
         "confidence": "high" if publishable else "degraded",
         "reasons": reasons,
     }
+
+
+def _copy_lint_reason(code: str) -> str:
+    if code == "raw_markdown_public_field":
+        return "raw_markdown_in_public_fields"
+    return f"copy_lint:{code}"
 
 
 def generate_site_story(
@@ -233,7 +252,10 @@ def generate_site_story(
         story["rejection_reasons"] = sorted(set(graph_pack.get("degraded_reasons") or []) | set(gate["reasons"]))
         return sanitize_site_artifact(story)
 
-    why_now = str(graph_pack.get("why_now") or "The graph pack connected fresh source evidence today.")
+    why_now = str(
+        graph_pack.get("why_now")
+        or f"The {graph_pack.get('date', '')} source trail connects the evidence."
+    )
     entity_names = [entity.get("name", "") for entity in entity_refs if entity.get("name")]
     source_domains = [source.get("domain", "") for source in source_refs if source.get("domain")]
     lead_entity = entity_names[0] if entity_names else "This signal"
@@ -1339,10 +1361,30 @@ def _site_title(graph_pack: dict[str, Any], primary: dict[str, Any]) -> str:
     lead_entity = entity_refs[0].get("name") if entity_refs else ""
     source_title = str(primary.get("title") or "")
     if lead_entity and "runtime" in source_title.lower():
-        return f"{lead_entity} agent runtime reliability becomes public infrastructure"
+        return _fit_site_title(
+            f"{lead_entity} agent runtime reliability becomes public infrastructure",
+            fallback=source_title,
+        )
     if source_title and not _is_generic_title(source_title):
-        return f"{source_title} becomes a connected public signal"
-    return f"{graph_pack.get('candidate_id', 'signal').replace('-', ' ').title()} becomes a connected public signal"
+        return _fit_site_title(
+            f"{source_title} becomes a connected public signal",
+            fallback=source_title,
+        )
+    return _fit_site_title(
+        f"{graph_pack.get('candidate_id', 'signal').replace('-', ' ').title()} becomes a connected public signal"
+    )
+
+
+def _fit_site_title(title: str, *, fallback: str = "", max_chars: int = 90) -> str:
+    """Keep deterministic fallback titles inside the same public title contract."""
+    clean = re.sub(r"\s+", " ", redact_sensitive_text(title)).strip()
+    fallback_clean = re.sub(r"\s+", " ", redact_sensitive_text(fallback)).strip()
+    if len(clean) <= max_chars:
+        return clean
+    if fallback_clean and len(fallback_clean) <= max_chars:
+        return fallback_clean
+    clipped = clean[:max_chars].rsplit(" ", 1)[0].strip()
+    return clipped or clean[:max_chars].strip()
 
 
 def _story_provenance(graph_pack: dict[str, Any], expert_results: list[dict[str, Any]]) -> dict[str, Any]:
