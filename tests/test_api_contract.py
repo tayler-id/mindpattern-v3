@@ -789,7 +789,16 @@ def test_story_endpoints_return_source_backed_public_stories(client):
     assert "openai" in story["graph_connectors"]["entity_ids"]
     assert "source" not in story["graph_connectors"]["topic_terms"]
     assert {edge["kind"] for edge in story["graph_edges"]} >= {"source_domain"}
-    assert story["related_paths"] == []
+    related = story["related_paths"]
+    assert related, "story detail must carry reader-facing related paths"
+    first = related[0]
+    assert first["relationship"] == "multi_connector"
+    assert first["connector_labels"]
+    assert all("_" not in label for label in first["connector_labels"])
+    assert first["reason"]
+    assert not first["reason"].startswith("Graph match")
+    assert first["target_url"].startswith("/s/")
+    assert first["slug"] != story["slug"]
     assert story["provenance"]["generated_by"] == "mindpattern.site_content.story_engine"
     assert story["provenance"]["ai_generated"] is True
 

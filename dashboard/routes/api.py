@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -27,7 +28,9 @@ from orchestrator.site_content import (
     sanitize_site_artifact,
     site_artifact_path,
 )
+from orchestrator.site_content import _TOPIC_STOPWORDS as _PUBLIC_TOPIC_STOPWORDS
 from orchestrator.site_graph import CorpusGraphReadModel
+from orchestrator.story_related import related_paths_for_story
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -61,6 +64,55 @@ _REPORT_BAD_LINE_RE = re.compile(
 )
 _MIN_PUBLIC_REPORT_BYTES = 1_000
 _MIN_STRUCTURED_REPORT_BYTES = 80
+_PUBLIC_ENTITY_STOPWORDS = {
+    "a",
+    "about",
+    "after",
+    "all",
+    "also",
+    "an",
+    "announced",
+    "announces",
+    "announcing",
+    "and",
+    "because",
+    "before",
+    "both",
+    "but",
+    "by",
+    "daily",
+    "day",
+    "for",
+    "from",
+    "how",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "june",
+    "more",
+    "new",
+    "not",
+    "now",
+    "on",
+    "series",
+    "source",
+    "stories",
+    "story",
+    "that",
+    "the",
+    "these",
+    "they",
+    "this",
+    "today",
+    "top",
+    "two",
+    "via",
+    "what",
+    "why",
+    "with",
+}
 
 
 def _valid_date(s: Optional[str]) -> Optional[str]:
@@ -88,20 +140,12 @@ def _strip_pii_dict(d: dict, fields: list[str]) -> dict:
 
 _USER_RE = re.compile(r"^[a-z0-9_-]+$")
 _ARC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
-_PUBLIC_ENTITY_SLUG_BLOCKLIST = {
-    "and",
+# Junk slugs must never resolve to entity pages: noise words from the naive
+# extractor (Announced, Series, Top, ...) plus structural words.
+_PUBLIC_ENTITY_SLUG_BLOCKLIST = _PUBLIC_ENTITY_STOPWORDS | {
     "because",
     "but",
-    "for",
-    "from",
-    "into",
-    "not",
-    "source",
     "story",
-    "that",
-    "the",
-    "this",
-    "with",
 }
 
 
@@ -1664,6 +1708,20 @@ def _public_story_source_refs(items: list[dict]) -> list[dict]:
     return refs
 
 
+def _is_public_entity_ref(*, slug: str, name: str) -> bool:
+    normalized_name = re.sub(r"\s+", " ", name).strip().lower()
+    normalized_slug = slug.strip().lower()
+    if not normalized_slug or not normalized_name:
+        return False
+    if normalized_name in _PUBLIC_ENTITY_STOPWORDS or normalized_slug in _PUBLIC_ENTITY_STOPWORDS:
+        return False
+    if len(normalized_name) < 3 or len(normalized_slug) < 3:
+        return False
+    if normalized_name.startswith(("the ", "this ", "that ")):
+        return False
+    return True
+
+
 def _public_story_entity_refs(items: list[dict]) -> list[dict]:
     refs: list[dict] = []
     seen: set[str] = set()
@@ -1675,22 +1733,49 @@ def _public_story_entity_refs(items: list[dict]) -> list[dict]:
             slug = normalize_slug(raw_slug)
         except ValueError:
             continue
+        name = redact_sensitive_text(str(item.get("name") or slug.replace("-", " ").title()))
+        if not _is_public_entity_ref(slug=slug, name=name):
+            continue
         if slug in seen:
             continue
         seen.add(slug)
         refs.append({
             "id": slug,
             "slug": slug,
-            "name": redact_sensitive_text(str(item.get("name") or slug.replace("-", " ").title())),
+            "name": name,
             "kind": redact_sensitive_text(str(item.get("kind") or "unknown")),
         })
     return refs
+
+
+def _public_story_topic_terms(items: list) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        term = redact_sensitive_text(str(item)).strip().lower()
+        term = re.sub(r"[^a-z0-9]+", " ", term)
+        term = re.sub(r"\s+", " ", term).strip()
+        if len(term) < 4 or term in seen:
+            continue
+        if term in _PUBLIC_ENTITY_STOPWORDS or term in _PUBLIC_TOPIC_STOPWORDS:
+            continue
+        seen.add(term)
+        terms.append(term)
+    return terms[:16]
 
 
 def _public_story_edges(items: list[dict]) -> list[dict]:
     edges: list[dict] = []
     for item in items:
         if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        if kind == "entity" and not _is_public_entity_ref(
+            slug=str(item.get("id") or ""),
+            name=str(item.get("label") or item.get("id") or ""),
+        ):
+            continue
+        if kind == "topic" and not _public_story_topic_terms([item.get("id") or ""]):
             continue
         target_url = redact_sensitive_text(str(item.get("target_url") or ""))
         if target_url and not target_url.startswith(("/", "http://", "https://")):
@@ -1790,20 +1875,14 @@ def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
         for finding_id in item.get("finding_ids") or item.get("primary_finding_ids") or []
         if str(finding_id).isdigit()
     ]
+    entity_refs = _public_story_entity_refs(item.get("entity_refs") or item.get("entities") or [])
     graph_connectors = item.get("graph_connectors") if isinstance(item.get("graph_connectors"), dict) else {}
     graph_connectors = {
         "issue_date": issue_date,
         "source_urls": [source["url"] for source in source_refs],
         "source_domains": sorted({source["domain"] for source in source_refs}),
-        "entity_ids": [
-            entity["id"]
-            for entity in _public_story_entity_refs(item.get("entity_refs") or item.get("entities") or [])
-        ],
-        "topic_terms": [
-            redact_sensitive_text(str(term))
-            for term in graph_connectors.get("topic_terms", [])
-            if str(term)
-        ][:16],
+        "entity_ids": [entity["id"] for entity in entity_refs],
+        "topic_terms": _public_story_topic_terms(graph_connectors.get("topic_terms", [])),
         "finding_ids": finding_ids,
         "arc_ids": [redact_sensitive_text(str(arc_id)) for arc_id in item.get("arc_ids", []) if str(arc_id)],
     }
@@ -1828,7 +1907,7 @@ def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
         "body_markdown": body_markdown or summary,
         "source_refs": source_refs,
         "source_trail": source_refs,
-        "entity_refs": _public_story_entity_refs(item.get("entity_refs") or item.get("entities") or []),
+        "entity_refs": entity_refs,
         "finding_ids": finding_ids,
         "primary_finding_ids": finding_ids,
         "supporting_finding_ids": [
@@ -1865,7 +1944,39 @@ def _load_public_story_file(path: Path) -> dict | None:
     return _public_story_artifact(item, fallback_slug=path.stem)
 
 
+_STORY_LIST_CACHE: dict[str, tuple[float, float, list[dict]]] = {}
+_STORY_LIST_CACHE_TTL_SECONDS = 300.0
+
+
+def _story_sources_fingerprint(user: str) -> float:
+    """Newest mtime across the report + site-story trees feeding the story list."""
+    newest = 0.0
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return newest
+    roots = [REPORTS_DIR / safe_user, REPORTS_DIR / safe_user / "site-stories"]
+    for root in roots:
+        try:
+            newest = max(newest, root.stat().st_mtime)
+        except OSError:
+            continue
+    return newest
+
+
 async def _all_public_stories(user: str) -> list[dict]:
+    now = time.monotonic()
+    fingerprint = _story_sources_fingerprint(user)
+    cached = _STORY_LIST_CACHE.get(user)
+    if cached is not None:
+        cached_at, cached_fingerprint, cached_stories = cached
+        if cached_fingerprint == fingerprint and now - cached_at < _STORY_LIST_CACHE_TTL_SECONDS:
+            return cached_stories
+    stories = _build_all_public_stories(user)
+    _STORY_LIST_CACHE[user] = (now, fingerprint, stories)
+    return stories
+
+
+def _build_all_public_stories(user: str) -> list[dict]:
     stories: list[dict] = []
     covered_story_units: set[str] = set()
     seen_slugs: set[str] = set()
@@ -1899,174 +2010,71 @@ async def _all_public_stories(user: str) -> list[dict]:
     return stories
 
 
-def _story_connector_set(story: dict, key: str) -> set:
-    values = story.get("graph_connectors", {}).get(key, [])
-    return {str(value) for value in values if str(value)}
-
-
-def _story_entity_labels(story: dict) -> dict[str, str]:
-    return {
-        str(entity["id"]): str(entity["name"])
-        for entity in story.get("entity_refs", [])
-        if entity.get("id") and entity.get("name")
-    }
-
-
-def _source_ref_by_url(story: dict) -> dict[str, dict]:
-    return {
-        str(source["url"]): source
-        for source in story.get("source_refs", [])
-        if source.get("url")
-    }
-
-
-def _related_path_from_graph(source: dict, candidate: dict) -> dict | None:
-    source_urls = _story_connector_set(source, "source_urls")
-    candidate_urls = _story_connector_set(candidate, "source_urls")
-    source_domains = _story_connector_set(source, "source_domains")
-    candidate_domains = _story_connector_set(candidate, "source_domains")
-    source_entities = _story_connector_set(source, "entity_ids")
-    candidate_entities = _story_connector_set(candidate, "entity_ids")
-    source_topics = _story_connector_set(source, "topic_terms")
-    candidate_topics = _story_connector_set(candidate, "topic_terms")
-    source_findings = _story_connector_set(source, "finding_ids")
-    candidate_findings = _story_connector_set(candidate, "finding_ids")
-    source_arcs = _story_connector_set(source, "arc_ids")
-    candidate_arcs = _story_connector_set(candidate, "arc_ids")
-
-    shared_urls = sorted(source_urls & candidate_urls)
-    shared_domains = sorted(source_domains & candidate_domains)
-    shared_entities = sorted(source_entities & candidate_entities)
-    shared_topics = sorted(source_topics & candidate_topics)
-    shared_findings = sorted(source_findings & candidate_findings)
-    shared_arcs = sorted(source_arcs & candidate_arcs)
-
-    if len(shared_topics) < 2:
-        shared_topics = []
-
-    if not any([shared_urls, shared_domains, shared_entities, shared_topics, shared_findings, shared_arcs]):
+def _story_vector(story: dict, embeddings: dict[int, "np.ndarray"]) -> "np.ndarray | None":
+    finding_ids = [
+        int(finding_id)
+        for finding_id in story.get("graph_connectors", {}).get("finding_ids", [])
+        if str(finding_id).isdigit()
+    ]
+    vectors = [embeddings[fid] for fid in finding_ids if fid in embeddings]
+    if not vectors:
         return None
+    mean = np.mean(np.stack(vectors), axis=0)
+    norm = float(np.linalg.norm(mean))
+    if norm == 0.0:
+        return None
+    return mean / norm
 
-    evidence_edges: list[dict] = []
-    relationships: list[str] = []
-    reason_parts: list[str] = []
-    score = 0.0
-    source_refs = _source_ref_by_url(source)
-    entity_labels = _story_entity_labels(source) | _story_entity_labels(candidate)
 
-    if shared_urls:
-        relationships.append("shared_source_url")
-        score += 6 * len(shared_urls)
-        labels: list[str] = []
-        for url in shared_urls[:3]:
-            ref = source_refs.get(url, {})
-            label = ref.get("title") or ref.get("domain") or url
-            labels.append(label)
-            evidence_edges.append({
-                "kind": "source_url",
-                "relationship": "shared_source_url",
-                "id": url,
-                "label": label,
-                "target_url": url,
-            })
-        reason_parts.append(f"same source URL: {', '.join(labels)}")
-
-    if shared_domains:
-        relationships.append("shared_source_domain")
-        score += 3 * len(shared_domains)
-        for domain in shared_domains[:3]:
-            evidence_edges.append({
-                "kind": "source_domain",
-                "relationship": "shared_source_domain",
-                "id": domain,
-                "label": domain,
-                "target_url": f"/source/{domain}",
-            })
-        reason_parts.append(f"same source domain: {', '.join(shared_domains[:3])}")
-
-    if shared_entities:
-        relationships.append("shared_entity")
-        score += 4 * len(shared_entities)
-        labels = [entity_labels.get(entity_id, entity_id) for entity_id in shared_entities[:4]]
-        for entity_id, label in zip(shared_entities[:4], labels):
-            evidence_edges.append({
-                "kind": "entity",
-                "relationship": "shared_entity",
-                "id": entity_id,
-                "label": label,
-                "target_url": f"/e/{entity_id}",
-            })
-        reason_parts.append(f"same entities: {', '.join(labels)}")
-
-    if shared_topics:
-        relationships.append("shared_topic")
-        score += 1.5 * len(shared_topics)
-        for topic in shared_topics[:5]:
-            evidence_edges.append({
-                "kind": "topic",
-                "relationship": "shared_topic",
-                "id": topic,
-                "label": topic,
-                "target_url": "",
-            })
-        reason_parts.append(f"same topic terms: {', '.join(shared_topics[:5])}")
-
-    if shared_findings:
-        relationships.append("shared_finding")
-        score += 5 * len(shared_findings)
-        for finding_id in shared_findings[:3]:
-            evidence_edges.append({
-                "kind": "finding",
-                "relationship": "shared_finding",
-                "id": finding_id,
-                "label": f"Finding {finding_id}",
-                "target_url": f"/f/{finding_id}",
-            })
-        reason_parts.append(f"same findings: {', '.join(shared_findings[:3])}")
-
-    if shared_arcs:
-        relationships.append("shared_arc")
-        score += 5 * len(shared_arcs)
-        for arc_id in shared_arcs[:3]:
-            evidence_edges.append({
-                "kind": "arc",
-                "relationship": "shared_arc",
-                "id": arc_id,
-                "label": arc_id,
-                "target_url": "",
-            })
-        reason_parts.append(f"same narrative arcs: {', '.join(shared_arcs[:3])}")
-
+def _story_embedding_index(stories: list[dict], user: str) -> dict[int, "np.ndarray"]:
+    """Stored finding embeddings for every finding referenced by a story."""
+    finding_ids: set[int] = set()
+    for story in stories:
+        for finding_id in story.get("graph_connectors", {}).get("finding_ids", []):
+            if str(finding_id).isdigit():
+                finding_ids.add(int(finding_id))
+    if not finding_ids:
+        return {}
+    conn = get_memory_db(user)
+    if conn is None:
+        return {}
+    try:
+        placeholders = ",".join("?" for _ in finding_ids)
+        rows = conn.execute(
+            f"SELECT finding_id, embedding FROM findings_embeddings WHERE finding_id IN ({placeholders})",
+            sorted(finding_ids),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
     return {
-        "kind": "story",
-        "id": candidate["id"],
-        "slug": candidate["slug"],
-        "title": candidate["title"],
-        "summary": candidate.get("summary", ""),
-        "issue_date": candidate["issue_date"],
-        "target_url": candidate["target_url"],
-        "relationship": "+".join(relationships),
-        "reason": "Graph match: " + "; ".join(reason_parts),
-        "score": round(score, 2),
-        "evidence_edges": evidence_edges[:10],
+        int(row["finding_id"]): np.array(_deserialize_f32(row["embedding"]), dtype=np.float32)
+        for row in rows
+        if row["embedding"] is not None
     }
 
 
-def _story_with_graph_related(story: dict, stories: list[dict], *, limit: int = 8) -> dict:
-    related_paths = []
-    for candidate in stories:
-        if candidate.get("slug") == story.get("slug"):
-            continue
-        related = _related_path_from_graph(story, candidate)
-        if related is not None:
-            related_paths.append(related)
+def _story_with_graph_related(story: dict, stories: list[dict], *, user: str, limit: int = 8) -> dict:
+    """Attach reader-facing related paths (evidence-backed, never fabricated)."""
+    embeddings = _story_embedding_index([story, *stories], user)
+    source_vector = _story_vector(story, embeddings)
 
-    related_paths.sort(
-        key=lambda item: (item["score"], item.get("issue_date", "")),
-        reverse=True,
-    )
+    def similarity_for(candidate: dict) -> float | None:
+        if source_vector is None:
+            return None
+        candidate_vector = _story_vector(candidate, embeddings)
+        if candidate_vector is None:
+            return None
+        return float(np.dot(source_vector, candidate_vector))
+
     enriched = dict(story)
-    enriched["related_paths"] = related_paths[:limit]
+    enriched["related_paths"] = related_paths_for_story(
+        story,
+        stories,
+        limit=limit,
+        similarity_for=similarity_for,
+    )
     return enriched
 
 
@@ -2174,10 +2182,12 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
             continue
         story = _load_public_story_file(path)
         if story is not None:
-            return story
+            stories = await _all_public_stories(user)
+            return _story_with_graph_related(story, stories, user=user)
     story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
     if story is not None:
-        return story
+        stories = await _all_public_stories(user)
+        return _story_with_graph_related(story, stories, user=user)
     return JSONResponse(status_code=404, content={"error": "Story not found"})
 
 
