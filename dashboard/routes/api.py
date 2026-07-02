@@ -2230,6 +2230,57 @@ async def get_entity_neighbors(
         conn.close()
 
 
+def _load_public_dossier(*, kind: str, slug: str, user: str) -> dict | None:
+    """Read a site dossier artifact (entity_dossier / source_dossier) if present."""
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return None
+    try:
+        path = site_artifact_path(
+            kind=kind,
+            user=safe_user,
+            slug=slug,
+            reports_root=REPORTS_DIR,
+        )
+    except ValueError:
+        return None
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return sanitize_site_artifact(payload)
+
+
+@router.get("/api/dossiers/entities/{slug}")
+async def get_entity_dossier(slug: str, user: str = Query("ramsay")):
+    """Public: curated entity dossier artifact from the content machine."""
+    try:
+        entity_slug = normalize_slug(slug)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Dossier not found"})
+    if not _is_public_entity_slug(entity_slug):
+        return JSONResponse(status_code=404, content={"error": "Dossier not found"})
+    dossier = _load_public_dossier(kind="entity_dossier", slug=entity_slug, user=user)
+    if dossier is None:
+        return JSONResponse(status_code=404, content={"error": "Dossier not found"})
+    return dossier
+
+
+@router.get("/api/dossiers/sources/{domain}")
+async def get_source_dossier(domain: str, user: str = Query("ramsay")):
+    """Public: curated source dossier artifact from the content machine."""
+    try:
+        source_slug = normalize_slug(domain.replace(".", "-"))
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Dossier not found"})
+    dossier = _load_public_dossier(kind="source_dossier", slug=source_slug, user=user)
+    if dossier is None:
+        return JSONResponse(status_code=404, content={"error": "Dossier not found"})
+    return dossier
+
+
 @router.get("/api/entities/{slug}")
 async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(20, ge=1, le=50)):
     """Public: dynamic entity page data from newsletters plus existing corpus graph."""
@@ -2350,9 +2401,11 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         "sources": max(len(source_trail), int(graph_counts.get("sources") or 0)),
     }
 
+    dossier = _load_public_dossier(kind="entity_dossier", slug=entity_slug, user=user)
     return {
         "kind": "entity",
         "slug": entity_slug,
+        "dossier": dossier,
         "name": entity_name
         or (graph_detail or {}).get("name")
         or corpus["name"]

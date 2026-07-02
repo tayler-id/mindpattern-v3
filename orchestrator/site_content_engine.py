@@ -11,10 +11,10 @@ import json
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
-from orchestrator.arcs import narrative_arcs_artifact_path
+from orchestrator.arcs import load_narrative_arcs, narrative_arcs_artifact_path
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from orchestrator.site_content import (
     build_public_story,
@@ -25,6 +25,7 @@ from orchestrator.site_content import (
     write_site_artifact,
 )
 from orchestrator.site_experts import run_site_expert_loop
+from orchestrator.site_writer import apply_story_copy
 from orchestrator.site_graph import CorpusGraphReadModel
 
 _GENERIC_PUBLIC_TITLES = {
@@ -125,7 +126,7 @@ def build_graph_pack(case: dict[str, Any], *, date: str, user: str) -> dict[str,
             "narrative_arcs": [
                 {
                     "id": normalize_slug(str(arc_id)),
-                    "target_url": f"/arcs/{normalize_slug(str(arc_id))}",
+                    "target_url": f"/arc/{normalize_slug(str(arc_id))}?date={run_date}",
                 }
                 for arc_id in case.get("arc_ids") or []
             ],
@@ -422,6 +423,29 @@ def run_site_content_dry_run(
     return ledger
 
 
+def _arc_memberships_for_date(
+    *,
+    date: str,
+    user: str,
+    reports_root: Path,
+) -> dict[int, set[str]]:
+    """Map finding ids to narrative arc ids from the day's arc artifact."""
+    memberships: dict[int, set[str]] = {}
+    try:
+        arcs = load_narrative_arcs(date=date, user=user, reports_root=reports_root)
+    except (ValueError, OSError, json.JSONDecodeError):
+        return memberships
+    for arc in arcs:
+        arc_id = str(arc.get("id") or "")
+        if not arc_id:
+            continue
+        for item in arc.get("evidence") or []:
+            finding_id = item.get("finding_id")
+            if str(finding_id).isdigit():
+                memberships.setdefault(int(finding_id), set()).add(arc_id)
+    return memberships
+
+
 def run_site_content_for_date(
     *,
     date: str,
@@ -429,10 +453,16 @@ def run_site_content_for_date(
     reports_root: Path,
     conn: sqlite3.Connection,
     max_stories: int = 5,
+    story_copywriter: Callable[[dict[str, Any], list[dict[str, Any]]], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
-    """Run the deterministic content machine against a public-safe corpus read model."""
+    """Run the content machine against a public-safe corpus read model.
+
+    ``story_copywriter`` is the optional live writing agent; deterministic copy
+    is the fail-closed fallback so tests and dry-runs never call a model.
+    """
     run_date = validate_run_date(date)
-    graph = CorpusGraphReadModel(conn)
+    arc_memberships = _arc_memberships_for_date(date=run_date, user=user, reports_root=reports_root)
+    graph = CorpusGraphReadModel(conn, arc_memberships=arc_memberships)
     cases = _candidate_cases_from_corpus(conn, graph, date=run_date, limit=max(10, max_stories * 3))
     selection = select_content_candidates(cases, date=run_date)
     selected = selection["selected"][:max_stories]
@@ -472,6 +502,13 @@ def run_site_content_for_date(
 
         expert_results = run_site_expert_loop(graph_pack, context={"date": run_date, "user": user})
         story = generate_site_story(graph_pack, expert_results=expert_results)
+        if story_copywriter is not None and story.get("status") == "published":
+            copy = story_copywriter(graph_pack, expert_results)
+            if copy:
+                agent_story = apply_story_copy(story, copy)
+                gate = evaluate_site_story_confidence(agent_story)
+                if gate["publishable"]:
+                    story = sanitize_site_artifact(agent_story)
         story_path = write_site_artifact(
             kind="site_story",
             user=user,
@@ -502,7 +539,7 @@ def run_site_content_for_date(
         "coverage": {
             "source": "corpus",
             "has_embeddings": _table_has_rows(conn, "findings_embeddings"),
-            "has_arcs": False,
+            "has_arcs": any(case.get("arc_ids") for case in cases),
         },
         "provenance": {
             "generated_by": "mindpattern.site_content_engine.corpus_run",
@@ -957,7 +994,7 @@ def _candidate_cases_from_corpus(
                     "entities": entity_refs,
                     "graph_edges": graph_edges,
                     "related_paths": list(related.get("items") or []),
-                    "arc_ids": [],
+                    "arc_ids": sorted(graph.arc_memberships.get(int(finding["id"]), set())),
                 }
             )
         )

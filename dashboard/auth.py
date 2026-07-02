@@ -44,6 +44,7 @@ PUBLIC_PREFIXES = [
     "/api/stories",
     "/api/site",
     "/api/entities",
+    "/api/dossiers",
     "/api/findings",
     "/api/stats",
     "/api/patterns",

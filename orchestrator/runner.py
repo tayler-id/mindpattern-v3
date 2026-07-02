@@ -1720,12 +1720,18 @@ class ResearchPipeline:
 
         try:
             from .site_content_engine import run_site_content_for_date
+            from .site_writer import site_story_copywriter_from_env
 
+            copywriter = site_story_copywriter_from_env()
             log_event(
                 self.traces_conn,
                 self.traces_run_id,
                 "site_content_started",
-                json.dumps({"mode": "corpus_deterministic", "max_stories": max_stories}),
+                json.dumps({
+                    "mode": "corpus_deterministic",
+                    "max_stories": max_stories,
+                    "story_writer": "claude-cli" if copywriter else "deterministic",
+                }),
             )
             result = run_site_content_for_date(
                 date=self.date_str,
@@ -1733,6 +1739,7 @@ class ResearchPipeline:
                 reports_root=PROJECT_ROOT / "reports",
                 conn=self.db,
                 max_stories=max_stories,
+                story_copywriter=copywriter,
             )
             log_event(
                 self.traces_conn,
@@ -1740,6 +1747,7 @@ class ResearchPipeline:
                 "site_content_completed",
                 json.dumps(_site_content_trace_payload(result)),
             )
+            self._run_site_dossiers()
             return result
         except Exception as e:
             result = {
@@ -1756,6 +1764,28 @@ class ResearchPipeline:
                 json.dumps(_site_content_trace_payload(result)),
             )
             return result
+
+    def _run_site_dossiers(self) -> None:
+        """Refresh public entity/source dossier artifacts. Fails open."""
+        if os.environ.get("MP_SITE_DOSSIERS_DISABLED") == "1":
+            return
+        try:
+            from .site_dossiers import run_dossier_generation
+
+            result = run_dossier_generation(
+                self.db,
+                date=self.date_str,
+                user=self.user_id,
+                reports_root=PROJECT_ROOT / "reports",
+            )
+            log_event(
+                self.traces_conn,
+                self.traces_run_id,
+                "site_dossiers_completed",
+                json.dumps({"written": result["written"], "skipped": result["skipped"]}),
+            )
+        except Exception as e:
+            logger.warning("Site dossier generation failed open: %s", e)
 
     def _phase_learn(self) -> dict:
         """Phase 6: Learn (Python + one Sonnet call)."""
