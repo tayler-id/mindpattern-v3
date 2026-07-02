@@ -356,7 +356,7 @@ def _snapshot_db(db_path: Path, dest: Path) -> None:
         src.close()
 
 
-CHUNK_BYTES = 4 * 1024 * 1024
+CHUNK_BYTES = 1024 * 1024  # small puts survive flyctl 0.4.58; >~2MB truncate
 
 
 def upload_bundle_chunked(bundle_path: Path, remote_path: str, app_name: str) -> dict:
