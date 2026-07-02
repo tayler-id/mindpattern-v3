@@ -154,10 +154,13 @@ def sync_to_fly(
     ) else -1
     if remote_size != bundle_size:
         log.warning(
-            "Remote bundle size %s != local %s — retrying upload once",
+            "Remote bundle size %s != local %s — retrying via chunked upload",
             remote_size, bundle_size,
         )
-        upload_result = upload_bundle(bundle_path, remote_bundle, app_name)
+        # flyctl 0.4.58 sftp truncates large single puts deterministically;
+        # sub-6MB chunks reassembled remotely land intact.
+        _fly_ssh(app_name, f"rm -f {remote_bundle}")
+        upload_result = upload_bundle_chunked(bundle_path, remote_bundle, app_name)
         size_result = _fly_ssh(app_name, f"wc -c < {remote_bundle}")
         remote_size = int(size_result["output"].split()[0]) if (
             size_result["success"] and size_result["output"].strip().split()
@@ -342,6 +345,65 @@ def _snapshot_db(db_path: Path, dest: Path) -> None:
             dst.close()
     finally:
         src.close()
+
+
+CHUNK_BYTES = 4 * 1024 * 1024
+
+
+def upload_bundle_chunked(bundle_path: Path, remote_path: str, app_name: str) -> dict:
+    """Upload a large file as sub-6MB chunks and reassemble remotely.
+
+    Works around flyctl 0.4.58 sftp truncating large single puts at a
+    deterministic boundary (observed 2026-07-02).
+    """
+    import tempfile
+
+    local_size = bundle_path.stat().st_size
+    chunk_dir = Path(tempfile.mkdtemp(prefix="fly-chunks-"))
+    chunk_paths: list[Path] = []
+    try:
+        with open(bundle_path, "rb") as source:
+            index = 0
+            while True:
+                blob = source.read(CHUNK_BYTES)
+                if not blob:
+                    break
+                chunk = chunk_dir / f"chunk.{index:04d}"
+                chunk.write_bytes(blob)
+                chunk_paths.append(chunk)
+                index += 1
+
+        remote_dir = f"{remote_path}.chunks"
+        _fly_ssh(app_name, f"rm -rf {remote_dir} && mkdir -p {remote_dir}")
+        for chunk in chunk_paths:
+            remote_chunk = f"{remote_dir}/{chunk.name}"
+            landed = False
+            for attempt in (1, 2):
+                result = upload_bundle(chunk, remote_chunk, app_name)
+                if not result.get("success"):
+                    continue
+                size_result = _fly_ssh(app_name, f"wc -c < {remote_chunk}")
+                remote_size = int((size_result.get("output") or "0").strip() or 0)
+                if remote_size == chunk.stat().st_size:
+                    landed = True
+                    break
+                _fly_ssh(app_name, f"rm -f {remote_chunk}")
+            if not landed:
+                return {"success": False, "error": f"chunk {chunk.name} would not land intact"}
+
+        _fly_ssh(app_name, f"cat {remote_dir}/chunk.* > {remote_path} && rm -rf {remote_dir}")
+        size_result = _fly_ssh(app_name, f"wc -c < {remote_path}")
+        remote_size = int((size_result.get("output") or "0").strip() or 0)
+        if remote_size != local_size:
+            return {
+                "success": False,
+                "error": f"reassembled size {remote_size} != local {local_size}",
+            }
+        return {"success": True, "bytes_uploaded": local_size}
+    finally:
+        for chunk in chunk_paths:
+            chunk.unlink(missing_ok=True)
+        chunk_dir.rmdir()
 
 
 def upload_bundle(bundle_path: Path, remote_path: str, app_name: str) -> dict:
