@@ -42,6 +42,13 @@ delve, tapestry, multifaceted, testament, realm, landscape, nuanced, pivotal, ro
 - No "serves as / stands as / functions as". Use "is".
 - No "highlighting / showcasing / emphasizing" analyses. Direct statements.
 
+## Structure
+
+The writer's rules in the prompt govern structure and craft: headline spec,
+dek that adds new information, lede with the verb in the first seven words,
+why-it-matters with stakes, one falsifiable take, terminal attribution.
+Follow them exactly.
+
 ## Output Contract
 
 Respond with ONLY a JSON object, no code fences, no commentary:

@@ -55,8 +55,8 @@ DEFAULT_WRITER_TIMEOUT = 300
 
 _COPY_FIELDS = ("title", "dek", "take", "why_now", "body_markdown")
 _MAX_FIELD_CHARS = {
-    "title": 200,
-    "dek": 320,
+    "title": 90,
+    "dek": 200,
     "take": 400,
     "why_now": 400,
     "body_markdown": 6000,
@@ -71,11 +71,19 @@ def _voice_excerpt(voice_text: str, *, limit: int = 12000) -> str:
     return voice_text.strip()[:limit]
 
 
+def load_writer_rules() -> str:
+    try:
+        return (PROJECT_ROOT / "docs" / "specs" / "site-writer-rules.md").read_text()
+    except OSError:
+        return ""
+
+
 def build_site_writer_prompt(
     graph_pack: dict[str, Any],
     expert_results: list[dict[str, Any]],
     *,
     voice_text: str,
+    rules_text: str | None = None,
 ) -> str:
     """Build the one-shot writer prompt. Pure and testable."""
     primary = (graph_pack.get("primary_evidence") or [{}])[0]
@@ -108,7 +116,11 @@ def build_site_writer_prompt(
         indent=2,
     )
 
+    rules = rules_text if rules_text is not None else load_writer_rules()
     return f"""Write one Rabbit Hole site story from the evidence pack below.
+
+## Writer's Rules (structure and craft; follow exactly)
+{rules}
 
 ## Voice Guide
 {_voice_excerpt(voice_text)}

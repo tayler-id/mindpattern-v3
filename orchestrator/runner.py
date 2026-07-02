@@ -1720,9 +1720,9 @@ class ResearchPipeline:
 
         try:
             from .site_content_engine import run_site_content_for_date
-            from .site_writer import site_story_copywriter_from_env
+            from .site_critic import reviewed_copywriter_from_env
 
-            copywriter = site_story_copywriter_from_env()
+            copywriter = reviewed_copywriter_from_env()
             log_event(
                 self.traces_conn,
                 self.traces_run_id,
