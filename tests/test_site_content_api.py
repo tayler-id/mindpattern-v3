@@ -185,3 +185,21 @@ def test_site_run_and_corpus_api_return_safe_public_artifacts(client_with_site_a
     assert missing.json()["status"] == "missing"
     assert client_with_site_artifacts.get("/api/site/runs/2026-99-99?user=ramsay").status_code == 404
     assert client_with_site_artifacts.get("/api/site/corpus/2026-07-01?user=../ramsay").status_code == 404
+
+
+def test_site_sitemap_lists_substantive_pages(client_with_site_artifacts):
+    client = client_with_site_artifacts
+    resp = client.get("/api/site/sitemap?user=ramsay")
+    assert resp.status_code == 200
+    sitemap = resp.json()
+    assert sitemap["kind"] == "site_sitemap"
+    slugs = {item["slug"] for item in sitemap["stories"]}
+    assert "openai-agent-runtime" in slugs
+    for item in sitemap["stories"]:
+        assert item["slug"]
+    assert isinstance(sitemap["entities"], list)
+    assert isinstance(sitemap["sources"], list)
+    assert isinstance(sitemap["briefings"], list)
+
+    missing_user = client.get("/api/site/sitemap?user=../ramsay")
+    assert missing_user.json()["stories"] == []

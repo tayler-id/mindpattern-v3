@@ -2142,6 +2142,52 @@ async def get_site_corpus_artifact(date: str, user: str = Query("ramsay")):
     return _load_site_artifact_response(kind="site_corpus", date=date, user=user)
 
 
+@router.get("/api/site/sitemap")
+async def get_site_sitemap(user: str = Query("ramsay")):
+    """Public: lightweight URL inventory for the site's sitemap.
+
+    Only substantive pages are listed: published stories, dossier-backed
+    entities and sources, and briefing dates — never thin or junk nodes.
+    """
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return {"kind": "site_sitemap", "stories": [], "entities": [], "sources": [], "briefings": []}
+
+    stories = await _all_public_stories(user)
+    story_items = [
+        {"slug": story["slug"], "issue_date": story.get("issue_date", "")}
+        for story in stories
+        if story.get("slug")
+    ]
+
+    entity_slugs: list[str] = []
+    entities_dir = REPORTS_DIR / safe_user / "site-dossiers" / "entities"
+    if entities_dir.is_dir():
+        entity_slugs = sorted(
+            path.stem for path in entities_dir.glob("*.json") if _is_public_entity_slug(path.stem)
+        )
+
+    source_domains: list[str] = []
+    sources_dir = REPORTS_DIR / safe_user / "site-dossiers" / "sources"
+    if sources_dir.is_dir():
+        for path in sorted(sources_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            domain = str(payload.get("domain") or "")
+            if domain:
+                source_domains.append(domain)
+
+    return {
+        "kind": "site_sitemap",
+        "stories": story_items,
+        "entities": entity_slugs,
+        "sources": source_domains,
+        "briefings": _structured_issue_dates(user=safe_user),
+    }
+
+
 @router.get("/api/stories")
 async def list_public_stories(
     user: str = Query("ramsay"),
