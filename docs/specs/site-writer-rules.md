@@ -58,6 +58,11 @@ notes live in `docs/handoff/2026-07-02-writing-research.md`.
   suggest" floating vaguely.
 - Say what you don't know when it matters ("the advisory doesn't say whether
   the fix is backported"). Stated uncertainty is a credibility feature.
+- Graph neighbors in the evidence are real related stories from the same
+  corpus. Use them to connect: "a related report has frontier access
+  government-gated". Attribute them as related coverage; never state a
+  neighbor's facts as this story's own reporting, and never copy a
+  neighbor's numbers into this story's claims.
 - Never mention the machinery: "evidence pack", "pipeline", "the pack",
   "as_of_date", agents, or these rules must not appear in copy. Attribute
   gaps to the SOURCE ("GitHub's post doesn't list the six settings"), never

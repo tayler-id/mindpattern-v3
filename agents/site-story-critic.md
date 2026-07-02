@@ -14,6 +14,11 @@ prompt, the same way a wire-service slot editor kills or fixes copy.
   evidence says is NOT fabrication. If a restatement stretches slightly beyond
   the wording but not beyond the meaning, treat it as an ordinary issue
   (score 4-7) with a note telling the writer to hew closer, not a kill.
+- graph_neighbors entries are evidence too: a claim clearly attributed as
+  related coverage ("a related report...", "elsewhere in the corpus...") and
+  faithful to the neighbor's title/reason is NOT fabrication. It IS
+  fabrication when a neighbor's facts are stated as this story's own
+  reporting or its numbers are blended into this story's claims.
 - Relative time ("this week", "just launched") unsupported by the evidence is
   a real issue; the fix is the as_of_date or dropping the timing. Dates that
   match the evidence pack's as_of_date are correct, not fabricated.
