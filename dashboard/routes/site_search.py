@@ -34,7 +34,7 @@ async def search_site(
     date_from: str = Query("", alias="from"),
     date_to: str = Query("", alias="to"),
     domain: str = Query(""),
-    limit: int = Query(8, ge=1, le=25),
+    limit: int = Query(8, ge=1, le=200),
     user: str = Query("ramsay"),
 ):
     """Public: grouped search across the whole public graph."""
@@ -47,9 +47,11 @@ async def search_site(
 
     from dashboard.routes import api as api_routes
 
+    totals: dict[str, int] = {}
     if "stories" in wanted:
         stories = await api_routes._all_public_stories(user)
         hits = []
+        matched = 0
         for story in stories:
             if not _story_matches(story, terms):
                 continue
@@ -62,17 +64,20 @@ async def search_site(
                 continue
             if domain and domain not in (story.get("graph_connectors", {}).get("source_domains") or []):
                 continue
-            hits.append({
-                "slug": story["slug"],
-                "title": story["title"],
-                "summary": str(story.get("summary") or "")[:220],
-                "issue_date": issue_date,
-                "target_url": story.get("target_url") or f"/s/{story['slug']}",
-                "has_take": bool(story.get("take")),
-            })
-            if len(hits) >= limit:
-                break
+            matched += 1
+            if len(hits) < limit:
+                hits.append({
+                    "slug": story["slug"],
+                    "title": story["title"],
+                    "summary": str(story.get("summary") or "")[:220],
+                    "issue_date": issue_date,
+                    "target_url": story.get("target_url") or f"/s/{story['slug']}",
+                    "has_take": bool(story.get("take")),
+                    "section_id": story.get("section_id") or "",
+                })
         groups["stories"] = hits
+        totals["stories"] = matched
+        totals["stories_corpus"] = len(stories)
 
     if "findings" in wanted:
         findings = await api_routes.search_findings(q=query, limit=limit, user=user)
@@ -134,4 +139,4 @@ async def search_site(
                 conn.close()
         groups["sources"] = source_hits
 
-    return {"kind": "site_search", "q": query, "groups": groups}
+    return {"kind": "site_search", "q": query, "groups": groups, "totals": totals}
