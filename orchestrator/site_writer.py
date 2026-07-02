@@ -66,6 +66,18 @@ _MAX_FIELD_CHARS = {
 }
 
 
+class UsageLimitReached(RuntimeError):
+    """The Claude subscription hit its session/usage limit."""
+
+
+_LIMIT_MARKERS = ("hit your session limit", "usage limit", "rate limit")
+
+
+def _is_limit_response(process) -> bool:
+    text = f"{getattr(process, 'stdout', '')} {getattr(process, 'stderr', '')}".lower()
+    return any(marker in text for marker in _LIMIT_MARKERS)
+
+
 def site_writer_enabled() -> bool:
     return os.environ.get(SITE_WRITER_ENV, "").strip().lower() in {"1", "claude", "live", "on"}
 
@@ -246,6 +258,8 @@ def write_story_copy_with_agent(
             return None
         if getattr(process, "returncode", 1) == 0 and not getattr(process, "timed_out", False):
             break
+        if _is_limit_response(process):
+            raise UsageLimitReached(f"claude usage limit while writing {candidate}")
         logger.warning(
             "site_writer %s attempt %d: exit=%s timed_out=%s stderr=%.300s stdout=%.200s",
             candidate,

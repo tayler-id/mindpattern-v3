@@ -29,7 +29,7 @@ from orchestrator.site_content import (
 )
 from orchestrator.site_content_engine import evaluate_site_story_confidence
 from orchestrator.site_critic import write_story_with_review
-from orchestrator.site_writer import apply_story_copy
+from orchestrator.site_writer import UsageLimitReached, apply_story_copy
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_REPORTS_ROOT = PROJECT_ROOT / "reports"
@@ -148,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     outcomes: dict[str, int] = {}
     workers = max(1, args.workers)
     done = 0
+    consecutive_failures = 0
+    aborted = ""
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(backfill_story, story, user=args.user, reports_root=reports_root): story
@@ -157,13 +159,28 @@ def main(argv: list[str] | None = None) -> int:
             story = futures[future]
             try:
                 outcome = future.result()
+            except UsageLimitReached as exc:
+                aborted = f"usage_limit: {exc}"
+                break
             except Exception as exc:
                 outcome = f"failed:exception:{type(exc).__name__}"
             done += 1
-            outcomes[outcome.split(":")[0]] = outcomes.get(outcome.split(":")[0], 0) + 1
+            kind = outcome.split(":")[0]
+            outcomes[kind] = outcomes.get(kind, 0) + 1
+            consecutive_failures = consecutive_failures + 1 if kind == "failed" else 0
             print(f"[{done}/{len(targets)}] {outcome}  {story.get('slug')}", flush=True)
+            if consecutive_failures >= 10:
+                aborted = "10 consecutive failures"
+                break
+        if aborted:
+            for future in futures:
+                future.cancel()
+            pool.shutdown(wait=False, cancel_futures=True)
+            print(f"ABORTED: {aborted}. Nothing lost; re-run resumes where this stopped.")
 
     print(json.dumps(outcomes))
+    if aborted:
+        return 2
     return 0 if outcomes.get("failed", 0) == 0 else 1
 
 
