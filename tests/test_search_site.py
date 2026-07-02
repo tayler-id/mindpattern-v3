@@ -63,3 +63,12 @@ def test_filters_narrow_stories(client):
 def test_types_param_limits_groups(client):
     payload = client.get("/api/search/site?q=mcp&types=stories").json()
     assert set(payload["groups"].keys()) == {"stories"}
+
+
+def test_take_filter_lists_takes_archive_wide(client):
+    payload = client.get("/api/search/site?q=&take=1").json()
+    slugs = [s["slug"] for s in payload["groups"]["stories"]]
+    assert slugs == ["2026-07-01-webkit-ships-mcp"]
+    assert payload["totals"]["stories"] == 1
+    with_query = client.get("/api/search/site?q=mcp&take=1").json()
+    assert len(with_query["groups"]["stories"]) == 1

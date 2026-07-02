@@ -35,13 +35,20 @@ async def search_site(
     date_to: str = Query("", alias="to"),
     domain: str = Query(""),
     limit: int = Query(8, ge=1, le=200),
+    take: int = Query(0, ge=0, le=1),
     user: str = Query("ramsay"),
 ):
-    """Public: grouped search across the whole public graph."""
+    """Public: grouped search across the whole public graph.
+
+    An empty query with take=1 is allowed: it lists every story that has
+    a take, archive-wide.
+    """
     query = q.strip()
-    if not query:
+    if not query and not take:
         return {"kind": "site_search", "q": q, "groups": {}}
     wanted = {t.strip() for t in types.split(",") if t.strip()}
+    if not query:
+        wanted = {"stories"}
     terms = [t for t in _norm(query).split(" ") if t]
     groups: dict[str, list] = {}
 
@@ -54,6 +61,8 @@ async def search_site(
         matched = 0
         for story in stories:
             if not _story_matches(story, terms):
+                continue
+            if take and not story.get("take"):
                 continue
             if section and story.get("section_id") != section:
                 continue
