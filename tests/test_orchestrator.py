@@ -70,7 +70,7 @@ class TestPhaseOrder:
     def test_correct_sequence(self):
         expected = [
             Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
-            Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
+            Phase.DELIVER, Phase.SITE_CONTENT, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
             Phase.IDENTITY, Phase.MIRROR, Phase.SYNC, Phase.COMPLETED,
         ]
         assert PHASE_ORDER == expected

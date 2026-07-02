@@ -14,10 +14,10 @@ from orchestrator.pipeline import (
 
 
 def test_all_phases_in_enum():
-    """Phase enum has all 11 execution phases plus COMPLETED and FAILED."""
+    """Phase enum has all 12 execution phases plus COMPLETED and FAILED."""
     expected = {
         "INIT", "TREND_SCAN", "RESEARCH", "SYNTHESIS",
-        "DELIVER", "LEARN", "SOCIAL", "ENGAGEMENT",
+        "DELIVER", "SITE_CONTENT", "LEARN", "SOCIAL", "ENGAGEMENT",
         "IDENTITY", "MIRROR", "SYNC",
         "COMPLETED", "FAILED",
     }
@@ -29,7 +29,7 @@ def test_phase_order_sequence():
     """PHASE_ORDER follows the documented execution sequence."""
     expected_order = [
         Phase.INIT, Phase.TREND_SCAN, Phase.RESEARCH, Phase.SYNTHESIS,
-        Phase.DELIVER, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
+        Phase.DELIVER, Phase.SITE_CONTENT, Phase.LEARN, Phase.SOCIAL, Phase.ENGAGEMENT,
         Phase.IDENTITY, Phase.MIRROR, Phase.SYNC,
         Phase.COMPLETED,
     ]
