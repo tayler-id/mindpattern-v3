@@ -35,13 +35,33 @@ def _valid_copy() -> dict:
     }
 
 
-def test_prompt_contains_evidence_and_hard_rules():
+def test_prompt_contains_evidence_and_voice_guide():
     pack = _graph_pack()
     prompt = build_site_writer_prompt(pack, [{"role": "Skeptic", "summary": "checks out"}], voice_text="Be sharp.")
     assert "openai.com" in prompt
     assert "Skeptic: checks out" in prompt
-    assert "Do not add facts" in prompt
     assert "Be sharp." in prompt
+    assert "JSON only" in prompt
+
+
+def test_writer_system_prompt_carries_the_voice_rules():
+    from orchestrator.site_writer import WRITER_SYSTEM_PROMPT
+
+    text = WRITER_SYSTEM_PROMPT.read_text()
+    assert "NEVER use em dashes" in text
+    assert "delve" in text
+    assert "Tayler Ramsay" in text
+    assert "Self-Audit" in text
+
+
+def test_parse_rejects_voice_violations():
+    banned = _valid_copy()
+    banned["body_markdown"] = "This is a robust improvement."
+    assert parse_writer_output(json.dumps(banned), allowed_urls=set()) is None
+
+    dashed = _valid_copy()
+    dashed["take"] = "Runtime is the control plane \u2014 everyone wants it."
+    assert parse_writer_output(json.dumps(dashed), allowed_urls=set()) is None
 
 
 def test_parse_accepts_valid_json_and_strips_fences():

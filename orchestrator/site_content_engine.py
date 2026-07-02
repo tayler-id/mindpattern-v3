@@ -238,12 +238,13 @@ def generate_site_story(
     lead_entity = entity_names[0] if entity_names else "This signal"
     lead_source = source_domains[0] if source_domains else "the source trail"
     summary = redact_sensitive_text(str(primary.get("summary") or primary.get("title") or ""))
+    # Deterministic fallback copy stays plain and factual. No fake opinions,
+    # no machinery talk, no em dashes (voice guide). The live writer agent is
+    # the only thing allowed to add a take.
     body = (
         f"{summary}\n\n"
-        f"Why it matters: {lead_entity} is now connected to a public graph trail "
-        f"through {lead_source}, related findings, and explicit claim evidence.\n\n"
-        "Follow the thread through the source trail and related graph paths rather "
-        "than treating this as an isolated headline."
+        f"{lead_source} is the primary source. The source trail and related "
+        f"stories below connect {lead_entity} to the rest of the archive."
     ).strip()
     story = {
         "kind": "site_story",
@@ -253,8 +254,8 @@ def generate_site_story(
         "confidence": "high",
         "issue_date": graph_pack.get("date", ""),
         "title": title,
-        "dek": "A source-backed Rabbit Hole intelligence artifact.",
-        "take": f"{lead_entity} is moving from a single finding into connected public intelligence.",
+        "dek": summary.split(". ")[0].rstrip(".") + "." if summary else "",
+        "take": "",
         "why_now": why_now,
         "body_markdown": body,
         "source_refs": source_refs,

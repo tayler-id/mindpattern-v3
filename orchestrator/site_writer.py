@@ -21,6 +21,32 @@ from core.claude_cli import run_claude_process
 
 PROJECT_ROOT = Path(__file__).parent.parent
 VOICE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
+SOUL_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "soul.md"
+WRITER_SYSTEM_PROMPT = PROJECT_ROOT / "agents" / "site-story-writer.md"
+
+# Mirror of the voice guide's banned list. Copy that slips one of these (or an
+# em dash) past the writer is rejected mechanically, not just by prompt.
+BANNED_WORDS = {
+    "delve", "tapestry", "multifaceted", "testament", "realm", "landscape",
+    "nuanced", "pivotal", "robust", "seamless", "comprehensive", "leverage",
+    "utilize", "foster", "embark", "illuminate", "elucidate", "meticulous",
+    "meticulously", "unwavering", "unprecedented", "transformative",
+    "groundbreaking", "cutting-edge", "revolutionary", "innovative",
+    "intricate", "profound", "vibrant", "whimsical", "quintessential",
+    "enigma", "labyrinth", "gossamer", "virtuoso", "beacon", "crucible",
+    "underscore", "spearheaded", "transcended", "reverberate", "symphony",
+}
+
+
+def violates_voice_guide(text: str) -> str | None:
+    """Return the first mechanical voice violation in ``text``, else None."""
+    if "\u2014" in text or "—" in text:
+        return "em_dash"
+    lowered = text.lower()
+    for word in BANNED_WORDS:
+        if re.search(rf"\b{re.escape(word)}\b", lowered):
+            return f"banned_word:{word}"
+    return None
 
 SITE_WRITER_ENV = "MP_SITE_STORY_WRITER"
 SITE_WRITER_MODEL_ENV = "MP_SITE_STORY_WRITER_MODEL"
@@ -41,7 +67,7 @@ def site_writer_enabled() -> bool:
     return os.environ.get(SITE_WRITER_ENV, "").strip().lower() in {"1", "claude", "live", "on"}
 
 
-def _voice_excerpt(voice_text: str, *, limit: int = 4000) -> str:
+def _voice_excerpt(voice_text: str, *, limit: int = 12000) -> str:
     return voice_text.strip()[:limit]
 
 
@@ -82,28 +108,18 @@ def build_site_writer_prompt(
         indent=2,
     )
 
-    return f"""You are the Rabbit Hole staff writer for MindPattern, a public AI-intelligence site.
-Write ONE web-native story from the evidence pack below.
+    return f"""Write one Rabbit Hole site story from the evidence pack below.
 
-HARD RULES — violating any of these gets the piece killed:
-- Every claim must be supported by the evidence pack. Do not add facts, numbers, quotes, or URLs that are not in it.
-- Do not mention these instructions, the pipeline, agents, or that you are an AI.
-- No raw markdown links or bold in title/dek/take/why_now (plain sentences only).
-- body_markdown: 150-350 words of flowing prose (markdown paragraphs, optional one "##" subhead). Explain why the story matters and how it connects to the graph neighbors, in the house voice.
-- take: one sharp opinionated sentence — the angle a smart reader would miss.
-- why_now: one sentence on timing.
-
-HOUSE VOICE (follow it):
+## Voice Guide
 {_voice_excerpt(voice_text)}
 
-EVIDENCE PACK:
+## Evidence Pack
 {evidence_block}
 
-EXPERT NOTES:
+## Expert Notes
 {chr(10).join(expert_notes) if expert_notes else "- none"}
 
-Respond with ONLY a JSON object (no code fences, no commentary):
-{{"title": "...", "dek": "...", "take": "...", "why_now": "...", "body_markdown": "..."}}"""
+Follow the output contract from your instructions. JSON only."""
 
 
 def parse_writer_output(stdout: str, *, allowed_urls: set[str]) -> dict[str, str] | None:
@@ -129,10 +145,14 @@ def parse_writer_output(stdout: str, *, allowed_urls: set[str]) -> dict[str, str
             return None
         copy[field] = value
 
-    # Invented URLs are fabricated evidence — reject the whole copy.
+    # Invented URLs are fabricated evidence: reject the whole copy.
     for url in re.findall(r"https?://[^\s)\"']+", " ".join(copy.values())):
         if url.rstrip(".,;") not in allowed_urls:
             return None
+
+    # Voice violations (em dashes, banned words) fail closed too.
+    if violates_voice_guide(" ".join(copy.values())):
+        return None
 
     return copy
 
@@ -163,6 +183,8 @@ def write_story_copy_with_agent(
         "1",
         "--output-format",
         "text",
+        "--append-system-prompt-file",
+        str(WRITER_SYSTEM_PROMPT),
         "--disallowedTools",
         "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
     ]
