@@ -13,7 +13,7 @@ from dashboard.routes import (
     api, editors_desk, engagement_history, findings, metrics, newsletters,
     performance, pipeline_status, prompts, run_history, skills,
     social_history, sse, traces,
-    sync_upload, events, site_search,
+    sync_upload, events, site_search, site_analytics,
 )
 
 from dashboard.auth import enforce_auth
@@ -50,6 +50,7 @@ app.include_router(traces.router)
 app.include_router(sync_upload.router)
 app.include_router(events.router)
 app.include_router(site_search.router)
+app.include_router(site_analytics.router)
 app.include_router(metrics.router)
 app.include_router(performance.router)
 app.include_router(findings.router)

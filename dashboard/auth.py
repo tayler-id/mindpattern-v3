@@ -42,7 +42,7 @@ PUBLIC_PREFIXES = [
     "/api/feed",
     "/api/issues",
     "/api/stories",
-    "/api/site",
+    "/api/site/",  # /api/site/sitemap etc. — NOT /api/site-analytics
     "/api/entities",
     "/api/dossiers",
     "/api/event",
