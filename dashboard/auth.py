@@ -107,4 +107,10 @@ async def enforce_auth(request: Request, call_next):
     if auth_header.startswith("Bearer ") and _token_valid(auth_header[7:]):
         return await call_next(request)
 
+    # Browser access to the internal dash: ?token= (same hash check).
+    if request.url.path.startswith("/site-analytics") and _token_valid(
+        request.query_params.get("token", "")
+    ):
+        return await call_next(request)
+
     return JSONResponse({"detail": "Authorization required"}, status_code=401)

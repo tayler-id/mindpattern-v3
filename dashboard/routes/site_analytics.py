@@ -83,9 +83,11 @@ async def site_analytics_page(request: Request, window: str = Query("7d")):
     if window not in _WINDOWS:
         window = "7d"
     data = _summary(window)
+    token = request.query_params.get("token", "")
+    token_qs = f"&token={token}" if token else ""
     bold = ' style="font-weight:bold"'
     tabs = " · ".join(
-        f'<a href="/site-analytics?window={w}"{bold if w == window else ""}>{w}</a>'
+        f'<a href="/site-analytics?window={w}{token_qs}"{bold if w == window else ""}>{w}</a>'
         for w in _WINDOWS
     )
     story_rows = "".join(

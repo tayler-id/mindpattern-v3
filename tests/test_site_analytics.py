@@ -34,3 +34,14 @@ def test_summary_shape_with_bearer(client, monkeypatch):
     page = client.get("/site-analytics", headers=headers)
     assert page.status_code == 200
     assert "hot-story" in page.text
+
+
+def test_dash_query_token(client, monkeypatch):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "browser-token")
+    assert client.get("/site-analytics?token=wrong").status_code == 401
+    ok = client.get("/site-analytics?token=browser-token")
+    assert ok.status_code == 200
+    assert "token=browser-token" in ok.text  # window links stay authed
+    # query token must NOT unlock other private routes
+    assert client.get("/api/site-analytics/summary?token=browser-token").status_code == 401
