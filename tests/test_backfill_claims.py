@@ -116,3 +116,17 @@ def test_cmd_provider_receives_prompt_on_stdin(monkeypatch):
     cmd, stdin_text = sw.writer_command("PROMPT TEXT")
     assert cmd[0] == "claude"
     assert sw.writer_label() == "claude-cli"
+
+
+def test_notebook_tracks_claims_and_outcomes(pool, monkeypatch):
+    claim = bf.claim_batch(user="ramsay", reports_root=pool, size=3, agent="nb")
+    monkeypatch.setattr(bf, "backfill_story", lambda s, *, user, reports_root: "written")
+    bf.run_claim(user="ramsay", reports_root=pool, claim_id=claim["claim_id"])
+
+    notebook = (pool / "ramsay" / "site-backfill-notebook.md").read_text()
+    assert claim["claim_id"] in notebook
+    assert "claimed: 3 stories" in notebook
+    assert notebook.count("— written at") == 3
+    assert "finished at" in notebook
+    status = bf.backfill_status(user="ramsay", reports_root=pool)
+    assert status["notebook"].endswith("site-backfill-notebook.md")

@@ -140,6 +140,32 @@ def backfill_story(
 CLAIM_TTL_HOURS = 3
 
 
+def _notebook_path(user: str, reports_root: Path) -> Path:
+    return reports_root / user / "site-backfill-notebook.md"
+
+
+def notebook_append(user: str, reports_root: Path, line: str) -> None:
+    """Append one line to the run notebook, safe under concurrent writers."""
+    import fcntl
+
+    path = _notebook_path(user, reports_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text(
+            "# Rabbit Hole backfill notebook\n\n"
+            "Append-only ledger of every batch and story. Source of truth for\n"
+            "done-ness is the artifact files; this is the human-readable trail.\n\n"
+        )
+    with open(path, "a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        handle.write(line.rstrip("\n") + "\n")
+        fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _ts() -> str:
+    return _now().strftime("%Y-%m-%d %H:%M:%SZ")
+
+
 def _claims_dir(user: str, reports_root: Path) -> Path:
     return reports_root / user / "site-backfill-claims"
 
@@ -223,6 +249,12 @@ def claim_batch(
         with os.fdopen(fd, "w") as handle:
             handle.write(payload)
         claimed.append(slug)
+    if claimed:
+        notebook_append(
+            user, reports_root,
+            f"\n## {claim_id}\n- agent: {agent}\n- claimed: {len(claimed)} stories at {_ts()}\n"
+            + "\n".join(f"- [ ] {slug}" for slug in claimed),
+        )
     return {"claim_id": claim_id, "agent": agent, "slugs": claimed}
 
 
@@ -282,6 +314,11 @@ def run_claim(
             # Completion releases the claim whatever the outcome; failures
             # become claimable again for a later batch.
             (claims / f"{slug}.json").unlink(missing_ok=True)
+            mark = "x" if kind in {"written", "skipped"} else "!"
+            notebook_append(
+                user, reports_root,
+                f"- [{mark}] {slug} — {outcome} at {_ts()} ({claim_id})",
+            )
             print(f"[{done}/{len(stories)}] {outcome}  {slug}", flush=True)
             if consecutive >= 10:
                 aborted = "10 consecutive failures"
@@ -289,6 +326,11 @@ def run_claim(
         if aborted:
             pool.shutdown(wait=False, cancel_futures=True)
             print(f"ABORTED: {aborted}. Remaining claims expire on their own.")
+    notebook_append(
+        user, reports_root,
+        f"- batch {claim_id} finished at {_ts()}: {json.dumps(outcomes)}"
+        + (f" ABORTED: {aborted}" if aborted else ""),
+    )
     return {"claim_id": claim_id, "outcomes": outcomes, "aborted": aborted}
 
 
@@ -313,6 +355,7 @@ def backfill_status(*, user: str, reports_root: Path) -> dict:
         by_agent[payload.get("agent", "?")] = by_agent.get(payload.get("agent", "?"), 0) + 1
     remaining = len(backfill_targets(user=user, since=None, limit=100000)) - len(active)
     return {
+        "notebook": str(_notebook_path(user, reports_root)),
         "written": written,
         "fallback_artifacts": fallback,
         "in_progress": len(active),
