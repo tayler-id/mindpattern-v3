@@ -35,6 +35,7 @@ async def search_site(
     date_to: str = Query("", alias="to"),
     domain: str = Query(""),
     limit: int = Query(8, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
     take: int = Query(0, ge=0, le=1),
     user: str = Query("ramsay"),
 ):
@@ -74,6 +75,8 @@ async def search_site(
             if domain and domain not in (story.get("graph_connectors", {}).get("source_domains") or []):
                 continue
             matched += 1
+            if matched <= offset:
+                continue
             if len(hits) < limit:
                 hits.append({
                     "slug": story["slug"],

@@ -72,3 +72,10 @@ def test_take_filter_lists_takes_archive_wide(client):
     assert payload["totals"]["stories"] == 1
     with_query = client.get("/api/search/site?q=mcp&take=1").json()
     assert len(with_query["groups"]["stories"]) == 1
+
+
+def test_story_offset_pages_through_matches(client):
+    first = client.get("/api/search/site?q=mcp&types=stories&limit=1&offset=0").json()
+    second = client.get("/api/search/site?q=mcp&types=stories&limit=1&offset=1").json()
+    assert first["groups"]["stories"][0]["slug"] != second["groups"]["stories"][0]["slug"]
+    assert first["totals"]["stories"] == 2
