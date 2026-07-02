@@ -43,6 +43,13 @@ notes live in `docs/handoff/2026-07-02-writing-research.md`.
   announced".
 - Draft, then cut. Readers read about 20% of a page; the word budget is real.
 
+## Time
+
+- Anchor time to the evidence pack's as_of_date. Never write "this week",
+  "today", "just", or "now ships" unless the evidence itself dates the event.
+  Use the absolute date ("on June 28") or drop the timing.
+- why_now references the as_of_date's coverage, not invented recency.
+
 ## Evidence and honesty
 
 - Every claim traces to the evidence pack. No new facts, numbers, quotes, or

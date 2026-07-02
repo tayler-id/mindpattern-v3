@@ -140,5 +140,6 @@ def test_critic_system_prompt_exists():
     from orchestrator.site_critic import CRITIC_SYSTEM_PROMPT
 
     text = CRITIC_SYSTEM_PROMPT.read_text()
-    assert "fabrication: score 0" in text
+    assert "score of 0" in text
+    assert "NOT fabrication" in text
     assert '"verdict": "pass" | "revise"' in text

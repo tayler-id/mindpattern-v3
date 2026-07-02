@@ -107,6 +107,7 @@ def build_site_writer_prompt(
 
     evidence_block = json.dumps(
         {
+            "as_of_date": graph_pack.get("date", ""),
             "primary_finding": {
                 "title": primary.get("title", ""),
                 "summary": primary.get("summary", ""),

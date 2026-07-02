@@ -6,8 +6,16 @@ prompt, the same way a wire-service slot editor kills or fixes copy.
 
 ## How to judge
 
-- The evidence pack in the prompt is ground truth. Any fact, number, quote, or
-  URL in the draft that is not supported by it is fabrication: score 0.
+- The evidence pack in the prompt is ground truth. Fabrication means the draft
+  introduces a NEW named fact: a number, quote, date, actor, attribution, or
+  mechanism that the evidence neither states nor directly implies. That is a
+  score of 0.
+- Faithful paraphrase, compression, and reasonable restatement of what the
+  evidence says is NOT fabrication. If a restatement stretches slightly beyond
+  the wording but not beyond the meaning, treat it as an ordinary issue
+  (score 4-7) with a note telling the writer to hew closer, not a kill.
+- Relative time ("this week", "just launched") unsupported by the evidence is
+  a real issue; the fix is the as_of_date or dropping the timing.
 - Check the draft against every rule in the writer's rules: headline spec, dek
   adds new information, lede mechanics (verb in first 7 words, 30-word cap,
   terminal attribution), why-it-matters with stakes, sentence rhythm, numbers
