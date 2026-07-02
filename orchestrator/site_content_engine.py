@@ -566,6 +566,18 @@ def write_issue_stories_for_date(
     with ThreadPoolExecutor(max_workers=3) as pool:
         for result in pool.map(_write_one, pending):
             outcome[result] += 1
+    try:
+        from datetime import datetime, timezone
+        from orchestrator.site_backfill import notebook_append
+        stamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%MZ')
+        notebook_append(
+            user, reports_root,
+            f"- {stamp} daily-run date={run_date} "
+            f"written={outcome['written']} fallback={outcome['fallback']} "
+            f"skipped={outcome['skipped']}",
+        )
+    except Exception:
+        pass  # tracking must never fail the run
     return outcome
 
 
