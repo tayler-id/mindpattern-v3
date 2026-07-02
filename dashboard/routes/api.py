@@ -1880,7 +1880,7 @@ def _public_story_provenance(item: dict) -> dict:
 def _public_story_artifact(item: dict, *, fallback_slug: str) -> dict | None:
     if not isinstance(item, dict):
         return None
-    if item.get("status") != "published" or item.get("confidence") != "high":
+    if item.get("status") != "published" or item.get("confidence") not in {"high", "source-backed"}:
         return None
     gate_item = dict(item)
     if gate_item.get("kind") == "story":

@@ -493,7 +493,9 @@ def is_publishable_site_story(story: dict[str, Any]) -> bool:
     return (
         story.get("kind") == "site_story"
         and story.get("status") == "published"
-        and story.get("confidence") == "high"
+        # "high" = corpus engine stories; "source-backed" = writer-upgraded
+        # newsletter stories (backfill + daily issue writer). Both earn /s pages.
+        and story.get("confidence") in {"high", "source-backed"}
         and bool(title)
         and not _is_generic_section_title(title)
         and bool(str(story.get("why_now") or "").strip())

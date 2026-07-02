@@ -203,3 +203,33 @@ def test_site_sitemap_lists_substantive_pages(client_with_site_artifacts):
 
     missing_user = client.get("/api/site/sitemap?user=../ramsay")
     assert missing_user.json()["stories"] == []
+
+
+def test_source_backed_writer_artifacts_pass_the_public_gate():
+    from dashboard.routes.api import _public_story_artifact
+
+    artifact = {
+        "kind": "site_story",
+        "id": "2026-07-02-webkit-story",
+        "slug": "2026-07-02-webkit-story",
+        "status": "published",
+        "confidence": "source-backed",
+        "issue_date": "2026-07-02",
+        "title": "WebKit shipped an official Safari MCP server",
+        "dek": "Agents can drive Safari through the browser itself.",
+        "take": "MCP only wins if the other engines follow.",
+        "why_now": "Shipped with the July 2 briefing cycle.",
+        "summary": "WebKit shipped an MCP server.",
+        "body_markdown": "WebKit shipped an MCP server for Safari.",
+        "source_refs": [{"url": "https://webkit.org/blog/mcp", "domain": "webkit.org", "title": "WebKit Blog"}],
+        "entity_refs": [{"id": "webkit", "slug": "webkit", "name": "WebKit", "kind": "org"}],
+        "claim_evidence": [{"claim": "WebKit shipped an MCP server", "source_url": "https://webkit.org/blog/mcp"}],
+        "graph_edges": [{"kind": "source_domain", "relationship": "cites_source_domain",
+                         "id": "webkit.org", "label": "webkit.org", "target_url": "/source/webkit.org"}],
+        "provenance": {"generated_by": "mindpattern.site_backfill.writer_harness",
+                       "ai_generated": True, "writer": "claude-cli", "redaction_status": "passed"},
+    }
+    public = _public_story_artifact(artifact, fallback_slug="2026-07-02-webkit-story")
+    assert public is not None
+    assert public["take"] == "MCP only wins if the other engines follow."
+    assert public["provenance"]["writer"] == "claude-cli"

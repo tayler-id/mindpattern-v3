@@ -339,6 +339,27 @@ def write_story_copy_with_agent(
     return copy
 
 
+def ensure_claim_evidence(story: dict[str, Any]) -> dict[str, Any]:
+    """Guarantee the headline claim is tied to the primary source.
+
+    The public gate refuses stories without claim evidence; writer-upgraded
+    newsletter stories inherit an empty list from their dynamic parents, so
+    anchor the title claim to the first cited source.
+    """
+    if story.get("claim_evidence"):
+        return story
+    refs = story.get("source_refs") or []
+    if not refs or not story.get("title"):
+        return story
+    updated = dict(story)
+    updated["claim_evidence"] = [{
+        "claim": str(story["title"]),
+        "source_url": str(refs[0].get("url") or ""),
+        "finding_id": None,
+    }]
+    return updated
+
+
 def apply_story_copy(story: dict[str, Any], copy: dict[str, str]) -> dict[str, Any]:
     """Overlay agent copy onto a deterministic story, updating provenance."""
     updated = dict(story)
@@ -348,7 +369,7 @@ def apply_story_copy(story: dict[str, Any], copy: dict[str, str]) -> dict[str, A
     provenance["ai_generated"] = True
     provenance["writer"] = writer_label()
     updated["provenance"] = provenance
-    return updated
+    return ensure_claim_evidence(updated)
 
 
 def site_story_copywriter_from_env() -> Callable[[dict, list], dict | None] | None:
