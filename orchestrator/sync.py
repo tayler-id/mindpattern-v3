@@ -321,6 +321,8 @@ def create_bundle(
             for artifact_dir in artifact_dirs:
                 if not artifact_dir.is_dir():
                     continue
+                if artifact_dir.name == "site-backfill-claims":
+                    continue  # local work-coordination state, never public
                 for json_file in sorted(artifact_dir.rglob("*.json")):
                     rel = json_file.relative_to(reports_dir)
                     tf.add(str(json_file), arcname=f"reports/{user_id}/{rel}")

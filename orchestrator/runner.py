@@ -1747,6 +1747,23 @@ class ResearchPipeline:
                 "site_content_completed",
                 json.dumps(_site_content_trace_payload(result)),
             )
+            try:
+                from .site_content_engine import write_issue_stories_for_date
+
+                issue_outcome = write_issue_stories_for_date(
+                    date=self.date_str,
+                    user=self.user_id,
+                    reports_root=PROJECT_ROOT / "reports",
+                    story_copywriter=copywriter,
+                )
+                log_event(
+                    self.traces_conn,
+                    self.traces_run_id,
+                    "site_issue_stories_completed",
+                    json.dumps(issue_outcome),
+                )
+            except Exception as e:
+                logger.warning("Issue story writing failed open: %s", e)
             self._run_site_dossiers()
             return result
         except Exception as e:

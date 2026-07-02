@@ -79,7 +79,65 @@ def _is_limit_response(process) -> bool:
 
 
 def site_writer_enabled() -> bool:
-    return os.environ.get(SITE_WRITER_ENV, "").strip().lower() in {"1", "claude", "live", "on"}
+    value = os.environ.get(SITE_WRITER_ENV, "").strip().lower()
+    return bool(value) and value not in {"0", "off", "false"}
+
+
+def writer_provider() -> str:
+    """Which drafting provider MP_SITE_STORY_WRITER selects.
+
+    "claude" (default), "codex" (Codex CLI, its own quota), or
+    "cmd:<shell template>" (any CLI: prompt on stdin, JSON copy on stdout).
+    The critic gate is always Claude regardless of the drafting provider.
+    """
+    value = os.environ.get(SITE_WRITER_ENV, "").strip()
+    lowered = value.lower()
+    if lowered in {"", "1", "claude", "live", "on"}:
+        return "claude"
+    if lowered == "codex":
+        return "codex"
+    if lowered.startswith("cmd:"):
+        return value
+    return "claude"
+
+
+def writer_label() -> str:
+    provider = writer_provider()
+    if provider == "claude":
+        return "claude-cli"
+    if provider == "codex":
+        return "codex"
+    return "cmd"
+
+
+def writer_command(prompt: str, *, model: str | None = None) -> tuple[list[str], str | None]:
+    """(argv, stdin) for one drafting call under the current provider."""
+    provider = writer_provider()
+    if provider == "codex":
+        return (
+            ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", prompt],
+            None,
+        )
+    if provider.startswith("cmd:"):
+        return (["sh", "-c", provider[4:]], prompt)
+    return (
+        [
+            "claude",
+            "-p",
+            prompt,
+            "--model",
+            model or os.environ.get(SITE_WRITER_MODEL_ENV, DEFAULT_WRITER_MODEL),
+            "--max-turns",
+            "8",
+            "--output-format",
+            "text",
+            "--append-system-prompt-file",
+            str(WRITER_SYSTEM_PROMPT),
+            "--disallowedTools",
+            "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
+        ],
+        None,
+    )
 
 
 def _voice_excerpt(voice_text: str, *, limit: int = 12000) -> str:
@@ -233,25 +291,19 @@ def write_story_copy_with_agent(
         except OSError:
             voice_text = ""
     prompt = build_site_writer_prompt(graph_pack, expert_results, voice_text=voice_text)
-    cmd = [
-        "claude",
-        "-p",
-        prompt,
-        "--model",
-        model or os.environ.get(SITE_WRITER_MODEL_ENV, DEFAULT_WRITER_MODEL),
-        "--max-turns",
-        "8",
-        "--output-format",
-        "text",
-        "--append-system-prompt-file",
-        str(WRITER_SYSTEM_PROMPT),
-        "--disallowedTools",
-        "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
-    ]
+    if writer_provider() != "claude":
+        # Non-Claude providers get the system prompt inline.
+        try:
+            prompt = WRITER_SYSTEM_PROMPT.read_text() + "\n\n" + prompt
+        except OSError:
+            pass
+    cmd, stdin_text = writer_command(prompt, model=model)
     candidate = graph_pack.get("candidate_id", "story")
     process = None
     for attempt in (1, 2):
         try:
+            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT, input_text=stdin_text)
+        except TypeError:
             process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
         except Exception as exc:
             logger.warning("site_writer %s: process exception %s", candidate, exc)
@@ -294,7 +346,7 @@ def apply_story_copy(story: dict[str, Any], copy: dict[str, str]) -> dict[str, A
         updated[field] = copy[field]
     provenance = dict(updated.get("provenance") or {})
     provenance["ai_generated"] = True
-    provenance["writer"] = "claude-cli"
+    provenance["writer"] = writer_label()
     updated["provenance"] = provenance
     return updated
 

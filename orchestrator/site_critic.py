@@ -195,26 +195,17 @@ def write_story_with_review(
     # Fabrication (score 0) goes back to the writer with the critic's notes,
     # like any desk: the editor names the unsupported claim, the writer cuts
     # it. The fabricating draft itself is never a publishable fallback.
+    from orchestrator.site_writer import writer_command
+
     draft_is_usable = verdict["score"] >= 5
     prompt = build_revision_prompt(graph_pack, draft, verdict["issues"], voice_text=voice_text)
-    cmd = [
-        "claude",
-        "-p",
-        prompt,
-        "--model",
-        os.environ.get("MP_SITE_STORY_WRITER_MODEL", "claude-sonnet-5"),
-        "--max-turns",
-        "8",
-        "--output-format",
-        "text",
-        "--append-system-prompt-file",
-        str(PROJECT_ROOT / "agents" / "site-story-writer.md"),
-        "--disallowedTools",
-        "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
-    ]
+    cmd, stdin_text = writer_command(prompt)
     candidate = graph_pack.get("candidate_id", "story")
     try:
-        process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+        try:
+            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT, input_text=stdin_text)
+        except TypeError:
+            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
     except Exception as exc:
         logger.warning("site_critic %s: revision exception %s", candidate, exc)
         return draft if draft_is_usable else None

@@ -444,6 +444,96 @@ def _arc_memberships_for_date(
     return memberships
 
 
+def write_issue_stories_for_date(
+    *,
+    date: str,
+    user: str,
+    reports_root: Path,
+    story_copywriter: Callable[[dict[str, Any], list[dict[str, Any]]], dict[str, Any] | None] | None,
+) -> dict[str, Any]:
+    """Write EVERY source-backed story unit of the day's issue for the site.
+
+    The newsletter is the canonical selection; this stage reformats all of it
+    into site-shaped story artifacts through the writer->critic harness. A
+    unit whose copy fails the gate keeps its evidence-only fallback artifact,
+    so the day is always fully covered. Fails open per story.
+    """
+    from orchestrator.site_content import build_structured_issue
+
+    run_date = validate_run_date(date)
+    outcome = {"kind": "issue_story_run", "date": run_date, "written": 0, "fallback": 0, "skipped": 0}
+    report_path = reports_root / user / f"{run_date}.md"
+    if not report_path.exists():
+        outcome["skipped"] = -1
+        return outcome
+    content = report_path.read_text(errors="replace")
+    first_heading = next(
+        (line.lstrip("# ").strip() for line in content.splitlines() if line.startswith("# ")),
+        f"Briefing {run_date}",
+    )
+    issue = build_structured_issue(
+        date=run_date,
+        user=user,
+        title=first_heading,
+        content=content,
+    )
+
+    for story_unit in issue.get("story_units", []):
+        story = build_public_story(issue=issue, story_unit=story_unit)
+        if story is None:
+            continue
+        slug = str(story.get("slug") or "")
+        try:
+            artifact_path = site_artifact_path(
+                kind="site_story", user=user, date=run_date, slug=slug, reports_root=reports_root
+            )
+        except ValueError:
+            continue
+        if artifact_path.exists():
+            outcome["skipped"] += 1
+            continue
+
+        pack = {
+            "candidate_id": slug,
+            "date": run_date,
+            "why_now": story.get("why_now") or f"Covered in the {run_date} briefing.",
+            "primary_evidence": [{
+                "title": story.get("title", ""),
+                "summary": story.get("body_markdown") or story.get("summary", ""),
+            }],
+            "source_refs": story.get("source_refs") or [],
+            "entity_refs": story.get("entity_refs") or [],
+            "related_paths": [],
+        }
+        artifact = dict(story)
+        artifact["kind"] = "site_story"
+        copy = None
+        if story_copywriter is not None:
+            try:
+                copy = story_copywriter(pack, [])
+            except Exception:
+                copy = None
+        if copy:
+            from orchestrator.site_writer import apply_story_copy
+
+            artifact = apply_story_copy(artifact, copy)
+            outcome["written"] += 1
+        else:
+            outcome["fallback"] += 1
+        provenance = dict(artifact.get("provenance") or {})
+        provenance["generated_by"] = "mindpattern.site_content_engine.issue_story_writer"
+        artifact["provenance"] = provenance
+        write_site_artifact(
+            kind="site_story",
+            user=user,
+            reports_root=reports_root,
+            date=run_date,
+            slug=slug,
+            artifact=sanitize_site_artifact(artifact),
+        )
+    return outcome
+
+
 def run_site_content_for_date(
     *,
     date: str,
