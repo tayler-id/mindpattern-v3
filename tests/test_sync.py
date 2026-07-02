@@ -772,3 +772,30 @@ def test_write_synced_marker_uses_configured_marker_dir(tmp_path, monkeypatch):
     write_synced_marker("2026-06-23")
 
     assert (tmp_path / "mindpattern-synced-2026-06-23").exists()
+
+
+class TestBundleSiteArtifacts:
+    def test_bundle_includes_rabbit_hole_site_artifacts(self, data_tree):
+        """Daily sync must ship site-stories/dossiers/arcs JSON to Fly."""
+        reports_dir = data_tree["reports_dir"]
+        (reports_dir / "site-stories" / "2026-03-14").mkdir(parents=True)
+        (reports_dir / "site-stories" / "2026-03-14" / "story-a.json").write_text("{}")
+        (reports_dir / "site-dossiers" / "entities").mkdir(parents=True)
+        (reports_dir / "site-dossiers" / "entities" / "openai.json").write_text("{}")
+        (reports_dir / "arcs").mkdir()
+        (reports_dir / "arcs" / "2026-03-14.json").write_text("{}")
+
+        bundle = create_bundle(
+            data_tree["user_id"],
+            data_tree["data_dir"],
+            data_tree["reports_dir"],
+            "2026-03-14",
+        )
+        with tarfile.open(bundle, "r:gz") as tf:
+            names = set(tf.getnames())
+        bundle.unlink()
+
+        user = data_tree["user_id"]
+        assert f"reports/{user}/site-stories/2026-03-14/story-a.json" in names
+        assert f"reports/{user}/site-dossiers/entities/openai.json" in names
+        assert f"reports/{user}/arcs/2026-03-14.json" in names

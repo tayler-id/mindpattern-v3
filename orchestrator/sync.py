@@ -236,6 +236,8 @@ def create_bundle(
         {user_id}/mindpattern/*.md
         reports/{user_id}/YYYY-MM-DD.md
         reports/{user_id}/agents/*.md
+        reports/{user_id}/site-*/**/*.json  (Rabbit Hole artifacts)
+        reports/{user_id}/arcs/*.json
 
     Args:
         user_id: User identifier.
@@ -277,6 +279,17 @@ def create_bundle(
             if agents_dir.is_dir():
                 for md_file in sorted(agents_dir.glob("*.md")):
                     tf.add(str(md_file), arcname=f"reports/{user_id}/agents/{md_file.name}")
+
+            # Add Rabbit Hole content-machine artifacts (site-stories,
+            # site-dossiers, site-issues, arcs, …) — the public site API on
+            # Fly serves these JSON files, so each daily run must ship them
+            artifact_dirs = sorted(reports_dir.glob("site-*")) + [reports_dir / "arcs"]
+            for artifact_dir in artifact_dirs:
+                if not artifact_dir.is_dir():
+                    continue
+                for json_file in sorted(artifact_dir.rglob("*.json")):
+                    rel = json_file.relative_to(reports_dir)
+                    tf.add(str(json_file), arcname=f"reports/{user_id}/{rel}")
 
             # Add vault identity files (voice.md, soul.md, …) — the Fly.io Slack
             # bot reads these for tone/persona when drafting posts
