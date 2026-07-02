@@ -1,6 +1,6 @@
 # Spec: First-party analytics + trending front page + site search
 
-**Status:** draft for review · **Date:** 2026-07-02
+**Status:** IMPLEMENTED & DEPLOYED 2026-07-02 · **Date:** 2026-07-02
 **Repos:** mindpattern-v3 (ingestion, scoring, dash, search API) +
 mindpattern-rabbit-hole (event client, wire ranking, arrows, search UI)
 
@@ -118,3 +118,17 @@ FE: build + smoke via local backend. CI: added to the existing test job.
 1. anon_id: INCLUDED — random first-party, resettable, never identity-tied.
 2. Most Read: own wire tab (Trending / Most Read / Latest / Topics).
 3. Search results: grouped by type.
+
+## Implementation notes (2026-07-02)
+
+All six success criteria met and test-enforced (tests/test_events_api.py,
+test_trending.py, test_search_site.py, test_site_analytics.py). Deployed:
+Fly backend + Vercel site, both on main. Deviations from the draft:
+
+- Search UI: user chose search + filtering embedded in the wire itself
+  (full-archive server search, With-take archive-wide, Load more
+  pagination) over a header box; /search page + cmd-K retained.
+- An Ask-AI answer layer was built then removed at user request
+  (no API key; retrieval-only search).
+- Ops lesson: the Fly image runs Python 3.11 - no backslashes inside
+  f-string expressions (took prod down for ~20 min on first dash deploy).
