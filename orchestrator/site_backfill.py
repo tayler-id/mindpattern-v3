@@ -86,7 +86,10 @@ def backfill_targets(
     stories = api_routes._build_all_public_stories(user)
     targets = []
     for story in stories:
-        if story.get("provenance", {}).get("ai_generated"):
+        # A story is done only when a writer actually authored its copy;
+        # ai_generated alone also covers deterministic engine fallbacks
+        # (e.g. critic-rejected drafts) which must stay rewritable.
+        if story.get("provenance", {}).get("writer"):
             continue
         if since and str(story.get("issue_date", "")) < since:
             continue
