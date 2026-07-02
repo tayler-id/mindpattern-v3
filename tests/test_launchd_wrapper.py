@@ -22,3 +22,10 @@ def test_launchd_defaults_to_skip_social():
     assert 'MP_LAUNCHD_SKIP_SOCIAL:-1' in source
     assert 'RUN_ARGS+=(--skip-social)' in source
     assert 'run.py "${RUN_ARGS[@]}" "$@"' in source
+
+
+def test_launchd_enables_site_story_writer_by_default():
+    """Nightly site stories get the live writer unless explicitly disabled."""
+    source = (PROJECT_ROOT / "run-launchd.sh").read_text()
+
+    assert 'MP_SITE_STORY_WRITER="${MP_SITE_STORY_WRITER:-claude}"' in source

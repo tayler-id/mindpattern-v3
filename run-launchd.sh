@@ -85,6 +85,10 @@ if [ "${MP_LAUNCHD_SKIP_SOCIAL:-1}" = "1" ]; then
     RUN_ARGS+=(--skip-social)
 fi
 
+# Rabbit Hole site stories are written by the live writer agent in the house
+# voice (fails closed to deterministic copy). MP_SITE_STORY_WRITER=off to disable.
+export MP_SITE_STORY_WRITER="${MP_SITE_STORY_WRITER:-claude}"
+
 /Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3 run.py "${RUN_ARGS[@]}" "$@"
 EXIT_CODE=$?
 
