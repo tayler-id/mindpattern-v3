@@ -478,6 +478,7 @@ def write_issue_stories_for_date(
         content=content,
     )
 
+    pending: list[dict[str, Any]] = []
     for story_unit in issue.get("story_units", []):
         story = build_public_story(issue=issue, story_unit=story_unit)
         if story is None:
@@ -492,7 +493,10 @@ def write_issue_stories_for_date(
         if artifact_path.exists():
             outcome["skipped"] += 1
             continue
+        pending.append(story)
 
+    def _write_one(story: dict[str, Any]) -> str:
+        slug = str(story.get("slug") or "")
         pack = {
             "candidate_id": slug,
             "date": run_date,
@@ -513,13 +517,12 @@ def write_issue_stories_for_date(
                 copy = story_copywriter(pack, [])
             except Exception:
                 copy = None
+        result = "fallback"
         if copy:
             from orchestrator.site_writer import apply_story_copy
 
             artifact = apply_story_copy(artifact, copy)
-            outcome["written"] += 1
-        else:
-            outcome["fallback"] += 1
+            result = "written"
         provenance = dict(artifact.get("provenance") or {})
         provenance["generated_by"] = "mindpattern.site_content_engine.issue_story_writer"
         artifact["provenance"] = provenance
@@ -531,6 +534,16 @@ def write_issue_stories_for_date(
             slug=slug,
             artifact=sanitize_site_artifact(artifact),
         )
+        return result
+
+    # A day is ~50 stories; sequential writing would stall the pipeline's
+    # later phases for hours. Three writer pipelines keep it under an hour
+    # without saturating the subscription.
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for result in pool.map(_write_one, pending):
+            outcome[result] += 1
     return outcome
 
 
