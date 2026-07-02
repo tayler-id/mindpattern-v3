@@ -148,6 +148,16 @@ _PUBLIC_ENTITY_SLUG_BLOCKLIST = _PUBLIC_ENTITY_STOPWORDS | {
     "story",
 }
 
+# Short slugs are junk-prone, so entity pages require >= 4 chars except for
+# well-known acronym entities the corpus genuinely tracks.
+_PUBLIC_ENTITY_SHORT_ALLOWLIST = {"aws", "cve", "gcp", "gpt", "mcp"}
+
+
+def _is_public_entity_slug(entity_slug: str) -> bool:
+    if entity_slug in _PUBLIC_ENTITY_SLUG_BLOCKLIST:
+        return False
+    return len(entity_slug) >= 4 or entity_slug in _PUBLIC_ENTITY_SHORT_ALLOWLIST
+
 
 def _safe_user(user: str) -> Optional[str]:
     """Reject user ids that could traverse paths (user becomes a path part)."""
@@ -2204,7 +2214,7 @@ async def get_entity_neighbors(
         entity_slug = normalize_slug(slug)
     except ValueError:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
-    if entity_slug in _PUBLIC_ENTITY_SLUG_BLOCKLIST or len(entity_slug) < 4:
+    if not _is_public_entity_slug(entity_slug):
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
 
     opened = _open_graph_model(user)
@@ -2229,7 +2239,7 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         entity_slug = normalize_slug(slug)
     except ValueError:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
-    if entity_slug in _PUBLIC_ENTITY_SLUG_BLOCKLIST or len(entity_slug) < 4:
+    if not _is_public_entity_slug(entity_slug):
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
 
     graph_detail: dict | None = None

@@ -57,3 +57,13 @@ def test_story_edges_drop_noise_entities_and_topics():
     assert "announced" not in ids
     assert "being" not in ids
     assert {"vercel", "hydrogen", "vercel.com"} <= set(ids)
+
+
+def test_known_acronym_entities_are_allowed_as_slugs():
+    from dashboard.routes.api import _is_public_entity_slug
+
+    for slug in ["mcp", "gpt", "cve"]:
+        assert _is_public_entity_slug(slug), slug
+    for slug in ["and", "the", "top", "ai", "x"]:
+        assert not _is_public_entity_slug(slug), slug
+    assert _is_public_entity_slug("vercel")
