@@ -28,7 +28,7 @@ ALLOWED_EVENTS = {
     "scroll_depth",
     "subscribe_submitted",
     "subscribe_success",
-    "search_query",
+    "search_query","agent_hit",
 }
 
 _SCHEMA = """

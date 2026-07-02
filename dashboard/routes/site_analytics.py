@@ -48,6 +48,24 @@ def _summary(window: str) -> dict:
                    WHERE ts>=? AND type IN ('subscribe_submitted','subscribe_success')
                    GROUP BY type""", (cutoff,))
         }
+        agent_hits = [
+            dict(r) for r in conn.execute(
+                """SELECT target, COUNT(*) hits FROM events
+                   WHERE type='agent_hit' AND ts>=? GROUP BY target
+                   ORDER BY hits DESC LIMIT 20""", (cutoff,))
+        ]
+        agent_pages = [
+            dict(r) for r in conn.execute(
+                """SELECT path, COUNT(*) hits FROM events
+                   WHERE type='agent_hit' AND ts>=? AND path!=''
+                   GROUP BY path ORDER BY hits DESC LIMIT 15""", (cutoff,))
+        ]
+        search_terms = [
+            dict(r) for r in conn.execute(
+                """SELECT target, COUNT(*) count FROM events
+                   WHERE type='search_query' AND ts>=? AND target!=''
+                   GROUP BY target ORDER BY count DESC LIMIT 20""", (cutoff,))
+        ]
         totals = dict(conn.execute(
             """SELECT COUNT(*) events, COUNT(DISTINCT anon_id) readers
                FROM events WHERE ts>=?""", (cutoff,)).fetchone())
@@ -61,6 +79,8 @@ def _summary(window: str) -> dict:
         "top_stories": top_stories,
         "clicks": clicks,
         "referrers": referrers,
+        "agents": {"by_bot": agent_hits, "top_pages": agent_pages},
+        "search_terms": search_terms,
         "subscribe": {
             "submitted": submitted,
             "success": success,
@@ -98,6 +118,18 @@ async def site_analytics_page(request: Request, window: str = Query("7d")):
     click_rows = "".join(
         f'<tr><td>{c["type"]}</td><td>{c["count"]}</td></tr>' for c in data["clicks"]
     ) or '<tr><td colspan="2">none</td></tr>'
+    agent_rows = "".join(
+        f'<tr><td>{a["target"]}</td><td>{a["hits"]}</td></tr>'
+        for a in data["agents"]["by_bot"]
+    ) or '<tr><td colspan="2">no AI-agent hits yet</td></tr>'
+    agent_page_rows = "".join(
+        f'<tr><td>{a["path"]}</td><td>{a["hits"]}</td></tr>'
+        for a in data["agents"]["top_pages"]
+    ) or '<tr><td colspan="2">none</td></tr>'
+    term_rows = "".join(
+        f'<tr><td>{t["target"]}</td><td>{t["count"]}</td></tr>'
+        for t in data["search_terms"]
+    ) or '<tr><td colspan="2">none</td></tr>'
     ref_rows = "".join(
         f'<tr><td>{r["ref_domain"]}</td><td>{r["count"]}</td></tr>' for r in data["referrers"]
     ) or '<tr><td colspan="2">direct / none</td></tr>'
@@ -111,6 +143,9 @@ th{{background:#ece7db;text-transform:uppercase;font-size:11px;letter-spacing:.0
 <h2>Top stories</h2><table><tr><th>story</th><th>views</th><th>readers</th></tr>{story_rows}</table>
 <h2>Clicks</h2><table><tr><th>type</th><th>count</th></tr>{click_rows}</table>
 <h2>Referrers</h2><table><tr><th>domain</th><th>count</th></tr>{ref_rows}</table>
+<h2>AI agents &amp; crawlers</h2><table><tr><th>agent</th><th>hits</th></tr>{agent_rows}</table>
+<h2>Pages agents read</h2><table><tr><th>path</th><th>hits</th></tr>{agent_page_rows}</table>
+<h2>Search terms</h2><table><tr><th>query</th><th>count</th></tr>{term_rows}</table>
 <h2>Subscribe</h2><p>submitted {sub["submitted"]} · success {sub["success"]} · conversion {sub["conversion"] if sub["conversion"] is not None else "n/a"}</p>
 </body></html>"""
     return HTMLResponse(html)
