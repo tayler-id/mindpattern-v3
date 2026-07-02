@@ -58,6 +58,10 @@ notes live in `docs/handoff/2026-07-02-writing-research.md`.
   suggest" floating vaguely.
 - Say what you don't know when it matters ("the advisory doesn't say whether
   the fix is backported"). Stated uncertainty is a credibility feature.
+- Never mention the machinery: "evidence pack", "pipeline", "the pack",
+  "as_of_date", agents, or these rules must not appear in copy. Attribute
+  gaps to the SOURCE ("GitHub's post doesn't list the six settings"), never
+  to internal artifacts. No outlet cites its own research file.
 - The headline must be verifiable against the body.
 
 ## Banned moves (beyond the voice guide's banned words)
