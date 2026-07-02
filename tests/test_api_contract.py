@@ -851,3 +851,22 @@ def test_entity_endpoint_returns_source_backed_issue_story_units(client):
 
     assert client.get("/api/entities/and?user=ramsay").status_code == 404
     assert client.get("/api/entities/openai?user=../ramsay").status_code == 404
+
+
+def test_public_reports_drop_email_only_feedback_footer():
+    from dashboard.routes.api import _clean_report_markdown
+
+    text = (
+        "# Ramsay Research Agent — July 2, 2026\n\n"
+        "## Top 5 Stories Today\n\nStory body.\n\n"
+        "## How This Newsletter Learns From You\n\n"
+        "This newsletter has been shaped by **14 pieces of feedback** so far.\n\n"
+        "**Your current preferences** (from your feedback):\n\n"
+        "- More builder tools (weight: +3.0)\n\n"
+        "Reply to this email.\n"
+    )
+    cleaned = _clean_report_markdown(text)
+    assert "How This Newsletter Learns" not in cleaned
+    assert "preferences" not in cleaned
+    assert "Reply to this email" not in cleaned
+    assert "Story body." in cleaned

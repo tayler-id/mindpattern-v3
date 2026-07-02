@@ -192,9 +192,34 @@ def _is_bad_report_line(line: str) -> bool:
     return bool(_REPORT_BAD_LINE_RE.match(_strip_inline_markdown(line).strip()))
 
 
+_EMAIL_ONLY_SECTION_RE = re.compile(
+    r"^##\s+(how this newsletter learns from you|feedback)\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_email_only_sections(text: str) -> str:
+    """Remove email-only furniture (feedback footer with reader preference
+    weights) from the public web rendering. The emailed newsletter keeps it."""
+    lines = text.split("\n")
+    kept: list[str] = []
+    skipping = False
+    for line in lines:
+        stripped = line.strip()
+        if _EMAIL_ONLY_SECTION_RE.match(stripped):
+            skipping = True
+            continue
+        if skipping and stripped.startswith("## "):
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    return "\n".join(kept).strip()
+
+
 def _clean_report_markdown(text: str) -> str:
     """Drop assistant preamble before the canonical newsletter heading."""
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    normalized = _strip_email_only_sections(normalized)
     if not normalized:
         return ""
 
