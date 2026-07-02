@@ -30,7 +30,7 @@ def _valid_copy() -> dict:
         "title": "OpenAI puts agent runtime reliability on the buyer's scorecard",
         "dek": "Reliability is becoming the procurement metric for agent platforms.",
         "take": "The runtime is the new control plane, and everyone is racing to own it.",
-        "why_now": "OpenAI made reliability a buyer-visible benchmark this week.",
+        "why_now": "The July 1 source trail made reliability a buyer-visible benchmark.",
         "body_markdown": "OpenAI made agent runtime reliability a buyer-visible benchmark.\n\nThat changes procurement.",
     }
 
@@ -62,6 +62,16 @@ def test_parse_rejects_voice_violations():
     dashed = _valid_copy()
     dashed["take"] = "Runtime is the control plane \u2014 everyone wants it."
     assert parse_writer_output(json.dumps(dashed), allowed_urls=set()) is None
+
+
+def test_parse_rejects_shared_hard_fail_lint():
+    internal = _valid_copy()
+    internal["why_now"] = "The evidence pack makes the timing clear."
+    assert parse_writer_output(json.dumps(internal), allowed_urls=set()) is None
+
+    relative_time = _valid_copy()
+    relative_time["why_now"] = "OpenAI made reliability a buyer-visible benchmark this week."
+    assert parse_writer_output(json.dumps(relative_time), allowed_urls=set()) is None
 
 
 def test_parse_accepts_valid_json_and_strips_fences():

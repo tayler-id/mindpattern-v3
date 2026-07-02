@@ -9,7 +9,7 @@ def _story(**overrides):
         "title": "OpenAI agent runtime reliability becomes public infrastructure",
         "dek": "A source-backed public intelligence artifact.",
         "take": "Runtime reliability is moving into buyer-facing agent decisions.",
-        "why_now": "The July 1 graph pack connects source evidence, entities, and related findings.",
+        "why_now": "The July 1 source trail connects evidence, entities, and related findings.",
         "body_markdown": "OpenAI made runtime reliability a buyer-visible benchmark.",
         "source_refs": [
             {
@@ -104,3 +104,14 @@ def test_confidence_gate_rejects_raw_markdown_and_skeptic_kill_switch():
     assert result["publishable"] is False
     assert "raw_markdown_in_public_fields" in result["reasons"]
     assert "skeptic_kill_switch" in result["reasons"]
+
+
+def test_confidence_gate_rejects_hard_fail_copy_lint():
+    result = evaluate_site_story_confidence(
+        _story(
+            body_markdown="This robust public story should fail deterministic lint."
+        )
+    )
+
+    assert result["publishable"] is False
+    assert "copy_lint:banned_word" in result["reasons"]

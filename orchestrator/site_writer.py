@@ -21,49 +21,32 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
+from orchestrator.site_copy_lint import (
+    BANNED_WORDS,
+    COPY_FIELDS,
+    MAX_FIELD_CHARS,
+    copy_allowed_urls_from_refs,
+    first_voice_violation,
+    hard_fail_issues,
+    lint_site_copy,
+)
 
 PROJECT_ROOT = Path(__file__).parent.parent
 VOICE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
 SOUL_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "soul.md"
 WRITER_SYSTEM_PROMPT = PROJECT_ROOT / "agents" / "site-story-writer.md"
 
-# Mirror of the voice guide's banned list. Copy that slips one of these (or an
-# em dash) past the writer is rejected mechanically, not just by prompt.
-BANNED_WORDS = {
-    "delve", "tapestry", "multifaceted", "testament", "realm", "landscape",
-    "nuanced", "pivotal", "robust", "seamless", "comprehensive", "leverage",
-    "utilize", "foster", "embark", "illuminate", "elucidate", "meticulous",
-    "meticulously", "unwavering", "unprecedented", "transformative",
-    "groundbreaking", "cutting-edge", "revolutionary", "innovative",
-    "intricate", "profound", "vibrant", "whimsical", "quintessential",
-    "enigma", "labyrinth", "gossamer", "virtuoso", "beacon", "crucible",
-    "underscore", "spearheaded", "transcended", "reverberate", "symphony",
-}
-
-
 def violates_voice_guide(text: str) -> str | None:
     """Return the first mechanical voice violation in ``text``, else None."""
-    if "\u2014" in text or "—" in text:
-        return "em_dash"
-    lowered = text.lower()
-    for word in BANNED_WORDS:
-        if re.search(rf"\b{re.escape(word)}\b", lowered):
-            return f"banned_word:{word}"
-    return None
+    return first_voice_violation(text)
 
 SITE_WRITER_ENV = "MP_SITE_STORY_WRITER"
 SITE_WRITER_MODEL_ENV = "MP_SITE_STORY_WRITER_MODEL"
 DEFAULT_WRITER_MODEL = "claude-sonnet-5"
 DEFAULT_WRITER_TIMEOUT = 300
 
-_COPY_FIELDS = ("title", "dek", "take", "why_now", "body_markdown")
-_MAX_FIELD_CHARS = {
-    "title": 90,
-    "dek": 200,
-    "take": 400,
-    "why_now": 400,
-    "body_markdown": 6000,
-}
+_COPY_FIELDS = COPY_FIELDS
+_MAX_FIELD_CHARS = MAX_FIELD_CHARS
 
 
 class UsageLimitReached(RuntimeError):
@@ -213,7 +196,11 @@ def build_site_writer_prompt(
 Follow the output contract from your instructions. JSON only."""
 
 
-def parse_writer_output(stdout: str, *, allowed_urls: set[str]) -> dict[str, str] | None:
+def parse_writer_output(
+    stdout: str,
+    *,
+    allowed_urls: set[str],
+) -> dict[str, str] | None:
     """Parse and validate the writer's JSON copy. Returns None on any violation."""
     text = stdout.strip()
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -226,26 +213,11 @@ def parse_writer_output(stdout: str, *, allowed_urls: set[str]) -> dict[str, str
     if not isinstance(payload, dict):
         return None
 
-    copy: dict[str, str] = {}
-    for field in _COPY_FIELDS:
-        value = payload.get(field)
-        if not isinstance(value, str) or not value.strip():
-            return None
-        value = value.strip()
-        if len(value) > _MAX_FIELD_CHARS[field]:
-            return None
-        copy[field] = value
-
-    # Invented URLs are fabricated evidence: reject the whole copy.
-    for url in re.findall(r"https?://[^\s)\"']+", " ".join(copy.values())):
-        if url.rstrip(".,;") not in allowed_urls:
-            return None
-
-    # Voice violations (em dashes, banned words) fail closed too.
-    if violates_voice_guide(" ".join(copy.values())):
+    issues = lint_site_copy(payload, allowed_urls=allowed_urls, include_revise=False)
+    if hard_fail_issues(issues):
         return None
 
-    return copy
+    return {field: str(payload[field]).strip() for field in _COPY_FIELDS}
 
 
 def diagnose_writer_output(stdout: str, *, allowed_urls: set[str]) -> str:
@@ -259,19 +231,12 @@ def diagnose_writer_output(stdout: str, *, allowed_urls: set[str]) -> str:
         return "bad_json"
     if not isinstance(payload, dict):
         return "not_object"
-    for field in _COPY_FIELDS:
-        value = payload.get(field)
-        if not isinstance(value, str) or not value.strip():
-            return f"missing:{field}"
-        if len(value.strip()) > _MAX_FIELD_CHARS[field]:
-            return f"too_long:{field}:{len(value.strip())}"
-    joined = " ".join(str(payload.get(f, "")) for f in _COPY_FIELDS)
-    for url in re.findall(r"https?://[^\s)\"']+", joined):
-        if url.rstrip(".,;") not in allowed_urls:
-            return f"invented_url:{url[:60]}"
-    violation = violates_voice_guide(joined)
-    if violation:
-        return f"voice:{violation}"
+    issues = hard_fail_issues(
+        lint_site_copy(payload, allowed_urls=allowed_urls, include_revise=False)
+    )
+    if issues:
+        issue = issues[0]
+        return f"{issue.code}:{issue.field}:{issue.excerpt}" if issue.excerpt else f"{issue.code}:{issue.field}"
     return "unknown"
 
 
@@ -323,11 +288,7 @@ def write_story_copy_with_agent(
         )
     if process is None or getattr(process, "returncode", 1) != 0 or getattr(process, "timed_out", False):
         return None
-    allowed_urls = {
-        str(ref.get("url", "")).rstrip(".,;")
-        for ref in graph_pack.get("source_refs") or []
-        if ref.get("url")
-    }
+    allowed_urls = copy_allowed_urls_from_refs(graph_pack.get("source_refs"))
     copy = parse_writer_output(process.stdout or "", allowed_urls=allowed_urls)
     if copy is None:
         logger.warning(

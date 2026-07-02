@@ -5,8 +5,8 @@ NN/g eyetracking research, readability science (American Press Institute,
 Flesch), GOV.UK content design, AP/Reuters lede and attribution discipline,
 Axios Smart Brevity, the Economist style guide, Bloomberg's nut-graf practice,
 and the craft of Stratechery, Money Stuff, and The Information. The voice guide
-(voice.md) governs tone; this governs structure and craft. Sources and research
-notes live in `docs/handoff/2026-07-02-writing-research.md`.
+(voice.md) governs tone; this governs structure and craft. Research notes live
+in `docs/research/2026-07-02-ai-writing-tells-and-human-web-copy.md`.
 
 ## The structure (200-350 words total)
 
