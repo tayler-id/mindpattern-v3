@@ -76,7 +76,7 @@ def test_site_issue_backfill_writes_idempotent_audit_and_structured_issues(tmp_p
     assert audit_path.exists()
 
     issue = json.loads(issue_path.read_text())
-    assert issue["story_units"][0]["title"] == "1. OpenAI ships agent controls."
+    assert issue["story_units"][0]["title"] == "OpenAI ships agent controls."
     assert issue["story_units"][0]["source_refs"][0]["domain"] == "openai.com"
     assert all(story["finding_ids"] == [] for story in issue["story_units"])
     assert issue["provenance"]["source_finding_ids"] == []
@@ -146,14 +146,14 @@ def test_historical_seed_generation_uses_backfill_audit_and_publishes_only_high_
     published = next(decision for decision in result["decisions"] if decision["action"] == "published")
     degraded = next(decision for decision in result["decisions"] if decision["action"] == "degraded")
     assert published["story_artifact"].endswith(
-        "/site-stories/2026-06-17/2026-06-17-1-openai-ships-agent-controls.json"
+        "/site-stories/2026-06-17/2026-06-17-openai-ships-agent-controls.json"
     )
     assert "missing_source_evidence" in degraded["reasons"]
 
     story_path = site_artifact_path(
         kind="site_story",
         date="2026-06-17",
-        slug="2026-06-17-1-openai-ships-agent-controls",
+        slug="2026-06-17-openai-ships-agent-controls",
         user="ramsay",
         reports_root=reports_root,
     )

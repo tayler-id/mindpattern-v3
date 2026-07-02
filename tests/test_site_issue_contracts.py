@@ -104,9 +104,9 @@ def test_structured_issue_promotes_container_section_bold_leads_to_story_titles(
     )
 
     story = issue["story_units"][0]
-    assert story["title"] == "1. Loop engineering gets a name."
-    assert story["slug"] == "1-loop-engineering-gets-a-name"
-    assert story["id"] == "2026-06-17-1-loop-engineering-gets-a-name"
+    assert story["title"] == "Loop engineering gets a name."
+    assert story["slug"] == "loop-engineering-gets-a-name"
+    assert story["id"] == "2026-06-17-loop-engineering-gets-a-name"
     assert story["summary"].startswith("Addy Osmani wrote")
     assert "Top 5 Stories Today" not in story["title"]
 

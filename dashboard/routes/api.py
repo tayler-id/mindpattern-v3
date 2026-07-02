@@ -29,6 +29,8 @@ from orchestrator.site_content import (
     site_artifact_path,
 )
 from orchestrator.site_content import _TOPIC_STOPWORDS as _PUBLIC_TOPIC_STOPWORDS
+from orchestrator.site_content import soften_em_dashes
+from orchestrator.site_content import _ENTITY_STOPWORDS as _EXTRACTOR_ENTITY_STOPWORDS
 from orchestrator.site_graph import CorpusGraphReadModel
 from orchestrator.story_related import related_paths_for_story
 from memory.embeddings import deserialize_f32 as _deserialize_f32
@@ -112,7 +114,7 @@ _PUBLIC_ENTITY_STOPWORDS = {
     "what",
     "why",
     "with",
-}
+} | {word.lower() for word in _EXTRACTOR_ENTITY_STOPWORDS}
 
 
 def _valid_date(s: Optional[str]) -> Optional[str]:
@@ -438,8 +440,8 @@ def _public_finding(row: sqlite3.Row | dict, *, kind: str = "finding") -> dict:
         "id": int(item.get("id") or 0),
         "run_date": _valid_date(item.get("run_date")) or "",
         "agent": item.get("agent") or "",
-        "title": item.get("title") or "",
-        "summary": item.get("summary") or "",
+        "title": soften_em_dashes(item.get("title") or ""),
+        "summary": soften_em_dashes(item.get("summary") or ""),
         "importance": item.get("importance") or "",
         "category": item.get("category") or "",
         "source_url": item.get("source_url") or "",

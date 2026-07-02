@@ -66,11 +66,34 @@ _GENERIC_SECTION_TITLES = _SECTION_CONTAINER_TITLES | {
     "saas disruption",
     "security",
     "skills of the day",
+    "source index",
+    "sources",
+    "quick links",
+    "closing",
+    "opening",
     "tools & developer experience",
     "tools and developer experience",
     "vibe coding",
 }
-_ENTITY_STOPWORDS = {
+_NUMBER_WORDS = {
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "first", "second", "third", "fourth", "fifth",
+}
+
+_ENTITY_STOPWORDS = _NUMBER_WORDS | {
+    "across",
+    "actual",
+    "address",
+    "agents",
+    "anything",
+    "available",
+    "cheap",
+    "coming",
+    "everything",
+    "global",
+    "introducing",
+    "nothing",
+    "something",
     "a",
     "about",
     "add",
@@ -237,6 +260,10 @@ _GENERIC_TOPIC_WORDS = {
 }
 
 _TOPIC_STOPWORDS = _ENTITY_STOPWORDS | _GENERIC_TOPIC_WORDS | {
+    "adds",
+    "arxiv",
+    "building",
+    "github",
     "briefing",
     "canonical",
     "cited",
@@ -305,6 +332,16 @@ _SITE_ARTIFACT_LAYOUTS = {
     "source_dossier": ("site-dossiers/sources", "slug"),
     "site_collection": ("site-collections", "date_slug"),
 }
+
+
+def soften_em_dashes(text: str) -> str:
+    """Replace em dashes with commas for public display (voice guide).
+
+    Research agents write findings with em dashes; the voice guide bans them
+    in anything reader-facing. Applied at the public read layer only, so the
+    stored corpus and the canonical newsletter stay untouched.
+    """
+    return re.sub(r"\s*\u2014+\s*", ", ", str(text or "")).strip()
 
 
 def normalize_slug(value: str, *, max_length: int = 96) -> str:
@@ -554,6 +591,7 @@ def _is_generic_section_title(title: str) -> bool:
 def _clean_story_title(title: str) -> str:
     title = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", title)
     title = re.sub(r"\s+", " ", title).strip()
+    title = re.sub(r"^\d+[.)]\s+", "", title)
     return title.strip("*_ ")
 
 
@@ -731,6 +769,12 @@ def build_public_story(*, issue: dict[str, Any], story_unit: dict[str, Any]) -> 
     """
     source_refs = story_unit.get("source_refs") or []
     if not source_refs:
+        return None
+    title = str(story_unit.get("title") or "")
+    # Section headings ("Security", "Research", "Tools & Developer Experience")
+    # are containers, not stories. They stay inside the briefing page and never
+    # get an /s page or show up as related-path candidates.
+    if _is_generic_section_title(title) or len(title.strip()) < 8:
         return None
 
     issue_date = validate_run_date(str(story_unit["issue_date"]))
