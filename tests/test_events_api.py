@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from dashboard.app import app
 from memory.events_db import open_events_db
 
+client_module = TestClient(app)
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -113,3 +115,49 @@ def test_trending_reorders_on_events_and_corpus(client, monkeypatch):
     assert order[2] == "quiet-story"
     assert payload["items"][0]["trend"] in {"up", "flat"}
     assert all("trending_score" in item for item in payload["items"])
+
+
+def test_events_survive_daily_sync_bundle(tmp_path, monkeypatch):
+    """Spec criterion 6: the sync bundle never contains or overwrites
+    site_events.db - events recorded before a sync are intact after."""
+    import hashlib
+    import io
+    import tarfile
+
+    from dashboard.routes import sync_upload
+    from memory.events_db import open_events_db, record_event
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.setenv("MP_EVENTS_DB", str(data_dir / "site_events.db"))
+    monkeypatch.setattr(sync_upload, "_data_root", lambda: data_dir)
+    monkeypatch.setattr(sync_upload, "_secret_ok", lambda provided: True)
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_pipeline_secret_valid", lambda provided: True)
+
+    conn = open_events_db()
+    assert record_event(conn, {"type": "story_view", "target": "pre-sync-story"})
+    conn.close()
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        payload = tmp_path / "memory.db"
+        payload.write_bytes(b"fresh daily database")
+        tar.add(payload, arcname="ramsay/memory.db")
+    body = buffer.getvalue()
+
+    response = client_module.post(
+        "/api/sync/bundle?user=ramsay",
+        content=body,
+        headers={
+            "X-Pipeline-Secret": "anything",
+            "X-Bundle-Sha256": hashlib.sha256(body).hexdigest(),
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    assert (data_dir / "ramsay" / "memory.db").read_bytes() == b"fresh daily database"
+    conn = open_events_db()
+    row = conn.execute("SELECT target FROM events").fetchone()
+    assert row["target"] == "pre-sync-story"
+    conn.close()
