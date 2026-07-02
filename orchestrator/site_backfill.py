@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -129,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--user", default="ramsay")
     parser.add_argument("--since", default=None, help="Only stories from this date on (YYYY-MM-DD)")
     parser.add_argument("--limit", type=int, default=25, help="Max stories this run")
+    parser.add_argument("--workers", type=int, default=4, help="Parallel writer pipelines")
     parser.add_argument("--dry-run", action="store_true", help="List targets, write nothing")
     parser.add_argument("--reports-root", default=str(DEFAULT_REPORTS_ROOT))
     args = parser.parse_args(argv)
@@ -142,10 +144,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     outcomes: dict[str, int] = {}
-    for index, story in enumerate(targets, 1):
-        outcome = backfill_story(story, user=args.user, reports_root=reports_root)
-        outcomes[outcome.split(":")[0]] = outcomes.get(outcome.split(":")[0], 0) + 1
-        print(f"[{index}/{len(targets)}] {outcome}  {story.get('slug')}", flush=True)
+    workers = max(1, args.workers)
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(backfill_story, story, user=args.user, reports_root=reports_root): story
+            for story in targets
+        }
+        for future in as_completed(futures):
+            story = futures[future]
+            try:
+                outcome = future.result()
+            except Exception as exc:
+                outcome = f"failed:exception:{type(exc).__name__}"
+            done += 1
+            outcomes[outcome.split(":")[0]] = outcomes.get(outcome.split(":")[0], 0) + 1
+            print(f"[{done}/{len(targets)}] {outcome}  {story.get('slug')}", flush=True)
 
     print(json.dumps(outcomes))
     return 0 if outcomes.get("failed", 0) == 0 else 1
