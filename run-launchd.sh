@@ -80,7 +80,12 @@ fi
 caffeinate -i -s -w "$$" &
 CAFF_PID=$!
 
-/Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3 run.py "$@"
+RUN_ARGS=()
+if [ "${MP_LAUNCHD_SKIP_SOCIAL:-1}" = "1" ]; then
+    RUN_ARGS+=(--skip-social)
+fi
+
+/Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3 run.py "${RUN_ARGS[@]}" "$@"
 EXIT_CODE=$?
 
 # NOTE: the ran-marker is NOT touched here. The deliver phase writes

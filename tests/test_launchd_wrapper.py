@@ -13,3 +13,12 @@ def test_launchd_skip_requires_delivery_and_sync_markers():
     assert 'SYNC_MARKER="${MARKER_DIR}/mindpattern-synced-${TODAY}"' in source
     assert 'if [ -f "$MARKER" ] && [ -f "$SYNC_MARKER" ]; then' in source
     assert 'Delivery marker exists but sync marker is missing' in source
+
+
+def test_launchd_defaults_to_skip_social():
+    """Scheduled runs should not block on social approval gates by default."""
+    source = (PROJECT_ROOT / "run-launchd.sh").read_text()
+
+    assert 'MP_LAUNCHD_SKIP_SOCIAL:-1' in source
+    assert 'RUN_ARGS+=(--skip-social)' in source
+    assert 'run.py "${RUN_ARGS[@]}" "$@"' in source
