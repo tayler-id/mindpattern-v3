@@ -19,13 +19,20 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
+from orchestrator.site_copy_lint import (
+    CopyLintIssue,
+    copy_allowed_urls_from_refs,
+    format_lint_issues_for_prompt,
+    hard_fail_issues,
+    lint_site_copy,
+    revise_issues,
+)
 from orchestrator.site_writer import (
     DEFAULT_WRITER_TIMEOUT,
     PROJECT_ROOT,
     build_site_writer_prompt,
     evidence_block_for_pack,
     parse_writer_output,
-    violates_voice_guide,
     write_story_copy_with_agent,
 )
 
@@ -51,9 +58,16 @@ def load_rules_spec() -> str:
         return ""
 
 
-def build_critic_prompt(copy: dict[str, str], graph_pack: dict[str, Any], *, rules_text: str) -> str:
+def build_critic_prompt(
+    copy: dict[str, str],
+    graph_pack: dict[str, Any],
+    *,
+    rules_text: str,
+    lint_issues: list[CopyLintIssue] | None = None,
+) -> str:
     evidence = evidence_block_for_pack(graph_pack)
     draft = json.dumps(copy, indent=2)
+    lint_block = format_lint_issues_for_prompt(lint_issues or [])
     return f"""Judge this Rabbit Hole story draft against the writer's rules.
 
 ## Writer's Rules
@@ -64,6 +78,13 @@ def build_critic_prompt(copy: dict[str, str], graph_pack: dict[str, Any], *, rul
 
 ## Draft
 {draft}
+
+## Deterministic Copy Lint
+These are provider-neutral lint findings from the shared CI gate. Fail-severity
+issues are not publishable. Revise-severity issues are editor notes; judge
+whether the draft fixes them or needs one rewrite.
+
+{lint_block}
 
 Respond with ONLY a JSON object:
 {{"score": 0-10, "verdict": "pass" | "revise", "issues": ["specific, fixable note", ...]}}
@@ -100,11 +121,17 @@ def run_critic(
     graph_pack: dict[str, Any],
     *,
     rules_text: str | None = None,
+    lint_issues: list[CopyLintIssue] | None = None,
     timeout: int = DEFAULT_WRITER_TIMEOUT,
     runner: Callable[..., Any] = run_claude_process,
 ) -> dict[str, Any] | None:
     """One critic pass. Returns verdict dict or None on any failure."""
-    prompt = build_critic_prompt(copy, graph_pack, rules_text=rules_text or load_rules_spec())
+    prompt = build_critic_prompt(
+        copy,
+        graph_pack,
+        rules_text=rules_text or load_rules_spec(),
+        lint_issues=lint_issues,
+    )
     cmd = [
         "claude",
         "-p",
@@ -135,14 +162,19 @@ def build_revision_prompt(
     issues: list[str],
     *,
     voice_text: str,
+    lint_issues: list[CopyLintIssue] | None = None,
 ) -> str:
     base = build_site_writer_prompt(graph_pack, [], voice_text=voice_text)
     notes = "\n".join(f"- {issue}" for issue in issues[:8])
+    lint_notes = format_lint_issues_for_prompt(lint_issues or [])
     draft = json.dumps(copy, indent=2)
     return f"""{base}
 
 ## Your previous draft
 {draft}
+
+## Deterministic Copy Lint
+{lint_notes}
 
 ## Editor's notes (fix every one)
 {notes}
@@ -178,7 +210,19 @@ def write_story_with_review(
         return draft
 
     candidate_id = graph_pack.get("candidate_id", "story")
-    verdict = run_critic(draft, graph_pack, rules_text=rules, timeout=timeout, runner=runner)
+    allowed_urls = copy_allowed_urls_from_refs(graph_pack.get("source_refs"))
+    draft_lint = lint_site_copy(draft, allowed_urls=allowed_urls)
+    if hard_fail_issues(draft_lint):
+        return None
+    draft_revise_lint = revise_issues(draft_lint)
+    verdict = run_critic(
+        draft,
+        graph_pack,
+        rules_text=rules,
+        lint_issues=draft_revise_lint,
+        timeout=timeout,
+        runner=runner,
+    )
     if verdict is None:
         # Critic unavailable: the mechanically validated draft is still better
         # than template copy, so publish it rather than fail the whole story.
@@ -198,7 +242,13 @@ def write_story_with_review(
     from orchestrator.site_writer import writer_command
 
     draft_is_usable = verdict["score"] >= 5
-    prompt = build_revision_prompt(graph_pack, draft, verdict["issues"], voice_text=voice_text)
+    prompt = build_revision_prompt(
+        graph_pack,
+        draft,
+        verdict["issues"],
+        voice_text=voice_text,
+        lint_issues=draft_revise_lint,
+    )
     cmd, stdin_text = writer_command(prompt)
     candidate = graph_pack.get("candidate_id", "story")
     try:
@@ -217,17 +267,24 @@ def write_story_with_review(
             getattr(process, "stderr", ""),
         )
         return draft if draft_is_usable else None
-    allowed_urls = {
-        str(ref.get("url", "")).rstrip(".,;")
-        for ref in graph_pack.get("source_refs") or []
-        if ref.get("url")
-    }
     revised = parse_writer_output(process.stdout or "", allowed_urls=allowed_urls)
     if revised is None:
         logger.warning("site_critic %s: revision output rejected", candidate)
         return draft if draft_is_usable else None
 
-    final_verdict = run_critic(revised, graph_pack, rules_text=rules, timeout=timeout, runner=runner)
+    revised_lint = lint_site_copy(revised, allowed_urls=allowed_urls)
+    if hard_fail_issues(revised_lint):
+        logger.warning("site_critic %s: revision failed hard copy lint", candidate)
+        return draft if draft_is_usable else None
+
+    final_verdict = run_critic(
+        revised,
+        graph_pack,
+        rules_text=rules,
+        lint_issues=revise_issues(revised_lint),
+        timeout=timeout,
+        runner=runner,
+    )
     if final_verdict is None or final_verdict["verdict"] == "pass":
         return revised
     logger.warning(

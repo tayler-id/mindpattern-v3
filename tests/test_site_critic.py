@@ -35,7 +35,7 @@ def _copy(take="Runtime reliability is the new buying criteria, and OpenAI knows
         "title": "OpenAI puts agent runtime reliability on the buyer's scorecard",
         "dek": "Reliability is becoming the procurement metric for agent platforms.",
         "take": take,
-        "why_now": "OpenAI made reliability a buyer-visible benchmark this week.",
+        "why_now": "The July 1 source trail made reliability a buyer-visible benchmark.",
         "body_markdown": "OpenAI made agent runtime reliability a buyer-visible benchmark.\n\nThat changes procurement.",
     }
 
@@ -54,6 +54,36 @@ def test_critic_prompt_contains_rules_and_draft():
     assert "RULE: front-load the point." in prompt
     assert "buyer's scorecard" in prompt
     assert "automatic 0" in prompt
+    assert "Deterministic Copy Lint" in prompt
+
+
+def test_critic_prompt_includes_revise_lint_evidence():
+    prompt = build_critic_prompt(
+        _copy(),
+        _graph_pack(),
+        rules_text="rules",
+        lint_issues=[],
+    )
+    assert "[]" in prompt
+
+    from orchestrator.site_copy_lint import CopyLintIssue
+
+    prompt = build_critic_prompt(
+        _copy(),
+        _graph_pack(),
+        rules_text="rules",
+        lint_issues=[
+            CopyLintIssue(
+                code="body_word_count",
+                severity="revise",
+                field="body_markdown",
+                excerpt="short body",
+                message="Body is too short.",
+            )
+        ],
+    )
+    assert "body_word_count" in prompt
+    assert "short body" in prompt
 
 
 def test_review_passes_clean_draft_through():
@@ -89,6 +119,7 @@ def test_review_revises_once_on_critic_notes():
             return FakeProcess(stdout=json.dumps(_copy()))
         assert "Editor's notes" in prompt
         assert "take is soft" in prompt
+        assert "Deterministic Copy Lint" in prompt
         return FakeProcess(stdout=json.dumps(revised))
 
     result = write_story_with_review(
@@ -97,6 +128,30 @@ def test_review_revises_once_on_critic_notes():
     assert result == revised
     assert state["writer_calls"] == 2
     assert state["critic_calls"] == 2
+
+
+def test_review_rejects_hard_fail_revision_output():
+    bad_revision = _copy()
+    bad_revision["body_markdown"] = "This robust revision should fail the shared lint."
+    state = {"writer_calls": 0, "critic_calls": 0}
+
+    def runner(cmd, **kwargs):
+        prompt = cmd[2]
+        if "Judge this Rabbit Hole story draft" in prompt:
+            state["critic_calls"] += 1
+            if state["critic_calls"] == 1:
+                return FakeProcess(stdout='{"score": 4, "verdict": "revise", "issues": ["weak"]}')
+            return FakeProcess(stdout='{"score": 9, "verdict": "pass", "issues": []}')
+        state["writer_calls"] += 1
+        if state["writer_calls"] == 1:
+            return FakeProcess(stdout=json.dumps(_copy()))
+        return FakeProcess(stdout=json.dumps(bad_revision))
+
+    result = write_story_with_review(
+        _graph_pack(), [], voice_text="v", rules_text="rules", runner=runner
+    )
+    assert result is None
+    assert state["critic_calls"] == 1
 
 
 def test_review_fails_closed_on_fabrication_score_zero():

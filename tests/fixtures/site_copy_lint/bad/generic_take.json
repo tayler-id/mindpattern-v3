@@ -1,0 +1,14 @@
+{
+  "expected_code": "generic_take",
+  "expected_severity": "revise",
+  "allowed_urls": [
+    "https://openai.com/news/agents"
+  ],
+  "copy": {
+    "title": "OpenAI puts agent reliability on buyer scorecards",
+    "dek": "Reliability moves from demo polish to procurement proof.",
+    "take": "Teams need to pay attention because this matters.",
+    "why_now": "The July 2 source trail ties OpenAI's reliability note to agent platform buying criteria.",
+    "body_markdown": "OpenAI made runtime reliability visible to buyers in its agent platform notes, per OpenAI.\n\nThat sounds small. It isn't. Agent teams already sell demos that work once, then struggle when the same flow hits messy customer data. Reliability moves the argument from capability to repeatability.\n\nThe procurement angle matters because a failed agent is not a failed chatbot. It can move money, change records, or block a team in the middle of work. A buyer can forgive a weak answer. They can't forgive silent drift inside a workflow.\n\nThe sharper read is that runtime reliability becomes the control plane fight. Model quality still matters, but buyers will score recovery, observability, and permissions before they trust autonomy.\n\nA related archive story points to government-gated frontier access. That makes the same point from another direction: access is becoming operational, not only technical. Watch the vendors that expose failure modes before a sales engineer has to explain them."
+  }
+}

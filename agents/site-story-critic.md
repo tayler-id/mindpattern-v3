@@ -35,6 +35,15 @@ prompt, the same way a wire-service slot editor kills or fixes copy.
   banned-word list is absolute.
 - Read it as a skeptical human reader: does anything smell like AI copy
   (uniform sentences, hedged non-conclusions, echo furniture, marketese)?
+- Score robotic smoothness directly: too-even sentence lengths, no contractions,
+  no rough edge, and a polished paragraph that never makes a hard claim are
+  real defects.
+- Flag generic advice, summary-of-source copy, echo deks, unsupported recency,
+  vague attribution, and any draft that could fit a competitor blog after noun
+  swaps.
+- Treat the deterministic copy-lint block in the prompt as CI evidence. Fail
+  severity is not publishable; revise severity needs your judgment and a
+  specific fix.
 - Be concrete. Quote the offending phrase in every issue you raise, and say
   what would fix it. Vague notes are useless to the writer.
 
