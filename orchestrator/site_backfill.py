@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -134,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="List targets, write nothing")
     parser.add_argument("--reports-root", default=str(DEFAULT_REPORTS_ROOT))
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
     reports_root = Path(args.reports_root)
     targets = backfill_targets(user=args.user, since=args.since, limit=args.limit)

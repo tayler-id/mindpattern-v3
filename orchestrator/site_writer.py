@@ -12,10 +12,13 @@ newsletter pipeline is never touched.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
 
@@ -169,6 +172,33 @@ def parse_writer_output(stdout: str, *, allowed_urls: set[str]) -> dict[str, str
     return copy
 
 
+def diagnose_writer_output(stdout: str, *, allowed_urls: set[str]) -> str:
+    text = stdout.strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match is None:
+        return "no_json"
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return "bad_json"
+    if not isinstance(payload, dict):
+        return "not_object"
+    for field in _COPY_FIELDS:
+        value = payload.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return f"missing:{field}"
+        if len(value.strip()) > _MAX_FIELD_CHARS[field]:
+            return f"too_long:{field}:{len(value.strip())}"
+    joined = " ".join(str(payload.get(f, "")) for f in _COPY_FIELDS)
+    for url in re.findall(r"https?://[^\s)\"']+", joined):
+        if url.rstrip(".,;") not in allowed_urls:
+            return f"invented_url:{url[:60]}"
+    violation = violates_voice_guide(joined)
+    if violation:
+        return f"voice:{violation}"
+    return "unknown"
+
+
 def write_story_copy_with_agent(
     graph_pack: dict[str, Any],
     expert_results: list[dict[str, Any]],
@@ -192,7 +222,7 @@ def write_story_copy_with_agent(
         "--model",
         model or os.environ.get(SITE_WRITER_MODEL_ENV, DEFAULT_WRITER_MODEL),
         "--max-turns",
-        "1",
+        "8",
         "--output-format",
         "text",
         "--append-system-prompt-file",
@@ -200,18 +230,41 @@ def write_story_copy_with_agent(
         "--disallowedTools",
         "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
     ]
-    try:
-        process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
-    except Exception:
-        return None
-    if getattr(process, "returncode", 1) != 0 or getattr(process, "timed_out", False):
+    candidate = graph_pack.get("candidate_id", "story")
+    process = None
+    for attempt in (1, 2):
+        try:
+            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+        except Exception as exc:
+            logger.warning("site_writer %s: process exception %s", candidate, exc)
+            return None
+        if getattr(process, "returncode", 1) == 0 and not getattr(process, "timed_out", False):
+            break
+        logger.warning(
+            "site_writer %s attempt %d: exit=%s timed_out=%s stderr=%.300s stdout=%.200s",
+            candidate,
+            attempt,
+            getattr(process, "returncode", None),
+            getattr(process, "timed_out", None),
+            getattr(process, "stderr", ""),
+            getattr(process, "stdout", ""),
+        )
+    if process is None or getattr(process, "returncode", 1) != 0 or getattr(process, "timed_out", False):
         return None
     allowed_urls = {
         str(ref.get("url", "")).rstrip(".,;")
         for ref in graph_pack.get("source_refs") or []
         if ref.get("url")
     }
-    return parse_writer_output(process.stdout or "", allowed_urls=allowed_urls)
+    copy = parse_writer_output(process.stdout or "", allowed_urls=allowed_urls)
+    if copy is None:
+        logger.warning(
+            "site_writer %s: output rejected (%s) stdout=%.300s",
+            candidate,
+            diagnose_writer_output(process.stdout or "", allowed_urls=allowed_urls),
+            (process.stdout or "").strip()[:300],
+        )
+    return copy
 
 
 def apply_story_copy(story: dict[str, Any], copy: dict[str, str]) -> dict[str, Any]:

@@ -10,10 +10,13 @@ subscription boundary as the newsletter; fails closed everywhere.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
 from orchestrator.site_writer import (
@@ -115,7 +118,7 @@ def run_critic(
         "--model",
         os.environ.get(SITE_CRITIC_MODEL_ENV, DEFAULT_CRITIC_MODEL),
         "--max-turns",
-        "1",
+        "8",
         "--output-format",
         "text",
         "--append-system-prompt-file",
@@ -180,16 +183,25 @@ def write_story_with_review(
     if not critic_enabled():
         return draft
 
+    candidate_id = graph_pack.get("candidate_id", "story")
     verdict = run_critic(draft, graph_pack, rules_text=rules, timeout=timeout, runner=runner)
     if verdict is None:
         # Critic unavailable: the mechanically validated draft is still better
         # than template copy, so publish it rather than fail the whole story.
+        logger.warning("site_critic %s: critic unavailable, publishing draft", candidate_id)
         return draft
     if verdict["verdict"] == "pass":
         return draft
-    if verdict["score"] <= 0:
-        return None
-
+    logger.warning(
+        "site_critic %s: score=%s issues=%s",
+        candidate_id,
+        verdict["score"],
+        "; ".join(verdict["issues"][:4])[:400],
+    )
+    # Fabrication (score 0) goes back to the writer with the critic's notes,
+    # like any desk: the editor names the unsupported claim, the writer cuts
+    # it. The fabricating draft itself is never a publishable fallback.
+    draft_is_usable = verdict["score"] >= 5
     prompt = build_revision_prompt(graph_pack, draft, verdict["issues"], voice_text=voice_text)
     cmd = [
         "claude",
@@ -198,7 +210,7 @@ def write_story_with_review(
         "--model",
         os.environ.get("MP_SITE_STORY_WRITER_MODEL", "claude-sonnet-5"),
         "--max-turns",
-        "1",
+        "8",
         "--output-format",
         "text",
         "--append-system-prompt-file",
@@ -206,12 +218,20 @@ def write_story_with_review(
         "--disallowedTools",
         "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
     ]
+    candidate = graph_pack.get("candidate_id", "story")
     try:
         process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
-    except Exception:
-        return None
+    except Exception as exc:
+        logger.warning("site_critic %s: revision exception %s", candidate, exc)
+        return draft if draft_is_usable else None
     if getattr(process, "returncode", 1) != 0 or getattr(process, "timed_out", False):
-        return None
+        logger.warning(
+            "site_critic %s: revision exit=%s stderr=%.200s",
+            candidate,
+            getattr(process, "returncode", None),
+            getattr(process, "stderr", ""),
+        )
+        return draft if draft_is_usable else None
     allowed_urls = {
         str(ref.get("url", "")).rstrip(".,;")
         for ref in graph_pack.get("source_refs") or []
@@ -219,14 +239,23 @@ def write_story_with_review(
     }
     revised = parse_writer_output(process.stdout or "", allowed_urls=allowed_urls)
     if revised is None:
-        return None
+        logger.warning("site_critic %s: revision output rejected", candidate)
+        return draft if draft_is_usable else None
 
     final_verdict = run_critic(revised, graph_pack, rules_text=rules, timeout=timeout, runner=runner)
     if final_verdict is None or final_verdict["verdict"] == "pass":
         return revised
-    # Still failing after one revision: fall back to the mechanically clean
-    # first draft only if the critic scored it above zero, else fail closed.
-    return draft if verdict["score"] >= 5 else None
+    logger.warning(
+        "site_critic %s: post-revision score=%s issues=%s",
+        candidate,
+        final_verdict["score"],
+        "; ".join(final_verdict["issues"][:3])[:300],
+    )
+    # Still failing after one revision: keep the better-scored version if
+    # either is usable, else fail closed to deterministic copy.
+    if final_verdict["score"] >= 5 or draft_is_usable:
+        return revised if final_verdict["score"] >= verdict["score"] else draft
+    return None
 
 
 def reviewed_copywriter_from_env() -> Callable[[dict, list], dict | None] | None:
