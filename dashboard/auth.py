@@ -45,6 +45,9 @@ PUBLIC_PREFIXES = [
     "/api/site",
     "/api/entities",
     "/api/dossiers",
+    "/api/event",
+    "/api/trending",
+    "/api/popular",
     "/api/findings",
     "/api/stats",
     "/api/patterns",
@@ -89,6 +92,10 @@ async def enforce_auth(request: Request, call_next):
         return await call_next(request)
 
     if is_public_route(request.url.path) and request.method in ("GET", "HEAD"):
+        return await call_next(request)
+
+    # The single public write: anonymous, validated, size-capped event beacon.
+    if request.url.path == "/api/event" and request.method == "POST":
         return await call_next(request)
 
     if request.url.path.startswith(("/api/approvals", "/api/sync/bundle")) and _pipeline_secret_valid(

@@ -1,0 +1,115 @@
+"""First-party event ingestion + trending/popular endpoints."""
+
+import json
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+from dashboard.app import app
+from memory.events_db import open_events_db
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("MP_EVENTS_DB", str(tmp_path / "site_events.db"))
+    return TestClient(app), tmp_path / "site_events.db"
+
+
+def test_event_post_is_public_and_stores_allowlisted(client):
+    http, db_path = client
+    response = http.post("/api/event", json={
+        "type": "story_view", "target": "2026-07-02-some-story",
+        "path": "/s/2026-07-02-some-story", "anon_id": "abc12345",
+    })
+    assert response.status_code == 202
+    assert response.json()["status"] == "ok"
+
+    conn = open_events_db(db_path)
+    row = conn.execute("SELECT * FROM events").fetchone()
+    assert row["type"] == "story_view"
+    assert row["target"] == "2026-07-02-some-story"
+    assert row["anon_id"] == "abc12345"
+
+
+def test_stored_rows_contain_no_pii_columns(client):
+    http, db_path = client
+    http.post("/api/event", json={"type": "story_view", "target": "x"},
+              headers={"User-Agent": "SecretBrowser/1.0", "X-Forwarded-For": "1.2.3.4"})
+    conn = open_events_db(db_path)
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
+    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value"}
+    row = dict(conn.execute("SELECT * FROM events").fetchone())
+    serialized = json.dumps(row)
+    assert "1.2.3.4" not in serialized
+    assert "SecretBrowser" not in serialized
+
+
+def test_junk_events_ignored_not_errored(client):
+    http, db_path = client
+    assert http.post("/api/event", json={"type": "evil_event"}).json()["status"] == "ignored"
+    assert http.post("/api/event", content=b"x" * 2000).json()["status"] == "ignored"
+    assert http.post("/api/event", content=b"not json").json()["status"] == "ignored"
+    conn = open_events_db(db_path)
+    assert conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"] == 0
+
+
+def test_query_strings_stripped_from_paths(client):
+    http, db_path = client
+    http.post("/api/event", json={
+        "type": "story_view", "target": "s", "path": "/s/x?email=me@example.com",
+    })
+    conn = open_events_db(db_path)
+    assert conn.execute("SELECT path FROM events").fetchone()["path"] == "/s/x"
+
+
+def test_popular_counts_views_and_unique_readers(client, monkeypatch, tmp_path):
+    http, db_path = client
+    for anon in ("reader-one", "reader-two", "reader-one"):
+        http.post("/api/event", json={
+            "type": "story_view", "target": "2026-07-02-hot-story", "anon_id": anon,
+        })
+    from dashboard.routes import api as api_routes
+
+    async def fake_stories(user):
+        return [{"slug": "2026-07-02-hot-story", "title": "Hot",
+                 "issue_date": "2026-07-02", "summary": "", "target_url": "/s/x"}]
+    monkeypatch.setattr(api_routes, "_all_public_stories", fake_stories)
+
+    payload = http.get("/api/popular?user=ramsay").json()
+    assert payload["items"][0]["views"] == 3
+    assert payload["items"][0]["unique_readers"] == 2
+
+
+def test_trending_reorders_on_events_and_corpus(client, monkeypatch):
+    http, db_path = client
+    from dashboard.routes import api as api_routes, events as events_routes
+
+    events_routes._TRENDING_CACHE.clear()
+    stories = [
+        {"slug": "quiet-story", "title": "Quiet", "issue_date": "2026-07-01",
+         "summary": "", "target_url": "/s/q", "graph_connectors": {"source_domains": []},
+         "arc_ids": []},
+        {"slug": "read-story", "title": "Read", "issue_date": "2026-07-01",
+         "summary": "", "target_url": "/s/r", "graph_connectors": {"source_domains": []},
+         "arc_ids": []},
+        {"slug": "internet-story", "title": "Repo hit 40,000 stars overnight",
+         "issue_date": "2026-07-01", "summary": "", "target_url": "/s/i",
+         "graph_connectors": {"source_domains": ["github.com"]}, "arc_ids": ["oss"]},
+    ]
+
+    async def fake_stories(user):
+        return stories
+    monkeypatch.setattr(api_routes, "_all_public_stories", fake_stories)
+    monkeypatch.setattr(events_routes, "_domain_recurrence", lambda user: {"github.com": 15})
+
+    for _ in range(5):
+        http.post("/api/event", json={"type": "story_view", "target": "read-story"})
+
+    payload = http.get("/api/trending?user=ramsay&limit=3").json()
+    order = [item["slug"] for item in payload["items"]]
+    assert order[0] == "read-story"          # on-site reads dominate
+    assert order[1] == "internet-story"       # corpus-only signal beats silence
+    assert order[2] == "quiet-story"
+    assert payload["items"][0]["trend"] in {"up", "flat"}
+    assert all("trending_score" in item for item in payload["items"])

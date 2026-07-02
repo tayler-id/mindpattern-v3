@@ -113,10 +113,8 @@ FE: build + smoke via local backend. CI: added to the existing test job.
 6. Events survive a daily sync (recorded on Fly before sync, still
    present after — integration-tested via the bundle-extract path).
 
-## Open questions
+## Decisions (review 2026-07-02)
 
-1. anon_id (random, first-party, resettable) for unique-reader counts:
-   include or drop?
-2. Most Read placement: its own wire tab, or a section under Trending?
-3. Search results: one blended list or grouped by type (spec assumes
-   grouped)?
+1. anon_id: INCLUDED — random first-party, resettable, never identity-tied.
+2. Most Read: own wire tab (Trending / Most Read / Latest / Topics).
+3. Search results: grouped by type.
