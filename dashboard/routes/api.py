@@ -1847,6 +1847,7 @@ def _public_story_provenance(item: dict) -> dict:
         "source_story_unit_id": source_story_unit_id,
         "redaction_status": redact_sensitive_text(str(provenance.get("redaction_status") or "passed")),
         "ai_generated": bool(provenance.get("ai_generated")),
+        "writer": redact_sensitive_text(str(provenance.get("writer") or "")),
         "human_approved": bool(provenance.get("human_approved")),
     }
 
@@ -1966,7 +1967,13 @@ def _story_sources_fingerprint(user: str) -> float:
     safe_user = _safe_user(user)
     if safe_user is None:
         return newest
-    roots = [REPORTS_DIR / safe_user, REPORTS_DIR / safe_user / "site-stories"]
+    user_root = REPORTS_DIR / safe_user
+    stories_root = user_root / "site-stories"
+    roots = [user_root, stories_root]
+    try:
+        roots.extend(path for path in stories_root.iterdir() if path.is_dir())
+    except OSError:
+        pass
     for root in roots:
         try:
             newest = max(newest, root.stat().st_mtime)
