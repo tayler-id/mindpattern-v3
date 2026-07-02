@@ -86,6 +86,8 @@ async def search_site(
                     "target_url": story.get("target_url") or f"/s/{story['slug']}",
                     "has_take": bool(story.get("take")),
                     "section_id": story.get("section_id") or "",
+                    "source_count": len(story.get("source_refs") or []),
+                    "entity_count": len(story.get("entity_refs") or []),
                 })
         groups["stories"] = hits
         totals["stories"] = matched
