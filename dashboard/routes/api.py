@@ -44,7 +44,13 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 # Reports may be in project_root/reports/ (local) or /data/reports/ (Fly.io)
 _reports_candidates = [PROJECT_ROOT / "reports", DATA_DIR / ".." / "reports", Path("/data/reports")]
-REPORTS_DIR = next((p for p in _reports_candidates if p.exists()), PROJECT_ROOT / "reports")
+# MP_REPORTS_DIR pins the data root explicitly (worktree operators, CLI tests);
+# otherwise probe the usual locations.
+REPORTS_DIR = (
+    Path(os.environ["MP_REPORTS_DIR"]).resolve()
+    if os.environ.get("MP_REPORTS_DIR")
+    else next((p for p in _reports_candidates if p.exists()), PROJECT_ROOT / "reports")
+)
 USERS_FILE = PROJECT_ROOT / "users.json"
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

@@ -49,3 +49,32 @@ jobs:
             tests/test_runner.py::TestPhaseSocial
         env:
           PYTHONPATH: .
+
+  backfill-harness-contract:
+    name: Backfill harness contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          allow-prereleases: true
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Backfill harness contract
+        run: |
+          python -m pytest -q --tb=short \
+            tests/test_backfill_claims.py \
+            tests/test_backfill_cli.py \
+            tests/test_backfill_prompt_contract.py \
+            tests/test_site_writer.py \
+            tests/test_site_critic.py
+        env:
+          PYTHONPATH: .

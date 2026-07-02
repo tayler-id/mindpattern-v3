@@ -79,10 +79,15 @@ def backfill_targets(
     user: str,
     since: str | None,
     limit: int,
+    reports_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Newest-first dynamic stories that still lack a written artifact."""
     from dashboard.routes import api as api_routes
 
+    if reports_root is not None:
+        # Worktree operators pass the canonical data root; target discovery
+        # must read the same tree claims and artifacts use.
+        api_routes.REPORTS_DIR = Path(reports_root).resolve()
     stories = api_routes._build_all_public_stories(user)
     targets = []
     for story in stories:
@@ -232,7 +237,7 @@ def claim_batch(
     expires_at = (_now() + timedelta(hours=ttl_hours)).isoformat()
 
     claimed: list[str] = []
-    for story in backfill_targets(user=user, since=None, limit=size * 3):
+    for story in backfill_targets(user=user, since=None, limit=size * 3, reports_root=reports_root):
         if len(claimed) >= size:
             break
         slug = str(story.get("slug") or "")
@@ -287,7 +292,8 @@ def run_claim(
         return {"error": "no active claims for that id (expired or released?)", "outcomes": {}}
 
     stories = [
-        story for story in backfill_targets(user=user, since=None, limit=100000)
+        story
+        for story in backfill_targets(user=user, since=None, limit=100000, reports_root=reports_root)
         if str(story.get("slug") or "") in owned
     ]
     outcomes: dict[str, int] = {}
@@ -356,7 +362,7 @@ def backfill_status(*, user: str, reports_root: Path) -> dict:
     by_agent: dict[str, int] = {}
     for payload in active.values():
         by_agent[payload.get("agent", "?")] = by_agent.get(payload.get("agent", "?"), 0) + 1
-    remaining = len(backfill_targets(user=user, since=None, limit=100000)) - len(active)
+    remaining = len(backfill_targets(user=user, since=None, limit=100000, reports_root=reports_root)) - len(active)
     return {
         "notebook": str(_notebook_path(user, reports_root)),
         "written": written,
@@ -431,7 +437,10 @@ def _main_legacy(argv: list[str]) -> int:
     reports_root = Path(args.reports_root)
     claimed_now = set(_active_claims(args.user, reports_root))
     targets = [
-        story for story in backfill_targets(user=args.user, since=args.since, limit=args.limit)
+        story
+        for story in backfill_targets(
+            user=args.user, since=args.since, limit=args.limit, reports_root=reports_root
+        )
         if str(story.get("slug") or "") not in claimed_now
     ]
     print(f"targets: {len(targets)}")

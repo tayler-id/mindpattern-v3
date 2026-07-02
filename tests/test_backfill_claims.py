@@ -25,7 +25,10 @@ def pool(tmp_path, monkeypatch):
         }
         for i in range(20)
     ]
-    monkeypatch.setattr(bf, "backfill_targets", lambda *, user, since, limit: stories[:limit])
+    monkeypatch.setattr(
+        bf, "backfill_targets",
+        lambda *, user, since, limit, reports_root=None: stories[:limit],
+    )
     return tmp_path
 
 
@@ -130,3 +133,61 @@ def test_notebook_tracks_claims_and_outcomes(pool, monkeypatch):
     assert "finished at" in notebook
     status = bf.backfill_status(user="ramsay", reports_root=pool)
     assert status["notebook"].endswith("site-backfill-notebook.md")
+
+
+def test_run_claim_output_artifact_passes_the_full_quality_gate(tmp_path, monkeypatch):
+    """End-to-end artifact gate: what run_claim writes must be publishable."""
+    import json as json_mod
+
+    from orchestrator import site_backfill as bf_mod
+    from orchestrator.site_content_engine import evaluate_site_story_confidence
+    from orchestrator.site_writer import violates_voice_guide
+
+    story = {
+        "kind": "story",
+        "id": "2026-07-02-openai-ships-agent-controls",
+        "slug": "2026-07-02-openai-ships-agent-controls",
+        "issue_date": "2026-07-02",
+        "status": "published",
+        "confidence": "source-backed",
+        "title": "OpenAI ships agent controls",
+        "summary": "OpenAI released new controls.",
+        "body_markdown": "OpenAI released new controls with detail.",
+        "source_refs": [{"url": "https://openai.com/news/controls", "domain": "openai.com", "title": "OpenAI"}],
+        "entity_refs": [{"id": "openai", "slug": "openai", "name": "OpenAI", "kind": "company"}],
+        "graph_edges": [{"kind": "source_domain", "relationship": "cites_source_domain",
+                         "id": "openai.com", "label": "openai.com", "target_url": "/source/openai.com"}],
+        "claim_evidence": [],
+        "provenance": {"ai_generated": False, "redaction_status": "passed"},
+    }
+    monkeypatch.setattr(
+        bf_mod, "backfill_targets",
+        lambda *, user, since, limit, reports_root=None: [story],
+    )
+    monkeypatch.setattr(
+        bf_mod, "write_story_with_review",
+        lambda pack, experts: {
+            "title": "OpenAI puts agent controls on the buyer's scorecard",
+            "dek": "Controls become the procurement question for agent platforms.",
+            "take": "Controls are the new moat, and OpenAI knows it.",
+            "why_now": "The controls shipped with the July 2 briefing cycle.",
+            "body_markdown": "OpenAI released new controls.\n\nThat changes procurement reviews.",
+        },
+    )
+
+    claim = bf_mod.claim_batch(user="ramsay", reports_root=tmp_path, size=1, agent="gate")
+    result = bf_mod.run_claim(user="ramsay", reports_root=tmp_path, claim_id=claim["claim_id"])
+    assert result["outcomes"] == {"written": 1}
+
+    artifact_path = (
+        tmp_path / "ramsay" / "site-stories" / "2026-07-02"
+        / "2026-07-02-openai-ships-agent-controls.json"
+    )
+    artifact = json_mod.loads(artifact_path.read_text())
+    assert artifact["kind"] == "site_story"
+    assert artifact["provenance"]["writer"]
+    assert artifact["claim_evidence"], "headline claim must be anchored to a source"
+    public_text = " ".join(str(artifact.get(k) or "") for k in ("title", "dek", "take", "why_now", "body_markdown"))
+    assert violates_voice_guide(public_text) is None
+    gate = evaluate_site_story_confidence(artifact)
+    assert gate["publishable"], gate["reasons"]
