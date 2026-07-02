@@ -266,3 +266,38 @@ def test_corpus_run_writes_site_story_from_public_findings(tmp_path):
     assert story["graph_edges"]
     assert story["claim_evidence"]
     assert is_publishable_site_story(story)
+
+
+def test_corpus_candidates_survive_titles_with_path_separators():
+    """A slash in one finding title must not kill the whole run."""
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE findings (
+            id INTEGER PRIMARY KEY, run_date TEXT, agent TEXT, title TEXT,
+            summary TEXT, importance TEXT, category TEXT, source_url TEXT,
+            source_name TEXT, created_at TEXT)"""
+    )
+    conn.execute(
+        """INSERT INTO findings VALUES
+        (7, '2026-07-01', 'agent', 'CI/CD agents ship 40% faster with worktrees',
+         'A summary with evidence.', 'high', 'ai',
+         'https://example.com/post', 'Example', '2026-07-01')"""
+    )
+    conn.commit()
+
+    import tempfile
+    from pathlib import Path as P
+
+    ledger = run_site_content_for_date(
+        date="2026-07-01",
+        user="ramsay",
+        reports_root=P(tempfile.mkdtemp()),
+        conn=conn,
+        max_stories=2,
+    )
+    assert ledger["status"] == "completed"
+    assert ledger["selected_candidates"]
+    assert "/" not in ledger["selected_candidates"][0]

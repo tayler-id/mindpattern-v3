@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from orchestrator.arcs import load_narrative_arcs, narrative_arcs_artifact_path
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from orchestrator.site_content import (
+    _title_slug,
     build_public_story,
     is_publishable_site_story,
     normalize_slug,
@@ -238,14 +239,10 @@ def generate_site_story(
     lead_entity = entity_names[0] if entity_names else "This signal"
     lead_source = source_domains[0] if source_domains else "the source trail"
     summary = redact_sensitive_text(str(primary.get("summary") or primary.get("title") or ""))
-    # Deterministic fallback copy stays plain and factual. No fake opinions,
-    # no machinery talk, no em dashes (voice guide). The live writer agent is
-    # the only thing allowed to add a take.
-    body = (
-        f"{summary}\n\n"
-        f"{lead_source} is the primary source. The source trail and related "
-        f"stories below connect {lead_entity} to the rest of the archive."
-    ).strip()
+    # Deterministic fallback copy is the evidence and nothing else. No fake
+    # opinions, no boilerplate closers, no em dashes (voice guide). Only the
+    # live writer agent adds a take or extra prose.
+    body = summary.strip()
     story = {
         "kind": "site_story",
         "id": candidate_id,
@@ -986,7 +983,7 @@ def _candidate_cases_from_corpus(
         cases.append(
             sanitize_site_artifact(
                 {
-                    "id": normalize_slug(str(finding["title"])),
+                    "id": _title_slug(str(finding["title"])),
                     "type": "finding_story",
                     "importance": finding.get("importance") or "medium",
                     "why_now": _why_now_for_finding(finding),
