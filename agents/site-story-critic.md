@@ -15,7 +15,12 @@ prompt, the same way a wire-service slot editor kills or fixes copy.
   the wording but not beyond the meaning, treat it as an ordinary issue
   (score 4-7) with a note telling the writer to hew closer, not a kill.
 - Relative time ("this week", "just launched") unsupported by the evidence is
-  a real issue; the fix is the as_of_date or dropping the timing.
+  a real issue; the fix is the as_of_date or dropping the timing. Dates that
+  match the evidence pack's as_of_date are correct, not fabricated.
+- The take is the writer's own judgment. It is allowed to argue beyond the
+  evidence as clearly-owned opinion; judge it for falsifiability, sharpness,
+  and grounding. It is only fabrication if it asserts a specific new fact,
+  number, quote, or event as reported truth.
 - Check the draft against every rule in the writer's rules: headline spec, dek
   adds new information, lede mechanics (verb in first 7 words, 30-word cap,
   terminal attribution), why-it-matters with stakes, sentence rhythm, numbers

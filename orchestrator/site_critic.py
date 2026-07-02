@@ -23,6 +23,7 @@ from orchestrator.site_writer import (
     DEFAULT_WRITER_TIMEOUT,
     PROJECT_ROOT,
     build_site_writer_prompt,
+    evidence_block_for_pack,
     parse_writer_output,
     violates_voice_guide,
     write_story_copy_with_agent,
@@ -51,14 +52,7 @@ def load_rules_spec() -> str:
 
 
 def build_critic_prompt(copy: dict[str, str], graph_pack: dict[str, Any], *, rules_text: str) -> str:
-    evidence = json.dumps(
-        {
-            "primary_finding": (graph_pack.get("primary_evidence") or [{}])[0],
-            "sources": graph_pack.get("source_refs") or [],
-        },
-        indent=2,
-        default=str,
-    )
+    evidence = evidence_block_for_pack(graph_pack)
     draft = json.dumps(copy, indent=2)
     return f"""Judge this Rabbit Hole story draft against the writer's rules.
 

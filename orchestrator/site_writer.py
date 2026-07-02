@@ -81,14 +81,8 @@ def load_writer_rules() -> str:
         return ""
 
 
-def build_site_writer_prompt(
-    graph_pack: dict[str, Any],
-    expert_results: list[dict[str, Any]],
-    *,
-    voice_text: str,
-    rules_text: str | None = None,
-) -> str:
-    """Build the one-shot writer prompt. Pure and testable."""
+def evidence_block_for_pack(graph_pack: dict[str, Any]) -> str:
+    """The single evidence JSON both the writer and the critic are shown."""
     primary = (graph_pack.get("primary_evidence") or [{}])[0]
     sources = [
         {"url": ref.get("url", ""), "domain": ref.get("domain", ""), "title": ref.get("title", "")}
@@ -99,13 +93,7 @@ def build_site_writer_prompt(
         {"title": item.get("title", ""), "reason": item.get("reason", "")}
         for item in (graph_pack.get("related_paths") or [])[:5]
     ]
-    expert_notes = [
-        f"- {result.get('role', 'expert')}: {result.get('summary', '')}"
-        for result in expert_results
-        if result.get("summary")
-    ]
-
-    evidence_block = json.dumps(
+    return json.dumps(
         {
             "as_of_date": graph_pack.get("date", ""),
             "primary_finding": {
@@ -119,6 +107,23 @@ def build_site_writer_prompt(
         },
         indent=2,
     )
+
+
+def build_site_writer_prompt(
+    graph_pack: dict[str, Any],
+    expert_results: list[dict[str, Any]],
+    *,
+    voice_text: str,
+    rules_text: str | None = None,
+) -> str:
+    """Build the one-shot writer prompt. Pure and testable."""
+    expert_notes = [
+        f"- {result.get('role', 'expert')}: {result.get('summary', '')}"
+        for result in expert_results
+        if result.get("summary")
+    ]
+
+    evidence_block = evidence_block_for_pack(graph_pack)
 
     rules = rules_text if rules_text is not None else load_writer_rules()
     return f"""Write one Rabbit Hole site story from the evidence pack below.
