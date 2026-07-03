@@ -43,6 +43,7 @@ def _graph_pack_from_story(story: dict[str, Any]) -> dict[str, Any]:
     return {
         "candidate_id": story.get("slug"),
         "date": story.get("issue_date", ""),
+        "section_id": story.get("section_id", ""),
         "why_now": story.get("why_now") or f"Covered in the {story.get('issue_date')} briefing.",
         "primary_evidence": [
             {

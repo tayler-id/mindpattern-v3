@@ -2026,6 +2026,48 @@ async def _all_public_stories(user: str) -> list[dict]:
     return stories
 
 
+
+def _fill_missing_story_sections(stories: list[dict], *, user: str) -> list[dict]:
+    """Serve-time repair: story files written without section_id (engine gap,
+    late June–July 2026) recover it from their date's structured issue, which
+    has carried per-unit sections all along."""
+    missing_dates = sorted(
+        {
+            str(story.get("issue_date") or "")
+            for story in stories
+            if not story.get("section_id") and story.get("issue_date")
+        }
+    )
+    for date in missing_dates:
+        issue = _structured_issue_from_report_file(date=date, user=user)
+        if issue is None:
+            continue
+        section_by_key: dict[str, str] = {}
+        for unit in issue.get("story_units", []):
+            section = str(unit.get("section_id") or "")
+            if not section:
+                continue
+            for key in (unit.get("id"), unit.get("slug")):
+                if key:
+                    section_by_key[str(key)] = section
+        for story in stories:
+            if story.get("section_id") or str(story.get("issue_date") or "") != date:
+                continue
+            unit_id = str(
+                story.get("story_unit_id")
+                or (story.get("provenance") or {}).get("source_story_unit_id")
+                or ""
+            )
+            section = (
+                section_by_key.get(unit_id)
+                or section_by_key.get(str(story.get("slug") or ""))
+                or section_by_key.get(str(story.get("id") or ""))
+            )
+            if section:
+                story["section_id"] = section
+    return stories
+
+
 def _build_all_public_stories(user: str) -> list[dict]:
     stories: list[dict] = []
     covered_story_units: set[str] = set()
@@ -2056,6 +2098,7 @@ def _build_all_public_stories(user: str) -> list[dict]:
             seen_slugs.add(slug)
             stories.append(story)
 
+    _fill_missing_story_sections(stories, user=user)
     stories.sort(key=lambda story: (story.get("issue_date", ""), story.get("slug", "")), reverse=True)
     return stories
 
