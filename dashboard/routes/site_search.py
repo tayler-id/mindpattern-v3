@@ -45,7 +45,7 @@ async def search_site(
     a take, archive-wide.
     """
     query = q.strip()
-    if not query and not take:
+    if not query and not take and not section:
         return {"kind": "site_search", "q": q, "groups": {}}
     wanted = {t.strip() for t in types.split(",") if t.strip()}
     if not query:
