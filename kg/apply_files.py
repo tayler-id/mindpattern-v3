@@ -52,6 +52,8 @@ def apply_result_files(
 
     for chunk_path in sorted(chunks_dir.glob("chunk-*.json")):
         result_path = results_dir / chunk_path.name.replace("chunk-", "result-")
+        if not result_path.exists():
+            continue  # not extracted yet — leave findings unmarked for a later wave
         chunk = _load_json(chunk_path)
         if not isinstance(chunk, list) or not chunk:
             continue
