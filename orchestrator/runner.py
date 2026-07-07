@@ -1765,6 +1765,7 @@ class ResearchPipeline:
             except Exception as e:
                 logger.warning("Issue story writing failed open: %s", e)
             self._run_site_dossiers()
+            self._run_kg_build()
             return result
         except Exception as e:
             result = {
@@ -1803,6 +1804,30 @@ class ResearchPipeline:
             )
         except Exception as e:
             logger.warning("Site dossier generation failed open: %s", e)
+
+    def _run_kg_build(self) -> None:
+        """Incremental knowledge-graph extraction over today's findings.
+
+        Opt-in (MP_KG_BUILD_ENABLED=1) and fails open — the newsletter, site
+        content, and dossiers are never blocked by graph work. Caps LLM spend
+        via MP_KG_BUILD_MAX_FINDINGS (default 200/run).
+        """
+        if os.environ.get("MP_KG_BUILD_ENABLED") != "1":
+            return
+        try:
+            from kg.build import build_kg, consolidate
+
+            max_findings = int(os.environ.get("MP_KG_BUILD_MAX_FINDINGS", "200"))
+            stats = build_kg(self.db, limit=max_findings, batch_size=25)
+            summary = consolidate(self.db, run_date=self.date_str)
+            log_event(
+                self.traces_conn,
+                self.traces_run_id,
+                "kg_build_completed",
+                json.dumps({**stats.as_dict(), **summary}),
+            )
+        except Exception as e:
+            logger.warning("KG build failed open: %s", e)
 
     def _phase_learn(self) -> dict:
         """Phase 6: Learn (Python + one Sonnet call)."""

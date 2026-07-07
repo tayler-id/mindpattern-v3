@@ -60,6 +60,14 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    except sqlite3.Error:
+        return False
+    return any(str(row["name"]) == column for row in rows)
+
+
 def _safe_slug(value: Any) -> str:
     try:
         return normalize_slug(str(value or ""))
@@ -298,16 +306,25 @@ class CorpusGraphReadModel:
 
         if _table_exists(self.conn, "kg_entities"):
             graph_sources.add("kg_entities")
-            rows = self.conn.execute(
+            if _column_exists(self.conn, "kg_entities", "slug"):
+                # stored slug is the same normalize_slug the API applies to the
+                # inbound path, so punctuated names ("Node.js") round-trip
+                query = """
+                    SELECT id, canonical_name, entity_type, mention_count, importance,
+                           first_seen, last_seen
+                    FROM kg_entities
+                    WHERE slug = ? OR lower(replace(canonical_name, ' ', '-')) = ?
                 """
-                SELECT id, canonical_name, entity_type, mention_count, importance,
-                       first_seen, last_seen
-                FROM kg_entities
-                WHERE lower(replace(canonical_name, ' ', '-')) = ?
-                """,
-                (entity_slug,),
-            ).fetchall()
-            for row in rows:
+                params: tuple[Any, ...] = (entity_slug, entity_slug)
+            else:
+                query = """
+                    SELECT id, canonical_name, entity_type, mention_count, importance,
+                           first_seen, last_seen
+                    FROM kg_entities
+                    WHERE lower(replace(canonical_name, ' ', '-')) = ?
+                """
+                params = (entity_slug,)
+            for row in self.conn.execute(query, params).fetchall():
                 kg_entity_ids.add(int(row["id"]))
                 entity_name = redact_sensitive_text(row["canonical_name"] or entity_name)
 
@@ -317,7 +334,7 @@ class CorpusGraphReadModel:
                 rows = self.conn.execute(
                     """
                     SELECT edge.id, edge.predicate, edge.fact_text, edge.fact_type,
-                           edge.confidence, edge.finding_id,
+                           edge.confidence, edge.finding_id, edge.subject_id,
                            subject.canonical_name AS subject_name,
                            object.canonical_name AS object_name,
                            subject.entity_type AS subject_type,
@@ -336,9 +353,20 @@ class CorpusGraphReadModel:
                     finding_id = row["finding_id"]
                     if finding_id is not None:
                         finding_ids.add(int(finding_id))
+                    # the neighbor is whichever side of the edge isn't this entity —
+                    # the website links it and derives /neighbors from it
+                    if int(row["subject_id"]) == entity_id:
+                        related_name = str(row["object_name"] or "")
+                        related_type = str(row["object_type"] or "")
+                    else:
+                        related_name = str(row["subject_name"] or "")
+                        related_type = str(row["subject_type"] or "")
                     relationships.append({
                         "source": "kg_edges",
                         "relationship": redact_sensitive_text(row["predicate"] or ""),
+                        "related_entity": redact_sensitive_text(related_name),
+                        "related_entity_slug": _safe_slug(related_name),
+                        "related_entity_type": redact_sensitive_text(related_type),
                         "entity_a": redact_sensitive_text(row["subject_name"] or ""),
                         "entity_a_type": redact_sensitive_text(row["subject_type"] or ""),
                         "entity_b": redact_sensitive_text(row["object_name"] or ""),

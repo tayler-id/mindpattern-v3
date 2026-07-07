@@ -59,6 +59,7 @@ _SCHEMA = """
     CREATE TABLE IF NOT EXISTS kg_entities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         canonical_name TEXT NOT NULL,
+        slug TEXT,                      -- public URL slug; same normalize_slug as the API
         entity_type TEXT NOT NULL DEFAULT 'Other',
         description TEXT,
         embedding BLOB,                 -- 384-dim bge-small, for resolution shortlist
@@ -71,6 +72,7 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(entity_type);
     CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(canonical_name);
+    CREATE INDEX IF NOT EXISTS idx_kg_entities_slug ON kg_entities(slug);
 
     -- ── Aliases (the first, cheapest resolution tier: exact match) ───
     CREATE TABLE IF NOT EXISTS kg_entity_aliases (
@@ -129,8 +131,17 @@ _SCHEMA = """
 
 
 def init_kg_schema(conn: sqlite3.Connection) -> None:
-    """Create all kg_* tables and indexes. Idempotent; safe to call repeatedly."""
+    """Create all kg_* tables and indexes. Idempotent; safe to call repeatedly.
+
+    Also migrates kg_entities tables created before the ``slug`` column existed
+    (additive ALTER; the guarded except keeps re-runs a no-op).
+    """
     conn.executescript(_SCHEMA)
+    try:
+        conn.execute("ALTER TABLE kg_entities ADD COLUMN slug TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_entities_slug ON kg_entities(slug)")
+    except sqlite3.OperationalError:
+        pass  # column already present
     conn.commit()
 
 
