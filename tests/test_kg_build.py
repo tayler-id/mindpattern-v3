@@ -104,6 +104,28 @@ def test_init_build_schema_is_idempotent_and_additive(conn):
 
 # ── extraction parsing/validation ─────────────────────────────────────
 
+def test_init_schema_migrates_pre_slug_tables():
+    """A kg_entities table created before the slug column existed (the pilot
+    DB) must migrate via the guarded ALTER — regression for the index-order bug."""
+    from kg.schema import init_kg_schema
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE kg_entities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, canonical_name TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'Other', description TEXT,
+            embedding BLOB, mention_count INTEGER DEFAULT 0,
+            importance REAL DEFAULT 0.0, first_seen TEXT, last_seen TEXT,
+            created_at TEXT DEFAULT (datetime('now')))"""
+    )
+    conn.execute("INSERT INTO kg_entities (canonical_name) VALUES ('Anthropic')")
+    init_kg_schema(conn)  # must not raise
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(kg_entities)")}
+    assert "slug" in columns
+    init_kg_schema(conn)  # idempotent
+
+
 def test_parse_extraction_handles_fences_and_garbage():
     payload = json.dumps(_extraction_payload())
     assert len(parse_extraction_output(payload)) == 3

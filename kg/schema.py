@@ -72,7 +72,8 @@ _SCHEMA = """
 
     CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(entity_type);
     CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(canonical_name);
-    CREATE INDEX IF NOT EXISTS idx_kg_entities_slug ON kg_entities(slug);
+    -- idx_kg_entities_slug is created in init_kg_schema AFTER the guarded
+    -- ALTER, so tables created before the slug column existed migrate cleanly
 
     -- ── Aliases (the first, cheapest resolution tier: exact match) ───
     CREATE TABLE IF NOT EXISTS kg_entity_aliases (
@@ -139,9 +140,9 @@ def init_kg_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
     try:
         conn.execute("ALTER TABLE kg_entities ADD COLUMN slug TEXT")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_entities_slug ON kg_entities(slug)")
     except sqlite3.OperationalError:
         pass  # column already present
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_kg_entities_slug ON kg_entities(slug)")
     conn.commit()
 
 
