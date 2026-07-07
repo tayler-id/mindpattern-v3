@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sqlite3
+import asyncio
 import time
 from datetime import datetime
 from pathlib import Path
@@ -1990,6 +1991,11 @@ def _load_public_story_file(path: Path) -> dict | None:
 
 _STORY_LIST_CACHE: dict[str, tuple[float, float, list[dict]]] = {}
 _STORY_LIST_CACHE_TTL_SECONDS = 300.0
+_STORY_REBUILD_LOCKS: dict[str, asyncio.Lock] = {}
+# Section repair is bounded to the engine era (the only gap) and its per-date
+# maps are memoized — the repair must never re-read issue files per rebuild.
+_SECTION_REPAIR_FLOOR = "2026-06-20"
+_SECTION_MAP_CACHE: dict[tuple[str, str], dict[str, str]] = {}
 
 
 def _story_sources_fingerprint(user: str) -> float:
@@ -2014,6 +2020,9 @@ def _story_sources_fingerprint(user: str) -> float:
 
 
 async def _all_public_stories(user: str) -> list[dict]:
+    """Fast path always: fresh cache → return; stale cache while another
+    request rebuilds → return stale (stale-while-revalidate); otherwise one
+    single-flight rebuild OFF the event loop (health checks stay alive)."""
     now = time.monotonic()
     fingerprint = _story_sources_fingerprint(user)
     cached = _STORY_LIST_CACHE.get(user)
@@ -2021,9 +2030,18 @@ async def _all_public_stories(user: str) -> list[dict]:
         cached_at, cached_fingerprint, cached_stories = cached
         if cached_fingerprint == fingerprint and now - cached_at < _STORY_LIST_CACHE_TTL_SECONDS:
             return cached_stories
-    stories = _build_all_public_stories(user)
-    _STORY_LIST_CACHE[user] = (now, fingerprint, stories)
-    return stories
+    lock = _STORY_REBUILD_LOCKS.setdefault(user, asyncio.Lock())
+    if cached is not None and lock.locked():
+        return cached[2]
+    async with lock:
+        now = time.monotonic()
+        fingerprint = _story_sources_fingerprint(user)
+        cached = _STORY_LIST_CACHE.get(user)
+        if cached is not None and cached[1] == fingerprint and now - cached[0] < _STORY_LIST_CACHE_TTL_SECONDS:
+            return cached[2]
+        stories = await asyncio.to_thread(_build_all_public_stories, user)
+        _STORY_LIST_CACHE[user] = (time.monotonic(), fingerprint, stories)
+        return stories
 
 
 
@@ -2035,21 +2053,26 @@ def _fill_missing_story_sections(stories: list[dict], *, user: str) -> list[dict
         {
             str(story.get("issue_date") or "")
             for story in stories
-            if not story.get("section_id") and story.get("issue_date")
+            if not story.get("section_id")
+            and str(story.get("issue_date") or "") >= _SECTION_REPAIR_FLOOR
         }
     )
     for date in missing_dates:
-        issue = _structured_issue_from_report_file(date=date, user=user)
-        if issue is None:
+        cache_key = (user, date)
+        section_by_key = _SECTION_MAP_CACHE.get(cache_key)
+        if section_by_key is None:
+            issue = _structured_issue_from_report_file(date=date, user=user)
+            section_by_key = {}
+            for unit in (issue or {}).get("story_units", []):
+                section = str(unit.get("section_id") or "")
+                if not section:
+                    continue
+                for key in (unit.get("id"), unit.get("slug")):
+                    if key:
+                        section_by_key[str(key)] = section
+            _SECTION_MAP_CACHE[cache_key] = section_by_key
+        if not section_by_key:
             continue
-        section_by_key: dict[str, str] = {}
-        for unit in issue.get("story_units", []):
-            section = str(unit.get("section_id") or "")
-            if not section:
-                continue
-            for key in (unit.get("id"), unit.get("slug")):
-                if key:
-                    section_by_key[str(key)] = section
         for story in stories:
             if story.get("section_id") or str(story.get("issue_date") or "") != date:
                 continue
