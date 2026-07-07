@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import asyncio
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -2171,9 +2172,41 @@ def _story_embedding_index(stories: list[dict], user: str) -> dict[int, "np.ndar
     }
 
 
+_STORY_EMBEDDING_CACHE: dict[str, tuple[float, dict[int, "np.ndarray"]]] = {}
+_STORY_EMBEDDING_CACHE_LOCK = threading.Lock()
+
+
+def _cached_story_embedding_index(stories: list[dict], user: str) -> dict[int, "np.ndarray"]:
+    """The full-corpus embedding index, built once per content change.
+
+    Rebuilding it per request wedged the server when Vercel revalidated many
+    story pages at once. Single-flight via lock: concurrent requests wait for
+    one build instead of each running their own."""
+    fingerprint = _story_sources_fingerprint(user)
+    cached = _STORY_EMBEDDING_CACHE.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    with _STORY_EMBEDDING_CACHE_LOCK:
+        cached = _STORY_EMBEDDING_CACHE.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        index = _story_embedding_index(stories, user)
+        _STORY_EMBEDDING_CACHE[user] = (fingerprint, index)
+        return index
+
+
 def _story_with_graph_related(story: dict, stories: list[dict], *, user: str, limit: int = 8) -> dict:
     """Attach reader-facing related paths (evidence-backed, never fabricated)."""
-    embeddings = _story_embedding_index([story, *stories], user)
+    embeddings = _cached_story_embedding_index(stories, user)
+    story_ids = {
+        int(finding_id)
+        for finding_id in story.get("graph_connectors", {}).get("finding_ids", [])
+        if str(finding_id).isdigit()
+    }
+    if story_ids - embeddings.keys():
+        # Story not in the cached list (e.g. structured-issue fallback):
+        # fetch just its own embeddings and overlay, without touching the cache.
+        embeddings = {**embeddings, **_story_embedding_index([story], user)}
     source_vector = _story_vector(story, embeddings)
 
     def similarity_for(candidate: dict) -> float | None:
@@ -2345,11 +2378,14 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
         story = _load_public_story_file(path)
         if story is not None:
             stories = await _all_public_stories(user)
-            return _story_with_graph_related(story, stories, user=user)
+            # Off the event loop: related-path computation loads embeddings
+            # for thousands of findings — synchronous handlers wedged the
+            # whole server when Vercel revalidated many pages at once.
+            return await asyncio.to_thread(_story_with_graph_related, story, stories, user=user)
     story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
     if story is not None:
         stories = await _all_public_stories(user)
-        return _story_with_graph_related(story, stories, user=user)
+        return await asyncio.to_thread(_story_with_graph_related, story, stories, user=user)
     return JSONResponse(status_code=404, content={"error": "Story not found"})
 
 
