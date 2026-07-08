@@ -2357,6 +2357,34 @@ async def list_public_stories(
     }
 
 
+_STORY_RESPONSE_CACHE: dict[tuple[str, str], tuple[float, dict]] = {}
+# Enrichment is GIL-heavy CPU on a shared-cpu-2x machine. Unbounded to_thread
+# fan-out during a Vercel revalidation burst starved the event loop until the
+# health check failed and Fly's edge dropped traffic. Bounded concurrency keeps
+# /healthz answering no matter how hard the site is crawled.
+_STORY_ENRICH_SEMAPHORE = asyncio.Semaphore(4)
+
+
+def _resolve_story_response(
+    story_slug: str, stories: list[dict], *, user: str, fingerprint: float
+) -> dict | None:
+    """Locate + enrich one story, entirely off the event loop; caches the result."""
+    story = None
+    for path in _public_story_files(user):
+        if path.stem != story_slug:
+            continue
+        story = _load_public_story_file(path)
+        if story is not None:
+            break
+    if story is None:
+        story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
+    if story is None:
+        return None
+    enriched = _story_with_graph_related(story, stories, user=user)
+    _STORY_RESPONSE_CACHE[(user, story_slug)] = (fingerprint, enriched)
+    return enriched
+
+
 @router.get("/api/stories/{slug}")
 async def get_public_story(slug: str, user: str = Query("ramsay")):
     """Public: one published Rabbit Hole story by slug.
@@ -2364,6 +2392,9 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     AI-written site-story artifacts win when present. Source-backed structured
     newsletter story units are the dynamic fallback, so the public site can
     read the full archive without requiring hand-built JSON for every story.
+
+    Each story is computed once per content change: the finished response is
+    cached by (user, slug) and invalidated by the sources fingerprint.
     """
     if _safe_user(user) is None:
         return JSONResponse(status_code=404, content={"error": "Story not found"})
@@ -2372,21 +2403,21 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     except ValueError:
         return JSONResponse(status_code=404, content={"error": "Story not found"})
 
-    for path in _public_story_files(user):
-        if path.stem != story_slug:
-            continue
-        story = _load_public_story_file(path)
-        if story is not None:
-            stories = await _all_public_stories(user)
-            # Off the event loop: related-path computation loads embeddings
-            # for thousands of findings — synchronous handlers wedged the
-            # whole server when Vercel revalidated many pages at once.
-            return await asyncio.to_thread(_story_with_graph_related, story, stories, user=user)
-    story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
-    if story is not None:
-        stories = await _all_public_stories(user)
-        return await asyncio.to_thread(_story_with_graph_related, story, stories, user=user)
-    return JSONResponse(status_code=404, content={"error": "Story not found"})
+    fingerprint = _story_sources_fingerprint(user)
+    cached = _STORY_RESPONSE_CACHE.get((user, story_slug))
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    stories = await _all_public_stories(user)
+    async with _STORY_ENRICH_SEMAPHORE:
+        cached = _STORY_RESPONSE_CACHE.get((user, story_slug))
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        enriched = await asyncio.to_thread(
+            _resolve_story_response, story_slug, stories, user=user, fingerprint=fingerprint
+        )
+    if enriched is None:
+        return JSONResponse(status_code=404, content={"error": "Story not found"})
+    return enriched
 
 
 @router.get("/api/entities/{slug}/neighbors")
