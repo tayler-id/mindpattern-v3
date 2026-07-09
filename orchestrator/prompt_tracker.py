@@ -153,12 +153,22 @@ class PromptTracker:
         if git_hash is None:
             git_hash = _get_git_hash(abs_path)
 
-        self.conn.execute(
+        cursor = self.conn.execute(
             """INSERT OR IGNORE INTO prompt_tracker
                (file_path, content_hash, git_hash, quality_snapshot, recorded_at)
                VALUES (?, ?, ?, ?, ?)""",
             (file_path, content_hash, git_hash, quality_snapshot, now),
         )
+        # Same (file_path, content_hash) already recorded (e.g. INIT recorded it
+        # without a score, LEARN supplies the score later): attach the score to
+        # the existing row instead of silently dropping it.
+        if cursor.rowcount == 0 and quality_snapshot is not None:
+            self.conn.execute(
+                """UPDATE prompt_tracker SET quality_snapshot = ?
+                   WHERE file_path = ? AND content_hash = ?
+                     AND quality_snapshot IS NULL""",
+                (quality_snapshot, file_path, content_hash),
+            )
         self.conn.commit()
 
     def check_regression(

@@ -1074,6 +1074,51 @@ class TestPromptTrackerRecordVersion:
         assert row["content_hash"] is not None
         assert row["quality_snapshot"] == 0.85
 
+    def test_same_hash_quality_update_attaches_score(self):
+        """INIT records without a score; LEARN's later same-hash call must attach it."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        tracker = PromptTracker(conn)
+
+        prompts_dir = PROJECT_ROOT / "prompts"
+        prompt_files = list(prompts_dir.glob("*.md"))
+        if not prompt_files:
+            pytest.skip("No prompt files found")
+        rel_path = str(prompt_files[0].relative_to(PROJECT_ROOT))
+
+        with patch("orchestrator.prompt_tracker._get_git_hash", return_value="abc123"):
+            tracker.record_version(rel_path)  # INIT: no score yet
+            tracker.record_version(rel_path, quality_snapshot=0.72)  # LEARN
+
+        rows = conn.execute(
+            "SELECT quality_snapshot FROM prompt_tracker WHERE file_path = ?",
+            (rel_path,),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["quality_snapshot"] == 0.72
+
+    def test_same_hash_does_not_overwrite_existing_score(self):
+        """The first recorded score for a content hash is kept."""
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        tracker = PromptTracker(conn)
+
+        prompts_dir = PROJECT_ROOT / "prompts"
+        prompt_files = list(prompts_dir.glob("*.md"))
+        if not prompt_files:
+            pytest.skip("No prompt files found")
+        rel_path = str(prompt_files[0].relative_to(PROJECT_ROOT))
+
+        with patch("orchestrator.prompt_tracker._get_git_hash", return_value="abc123"):
+            tracker.record_version(rel_path, quality_snapshot=0.60)
+            tracker.record_version(rel_path, quality_snapshot=0.90)
+
+        row = conn.execute(
+            "SELECT quality_snapshot FROM prompt_tracker WHERE file_path = ?",
+            (rel_path,),
+        ).fetchone()
+        assert row["quality_snapshot"] == 0.60
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 9. orchestrator/agents.py — run_agent_with_files()
