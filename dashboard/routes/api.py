@@ -2125,9 +2125,16 @@ async def _cached_offload(key: tuple, user: str, compute):
         cached = _public_cache_get(key, fingerprint)
         if cached is not None:
             return cached[1]
-        value = await asyncio.to_thread(compute)
-        _public_cache_put(key, fingerprint, value)
-        return value
+
+        def _compute_and_store():
+            # Cache-put happens inside the worker thread: threads outlive a
+            # client disconnect, so an impatient reader still warms the cache
+            # and their retry is instant. (Awaiting coroutines get cancelled.)
+            value = compute()
+            _public_cache_put(key, fingerprint, value)
+            return value
+
+        return await asyncio.to_thread(_compute_and_store)
 
 
 async def _cached_await(key: tuple, user: str, compute_async):
