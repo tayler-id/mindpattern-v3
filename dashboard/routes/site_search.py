@@ -47,6 +47,33 @@ async def search_site(
     query = q.strip()
     if not query and not take and not section:
         return {"kind": "site_search", "q": q, "groups": {}}
+
+    from dashboard.routes import api as api_routes
+
+    return await api_routes._cached_await(
+        ("site-search", user, query, types, section, date_from, date_to, domain, limit, offset, take),
+        user,
+        lambda: _search_site_uncached(
+            query=query, types=types, section=section, date_from=date_from,
+            date_to=date_to, domain=domain, limit=limit, offset=offset,
+            take=take, user=user,
+        ),
+    )
+
+
+async def _search_site_uncached(
+    *,
+    query: str,
+    types: str,
+    section: str,
+    date_from: str,
+    date_to: str,
+    domain: str,
+    limit: int,
+    offset: int,
+    take: int,
+    user: str,
+):
     wanted = {t.strip() for t in types.split(",") if t.strip()}
     if not query:
         wanted = {"stories"}

@@ -774,15 +774,10 @@ async def get_findings(
         conn.close()
 
 
-@router.get("/api/finding/{finding_id}")
-async def get_finding(
-    finding_id: int,
-    user: str = Query("ramsay"),
-):
-    """Public: one finding by ID with whitelisted fields only."""
+def _finding_impl(finding_id: int, user: str) -> dict | None:
     opened = _open_graph_model(user)
     if opened is None:
-        return _finding_not_found()
+        return None
     conn, model = opened
     try:
         graph_finding = model.get_finding(finding_id)
@@ -801,10 +796,24 @@ async def get_finding(
             (finding_id,),
         ).fetchone()
         if row is None:
-            return _finding_not_found()
+            return None
         return _public_finding(row)
     finally:
         conn.close()
+
+
+@router.get("/api/finding/{finding_id}")
+async def get_finding(
+    finding_id: int,
+    user: str = Query("ramsay"),
+):
+    """Public: one finding by ID with whitelisted fields only."""
+    value = await _cached_offload(
+        ("finding", user, finding_id), user, lambda: _finding_impl(finding_id, user)
+    )
+    if value is None:
+        return _finding_not_found()
+    return value
 
 
 @router.get("/api/findings/{finding_id}")
@@ -826,18 +835,25 @@ async def get_related_findings(
     """Public: source finding's related findings over stored embeddings."""
     if mode not in {"semantic", "blended"}:
         return JSONResponse(status_code=400, content={"error": "Unsupported related mode"})
+    value = await _cached_offload(
+        ("related", user, finding_id, mode, limit),
+        user,
+        lambda: _related_findings_impl(finding_id, mode, limit, user),
+    )
+    if value is None:
+        return _finding_not_found()
+    return value
 
+
+def _related_findings_impl(finding_id: int, mode: str, limit: int, user: str) -> dict | None:
     opened = _open_graph_model(user)
     if opened is None:
-        return _finding_not_found()
+        return None
 
     conn, model = opened
     try:
         if mode == "blended":
-            blended = model.get_related_paths_for_finding(finding_id, limit=limit)
-            if blended is None:
-                return _finding_not_found()
-            return blended
+            return model.get_related_paths_for_finding(finding_id, limit=limit)
 
         source = conn.execute(
             """
@@ -849,7 +865,7 @@ async def get_related_findings(
             (finding_id,),
         ).fetchone()
         if source is None:
-            return _finding_not_found()
+            return None
         if source["embedding"] is None or limit == 0:
             return {
                 "kind": "related",
@@ -1047,14 +1063,25 @@ async def get_source_detail(
     user: str = Query("ramsay"),
 ):
     """Public: one source-domain page with linked findings and entities."""
+    value = await _cached_offload(
+        ("source", user, domain, limit, offset),
+        user,
+        lambda: _source_detail_impl(domain, limit, offset, user),
+    )
+    if value is None:
+        return JSONResponse(status_code=404, content={"error": "Source not found"})
+    return value
+
+
+def _source_detail_impl(domain: str, limit: int, offset: int, user: str) -> dict | None:
     opened = _open_graph_model(user)
     if opened is None:
-        return JSONResponse(status_code=404, content={"error": "Source not found"})
+        return None
     conn, model = opened
     try:
         source = model.get_source(domain, limit=limit, offset=offset)
         if source.get("status") == "missing":
-            return JSONResponse(status_code=404, content={"error": "Source not found"})
+            return None
         return source
     finally:
         conn.close()
@@ -1165,6 +1192,10 @@ async def get_stats(user: str = Query("ramsay")):
     """Public: aggregate statistics. Returns v2-compatible flat format
     (findings/sources/patterns/skills as integers, by_agent, by_date)
     so the Vercel frontend can render charts."""
+    return await _cached_offload(("stats", user), user, lambda: _stats_impl(user))
+
+
+def _stats_impl(user: str) -> dict:
     conn = get_memory_db(user)
     if conn is None:
         return {
@@ -1212,7 +1243,12 @@ async def search_findings(
     """Public: semantic search over findings using embeddings."""
     if not q:
         return []
+    return await _cached_offload(
+        ("search", user, q, limit), user, lambda: _search_findings_impl(q, limit, user)
+    )
 
+
+def _search_findings_impl(q: str, limit: int, user: str) -> list:
     conn = get_memory_db(user)
     if conn is None:
         return []
@@ -1377,7 +1413,12 @@ async def search_skills(
     """Public: semantic search over skills using embeddings."""
     if not q:
         return []
+    return await _cached_offload(
+        ("skills-search", user, q, limit), user, lambda: _search_skills_impl(q, limit, user)
+    )
 
+
+def _search_skills_impl(q: str, limit: int, user: str) -> list:
     conn = get_memory_db(user)
     if conn is None:
         return []
@@ -1478,6 +1519,10 @@ async def list_reports(user: str = Query("ramsay")):
     """Public: list available newsletter reports."""
     if _safe_user(user) is None:
         return []
+    return await _cached_offload(("reports", user), user, lambda: _list_reports_impl(user))
+
+
+def _list_reports_impl(user: str) -> list:
     reports_dir = REPORTS_DIR / user
     if not reports_dir.exists():
         return []
@@ -1514,7 +1559,12 @@ async def search_reports(
     """Public: search newsletter reports by text content."""
     if not q or _safe_user(user) is None:
         return []
+    return await _cached_offload(
+        ("reports-search", user, q, limit), user, lambda: _search_reports_impl(q, limit, user)
+    )
 
+
+def _search_reports_impl(q: str, limit: int, user: str) -> list:
     reports_dir = REPORTS_DIR / user
     if not reports_dir.exists():
         return []
@@ -1677,13 +1727,22 @@ async def list_structured_issues(user: str = Query("ramsay")):
     ]
 
 
+def _structured_issue_impl(date: str, user: str) -> dict | None:
+    issue = _structured_issue_from_report_file(date=date, user=user)
+    if issue is None:
+        return None
+    return _enrich_issue_with_published_stories(issue=issue, user=user)
+
+
 @router.get("/api/issues/{date}/structured")
 async def get_structured_issue(date: str, user: str = Query("ramsay")):
     """Public: deterministic issue -> sections/story units/source graph."""
-    issue = _structured_issue_from_report_file(date=date, user=user)
-    if issue is None:
+    value = await _cached_offload(
+        ("issue-structured", user, date), user, lambda: _structured_issue_impl(date, user)
+    )
+    if value is None:
         return JSONResponse(status_code=404, content={"error": "Issue not found"})
-    return _enrich_issue_with_published_stories(issue=issue, user=user)
+    return value
 
 
 def _story_date_from_slug(slug: str) -> str | None:
@@ -2020,6 +2079,72 @@ def _story_sources_fingerprint(user: str) -> float:
     return newest
 
 
+def _data_fingerprint(user: str) -> float:
+    """Newest mtime across everything public endpoints read: the report and
+    site-story trees plus memory.db. The nightly sync moves it; every public
+    response cache below invalidates in one step."""
+    newest = _story_sources_fingerprint(user)
+    safe_user = _safe_user(user)
+    if safe_user is not None:
+        try:
+            newest = max(newest, (DATA_DIR / safe_user / "memory.db").stat().st_mtime)
+        except OSError:
+            pass
+    return newest
+
+
+_PUBLIC_RESPONSE_CACHE: dict[tuple, tuple[float, object]] = {}
+_PUBLIC_RESPONSE_CACHE_MAX = 4096
+_PUBLIC_OFFLOAD_SEMAPHORE = asyncio.Semaphore(4)
+
+
+def _public_cache_get(key: tuple, fingerprint: float):
+    cached = _PUBLIC_RESPONSE_CACHE.get(key)
+    if cached is not None and cached[0] == fingerprint:
+        return cached
+    return None
+
+
+def _public_cache_put(key: tuple, fingerprint: float, value) -> None:
+    if len(_PUBLIC_RESPONSE_CACHE) >= _PUBLIC_RESPONSE_CACHE_MAX:
+        _PUBLIC_RESPONSE_CACHE.clear()
+    _PUBLIC_RESPONSE_CACHE[key] = (fingerprint, value)
+
+
+async def _cached_offload(key: tuple, user: str, compute):
+    """Run a blocking `compute` off the event loop, once per content change.
+
+    The finished value (plain data, never a Response object) is cached against
+    the data fingerprint. Misses queue on a small semaphore so a crawl burst
+    can never starve the loop — /healthz keeps answering no matter what."""
+    fingerprint = _data_fingerprint(user)
+    cached = _public_cache_get(key, fingerprint)
+    if cached is not None:
+        return cached[1]
+    async with _PUBLIC_OFFLOAD_SEMAPHORE:
+        cached = _public_cache_get(key, fingerprint)
+        if cached is not None:
+            return cached[1]
+        value = await asyncio.to_thread(compute)
+        _public_cache_put(key, fingerprint, value)
+        return value
+
+
+async def _cached_await(key: tuple, user: str, compute_async):
+    """Same cache for handlers whose miss path itself awaits (mixed bodies)."""
+    fingerprint = _data_fingerprint(user)
+    cached = _public_cache_get(key, fingerprint)
+    if cached is not None:
+        return cached[1]
+    async with _PUBLIC_OFFLOAD_SEMAPHORE:
+        cached = _public_cache_get(key, fingerprint)
+        if cached is not None:
+            return cached[1]
+        value = await compute_async()
+        _public_cache_put(key, fingerprint, value)
+        return value
+
+
 async def _all_public_stories(user: str) -> list[dict]:
     """Fast path always: fresh cache → return; stale cache while another
     request rebuilds → return stale (stale-while-revalidate); otherwise one
@@ -2293,6 +2418,12 @@ async def get_site_sitemap(user: str = Query("ramsay")):
         return {"kind": "site_sitemap", "stories": [], "entities": [], "sources": [], "briefings": []}
 
     stories = await _all_public_stories(user)
+    return await _cached_offload(
+        ("sitemap", user), user, lambda: _site_sitemap_impl(stories, safe_user)
+    )
+
+
+def _site_sitemap_impl(stories: list[dict], safe_user: str) -> dict:
     story_items = [
         {"slug": story["slug"], "issue_date": story.get("issue_date", "")}
         for story in stories
@@ -2436,14 +2567,25 @@ async def get_entity_neighbors(
     if not _is_public_entity_slug(entity_slug):
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
 
+    value = await _cached_offload(
+        ("entity-neighbors", user, entity_slug, limit),
+        user,
+        lambda: _entity_neighbors_impl(entity_slug, limit, user),
+    )
+    if value is None:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+    return value
+
+
+def _entity_neighbors_impl(entity_slug: str, limit: int, user: str) -> dict | None:
     opened = _open_graph_model(user)
     if opened is None:
-        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+        return None
     conn, model = opened
     try:
         neighbors = model.get_entity_neighbors(entity_slug, limit=limit)
         if not neighbors.get("items"):
-            return JSONResponse(status_code=404, content={"error": "Entity not found"})
+            return None
         return neighbors
     finally:
         conn.close()
@@ -2512,6 +2654,17 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
     if not _is_public_entity_slug(entity_slug):
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
 
+    value = await _cached_offload(
+        ("entity", user, entity_slug, limit),
+        user,
+        lambda: _entity_impl(entity_slug, limit, user),
+    )
+    if value is None:
+        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+    return value
+
+
+def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
     graph_detail: dict | None = None
     opened = _open_graph_model(user)
     if opened is not None:
@@ -2608,7 +2761,7 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         merged_relationships.append(relationship)
 
     if not story_units and not merged_findings and not merged_relationships and not corpus["kg_entities"]:
-        return JSONResponse(status_code=404, content={"error": "Entity not found"})
+        return None
 
     graph_sources = sorted({"newsletter_issues"} if story_units else set())
     graph_sources = sorted(set(graph_sources) | set(corpus["graph_sources"]) | set(graph_sources_from_model))
