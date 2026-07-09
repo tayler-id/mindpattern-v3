@@ -355,10 +355,12 @@ class PipelineMonitor:
         today_score = row["overall_score"]
 
         # Get 7-day average (excluding today)
+        # LIMIT must apply before AVG(), so select the window in a subquery
         avg_row = self.conn.execute(
-            "SELECT AVG(overall_score) AS avg_score, COUNT(*) AS cnt "
-            "FROM quality_history WHERE run_date < ? "
-            "ORDER BY run_date DESC LIMIT 7",
+            "SELECT AVG(overall_score) AS avg_score, COUNT(*) AS cnt FROM ("
+            "  SELECT overall_score FROM quality_history WHERE run_date < ? "
+            "  ORDER BY run_date DESC LIMIT 7"
+            ")",
             (run_date,),
         ).fetchone()
 
@@ -377,8 +379,10 @@ class PipelineMonitor:
 
         for dim in dimensions:
             dim_avg_row = self.conn.execute(
-                f"SELECT AVG({dim}) AS avg_val FROM quality_history "
-                "WHERE run_date < ? ORDER BY run_date DESC LIMIT 7",
+                f"SELECT AVG({dim}) AS avg_val FROM ("
+                f"  SELECT {dim} FROM quality_history WHERE run_date < ? "
+                "  ORDER BY run_date DESC LIMIT 7"
+                ")",
                 (run_date,),
             ).fetchone()
 
