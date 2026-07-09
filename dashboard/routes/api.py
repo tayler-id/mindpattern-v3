@@ -1641,7 +1641,24 @@ def _structured_issue_dates(*, user: str) -> list[str]:
     return sorted(dates, reverse=True)
 
 
+_STRUCTURED_ISSUE_CACHE: dict[tuple[str, str], tuple[float, dict | None]] = {}
+
+
 def _structured_issue_from_report_file(*, date: str, user: str) -> dict | None:
+    """Parsed once per content change: entity pages walk every issue date, so
+    uncached parsing meant one entity request re-parsed all ~157 report files.
+    Consumers never mutate the parsed issue (enrichment copies)."""
+    fingerprint = _data_fingerprint(user)
+    cache_key = (user, date)
+    cached = _STRUCTURED_ISSUE_CACHE.get(cache_key)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    issue = _structured_issue_from_report_file_uncached(date=date, user=user)
+    _STRUCTURED_ISSUE_CACHE[cache_key] = (fingerprint, issue)
+    return issue
+
+
+def _structured_issue_from_report_file_uncached(*, date: str, user: str) -> dict | None:
     target = _report_file_for_date(date=date, user=user)
     if target is None:
         return None
