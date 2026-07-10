@@ -306,30 +306,43 @@ class CorpusGraphReadModel:
 
         if _table_exists(self.conn, "kg_entities"):
             graph_sources.add("kg_entities")
-            if _column_exists(self.conn, "kg_entities", "slug"):
+            columns = (
+                "id, canonical_name, entity_type, mention_count, importance, "
+                "first_seen, last_seen"
+            )
+            entity_rows: list[Any] = []
+            has_slug = _column_exists(self.conn, "kg_entities", "slug")
+            if has_slug:
                 # stored slug is the same normalize_slug the API applies to the
                 # inbound path, so punctuated names ("Node.js") round-trip
-                query = """
-                    SELECT id, canonical_name, entity_type, mention_count, importance,
-                           first_seen, last_seen
-                    FROM kg_entities
-                    WHERE slug = ? OR lower(replace(canonical_name, ' ', '-')) = ?
-                """
-                params: tuple[Any, ...] = (entity_slug, entity_slug)
-            else:
-                query = """
-                    SELECT id, canonical_name, entity_type, mention_count, importance,
-                           first_seen, last_seen
-                    FROM kg_entities
-                    WHERE lower(replace(canonical_name, ' ', '-')) = ?
-                """
-                params = (entity_slug,)
-            for row in self.conn.execute(query, params).fetchall():
+                entity_rows = self.conn.execute(
+                    f"SELECT {columns} FROM kg_entities WHERE slug = ?",
+                    (entity_slug,),
+                ).fetchall()
+            if not entity_rows:
+                # legacy rows (pre-slug snapshot, or NULL slug before a heal
+                # ran): match with the SAME normalizer that writes slugs — a
+                # SQL lower(replace(...)) strips no punctuation, so it both
+                # misses 'Node.js' and can over-match an unrelated row
+                scan = (
+                    f"SELECT {columns} FROM kg_entities WHERE slug IS NULL OR slug = ''"
+                    if has_slug
+                    else f"SELECT {columns} FROM kg_entities"
+                )
+                entity_rows = [
+                    row
+                    for row in self.conn.execute(scan).fetchall()
+                    if _safe_slug(str(row["canonical_name"] or "")) == entity_slug
+                ]
+            for row in entity_rows:
                 kg_entity_ids.add(int(row["id"]))
                 entity_name = redact_sensitive_text(row["canonical_name"] or entity_name)
 
         if kg_entity_ids and _table_exists(self.conn, "kg_edges"):
             graph_sources.add("kg_edges")
+            # an edge between two matched ids is returned by both per-id
+            # queries — dedup so it isn't listed twice with opposite neighbors
+            seen_edge_ids: set[int] = set()
             for entity_id in kg_entity_ids:
                 rows = self.conn.execute(
                     """
@@ -350,6 +363,10 @@ class CorpusGraphReadModel:
                     (entity_id, entity_id),
                 ).fetchall()
                 for row in rows:
+                    edge_id = int(row["id"])
+                    if edge_id in seen_edge_ids:
+                        continue
+                    seen_edge_ids.add(edge_id)
                     finding_id = row["finding_id"]
                     if finding_id is not None:
                         finding_ids.add(int(finding_id))
