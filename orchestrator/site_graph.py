@@ -60,6 +60,14 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    except sqlite3.Error:
+        return False
+    return any(str(row["name"]) == column for row in rows)
+
+
 def _safe_slug(value: Any) -> str:
     try:
         return normalize_slug(str(value or ""))
@@ -298,26 +306,48 @@ class CorpusGraphReadModel:
 
         if _table_exists(self.conn, "kg_entities"):
             graph_sources.add("kg_entities")
-            rows = self.conn.execute(
-                """
-                SELECT id, canonical_name, entity_type, mention_count, importance,
-                       first_seen, last_seen
-                FROM kg_entities
-                WHERE lower(replace(canonical_name, ' ', '-')) = ?
-                """,
-                (entity_slug,),
-            ).fetchall()
-            for row in rows:
+            columns = (
+                "id, canonical_name, entity_type, mention_count, importance, "
+                "first_seen, last_seen"
+            )
+            entity_rows: list[Any] = []
+            has_slug = _column_exists(self.conn, "kg_entities", "slug")
+            if has_slug:
+                # stored slug is the same normalize_slug the API applies to the
+                # inbound path, so punctuated names ("Node.js") round-trip
+                entity_rows = self.conn.execute(
+                    f"SELECT {columns} FROM kg_entities WHERE slug = ?",
+                    (entity_slug,),
+                ).fetchall()
+            if not entity_rows:
+                # legacy rows (pre-slug snapshot, or NULL slug before a heal
+                # ran): match with the SAME normalizer that writes slugs — a
+                # SQL lower(replace(...)) strips no punctuation, so it both
+                # misses 'Node.js' and can over-match an unrelated row
+                scan = (
+                    f"SELECT {columns} FROM kg_entities WHERE slug IS NULL OR slug = ''"
+                    if has_slug
+                    else f"SELECT {columns} FROM kg_entities"
+                )
+                entity_rows = [
+                    row
+                    for row in self.conn.execute(scan).fetchall()
+                    if _safe_slug(str(row["canonical_name"] or "")) == entity_slug
+                ]
+            for row in entity_rows:
                 kg_entity_ids.add(int(row["id"]))
                 entity_name = redact_sensitive_text(row["canonical_name"] or entity_name)
 
         if kg_entity_ids and _table_exists(self.conn, "kg_edges"):
             graph_sources.add("kg_edges")
+            # an edge between two matched ids is returned by both per-id
+            # queries — dedup so it isn't listed twice with opposite neighbors
+            seen_edge_ids: set[int] = set()
             for entity_id in kg_entity_ids:
                 rows = self.conn.execute(
                     """
                     SELECT edge.id, edge.predicate, edge.fact_text, edge.fact_type,
-                           edge.confidence, edge.finding_id,
+                           edge.confidence, edge.finding_id, edge.subject_id,
                            subject.canonical_name AS subject_name,
                            object.canonical_name AS object_name,
                            subject.entity_type AS subject_type,
@@ -333,12 +363,27 @@ class CorpusGraphReadModel:
                     (entity_id, entity_id),
                 ).fetchall()
                 for row in rows:
+                    edge_id = int(row["id"])
+                    if edge_id in seen_edge_ids:
+                        continue
+                    seen_edge_ids.add(edge_id)
                     finding_id = row["finding_id"]
                     if finding_id is not None:
                         finding_ids.add(int(finding_id))
+                    # the neighbor is whichever side of the edge isn't this entity —
+                    # the website links it and derives /neighbors from it
+                    if int(row["subject_id"]) == entity_id:
+                        related_name = str(row["object_name"] or "")
+                        related_type = str(row["object_type"] or "")
+                    else:
+                        related_name = str(row["subject_name"] or "")
+                        related_type = str(row["subject_type"] or "")
                     relationships.append({
                         "source": "kg_edges",
                         "relationship": redact_sensitive_text(row["predicate"] or ""),
+                        "related_entity": redact_sensitive_text(related_name),
+                        "related_entity_slug": _safe_slug(related_name),
+                        "related_entity_type": redact_sensitive_text(related_type),
                         "entity_a": redact_sensitive_text(row["subject_name"] or ""),
                         "entity_a_type": redact_sensitive_text(row["subject_type"] or ""),
                         "entity_b": redact_sensitive_text(row["object_name"] or ""),
