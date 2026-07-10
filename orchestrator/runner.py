@@ -448,6 +448,10 @@ class ResearchPipeline:
         self.newsletter_eval: dict = {}
         self.social_result: dict = {}
         self.preflight_data: dict | None = None
+        # Set when the owner newsletter send confirms failure; the run then
+        # finishes as completed_degraded with a nonzero exit instead of
+        # reporting a false "completed" success.
+        self.delivery_failed: bool = False
 
         # Traces DB for observability
         self.traces_conn = get_traces_db()
@@ -485,12 +489,71 @@ class ResearchPipeline:
         if resume_id:
             resume_phase = self.checkpoint.resume_from(resume_id)
             if resume_phase:
-                logger.info(f"Resuming from {resume_phase.value} (run {resume_id})")
-                self.pipeline.run_id = resume_id
-                self.pipeline.current_phase = resume_phase
+                resume_phase = self._adopt_resumed_run(resume_id, resume_phase)
                 return self._execute_from(resume_phase)
 
         return self._execute_from(Phase.INIT)
+
+    def _adopt_resumed_run(self, resume_id: str, resume_phase: Phase) -> Phase:
+        """Continue a prior incomplete run under its own identity.
+
+        The constructor already created a fresh trace row, but a resumed run
+        must not split one logical execution across two run IDs (checkpoints
+        landed under the old ID while events/completion landed under the new
+        one, and the old row stayed 'running' forever). Drop the fresh row,
+        adopt the old one, and rehydrate the in-memory state that later
+        phases read.
+
+        Returns the (possibly adjusted) phase to execute from.
+        """
+        # Preflight items are not checkpointed, and RESEARCH without them
+        # runs in the degraded no-preflight mode. TREND_SCAN is cheap,
+        # deterministic Python — re-run it so research keeps full context.
+        if resume_phase == Phase.RESEARCH:
+            logger.info("Resume target RESEARCH: re-running TREND_SCAN to rebuild preflight context")
+            resume_phase = Phase.TREND_SCAN
+
+        if self.traces_run_id != resume_id:
+            self.traces_conn.execute(
+                "DELETE FROM pipeline_runs WHERE id = ?", (self.traces_run_id,))
+            cursor = self.traces_conn.execute(
+                "UPDATE pipeline_runs SET status = 'running', completed_at = NULL, "
+                "error = NULL WHERE id = ?", (resume_id,))
+            self.traces_conn.commit()
+            if cursor.rowcount == 0:
+                # Checkpoints survived but the trace row didn't — recreate it
+                # so completion has a row to update.
+                create_pipeline_run(
+                    self.traces_conn,
+                    pipeline_type="research",
+                    trigger="resume",
+                    metadata=json.dumps({"user_id": self.user_id, "date": self.date_str}),
+                    run_id=resume_id,
+                    status="running",
+                )
+        self.traces_run_id = resume_id
+        self.pipeline.run_id = resume_id
+        self.pipeline.current_phase = resume_phase
+
+        # Rehydrate what completed-phase checkpoints can restore. Preflight
+        # data and raw agent results are not persisted; downstream phases
+        # already tolerate their absence (findings live in memory.db).
+        trend_state = self.checkpoint.load_phase(resume_id, Phase.TREND_SCAN)
+        if trend_state:
+            self.trends = trend_state.get("trends") or []
+        synth_state = self.checkpoint.load_phase(resume_id, Phase.SYNTHESIS)
+        if synth_state:
+            self.newsletter_eval = synth_state.get("eval_scores") or {}
+        report_path = PROJECT_ROOT / "reports" / self.user_id / f"{self.date_str}.md"
+        if report_path.exists():
+            self.newsletter_text = report_path.read_text()
+
+        logger.info(
+            f"Resuming run {resume_id} from {resume_phase.value} "
+            f"(trends={len(self.trends)}, "
+            f"newsletter={'restored' if self.newsletter_text else 'absent'})"
+        )
+        return resume_phase
 
     def _execute_from(self, start_phase: Phase) -> int:
         """Execute phases starting from the given phase."""
@@ -591,7 +654,19 @@ class ResearchPipeline:
                              user_id=self.user_id)
 
         warnings = self.pipeline.warnings
-        if warnings:
+        exit_code = 0
+        if self.delivery_failed:
+            # The newsletter did not reach the owner: recording "completed"
+            # here is a false success for monitoring and the dashboard. The
+            # missing ran-marker already makes the scheduler retry; this makes
+            # status and exit code tell the same story.
+            complete_pipeline_run(
+                self.traces_conn, self.traces_run_id,
+                status="completed_degraded",
+                error=json.dumps({"warnings": warnings, "delivery_failed": True}))
+            logger.error("Completed WITHOUT newsletter delivery (completed_degraded)")
+            exit_code = 1
+        elif warnings:
             complete_pipeline_run(self.traces_conn, self.traces_run_id,
                                   status="completed",
                                   error=json.dumps({"warnings": warnings}))
@@ -609,7 +684,7 @@ class ResearchPipeline:
             logger.warning(f"Monitor summary generation failed: {e}")
 
         logger.info(f"Pipeline {self.pipeline.run_id} completed")
-        return 0
+        return exit_code
 
     def _record_agent_trace(self, result) -> None:
         """Mirror one research agent result into traces.db agent_runs."""
@@ -1028,7 +1103,19 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Cross-agent dedup failed (non-critical): {e}")
 
+        # Policy gate runs BEFORE storage so invalid findings (missing fields,
+        # bad URLs, injection text, banned entities) never enter memory.
+        policy = None
+        try:
+            from policies.engine import PolicyEngine
+            policy = PolicyEngine.load_research()
+        except FileNotFoundError:
+            logger.debug("No research.json policy file, skipping validation")
+        except Exception as e:
+            logger.warning(f"Policy load failed (non-critical): {e}")
+
         total_stored = 0
+        total_policy_skipped = 0
         for result in self.agent_results:
             if result.error and not result.findings:
                 continue
@@ -1039,6 +1126,19 @@ class ResearchPipeline:
                     summary = finding.get("summary", "")
                     if not title or not summary:
                         continue
+
+                    if policy is not None:
+                        violations = policy.validate_finding(
+                            result.agent_name, finding,
+                            check_summary_length=False,
+                        )
+                        if violations:
+                            total_policy_skipped += 1
+                            logger.warning(
+                                f"Skipping policy-violating finding "
+                                f"'{title[:60]}': {'; '.join(violations[:3])}"
+                            )
+                            continue
 
                     # Dedup: check if a near-identical finding exists in the last 10 days
                     # Dedup gate (2026-06-12 lesson: a January story reached
@@ -1113,25 +1213,26 @@ class ResearchPipeline:
             except Exception as e:
                 logger.warning(f"Monitor record_agent_metrics failed for {result.agent_name}: {e}")
 
-        # Validate findings with PolicyEngine (if research.json exists)
-        try:
-            from policies.engine import PolicyEngine
-            policy = PolicyEngine.load_research()
-            for result in self.agent_results:
-                if result.error and not result.findings:
-                    continue
-                errors = policy.validate_agent_output(
-                    result.agent_name, {"findings": result.findings})
-                if errors:
-                    logger.warning(
-                        f"Policy violations for {result.agent_name}: "
-                        f"{len(errors)} issue(s)")
-                    for err in errors[:5]:  # Log first 5 only
-                        logger.warning(f"  {err}")
-        except FileNotFoundError:
-            logger.debug("No research.json policy file, skipping validation")
-        except Exception as e:
-            logger.warning(f"Policy validation failed (non-critical): {e}")
+        # Batch-level policy report (count envelope, summary length) — the
+        # per-finding storage gate above already blocked invalid findings.
+        if total_policy_skipped:
+            logger.warning(
+                f"Policy gate skipped {total_policy_skipped} finding(s) before storage")
+        if policy is not None:
+            try:
+                for result in self.agent_results:
+                    if result.error and not result.findings:
+                        continue
+                    errors = policy.validate_agent_output(
+                        result.agent_name, {"findings": result.findings})
+                    if errors:
+                        logger.warning(
+                            f"Policy violations for {result.agent_name}: "
+                            f"{len(errors)} issue(s)")
+                        for err in errors[:5]:  # Log first 5 only
+                            logger.warning(f"  {err}")
+            except Exception as e:
+                logger.warning(f"Policy validation failed (non-critical): {e}")
 
         successful = sum(1 for r in self.agent_results if not r.error)
         logger.info(f"Research: {successful} agents succeeded, {total_stored} findings stored")
@@ -1657,6 +1758,7 @@ class ResearchPipeline:
             # A silent delivery failure means no newsletter and nobody
             # notices — alert the owner instead of logging-and-completing.
             logger.error(f"Newsletter send failed: {result.get('error')}")
+            self.delivery_failed = True
             self._send_alert(
                 f"Newsletter send FAILED for {self.date_str}: "
                 f"{result.get('error')}"

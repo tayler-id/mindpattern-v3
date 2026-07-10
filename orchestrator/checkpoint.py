@@ -80,6 +80,16 @@ class Checkpoint:
         state_data = json.loads(row[1]) if row[1] else None
         return phase, state_data
 
+    def load_phase(self, pipeline_run_id: str, phase: Phase) -> dict | None:
+        """Load the saved state for one phase of a run, if any."""
+        row = self.conn.execute(
+            "SELECT state_data FROM checkpoints WHERE pipeline_run_id = ? AND phase = ?",
+            (pipeline_run_id, phase.value),
+        ).fetchone()
+        if not row or not row[0]:
+            return None
+        return json.loads(row[0])
+
     def get_completed_phases(self, pipeline_run_id: str) -> list[Phase]:
         """Get all completed phases for a pipeline run, in order."""
         rows = self.conn.execute(
