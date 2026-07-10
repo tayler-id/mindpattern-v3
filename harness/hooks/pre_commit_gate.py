@@ -6,7 +6,7 @@ a harness worktree, runs the deterministic gates first. If any gate
 fails, blocks the commit with a clear error message.
 
 Stdin: {"tool_name": "Bash", "tool_input": {"command": "..."}, "session_id": "..."}
-Stdout: {"decision": "allow"} or {"decision": "block", "reason": "..."}
+Stdout: nothing (no opinion) or {"decision": "block", "reason": "..."}
 """
 
 import json
@@ -20,19 +20,16 @@ def main():
     try:
         event = json.loads(sys.stdin.read())
     except (json.JSONDecodeError, EOFError):
-        print(json.dumps({"decision": "allow"}))
         return
 
     command = event.get("tool_input", {}).get("command", "")
 
     # Only gate git commits in harness worktrees
     if "git commit" not in command:
-        print(json.dumps({"decision": "allow"}))
         return
 
     cwd = event.get("cwd", os.getcwd())
     if "harness" not in cwd and "worktree" not in cwd:
-        print(json.dumps({"decision": "allow"}))
         return
 
     # Find the ticket file for this worktree
@@ -108,7 +105,7 @@ def main():
                     }))
                     return
 
-    print(json.dumps({"decision": "allow"}))
+    # No output = no opinion: the normal permission flow decides.
 
 
 if __name__ == "__main__":
