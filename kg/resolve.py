@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 import sqlite3
 
+from kg.extract import MAX_ENTITY_NAME_CHARS, MAX_ENTITY_NAME_WORDS
+
 _FALLBACK_STOPWORDS = {
     "announced", "update", "updates", "release", "releases", "new", "news",
     "report", "reports", "launch", "launches", "today", "week", "year",
@@ -41,7 +43,7 @@ def is_junk_entity(name: str) -> bool:
     text = re.sub(r"\s+", " ", str(name or "")).strip()
     if not text or not _HAS_ALNUM_RE.search(text):
         return True
-    if len(text) > 60 or len(text.split()) > 6:
+    if len(text) > MAX_ENTITY_NAME_CHARS or len(text.split()) > MAX_ENTITY_NAME_WORDS:
         return True
     lowered = text.lower()
     if any(marker in lowered for marker in _JUNK_SUBSTRINGS):
@@ -73,9 +75,6 @@ def public_slug(name: str) -> str:
     except Exception:
         slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
         return slug[:96]
-
-
-_TYPE_RANK = {"Other": 0}  # every concrete type outranks Other
 
 
 def _lookup_alias(conn: sqlite3.Connection, alias: str) -> int | None:
@@ -126,18 +125,30 @@ def resolve_entity(
         entity_id = int(row[0]) if row else None
 
     if entity_id is None:
+        # ON CONFLICT(slug) closes the SELECT-then-INSERT race: two writers
+        # (daily runner + operator apply run) can both miss the lookups above,
+        # but only one insert wins under the UNIQUE slug index — the loser
+        # adopts the winner's row instead of minting a duplicate.
         cursor = conn.execute(
             """
             INSERT INTO kg_entities (canonical_name, slug, entity_type, first_seen, last_seen)
             VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(slug) DO NOTHING
             """,
             (display, slug, entity_type, seen_date, seen_date),
         )
-        entity_id = int(cursor.lastrowid)
-        _add_alias(conn, entity_id, display)
-        if normalized and normalized.casefold() != display.casefold():
-            _add_alias(conn, entity_id, normalized)
-        return entity_id
+        if cursor.rowcount:
+            entity_id = int(cursor.lastrowid)
+            _add_alias(conn, entity_id, display)
+            if normalized and normalized.casefold() != display.casefold():
+                _add_alias(conn, entity_id, normalized)
+            return entity_id
+        row = conn.execute(
+            "SELECT id FROM kg_entities WHERE slug = ? LIMIT 1", (slug,)
+        ).fetchone()
+        if row is None:  # winner rolled back between our INSERT and SELECT
+            return None
+        entity_id = int(row[0])
 
     _add_alias(conn, entity_id, display)
     if seen_date:
