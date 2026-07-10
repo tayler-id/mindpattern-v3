@@ -39,7 +39,10 @@ existing public API. Branch: `feature/kg-population` (worktree
   404) + `related_entity` fields on kg edges (site links + neighbors)
 - `orchestrator/runner.py` — `_run_kg_build()` in SITE_CONTENT: **opt-in**
   (`MP_KG_BUILD_ENABLED=1`), fails open, capped (`MP_KG_BUILD_MAX_FINDINGS`,
-  default 200/run)
+  default 200/run; `0` skips). Tunable without a code change:
+  `MP_KG_BUILD_BATCH_SIZE` (25), `MP_KG_BUILD_WORKERS` (1 = sequential — the
+  200-finding default is 8 sequential extraction calls, so raise this if the
+  nightly window gets tight), `MP_KG_BUILD_TIMEOUT` (300s/batch)
 
 ## To go live (two steps, in order)
 

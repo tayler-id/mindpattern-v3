@@ -1809,16 +1809,27 @@ class ResearchPipeline:
         """Incremental knowledge-graph extraction over today's findings.
 
         Opt-in (MP_KG_BUILD_ENABLED=1) and fails open — the newsletter, site
-        content, and dossiers are never blocked by graph work. Caps LLM spend
-        via MP_KG_BUILD_MAX_FINDINGS (default 200/run).
+        content, and dossiers are never blocked by graph work. LLM spend and
+        latency are tunable without a code change: MP_KG_BUILD_MAX_FINDINGS
+        (default 200; 0 skips the build), MP_KG_BUILD_BATCH_SIZE (25),
+        MP_KG_BUILD_WORKERS (1 = sequential), MP_KG_BUILD_TIMEOUT (300s/batch).
         """
         if os.environ.get("MP_KG_BUILD_ENABLED") != "1":
             return
         try:
-            from kg.build import build_kg, consolidate
+            from kg.build import DEFAULT_BATCH_SIZE, DEFAULT_TIMEOUT, build_kg, consolidate
 
             max_findings = int(os.environ.get("MP_KG_BUILD_MAX_FINDINGS", "200"))
-            stats = build_kg(self.db, limit=max_findings, batch_size=25)
+            if max_findings <= 0:
+                logger.info("MP_KG_BUILD_MAX_FINDINGS=%s: skipping KG build", max_findings)
+                return
+            stats = build_kg(
+                self.db,
+                limit=max_findings,
+                batch_size=int(os.environ.get("MP_KG_BUILD_BATCH_SIZE", str(DEFAULT_BATCH_SIZE))),
+                workers=int(os.environ.get("MP_KG_BUILD_WORKERS", "1")),
+                timeout=int(os.environ.get("MP_KG_BUILD_TIMEOUT", str(DEFAULT_TIMEOUT))),
+            )
             summary = consolidate(self.db, run_date=self.date_str)
             log_event(
                 self.traces_conn,
