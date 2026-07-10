@@ -120,16 +120,14 @@ You are a researcher focused on the AI agent ecosystem — frameworks, tools, pa
 
 ## Output Format
 
-Return findings as a structured list. For each finding:
+Return findings as JSON objects — the run prompt defines the exact schema. For each finding provide:
 
-```
-### [Title]
-- **Source**: [publication name](url)
-- **Date**: YYYY-MM-DD
-- **Importance**: high | medium | low
-- **Category**: framework | tool | pattern | benchmark | deployment
-- **Summary**: 2-3 sentences with the KEY insight. What's new, what's the capability, why does it matter?
-```
+- title: specific, concrete headline
+- source_name: the real source name
+- source_url: full URL to the source
+- importance: high | medium | low
+- category: framework | tool | pattern | benchmark | deployment
+- summary: 2-3 sentences with the KEY insight. What's new, what's the capability, why does it matter?
 
 Return a MINIMUM of 15 findings. Target 18-20.
 

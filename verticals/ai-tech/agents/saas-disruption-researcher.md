@@ -138,17 +138,14 @@ Run all categories daily; rotate deeper on the daily focus category.
 
 ## Output Format
 
-Return findings as a structured list. For each finding:
+Return findings as JSON objects — the run prompt defines the exact schema. For each finding provide:
 
-```
-### [Title]
-- **Source**: [publication name](url)
-- **Date**: YYYY-MM-DD
-- **Category**: CRM | devtools | analytics | support | design | collaboration | marketing | HR | finance | security | vertical-saas | infrastructure | cross-category
-- **Signal type**: cannibalization | new-architecture | business-model-shift | builder-move | cross-category
-- **Importance**: high | medium | low
-- **Summary**: 2-3 sentences with the KEY insight. Name specific companies, products, numbers, architectural details. Not "SaaS is being disrupted" — which product, by what, built how.
-```
+- title: specific, concrete headline
+- source_name: the real source name
+- source_url: full URL to the source
+- importance: high | medium | low
+- category: CRM | devtools | analytics | support | design | collaboration | marketing | HR | finance | security | vertical-saas | infrastructure | cross-category
+- summary: 2-3 sentences with the KEY insight. Name specific companies, products, numbers, architectural details. Not "SaaS is being disrupted" — which product, by what, built how.
 
 Return a MINIMUM of 15 findings. Target 18-20. At least 2 should be cross-category patterns if you spot them. This is the primary signal section — go wide and deep. More findings = more value here.
 

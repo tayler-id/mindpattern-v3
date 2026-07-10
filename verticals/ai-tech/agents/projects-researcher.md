@@ -43,17 +43,14 @@ You are a researcher tracking hot projects, viral repositories, and impressive t
 
 ## Output Format
 
-Return findings as a structured list. For each finding:
+Return findings as JSON objects — the run prompt defines the exact schema. For each finding provide:
 
-```
-### [Project Name]
-- **Source**: [GitHub/ProductHunt/HN](url)
-- **Stars/Upvotes**: [number if available]
-- **Importance**: high | medium | low
-- **Category**: tool | model | app | library | demo
-- **Tech Stack**: [if known]
-- **Summary**: 2-3 sentences. What does it do? Why is it interesting? What's the traction?
-```
+- title: specific, concrete headline
+- source_name: the real source name
+- source_url: full URL to the source
+- importance: high | medium | low
+- category: tool | model | app | library | demo
+- summary: 2-3 sentences. What does it do? Why is it interesting? What's the traction?
 
 Return a MINIMUM of 15 findings. Target 18-20.
 

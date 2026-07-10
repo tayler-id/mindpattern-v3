@@ -1,7 +1,7 @@
 {
     "required_fields": ["title", "summary", "importance", "source_url", "source_name"],
     "importance_values": ["high", "medium", "low"],
-    "max_findings_per_agent": 15,
+    "max_findings_per_agent": 25,
     "min_findings_per_agent": 1,
     "max_summary_length": 1000,
     "max_age_hours": 48,

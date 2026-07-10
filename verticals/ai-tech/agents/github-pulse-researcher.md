@@ -54,16 +54,14 @@ When evaluating, look for:
 
 ## Output Format
 
-Return findings as a structured list. For each finding:
+Return findings as JSON objects — the run prompt defines the exact schema. For each finding provide:
 
-```
-### [Title]
-- **Source**: [source name](url)
-- **Date**: YYYY-MM-DD
-- **Importance**: high | medium | low
-- **Category**: tool | framework | library | integration | model | demo
-- **Summary**: 2-3 sentences with the KEY insight. Include specific numbers, names, dates.
-```
+- title: specific, concrete headline
+- source_name: the real source name
+- source_url: full URL to the source
+- importance: high | medium | low
+- category: tool | framework | library | integration | model | demo
+- summary: 2-3 sentences with the KEY insight. Include specific numbers, names, dates.
 
 Return a MINIMUM of 15 findings. Target 18-20.
 

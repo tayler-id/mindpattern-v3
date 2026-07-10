@@ -99,72 +99,105 @@ class PolicyEngine:
             )
 
         for i, finding in enumerate(findings):
-            prefix = f"[{agent_name}] Finding {i + 1}"
+            errors.extend(self.validate_finding(agent_name, finding, index=i))
 
-            # Required fields
-            for field in required_fields:
-                if field not in finding or not finding[field]:
-                    errors.append(f"{prefix}: missing required field '{field}'")
+        return errors
 
-            # Source URL validation
-            source_url = finding.get("source_url", "")
-            if source_url:
-                parsed = urlparse(source_url)
-                if not parsed.scheme or not parsed.netloc:
-                    errors.append(
-                        f"{prefix}: invalid source_url '{source_url}' "
-                        f"(must have scheme and netloc)"
-                    )
-                if parsed.scheme not in ("http", "https"):
-                    errors.append(
-                        f"{prefix}: source_url scheme must be http or https, "
-                        f"got '{parsed.scheme}'"
-                    )
+    def validate_finding(
+        self,
+        agent_name: str,
+        finding: dict,
+        index: int = 0,
+        *,
+        check_summary_length: bool = True,
+    ) -> list[str]:
+        """Check a single finding against research.json rules.
 
-            # Importance validation
-            importance = finding.get("importance", "")
-            if importance and importance not in valid_importance:
+        Used both by validate_agent_output() for whole-batch reporting and by
+        the runner as a pre-storage gate for individual findings.
+
+        Args:
+            agent_name: Name of the agent that produced the finding.
+            finding: A single finding dict.
+            index: Zero-based position in the batch (for error messages).
+            check_summary_length: Include the summary-length check. The
+                pre-storage gate disables it — an overlong summary is
+                storable, so it stays a batch-level warning only.
+
+        Returns:
+            List of error strings. Empty list means valid.
+        """
+        errors = []
+        required_fields = self.rules.get("required_fields", [])
+        valid_importance = self.rules.get("importance_values", [])
+        max_summary_length = self.rules.get("max_summary_length", 1000)
+        injection_patterns = self.rules.get("injection_patterns", [])
+        prefix = f"[{agent_name}] Finding {index + 1}"
+
+        # Required fields
+        for field in required_fields:
+            if field not in finding or not finding[field]:
+                errors.append(f"{prefix}: missing required field '{field}'")
+
+        # Source URL validation
+        source_url = finding.get("source_url", "")
+        if source_url:
+            parsed = urlparse(source_url)
+            if not parsed.scheme or not parsed.netloc:
                 errors.append(
-                    f"{prefix}: invalid importance '{importance}' "
-                    f"(must be one of {valid_importance})"
+                    f"{prefix}: invalid source_url '{source_url}' "
+                    f"(must have scheme and netloc)"
+                )
+            if parsed.scheme not in ("http", "https"):
+                errors.append(
+                    f"{prefix}: source_url scheme must be http or https, "
+                    f"got '{parsed.scheme}'"
                 )
 
-            # Summary length
-            summary = finding.get("summary", "")
-            if summary and len(summary) > max_summary_length:
-                errors.append(
-                    f"{prefix}: summary too long ({len(summary)} chars, "
-                    f"max {max_summary_length})"
+        # Importance validation
+        importance = finding.get("importance", "")
+        if importance and importance not in valid_importance:
+            errors.append(
+                f"{prefix}: invalid importance '{importance}' "
+                f"(must be one of {valid_importance})"
+            )
+
+        # Summary length
+        summary = finding.get("summary", "")
+        if check_summary_length and summary and len(summary) > max_summary_length:
+            errors.append(
+                f"{prefix}: summary too long ({len(summary)} chars, "
+                f"max {max_summary_length})"
+            )
+
+        # Prompt injection scan on all text fields
+        text_fields = ["title", "summary", "source_name"]
+        for field in text_fields:
+            value = finding.get(field, "")
+            if value:
+                injections = self.scan_for_injection(
+                    value, patterns=injection_patterns
                 )
-
-            # Prompt injection scan on all text fields
-            text_fields = ["title", "summary", "source_name"]
-            for field in text_fields:
-                value = finding.get(field, "")
-                if value:
-                    injections = self.scan_for_injection(
-                        value, patterns=injection_patterns
+                for pattern in injections:
+                    errors.append(
+                        f"{prefix}: prompt injection detected in '{field}': "
+                        f"matched pattern '{pattern}'"
                     )
-                    for pattern in injections:
-                        errors.append(
-                            f"{prefix}: prompt injection detected in '{field}': "
-                            f"matched pattern '{pattern}'"
-                        )
 
-            # Banned entities — reject findings that mention blocked companies
-            banned_entities = self.rules.get("banned_entities", [])
-            for field in text_fields:
-                value = finding.get(field, "")
-                if value:
-                    for pattern in banned_entities:
-                        try:
-                            if re.search(pattern, value):
-                                errors.append(
-                                    f"{prefix}: banned entity in '{field}': "
-                                    f"matched '{pattern}'"
-                                )
-                        except re.error:
-                            pass
+        # Banned entities — reject findings that mention blocked companies
+        banned_entities = self.rules.get("banned_entities", [])
+        for field in text_fields:
+            value = finding.get(field, "")
+            if value:
+                for pattern in banned_entities:
+                    try:
+                        if re.search(pattern, value):
+                            errors.append(
+                                f"{prefix}: banned entity in '{field}': "
+                                f"matched '{pattern}'"
+                            )
+                    except re.error:
+                        pass
 
         return errors
 

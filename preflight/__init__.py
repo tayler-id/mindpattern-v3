@@ -13,7 +13,13 @@ TOOLS_DIR = PROJECT_ROOT / "tools"
 
 
 def _sanitize_external_text(text: str) -> str:
-    """Strip control characters and known prompt injection delimiters from external content."""
+    """Strip control characters from external content.
+
+    This is NOT an injection filter: instruction-like text ("ignore previous
+    instructions", role resets, etc.) passes through untouched and reaches the
+    research agent prompts. The downstream defense is the PolicyEngine
+    injection scan, which gates findings before they are stored.
+    """
     # Remove null bytes and control chars except newline/tab
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     return text

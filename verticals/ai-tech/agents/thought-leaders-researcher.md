@@ -43,16 +43,14 @@ You are a researcher tracking what the most influential people in AI and coding 
 
 ## Output Format
 
-Return findings as a structured list. For each finding:
+Return findings as JSON objects — the run prompt defines the exact schema. For each finding provide:
 
-```
-### [Person Name]: [What they said/did]
-- **Source**: [platform](url)
-- **Date**: YYYY-MM-DD
-- **Importance**: high | medium | low
-- **Category**: prediction | analysis | launch | framework | policy
-- **Summary**: 2-3 sentences capturing their KEY point or insight. What's the take? Why does it matter?
-```
+- title: specific, concrete headline
+- source_name: the real source name
+- source_url: full URL to the source
+- importance: high | medium | low
+- category: prediction | analysis | launch | framework | policy
+- summary: 2-3 sentences capturing their KEY point or insight. What's the take? Why does it matter?
 
 Return a MINIMUM of 15 findings. Target 18-20. Prioritize hot takes, contrarian views, and things people are actually building over generic commentary.
 

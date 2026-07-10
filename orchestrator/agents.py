@@ -105,6 +105,11 @@ FILE_AGENT_DISALLOWED_TOOLS = "Agent"
 PROMPT_DEFAULT_ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
 PROMPT_DISALLOWED_TOOLS = "Agent,Write,Edit,NotebookEdit,Skill"
 
+# Per-agent findings target quoted in the research prompt. Must never exceed
+# policies/research.json max_findings_per_agent — a contract test binds them.
+FINDINGS_TARGET_MIN = 20
+FINDINGS_TARGET_MAX = 25
+
 
 def _build_claude_command(
     prompt_arg: str,
@@ -303,7 +308,7 @@ Look for:
 - Primary sources not in our feed list
 - Reactions and follow-ups to stories in the preflight data
 
-Target: 20-25 total findings (15-20 from Phase 1 + 3-5 from Phase 2).
+Target: {FINDINGS_TARGET_MIN}-{FINDINGS_TARGET_MAX} total findings (15-20 from Phase 1 + 3-5 from Phase 2).
 
 """
 
