@@ -97,7 +97,8 @@ def select_unprocessed_findings(
         query += " AND f.run_date >= ?"
         params.append(since)
     query += " ORDER BY f.run_date DESC, f.id DESC"
-    if limit:
+    if limit is not None:
+        # limit=0 means "select nothing" (a spend cap), never "no limit"
         query += " LIMIT ?"
         params.append(int(limit))
     return conn.execute(query, params).fetchall()
@@ -130,6 +131,9 @@ def apply_batch_result(
     """Write one batch's entities/edges + progress markers in one transaction."""
     by_id = {int(row["id"]): row for row in batch}
     entities_before = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
+    # accumulate locally; fold into stats only after the commit, so a
+    # mid-batch rollback can't leave counters claiming rows that don't exist
+    processed = failed = batch_edges = 0
     try:
         for finding_id, row in by_id.items():
             item = validated.get(finding_id)
@@ -139,7 +143,7 @@ def apply_batch_result(
                     "INSERT OR REPLACE INTO kg_build_log (finding_id, status) VALUES (?, 'failed')",
                     (finding_id,),
                 )
-                stats.findings_failed += 1
+                failed += 1
                 continue
 
             id_by_name: dict[str, int] = {}
@@ -183,12 +187,15 @@ def apply_batch_result(
                 "INSERT OR REPLACE INTO kg_build_log (finding_id, status, edges_added) VALUES (?, ?, ?)",
                 (finding_id, status, edges_added),
             )
-            stats.findings_processed += 1
-            stats.edges_added += edges_added
+            processed += 1
+            batch_edges += edges_added
         conn.commit()
     except Exception:
         conn.rollback()
         raise
+    stats.findings_processed += processed
+    stats.findings_failed += failed
+    stats.edges_added += batch_edges
     entities_after = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
     stats.entities_created += int(entities_after) - int(entities_before)
 
@@ -249,7 +256,11 @@ def build_kg(
     note(f"{len(rows)} findings in {len(batches)} batches (size {batch_size})")
 
     def run(batch: list[sqlite3.Row]) -> dict[int, dict[str, Any]]:
-        return _run_one_batch(batch, model=model, timeout=timeout, runner=runner)
+        try:
+            return _run_one_batch(batch, model=model, timeout=timeout, runner=runner)
+        except Exception as e:  # extraction is fail-open too, not just apply
+            logger.warning("kg batch extraction failed open: %s", e)
+            return {}
 
     if workers > 1:
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -300,24 +311,44 @@ def consolidate(conn: sqlite3.Connection, *, run_date: str) -> dict[str, Any]:
     """Recompute mention counts, importance, and communities. Idempotent."""
     init_build_schema(conn)
 
-    # heal rows created before the slug column existed
+    # heal rows created before the slug column existed — collision-aware:
+    # two legacy names can render the same slug ("GPT-5.2" / "GPT 5.2"), and
+    # a blind UPDATE would either violate the UNIQUE index or merge two
+    # entities onto one public page. Suffix the newcomer with its id instead.
     from kg.resolve import public_slug
 
     for row in conn.execute(
         "SELECT id, canonical_name FROM kg_entities WHERE slug IS NULL OR slug = ''"
     ).fetchall():
+        entity_id = int(row["id"])
+        slug = public_slug(str(row["canonical_name"]))
+        if not slug:
+            continue  # unslugifiable name stays NULL (allowed by the index)
+        taken = conn.execute(
+            "SELECT 1 FROM kg_entities WHERE slug = ? AND id != ? LIMIT 1",
+            (slug, entity_id),
+        ).fetchone()
+        if taken:
+            slug = f"{slug}-{entity_id}"
         conn.execute(
-            "UPDATE kg_entities SET slug = ? WHERE id = ?",
-            (public_slug(str(row["canonical_name"])), int(row["id"])),
+            "UPDATE kg_entities SET slug = ? WHERE id = ?", (slug, entity_id)
         )
 
-    conn.execute(
+    # one pass over kg_edges instead of a correlated OR subquery per entity
+    # (the OR defeats both single-column indexes → O(entities × edges))
+    mention_rows = conn.execute(
         """
-        UPDATE kg_entities SET mention_count = (
-            SELECT COUNT(DISTINCT e.finding_id) FROM kg_edges e
-            WHERE e.subject_id = kg_entities.id OR e.object_id = kg_entities.id
-        )
+        SELECT entity_id, COUNT(DISTINCT finding_id) AS mentions FROM (
+            SELECT subject_id AS entity_id, finding_id FROM kg_edges
+            UNION ALL
+            SELECT object_id AS entity_id, finding_id FROM kg_edges
+        ) GROUP BY entity_id
         """
+    ).fetchall()
+    conn.execute("UPDATE kg_entities SET mention_count = 0")
+    conn.executemany(
+        "UPDATE kg_entities SET mention_count = ? WHERE id = ?",
+        [(int(r["mentions"]), int(r["entity_id"])) for r in mention_rows],
     )
 
     rows = conn.execute(

@@ -69,16 +69,15 @@ def apply_result_files(
         validated: dict[int, dict[str, Any]] = {}
         payload = _load_json(result_path) if result_path.exists() else None
         items = payload.get("findings") if isinstance(payload, dict) else None
-        for item in items or []:
-            clean = validate_extraction(item, allowed_ids=allowed_ids)
-            if clean is not None:
-                validated[clean["id"]] = clean
-        if not validated:
-            stats.batches_failed += 1
-
-        try:
+        try:  # one bad pair never aborts the apply run — validation included
+            for item in items or []:
+                clean = validate_extraction(item, allowed_ids=allowed_ids)
+                if clean is not None:
+                    validated[clean["id"]] = clean
+            if not validated:
+                stats.batches_failed += 1
             apply_batch_result(conn, batch, validated, stats)
-        except Exception as e:  # one bad pair never aborts the apply run
+        except Exception as e:
             conn.rollback()
             stats.batches_failed += 1
             stats.errors.append(f"{chunk_path.name}: {type(e).__name__}: {e}")
@@ -107,7 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     if not run_date:
         row = conn.execute("SELECT MAX(run_date) FROM findings").fetchone()
         run_date = str(row[0] or "1970-01-01")
-    summary = consolidate(conn, run_date=run_date)
+    try:
+        summary: dict[str, Any] = consolidate(conn, run_date=run_date)
+    except Exception as e:
+        # the apply already committed; a lock-timeout here (e.g. the daily
+        # run holds the write lock) must not abort the whole operator run
+        logger.warning("consolidate failed open after apply: %s", e)
+        summary = {"error": f"{type(e).__name__}: {e}"}
     print(json.dumps({"apply": stats.as_dict(), "consolidate": summary}, indent=2))
     conn.close()
     return 0
