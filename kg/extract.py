@@ -17,6 +17,7 @@ import os
 import re
 from typing import Any
 
+from core.llm import extract_json
 from kg.schema import ENTITY_TYPES, FACT_TYPES, PREDICATES
 
 logger = logging.getLogger(__name__)
@@ -45,9 +46,12 @@ Rules:
 - Only extract entities literally named in the finding text. Never invent or infer names.
 - Entity names are short proper nouns exactly as written (e.g. "Anthropic",
   "Claude Fable 5", "Sam Altman", "SWE-bench"). Never a sentence, headline,
-  domain name, or description. Max {max_words} words.
+  domain name, or description. Max {max_words} words and {max_chars} characters.
+- Never output a name made only of generic words ("Update", "Launch",
+  "Report", "News") — skip it instead.
 - "Product" covers AI models. Papers use their short title.
 - Every edge's subject and object MUST appear in that finding's entities list.
+- An edge's subject and object must be different entities (no self-loops).
 - Prefer the most specific predicate; use MENTIONS only when nothing else fits,
   and at most one MENTIONS edge per finding.
 - fact_text is one short sentence stating the fact in plain words.
@@ -71,6 +75,7 @@ def build_extraction_prompt(findings: list[dict[str, Any]]) -> str:
         entity_types=", ".join(ENTITY_TYPES),
         predicates=", ".join(PREDICATES),
         max_words=MAX_ENTITY_NAME_WORDS,
+        max_chars=MAX_ENTITY_NAME_CHARS,
         max_entities=MAX_ENTITIES_PER_FINDING,
         max_edges=MAX_EDGES_PER_FINDING,
     )
@@ -104,25 +109,23 @@ def extraction_command(prompt: str, *, model: str | None = None) -> list[str]:
 
 
 def parse_extraction_output(stdout: str) -> list[dict[str, Any]]:
-    """Parse model output into per-finding extraction dicts. [] on any failure."""
+    """Parse model output into per-finding extraction dicts. [] on any failure.
+
+    JSON salvage is delegated to ``core.llm.extract_json`` (bare, fenced, or
+    embedded payloads — strictly more shapes than the fence regex this
+    replaced); only the ``findings`` unwrap is KG-specific.
+    """
     text = (stdout or "").strip()
     if not text:
         return []
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if fence:
-        text = fence.group(1)
-    else:
-        start, end = text.find("{"), text.rfind("}")
-        if start == -1 or end <= start:
-            return []
-        text = text[start: end + 1]
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
+    data = extract_json(text)
+    if data is None:
         logger.warning("kg extraction: unparseable model output (%d chars)", len(stdout or ""))
         return []
     items = data.get("findings") if isinstance(data, dict) else None
-    return items if isinstance(items, list) else []
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
 
 
 def _clean_name(value: Any) -> str:
@@ -136,8 +139,12 @@ def validate_extraction(
     """Deterministically enforce the closed vocabularies on one finding's output.
 
     Returns {"id", "entities", "edges"} with only valid rows, or None when the
-    item is malformed or refers to a finding outside this batch.
+    item is malformed or refers to a finding outside this batch. Never raises
+    on malformed shapes (non-dict items, non-list entities/edges) — the
+    fail-open contract of both callers depends on that.
     """
+    if not isinstance(item, dict):
+        return None
     try:
         finding_id = int(item.get("id"))
     except (TypeError, ValueError):
@@ -145,8 +152,16 @@ def validate_extraction(
     if finding_id not in allowed_ids:
         return None
 
-    entities: dict[str, str] = {}
-    for raw in (item.get("entities") or [])[:MAX_ENTITIES_PER_FINDING]:
+    raw_entities = item.get("entities")
+    if not isinstance(raw_entities, list):
+        raw_entities = []
+    raw_edges = item.get("edges")
+    if not isinstance(raw_edges, list):
+        raw_edges = []
+
+    # casefolded key -> (display name, entity type)
+    entities: dict[str, tuple[str, str]] = {}
+    for raw in raw_entities[:MAX_ENTITIES_PER_FINDING]:
         if not isinstance(raw, dict):
             continue
         name = _clean_name(raw.get("name"))
@@ -155,18 +170,16 @@ def validate_extraction(
             continue
         if len(name) > MAX_ENTITY_NAME_CHARS or len(name.split()) > MAX_ENTITY_NAME_WORDS:
             continue
-        entities.setdefault(name.casefold(), name)
-        entities[f"__type__{name.casefold()}"] = etype
+        entities.setdefault(name.casefold(), (name, etype))
 
-    names = {k: v for k, v in entities.items() if not k.startswith("__type__")}
+    names = {key: name for key, (name, _etype) in entities.items()}
     valid_entities = [
-        {"name": name, "type": entities[f"__type__{key}"]}
-        for key, name in names.items()
+        {"name": name, "type": etype} for name, etype in entities.values()
     ]
 
     edges: list[dict[str, Any]] = []
     mentions_used = 0
-    for raw in (item.get("edges") or [])[:MAX_EDGES_PER_FINDING * 2]:
+    for raw in raw_edges[:MAX_EDGES_PER_FINDING * 2]:
         if len(edges) >= MAX_EDGES_PER_FINDING or not isinstance(raw, dict):
             continue
         subject = _clean_name(raw.get("subject"))
