@@ -44,6 +44,7 @@ _IMPLICATION_SIGNALS = {
 }
 
 _CONNECTOR_LABELS = {
+    "kg_relationship": "Graph relationship",
     "shared_entity": "Shared entity",
     "same_source_url": "Same source",
     "same_source_domain": "Same source domain",
@@ -58,6 +59,53 @@ _CONNECTOR_LABELS = {
 }
 
 SEMANTIC_NEIGHBOR_THRESHOLD = 0.45
+
+# Typed kg_edges only link stories when they are confident, factual, and
+# specific. MENTIONS is the hub-noise predicate; Opinion/Prediction edges
+# never read as an established connection between two stories.
+KG_EDGE_CONFIDENCE_FLOOR = 0.75
+KG_EDGES_PER_PATH = 3
+_KG_SKIP_PREDICATES = {"MENTIONS"}
+
+
+def _humanize_predicate(predicate: Any) -> str:
+    text = str(predicate or "").strip().lower().replace("_", " ")
+    return text or "related to"
+
+
+def _kg_edge_phrase(edge: dict[str, Any]) -> str:
+    return (
+        f"{edge.get('subject_name')} "
+        f"{_humanize_predicate(edge.get('predicate'))} "
+        f"{edge.get('object_name')}"
+    )
+
+
+def _clean_kg_edges(kg_edges: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    cleaned = []
+    for edge in kg_edges or []:
+        if not isinstance(edge, dict):
+            continue
+        try:
+            confidence = float(edge.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        subject_slug = str(edge.get("subject_slug") or "")
+        object_slug = str(edge.get("object_slug") or "")
+        if (
+            str(edge.get("predicate") or "").upper() in _KG_SKIP_PREDICATES
+            or str(edge.get("fact_type") or "Fact") != "Fact"
+            or confidence < KG_EDGE_CONFIDENCE_FLOOR
+            or not subject_slug
+            or not object_slug
+            or subject_slug == object_slug
+            or not edge.get("subject_name")
+            or not edge.get("object_name")
+        ):
+            continue
+        cleaned.append(edge)
+    cleaned.sort(key=lambda edge: float(edge.get("confidence") or 0.0), reverse=True)
+    return cleaned[:KG_EDGES_PER_PATH]
 
 
 def _connector(
@@ -128,12 +176,16 @@ def related_path_between_stories(
     candidate: dict,
     *,
     similarity: float | None = None,
+    kg_edges: list[dict] | None = None,
 ) -> dict | None:
     """Build one reader-facing related path from ``source`` to ``candidate``.
 
     Returns ``None`` when the two stories share no graph evidence.
     ``similarity`` is an optional precomputed cosine similarity between the
     stories' embeddings (the caller owns embedding access to keep this pure).
+    ``kg_edges`` are optional typed knowledge-graph edges between the two
+    stories' entities (the caller owns DB access); they are strictly additive
+    substrate — they can create or enrich a path, never suppress one.
     """
     shared_urls = sorted(_connector_set(source, "source_urls") & _connector_set(candidate, "source_urls"))
     shared_domains = sorted(
@@ -147,9 +199,10 @@ def related_path_between_stories(
     if len(shared_topics) < 2:
         shared_topics = []
 
+    kg_edges = _clean_kg_edges(kg_edges)
     semantic = similarity is not None and similarity >= SEMANTIC_NEIGHBOR_THRESHOLD
     has_substrate = any(
-        [shared_urls, shared_domains, shared_entities, shared_topics, shared_findings, shared_arcs]
+        [shared_urls, shared_domains, shared_entities, shared_topics, shared_findings, shared_arcs, kg_edges]
     )
     if not has_substrate and not semantic:
         return None
@@ -158,6 +211,36 @@ def related_path_between_stories(
     evidence_edges: list[dict[str, Any]] = []
     entity_labels = _entity_labels(source) | _entity_labels(candidate)
     source_refs = _source_ref_by_url(source)
+
+    if kg_edges:
+        best = kg_edges[0]
+        phrase = _kg_edge_phrase(best)
+        connectors.append(
+            _connector(
+                "kg_relationship",
+                label=phrase,
+                detail=f"linked by a graph relationship ({phrase})",
+                weight=5.5 * sum(float(edge.get("confidence") or 0.0) for edge in kg_edges),
+                evidence=[
+                    {
+                        "kind": "kg_edge",
+                        "id": edge.get("id"),
+                        "predicate": edge.get("predicate"),
+                        "fact_text": edge.get("fact_text") or "",
+                        "finding_id": edge.get("finding_id"),
+                    }
+                    for edge in kg_edges
+                ],
+            )
+        )
+        for edge in kg_edges:
+            evidence_edges.append({
+                "kind": "kg_edge",
+                "relationship": _humanize_predicate(edge.get("predicate")),
+                "id": str(edge.get("id") or ""),
+                "label": _kg_edge_phrase(edge),
+                "target_url": f"/e/{edge.get('object_slug')}",
+            })
 
     if shared_findings:
         labels = [f"finding {finding_id}" for finding_id in shared_findings[:3]]
@@ -361,6 +444,7 @@ def related_paths_for_story(
     *,
     limit: int = 8,
     similarity_for: Callable[[dict], float | None] | None = None,
+    kg_edges_for: Callable[[dict], list[dict]] | None = None,
 ) -> list[dict]:
     """Rank reader-facing related paths from ``story`` into ``stories``."""
     paths: list[dict] = []
@@ -368,7 +452,10 @@ def related_paths_for_story(
         if candidate.get("slug") == story.get("slug"):
             continue
         similarity = similarity_for(candidate) if similarity_for is not None else None
-        path = related_path_between_stories(story, candidate, similarity=similarity)
+        kg_edges = kg_edges_for(candidate) if kg_edges_for is not None else None
+        path = related_path_between_stories(
+            story, candidate, similarity=similarity, kg_edges=kg_edges
+        )
         if path is not None:
             paths.append(path)
 

@@ -146,3 +146,93 @@ def test_no_raw_relationship_strings_in_labels():
     path = related_path_between_stories(a, b)
     for label in path["connector_labels"]:
         assert "_" not in label
+
+
+def _kg_edge(subject, predicate, obj, *, confidence=1.0, fact_type="Fact",
+             fact_text="", finding_id=7, edge_id=1):
+    return {
+        "id": edge_id,
+        "predicate": predicate,
+        "fact_text": fact_text,
+        "fact_type": fact_type,
+        "confidence": confidence,
+        "finding_id": finding_id,
+        "subject_name": subject.replace("-", " ").title(),
+        "subject_slug": subject,
+        "object_name": obj.replace("-", " ").title(),
+        "object_slug": obj,
+    }
+
+
+def test_kg_edge_connects_otherwise_unlinked_stories():
+    a = _story("a", entities=["anthropic"])
+    b = _story("b", entities=["humanloop"])
+    assert related_path_between_stories(a, b) is None
+
+    path = related_path_between_stories(
+        a, b, kg_edges=[_kg_edge("anthropic", "ACQUIRED", "humanloop")]
+    )
+    assert path is not None
+    assert "Anthropic acquired Humanloop" in path["connector_labels"]
+    assert any(c["kind"] == "kg_relationship" for c in path["connectors"])
+    edge = next(e for e in path["evidence_edges"] if e["kind"] == "kg_edge")
+    assert edge["target_url"] == "/e/humanloop"
+    for label in path["connector_labels"]:
+        assert "_" not in label
+
+
+def test_kg_edge_is_additive_never_limiting():
+    a = _story("a", entities=["vercel"])
+    b = _story("b", entities=["vercel"])
+    plain = related_path_between_stories(a, b)
+    upgraded = related_path_between_stories(
+        a, b, kg_edges=[_kg_edge("vercel", "PARTNERS_WITH", "anthropic")]
+    )
+    # every connector that exists today still exists, plus the kg one
+    assert {c["kind"] for c in plain["connectors"]} <= {c["kind"] for c in upgraded["connectors"]}
+    assert upgraded["score"] > plain["score"]
+    assert "Vercel partners with Anthropic" in upgraded["connector_labels"]
+
+
+def test_kg_edges_filtered_for_quality():
+    a = _story("a", entities=["anthropic"])
+    b = _story("b", entities=["humanloop"])
+    junk = [
+        _kg_edge("anthropic", "USES", "humanloop", confidence=0.3),
+        _kg_edge("anthropic", "MENTIONS", "humanloop"),
+        _kg_edge("anthropic", "PREDICTS", "humanloop", fact_type="Prediction"),
+        _kg_edge("anthropic", "USES", "anthropic"),
+    ]
+    assert related_path_between_stories(a, b, kg_edges=junk) is None
+
+
+def test_kg_edges_capped_and_best_first():
+    a = _story("a", entities=["anthropic"])
+    b = _story("b", entities=["humanloop"])
+    edges = [
+        _kg_edge("anthropic", "USES", "humanloop", confidence=0.8, edge_id=1),
+        _kg_edge("anthropic", "ACQUIRED", "humanloop", confidence=0.99, edge_id=2),
+        _kg_edge("anthropic", "SUPPORTS", "humanloop", confidence=0.9, edge_id=3),
+        _kg_edge("anthropic", "PARTNERS_WITH", "humanloop", confidence=0.85, edge_id=4),
+    ]
+    path = related_path_between_stories(a, b, kg_edges=edges)
+    kg_evidence = [e for e in path["evidence_edges"] if e["kind"] == "kg_edge"]
+    assert len(kg_evidence) == 3
+    assert "Anthropic acquired Humanloop" in path["connector_labels"]
+
+
+def test_kg_edges_for_wiring_in_ranking():
+    source = _story("src", entities=["anthropic"])
+    stranger = _story("stranger", entities=["humanloop"])
+    neighbor = _story("neighbor", entities=["anthropic"])
+
+    paths = related_paths_for_story(
+        source,
+        [stranger, neighbor],
+        kg_edges_for=lambda candidate: (
+            [_kg_edge("anthropic", "ACQUIRED", "humanloop")]
+            if candidate["slug"] == "stranger"
+            else []
+        ),
+    )
+    assert {p["slug"] for p in paths} == {"stranger", "neighbor"}

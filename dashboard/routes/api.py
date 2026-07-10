@@ -34,7 +34,7 @@ from orchestrator.site_content import _TOPIC_STOPWORDS as _PUBLIC_TOPIC_STOPWORD
 from orchestrator.site_content import soften_em_dashes
 from orchestrator.site_content import _ENTITY_STOPWORDS as _EXTRACTOR_ENTITY_STOPWORDS
 from orchestrator.site_graph import CorpusGraphReadModel
-from orchestrator.story_related import related_paths_for_story
+from orchestrator.story_related import KG_EDGE_CONFIDENCE_FLOOR, related_paths_for_story
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
@@ -2344,6 +2344,132 @@ def _cached_story_embedding_index(stories: list[dict], user: str) -> dict[int, "
         return index
 
 
+_KG_PAIR_EDGE_CACHE: dict[str, tuple[float, dict[tuple[str, str], list[dict]]]] = {}
+_KG_PAIR_EDGE_CACHE_LOCK = threading.Lock()
+
+# "A competes with B" and "B competes with A" are one claim, not two.
+_SYMMETRIC_PREDICATES = {"COMPETES_WITH", "PARTNERS_WITH", "BENCHMARKED_AGAINST"}
+
+
+def _kg_pair_edge_index(user: str) -> dict[tuple[str, str], list[dict]]:
+    """(slug_a, slug_b) -> typed kg edges linkable between two stories.
+
+    Keys are sorted slug pairs. Only confident, factual, specific edges
+    qualify — MENTIONS (hub noise), Opinion/Prediction, and sub-floor
+    confidence never link stories. Fails open to {} so related paths
+    degrade to today's co-occurrence connectors, never to an error.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return {}
+    try:
+        if not _table_exists(conn, "kg_edges") or not _table_exists(conn, "kg_entities"):
+            return {}
+        rows = conn.execute(
+            """
+            SELECT edge.id, edge.predicate, edge.fact_text, edge.fact_type,
+                   edge.confidence, edge.finding_id,
+                   subject.canonical_name AS subject_name, subject.slug AS subject_slug,
+                   object.canonical_name AS object_name, object.slug AS object_slug
+            FROM kg_edges edge
+            JOIN kg_entities subject ON subject.id = edge.subject_id
+            JOIN kg_entities object ON object.id = edge.object_id
+            WHERE edge.fact_type = 'Fact'
+              AND edge.confidence >= ?
+              AND edge.predicate != 'MENTIONS'
+              AND edge.subject_id != edge.object_id
+            """,
+            (KG_EDGE_CONFIDENCE_FLOOR,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+    index: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        subject_slug = str(row["subject_slug"] or "") or _safe_entity_slug(row["subject_name"] or "")
+        object_slug = str(row["object_slug"] or "") or _safe_entity_slug(row["object_name"] or "")
+        if not subject_slug or not object_slug or subject_slug == object_slug:
+            continue
+        edge = {
+            "id": int(row["id"]),
+            "predicate": str(row["predicate"] or ""),
+            "fact_text": redact_sensitive_text(row["fact_text"] or ""),
+            "fact_type": str(row["fact_type"] or "Fact"),
+            "confidence": float(row["confidence"] or 0.0),
+            "finding_id": int(row["finding_id"]) if row["finding_id"] is not None else None,
+            "subject_name": redact_sensitive_text(row["subject_name"] or ""),
+            "subject_slug": subject_slug,
+            "object_name": redact_sensitive_text(row["object_name"] or ""),
+            "object_slug": object_slug,
+        }
+        key = (subject_slug, object_slug) if subject_slug < object_slug else (object_slug, subject_slug)
+        index.setdefault(key, []).append(edge)
+    return index
+
+
+def _cached_kg_pair_edge_index(user: str) -> dict[tuple[str, str], list[dict]]:
+    """Single-flight cache keyed on memory.db mtime (changes on nightly sync)."""
+    try:
+        fingerprint = (DATA_DIR / user / "memory.db").stat().st_mtime
+    except OSError:
+        return {}
+    cached = _KG_PAIR_EDGE_CACHE.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    with _KG_PAIR_EDGE_CACHE_LOCK:
+        cached = _KG_PAIR_EDGE_CACHE.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        index = _kg_pair_edge_index(user)
+        _KG_PAIR_EDGE_CACHE[user] = (fingerprint, index)
+        return index
+
+
+def _story_entity_slugs(story: dict) -> set[str]:
+    slugs = {
+        str(entity.get("slug") or entity.get("id") or "")
+        for entity in story.get("entity_refs", [])
+        if isinstance(entity, dict)
+    }
+    slugs.update(str(v) for v in story.get("graph_connectors", {}).get("entity_ids", []))
+    slugs.discard("")
+    return slugs
+
+
+def _kg_edges_between(
+    index: dict[tuple[str, str], list[dict]],
+    slugs_a: set[str],
+    slugs_b: set[str],
+) -> list[dict]:
+    """Best typed edges between two stories' entity sets, deduped, capped."""
+    if not index or not slugs_a or not slugs_b:
+        return []
+    edges: list[dict] = []
+    for a in slugs_a:
+        for b in slugs_b:
+            if a == b:
+                continue
+            key = (a, b) if a < b else (b, a)
+            edges.extend(index.get(key, []))
+    edges.sort(key=lambda edge: edge["confidence"], reverse=True)
+    # the same claim is often extracted from several findings — one slot per
+    # distinct relationship, so the ≤3 shown are different facts, not repeats
+    distinct: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for edge in edges:
+        subject, obj = edge["subject_slug"], edge["object_slug"]
+        if edge["predicate"] in _SYMMETRIC_PREDICATES and obj < subject:
+            subject, obj = obj, subject
+        claim = (subject, edge["predicate"], obj)
+        if claim in seen:
+            continue
+        seen.add(claim)
+        distinct.append(edge)
+    return distinct[:3]
+
+
 def _story_with_graph_related(story: dict, stories: list[dict], *, user: str, limit: int = 8) -> dict:
     """Attach reader-facing related paths (evidence-backed, never fabricated)."""
     embeddings = _cached_story_embedding_index(stories, user)
@@ -2366,12 +2492,19 @@ def _story_with_graph_related(story: dict, stories: list[dict], *, user: str, li
             return None
         return float(np.dot(source_vector, candidate_vector))
 
+    kg_pair_index = _cached_kg_pair_edge_index(user)
+    story_slugs = _story_entity_slugs(story)
+
+    def kg_edges_for(candidate: dict) -> list[dict]:
+        return _kg_edges_between(kg_pair_index, story_slugs, _story_entity_slugs(candidate))
+
     enriched = dict(story)
     enriched["related_paths"] = related_paths_for_story(
         story,
         stories,
         limit=limit,
         similarity_for=similarity_for,
+        kg_edges_for=kg_edges_for,
     )
     return enriched
 
