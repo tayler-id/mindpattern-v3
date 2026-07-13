@@ -1,20 +1,44 @@
 """Internal site analytics: what readers actually do on Rabbit Hole.
 
 Private (bearer token) — answers: which stories are popular (today / 7d /
-all time), what gets clicked, where readers come from, subscribe conversion.
+all time), what gets clicked, where readers come from, subscribe conversion,
+and how much of the traffic is AI crawlers vs humans.
+
+The /site-analytics page is the live version of the editorial dashboard
+originally built as a static artifact (2026-07-09): same design, but every
+number is computed from site_events.db at request time.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 from memory.events_db import open_events_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 _WINDOWS = {"today": 1, "7d": 7, "all": 3650}
+_WINDOW_LABELS = {"today": "last 24 hours", "7d": "last 7 days", "all": "all time"}
+_MAX_DAILY_COLUMNS = 60
+
+_MIX_LABELS = {
+    "story_view": "Story views",
+    "scroll_depth": "Scroll-depth pings",
+    "related_click": "Related-story clicks",
+    "entity_click": "Entity clicks",
+    "source_click": "Source clicks",
+    "briefing_click": "Briefing clicks",
+    "outbound_source_click": "Outbound source clicks",
+    "search_query": "Searches",
+    "subscribe_submitted": "Subscribe submitted",
+    "subscribe_success": "Subscribe confirmed",
+}
 
 
 def _summary(window: str) -> dict:
@@ -66,16 +90,51 @@ def _summary(window: str) -> dict:
                    WHERE type='search_query' AND ts>=? AND target!=''
                    GROUP BY target ORDER BY count DESC LIMIT 20""", (cutoff,))
         ]
+        daily = [
+            dict(r) for r in conn.execute(
+                """SELECT date(ts,'unixepoch') d,
+                          SUM(type='agent_hit') bots,
+                          SUM(type!='agent_hit') human,
+                          SUM(type='story_view') views
+                   FROM events WHERE ts>=? GROUP BY d ORDER BY d""", (cutoff,))
+        ][-_MAX_DAILY_COLUMNS:]
+        mix = [
+            {"type": r["type"], "label": _MIX_LABELS.get(r["type"], r["type"]),
+             "count": r["n"]}
+            for r in conn.execute(
+                """SELECT type, COUNT(*) n FROM events
+                   WHERE ts>=? AND type!='agent_hit'
+                   GROUP BY type ORDER BY n DESC""", (cutoff,))
+        ]
+        scroll = [
+            dict(r) for r in conn.execute(
+                """SELECT value, COUNT(*) n FROM events
+                   WHERE type='scroll_depth' AND ts>=? AND value>0
+                   GROUP BY value ORDER BY value""", (cutoff,))
+        ]
         totals = dict(conn.execute(
-            """SELECT COUNT(*) events, COUNT(DISTINCT anon_id) readers
+            """SELECT COUNT(*) events,
+                      COUNT(DISTINCT CASE WHEN anon_id!='' THEN anon_id END) readers,
+                      SUM(type='agent_hit') crawler_hits,
+                      SUM(type='story_view') story_views
                FROM events WHERE ts>=?""", (cutoff,)).fetchone())
     finally:
         conn.close()
+    events = totals["events"] or 0
+    crawler_hits = totals["crawler_hits"] or 0
+    totals["crawler_hits"] = crawler_hits
+    totals["story_views"] = totals["story_views"] or 0
+    totals["human_events"] = events - crawler_hits
+    totals["crawler_share"] = round(crawler_hits / events * 100, 1) if events else 0.0
     submitted = subs.get("subscribe_submitted", 0)
     success = subs.get("subscribe_success", 0)
     return {
         "window": window,
+        "window_label": _WINDOW_LABELS.get(window, window),
         "totals": totals,
+        "daily": daily,
+        "mix": mix,
+        "scroll": scroll,
         "top_stories": top_stories,
         "clicks": clicks,
         "referrers": referrers,
@@ -89,63 +148,496 @@ def _summary(window: str) -> dict:
     }
 
 
+async def _story_titles(slugs: list[str]) -> dict[str, str]:
+    """Best-effort slug → headline map from the site read model."""
+    if not slugs:
+        return {}
+    try:
+        from dashboard.routes import api as api_routes
+        stories = await api_routes._all_public_stories("ramsay")
+    except Exception:
+        logger.warning("site-analytics: story title lookup failed", exc_info=True)
+        return {}
+    wanted = set(slugs)
+    return {
+        s["slug"]: s["title"]
+        for s in stories
+        if s.get("slug") in wanted and s.get("title")
+    }
+
+
+async def _summary_with_titles(window: str) -> dict:
+    data = _summary(window)
+    titles = await _story_titles([s["target"] for s in data["top_stories"]])
+    for story in data["top_stories"]:
+        story["title"] = titles.get(story["target"], "")
+    return data
+
+
 @router.get("/api/site-analytics/summary")
 async def site_analytics_summary(window: str = Query("7d")):
     """Private: reader-behavior summary for the internal dash."""
     if window not in _WINDOWS:
         window = "7d"
-    return _summary(window)
+    return await _summary_with_titles(window)
+
+
+# The page shell. Placeholders (__DATA__, __TABS__, __GENERATED__) are
+# replaced server-side; everything dynamic renders client-side from the
+# injected JSON so user-supplied strings never touch raw HTML.
+_PAGE = """<!doctype html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MindPattern — Site Analytics</title>
+<style>
+  :root {
+    --paper: #ffffff; --panel: #f2f2f4; --ink: #0e0e0f; --ink-prose: #1d1d20;
+    --ink-soft: #55555a; --line: #e8e8ea; --line-strong: #0e0e0f;
+    --human: #e63b12; --human-wash: #fdeae4; --crawler: #0797a6; --crawler-wash: #e2f4f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #141416; --panel: #1e1e21; --ink: #f0f0f2; --ink-prose: #d8d8dc;
+      --ink-soft: #9a9aa2; --line: #2a2a2e; --line-strong: #f0f0f2;
+      --human: #f0552b; --human-wash: #2c1a14; --crawler: #12a8b8; --crawler-wash: #10262a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink-prose);
+    font-family: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+    font-size: 15px; line-height: 1.55;
+  }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .display {
+    font-family: Archivo, "Archivo Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-weight: 850; letter-spacing: -0.02em; color: var(--ink);
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 0 28px 72px; }
+  .folio {
+    display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline;
+    justify-content: space-between; border-bottom: 2px solid var(--line-strong);
+    padding: 18px 0 12px;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft);
+  }
+  .folio b { color: var(--ink); font-weight: 600; }
+  .folio a { color: var(--ink-soft); text-decoration: none; }
+  .folio a.active, .folio a:hover { color: var(--ink); font-weight: 600; }
+  h1 {
+    margin: 34px 0 0; font-size: clamp(38px, 6vw, 62px); line-height: 0.98;
+    text-transform: uppercase; text-wrap: balance;
+  }
+  h1 .flood { background: var(--ink); color: var(--paper); padding: 0 0.12em; }
+  .dek { max-width: 62ch; margin: 18px 0 0; font-size: 17px; color: var(--ink-prose); }
+  .dek b { color: var(--ink); }
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    border-top: 2px solid var(--line-strong); border-bottom: 1px solid var(--line);
+    margin-top: 34px;
+  }
+  .tile { padding: 16px 18px 18px 0; border-right: 1px solid var(--line); }
+  .tile:last-child { border-right: none; }
+  .tile + .tile { padding-left: 18px; }
+  .tile .k {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft);
+  }
+  .tile .v {
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 800; font-size: 30px; color: var(--ink); margin-top: 6px;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  }
+  .tile .v .unit { font-size: 14px; font-weight: 600; color: var(--ink-soft); margin-left: 2px; }
+  .tile.human .v { color: var(--human); }
+  .tile.crawler .v { color: var(--crawler); }
+  section { margin-top: 52px; }
+  .kicker {
+    display: flex; align-items: baseline; gap: 12px;
+    border-bottom: 2px solid var(--line-strong); padding-bottom: 8px;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink);
+  }
+  .kicker .sub { color: var(--ink-soft); letter-spacing: 0.1em; }
+  .kicker .dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; flex: none; }
+  .dot.h { background: var(--human); }
+  .dot.c { background: var(--crawler); }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
+  @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
+  .cols { display: flex; align-items: flex-end; gap: 6px; height: 150px; margin-top: 26px; }
+  .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; position: relative; cursor: default; }
+  .col .bar { border-radius: 3px 3px 0 0; min-height: 2px; }
+  .col.human .bar { background: var(--human); }
+  .col.crawler .bar { background: var(--crawler); }
+  .col .top {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10px; color: var(--ink-soft); white-space: nowrap;
+  }
+  .xaxis { display: flex; gap: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .xaxis span {
+    flex: 1; text-align: center; overflow: hidden;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 9.5px; letter-spacing: 0.04em; color: var(--ink-soft);
+  }
+  .ranked { margin-top: 8px; }
+  .rrow {
+    display: grid; grid-template-columns: 26px minmax(120px, 34%) 1fr 84px;
+    gap: 12px; align-items: center;
+    border-bottom: 1px solid var(--line); padding: 9px 0; cursor: default;
+  }
+  .rrow .idx { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--ink-soft); }
+  .rrow .name { font-family: Archivo, "Helvetica Neue", Arial, sans-serif; font-weight: 640; font-size: 13.5px; color: var(--ink); line-height: 1.25; overflow-wrap: anywhere; }
+  .rrow .name a { color: inherit; text-decoration: none; }
+  .rrow .name a:hover { text-decoration: underline; }
+  .rrow .name .mono-name { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-weight: 500; }
+  .rrow .track { height: 12px; }
+  .rrow .fill { height: 100%; border-radius: 2px; min-width: 2px; display: block; }
+  .rrow.h .fill { background: var(--human); }
+  .rrow.c .fill { background: var(--crawler); }
+  .rrow .num {
+    text-align: right; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .rrow .num small { color: var(--ink-soft); font-size: 10px; display: block; }
+  .rrow.more { border-bottom: none; }
+  .rrow.more .name { color: var(--ink-soft); font-weight: 500; font-size: 12px; }
+  .empty {
+    padding: 14px 0; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11.5px; color: var(--ink-soft);
+  }
+  .depth { display: grid; grid-template-columns: 64px 1fr 64px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .depth .lab { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-soft); }
+  .depth .track { height: 12px; }
+  .depth .fill { height: 100%; background: var(--human); border-radius: 2px; display: block; }
+  .depth .n { text-align: right; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .note {
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); padding: 18px 22px; margin-top: 26px; max-width: 72ch;
+  }
+  .note .k {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-soft); display: block; margin-bottom: 8px;
+  }
+  .note p { margin: 0 0 10px; }
+  .note p:last-child { margin-bottom: 0; }
+  .note b { color: var(--ink); }
+  #tip {
+    position: fixed; pointer-events: none; z-index: 10;
+    background: var(--ink); color: var(--paper);
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; line-height: 1.5; padding: 6px 10px; border-radius: 4px;
+    opacity: 0; transition: opacity 120ms linear; white-space: pre-line; max-width: 320px;
+  }
+  @media (prefers-reduced-motion: reduce) { #tip { transition: none; } }
+  [data-tip]:focus-visible { outline: 2px solid var(--human); outline-offset: 2px; }
+  footer {
+    margin-top: 60px; border-top: 2px solid var(--line-strong); padding-top: 12px;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft);
+    display: flex; flex-wrap: wrap; gap: 6px 24px; justify-content: space-between;
+  }
+</style>
+</head><body>
+<div class="page">
+  <div class="folio">
+    <span><b>MindPattern</b> · Site analytics</span>
+    <span>__TABS__</span>
+    <span>First-party · no IP · no UA · no geo</span>
+  </div>
+
+  <h1 class="display" id="headline"></h1>
+  <p class="dek" id="dek"></p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section id="dailySection">
+    <div class="kicker"><span>Daily traffic</span><span class="sub">— two populations, two scales, two charts</span></div>
+    <div class="duo">
+      <div>
+        <div class="kicker" style="border-bottom:1px solid var(--line); margin-top:22px;">
+          <span class="dot c"></span><span>Crawler hits / day</span><span class="sub" id="botPeak"></span>
+        </div>
+        <div class="cols" id="botCols"></div>
+        <div class="xaxis" id="botAxis"></div>
+      </div>
+      <div>
+        <div class="kicker" style="border-bottom:1px solid var(--line); margin-top:22px;">
+          <span class="dot h"></span><span>Human events / day</span><span class="sub" id="humanPeak"></span>
+        </div>
+        <div class="cols" id="humanCols"></div>
+        <div class="xaxis" id="humanAxis"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker"><span class="dot c"></span><span>Crawler leaderboard</span><span class="sub" id="botSub">— hits</span></div>
+    <div class="ranked" id="botRank"></div>
+  </section>
+
+  <section>
+    <div class="kicker"><span class="dot h"></span><span>Most-read stories</span><span class="sub">— views · unique readers</span></div>
+    <div class="ranked" id="storyRank"></div>
+  </section>
+
+  <section>
+    <div class="kicker"><span class="dot h"></span><span>What humans did</span><span class="sub">— event mix · reading depth</span></div>
+    <div class="duo">
+      <div><div class="ranked" id="mixRank"></div></div>
+      <div>
+        <div class="kicker" style="border-bottom:1px solid var(--line); margin-top:8px; margin-bottom:8px;">
+          <span>Scroll depth reached</span><span class="sub" id="depthSub"></span>
+        </div>
+        <div id="depthRows"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="kicker"><span class="dot h"></span><span>Where readers came from</span><span class="sub">— referrer domain · searches on site</span></div>
+    <div class="duo">
+      <div><div class="ranked" id="refRank"></div></div>
+      <div><div class="ranked" id="searchRank"></div></div>
+    </div>
+    <div class="note" id="briefing" hidden>
+      <span class="k">Briefing — computed from this window</span>
+      <div id="briefingBody"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Source: site_events.db on Fly (first-party event store)</span>
+    <span>Queried __GENERATED__ · live on every load</span>
+  </footer>
+</div>
+
+<div id="tip" role="status"></div>
+
+<script>
+  const DATA = __DATA__;
+
+  const esc = (s) => String(s).replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmt = (n) => Number(n || 0).toLocaleString("en-US");
+
+  // Tooltip singleton
+  const tip = document.getElementById("tip");
+  function bindTips(root) {
+    root.querySelectorAll("[data-tip]").forEach((el) => {
+      el.setAttribute("tabindex", "0");
+      const show = (x, y) => {
+        tip.textContent = el.dataset.tip;
+        tip.style.opacity = "1";
+        const r = tip.getBoundingClientRect();
+        tip.style.left = Math.min(x + 14, innerWidth - r.width - 8) + "px";
+        tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px";
+      };
+      el.addEventListener("mousemove", (e) => show(e.clientX, e.clientY));
+      el.addEventListener("mouseleave", () => (tip.style.opacity = "0"));
+      el.addEventListener("focus", () => {
+        const r = el.getBoundingClientRect();
+        show(r.left, r.bottom);
+      });
+      el.addEventListener("blur", () => (tip.style.opacity = "0"));
+    });
+  }
+
+  // Headline + dek
+  const t = DATA.totals;
+  const share = t.crawler_share;
+  document.getElementById("headline").innerHTML =
+    t.events === 0 ? 'Nothing yet — <span class="flood">quiet wire.</span>' :
+    share >= 50 ? 'The bots found <span class="flood">it first.</span>' :
+    'Humans are <span class="flood">reading it.</span>';
+  const topBots = (DATA.agents.by_bot || []).slice(0, 2).map((b) => esc(b.target)).join(" and ");
+  document.getElementById("dek").innerHTML =
+    `<b>${fmt(t.events)} events</b> hit mindpattern.ai in the ${esc(DATA.window_label)}. ` +
+    `<b>${share}%</b> were AI crawlers` +
+    (topBots ? ` — led by ${topBots}` : "") +
+    `. The human side: <b>${fmt(t.readers)} readers</b>, ` +
+    `<b>${fmt(t.story_views)} story views</b>, ${fmt(t.human_events)} human events in total. ` +
+    `Live numbers, honestly reported.`;
+
+  // Stat tiles
+  document.getElementById("tiles").innerHTML = [
+    ["", "Total events", fmt(t.events)],
+    ["crawler", "Crawler hits", fmt(t.crawler_hits)],
+    ["crawler", "Crawler share", `${share}<span class="unit">%</span>`],
+    ["human", "Human events", fmt(t.human_events)],
+    ["human", "Story views", fmt(t.story_views)],
+    ["human", "Unique readers", fmt(t.readers)],
+  ].map(([cls, k, v]) =>
+    `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`
+  ).join("");
+
+  // Daily columns
+  function columns(elId, axisId, key, cls) {
+    const el = document.getElementById(elId);
+    const ax = document.getElementById(axisId);
+    const max = Math.max(...DATA.daily.map((r) => r[key] || 0), 0);
+    const peakIdx = DATA.daily.findIndex((r) => (r[key] || 0) === max);
+    const showEvery = Math.ceil(DATA.daily.length / 10);
+    DATA.daily.forEach((r, i) => {
+      const n = r[key] || 0;
+      const c = document.createElement("div");
+      c.className = "col " + cls;
+      const h = max ? Math.round((n / max) * 118) : 0;
+      const extra = key === "human" ? `\\nstory views ${fmt(r.views)}` : "";
+      c.dataset.tip = `${r.d}\\n${key === "bots" ? "crawler hits" : "human events"} ${fmt(n)}${extra}`;
+      c.innerHTML =
+        (i === peakIdx && max > 0 ? `<span class="top" style="bottom:${h + 6}px">${fmt(n)}</span>` : "") +
+        `<div class="bar" style="height:${Math.max(h, 2)}px"></div>`;
+      el.appendChild(c);
+      const s = document.createElement("span");
+      s.textContent = i % showEvery === 0 ? r.d.slice(5) : "";
+      ax.appendChild(s);
+    });
+    bindTips(el);
+    return max;
+  }
+  if (DATA.daily.length) {
+    const botMax = columns("botCols", "botAxis", "bots", "crawler");
+    const humanMax = columns("humanCols", "humanAxis", "human", "human");
+    document.getElementById("botPeak").textContent = `peak ${fmt(botMax)}`;
+    document.getElementById("humanPeak").textContent = `peak ${fmt(humanMax)}`;
+  } else {
+    document.getElementById("dailySection").innerHTML =
+      '<div class="empty">no events in this window</div>';
+  }
+
+  // Ranked bar lists
+  function ranked(elId, rows, cls, opts = {}) {
+    const el = document.getElementById(elId);
+    if (!rows.length) {
+      el.innerHTML = `<div class="empty">${opts.empty || "none in this window"}</div>`;
+      return;
+    }
+    const max = Math.max(...rows.map((r) => r.n));
+    rows.forEach((r, i) => {
+      const row = document.createElement("div");
+      row.className = "rrow " + cls;
+      const w = Math.max((r.n / max) * 100, 0.6);
+      const readers = r.readers != null ? `<small>${fmt(r.readers)} rdr</small>` : "";
+      let name = opts.mono ? `<span class="mono-name">${esc(r.name)}</span>` : esc(r.name);
+      if (r.href) name = `<a href="${esc(r.href)}" target="_blank" rel="noopener">${name}</a>`;
+      row.dataset.tip = `${r.name}\\n${fmt(r.n)} ${opts.unit || ""}`.trim() +
+        (r.readers != null ? ` · ${fmt(r.readers)} unique readers` : "");
+      row.innerHTML =
+        `<span class="idx">${String(i + 1).padStart(2, "0")}</span>` +
+        `<span class="name">${name}</span>` +
+        `<span class="track"><span class="fill" style="width:${w}%"></span></span>` +
+        `<span class="num">${fmt(r.n)}${readers}</span>`;
+      el.appendChild(row);
+    });
+    if (opts.more) {
+      const row = document.createElement("div");
+      row.className = "rrow more " + cls;
+      row.innerHTML = `<span class="idx">+${opts.moreCount}</span>` +
+        `<span class="name" style="grid-column: 2 / -1">${esc(opts.more)}</span>`;
+      el.appendChild(row);
+    }
+    bindTips(el);
+  }
+
+  const botsAll = DATA.agents.by_bot.map((b) => ({ name: b.target, n: b.hits }));
+  const botsTop = botsAll.slice(0, 8);
+  const botsRest = botsAll.slice(8);
+  document.getElementById("botSub").textContent = `— hits, ${DATA.window_label}`;
+  ranked("botRank", botsTop, "c", {
+    unit: "hits", mono: true, empty: "no crawler hits in this window",
+    more: botsRest.length
+      ? botsRest.map((b) => b.name).join(" · ") + " — " +
+        fmt(botsRest.reduce((a, b) => a + b.n, 0)) + " hits combined"
+      : "",
+    moreCount: botsRest.length,
+  });
+
+  ranked("storyRank",
+    DATA.top_stories.slice(0, 12).map((s) => ({
+      name: s.title || s.target, n: s.views, readers: s.readers,
+      href: "https://mindpattern.ai/s/" + encodeURIComponent(s.target),
+    })),
+    "h", { unit: "views", empty: "no story views in this window" });
+
+  ranked("mixRank",
+    DATA.mix.map((m) => ({ name: m.label, n: m.count })),
+    "h", { unit: "events", empty: "no human events in this window" });
+
+  // Scroll depth
+  const dEl = document.getElementById("depthRows");
+  const depthTotal = DATA.scroll.reduce((a, r) => a + r.n, 0);
+  document.getElementById("depthSub").textContent =
+    depthTotal ? `of ${fmt(depthTotal)} depth pings` : "";
+  if (!DATA.scroll.length) {
+    dEl.innerHTML = '<div class="empty">no scroll tracking in this window</div>';
+  } else {
+    DATA.scroll.forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "depth";
+      row.dataset.tip = `${fmt(r.n)} reads reached ${r.value}% of the page`;
+      row.innerHTML =
+        `<span class="lab">≥ ${r.value}%</span>` +
+        `<span class="track"><span class="fill" style="width:${(r.n / depthTotal) * 100}%"></span></span>` +
+        `<span class="n">${fmt(r.n)}</span>`;
+      dEl.appendChild(row);
+    });
+    bindTips(dEl);
+  }
+
+  ranked("refRank",
+    DATA.referrers.map((r) => ({ name: r.ref_domain, n: r.count })),
+    "h", { unit: "visits", mono: true, empty: "direct / no referrers in this window" });
+  ranked("searchRank",
+    DATA.search_terms.map((r) => ({ name: r.target, n: r.count })),
+    "h", { unit: "searches", mono: true, empty: "no searches in this window" });
+
+  // Computed briefing: drill-through, subscribes — only when there is signal.
+  const clickOf = (type) => (DATA.clicks.find((c) => c.type === type) || {}).count || 0;
+  const lines = [];
+  if (t.story_views > 0) {
+    const related = clickOf("related_click");
+    lines.push(`<b>${Math.round((related / t.story_views) * 100)}% drill-through</b> — ` +
+      `${fmt(related)} related-story clicks against ${fmt(t.story_views)} views.`);
+  }
+  const sub = DATA.subscribe;
+  lines.push(sub.submitted
+    ? `Subscribes: <b>${fmt(sub.success)} confirmed</b> of ${fmt(sub.submitted)} submitted` +
+      (sub.conversion != null ? ` (${Math.round(sub.conversion * 100)}%).` : ".")
+    : "No subscribes in this window yet.");
+  const outbound = clickOf("outbound_source_click");
+  if (outbound) lines.push(`${fmt(outbound)} outbound source clicks — readers following the wire to primary sources.`);
+  if (lines.length) {
+    document.getElementById("briefing").hidden = false;
+    document.getElementById("briefingBody").innerHTML =
+      lines.map((l) => `<p>${l}</p>`).join("");
+  }
+</script>
+</body></html>"""
 
 
 @router.get("/site-analytics", response_class=HTMLResponse)
 async def site_analytics_page(request: Request, window: str = Query("7d")):
-    """Private: minimal internal dash — tables over the summary."""
+    """Private: the live editorial dashboard — fresh queries on every load."""
     if window not in _WINDOWS:
         window = "7d"
-    data = _summary(window)
+    data = await _summary_with_titles(window)
     token = request.query_params.get("token", "")
     token_qs = f"&token={token}" if token else ""
-    bold = ' style="font-weight:bold"'
+    active = ' class="active"'
     tabs = " · ".join(
-        f'<a href="/site-analytics?window={w}{token_qs}"{bold if w == window else ""}>{w}</a>'
+        f'<a href="/site-analytics?window={w}{token_qs}"'
+        f'{active if w == window else ""}>{w}</a>'
         for w in _WINDOWS
     )
-    story_rows = "".join(
-        f'<tr><td><a href="https://mindpattern.ai/s/{s["target"]}">{s["target"]}</a></td>'
-        f'<td>{s["views"]}</td><td>{s["readers"]}</td></tr>'
-        for s in data["top_stories"]
-    ) or '<tr><td colspan="3">no story views in window</td></tr>'
-    click_rows = "".join(
-        f'<tr><td>{c["type"]}</td><td>{c["count"]}</td></tr>' for c in data["clicks"]
-    ) or '<tr><td colspan="2">none</td></tr>'
-    agent_rows = "".join(
-        f'<tr><td>{a["target"]}</td><td>{a["hits"]}</td></tr>'
-        for a in data["agents"]["by_bot"]
-    ) or '<tr><td colspan="2">no AI-agent hits yet</td></tr>'
-    agent_page_rows = "".join(
-        f'<tr><td>{a["path"]}</td><td>{a["hits"]}</td></tr>'
-        for a in data["agents"]["top_pages"]
-    ) or '<tr><td colspan="2">none</td></tr>'
-    term_rows = "".join(
-        f'<tr><td>{t["target"]}</td><td>{t["count"]}</td></tr>'
-        for t in data["search_terms"]
-    ) or '<tr><td colspan="2">none</td></tr>'
-    ref_rows = "".join(
-        f'<tr><td>{r["ref_domain"]}</td><td>{r["count"]}</td></tr>' for r in data["referrers"]
-    ) or '<tr><td colspan="2">direct / none</td></tr>'
-    sub = data["subscribe"]
-    html = f"""<!doctype html><html><head><title>Site analytics · {window}</title>
-<style>body{{font-family:ui-monospace,monospace;max-width:860px;margin:2rem auto;padding:0 1rem;background:#f4f1ea;color:#1a1a1a}}
-table{{border-collapse:collapse;width:100%;margin:.5rem 0 1.5rem}}td,th{{border:1px solid #d8d2c4;padding:.35rem .6rem;text-align:left;font-size:13px}}
-th{{background:#ece7db;text-transform:uppercase;font-size:11px;letter-spacing:.08em}}h1{{font-size:20px}}h2{{font-size:14px;text-transform:uppercase;letter-spacing:.08em}}</style></head><body>
-<h1>Rabbit Hole — reader analytics</h1>
-<p>Window: {tabs} · {data["totals"]["events"]} events · {data["totals"]["readers"]} readers</p>
-<h2>Top stories</h2><table><tr><th>story</th><th>views</th><th>readers</th></tr>{story_rows}</table>
-<h2>Clicks</h2><table><tr><th>type</th><th>count</th></tr>{click_rows}</table>
-<h2>Referrers</h2><table><tr><th>domain</th><th>count</th></tr>{ref_rows}</table>
-<h2>AI agents &amp; crawlers</h2><table><tr><th>agent</th><th>hits</th></tr>{agent_rows}</table>
-<h2>Pages agents read</h2><table><tr><th>path</th><th>hits</th></tr>{agent_page_rows}</table>
-<h2>Search terms</h2><table><tr><th>query</th><th>count</th></tr>{term_rows}</table>
-<h2>Subscribe</h2><p>submitted {sub["submitted"]} · success {sub["success"]} · conversion {sub["conversion"] if sub["conversion"] is not None else "n/a"}</p>
-</body></html>"""
+    generated = time.strftime("%d %b %Y %H:%M UTC", time.gmtime())
+    payload = json.dumps(data).replace("<", "\\u003c")
+    html = (
+        _PAGE
+        .replace("__TABS__", tabs)
+        .replace("__GENERATED__", generated)
+        .replace("__DATA__", payload)
+    )
     return HTMLResponse(html)

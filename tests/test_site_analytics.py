@@ -36,6 +36,44 @@ def test_summary_shape_with_bearer(client, monkeypatch):
     assert "hot-story" in page.text
 
 
+def test_summary_splits_crawlers_from_humans(client, monkeypatch):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+
+    client.post("/api/event", json={"type": "agent_hit", "target": "GPTBot", "path": "/s/hot-story"})
+    client.post("/api/event", json={"type": "story_view", "target": "hot-story", "anon_id": "reader01"})
+    client.post("/api/event", json={"type": "scroll_depth", "target": "hot-story", "value": 50})
+    client.post("/api/event", json={"type": "related_click", "target": "next-story"})
+
+    payload = client.get("/api/site-analytics/summary?window=7d", headers=headers).json()
+    assert payload["totals"]["events"] == 4
+    assert payload["totals"]["crawler_hits"] == 1
+    assert payload["totals"]["human_events"] == 3
+    assert payload["totals"]["crawler_share"] == 25.0
+    assert payload["totals"]["story_views"] == 1
+    assert payload["agents"]["by_bot"][0]["target"] == "GPTBot"
+    # daily series covers today with the bot/human split
+    assert payload["daily"][-1]["bots"] == 1
+    assert payload["daily"][-1]["human"] == 3
+    assert payload["daily"][-1]["views"] == 1
+    # human event mix excludes crawler hits
+    assert {m["type"] for m in payload["mix"]} == {"story_view", "scroll_depth", "related_click"}
+    assert payload["scroll"] == [{"value": 50, "n": 1}]
+
+
+def test_page_escapes_user_supplied_targets(client, monkeypatch):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+
+    client.post("/api/event", json={"type": "search_query", "target": "<script>alert(1)</script>"})
+
+    page = client.get("/site-analytics", headers=headers)
+    assert page.status_code == 200
+    assert "<script>alert" not in page.text  # injected JSON escapes all '<'
+
+
 def test_dash_query_token(client, monkeypatch):
     import dashboard.auth as auth
     monkeypatch.setattr(auth, "_token_valid", lambda token: token == "browser-token")
