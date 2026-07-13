@@ -134,10 +134,12 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
                 continue
             if domain:
                 source_domains.append(domain)
+    # Handlers are called as plain functions here, so every Query param must
+    # be passed explicitly — an omitted one stays a Query object, not a value.
     await step(
         "sources",
         [
-            (lambda d=d: api.get_source_detail(d, user=user, limit=SITE_SOURCE_LIMIT))
+            (lambda d=d: api.get_source_detail(d, user=user, limit=SITE_SOURCE_LIMIT, offset=0))
             for d in source_domains
         ],
     )
