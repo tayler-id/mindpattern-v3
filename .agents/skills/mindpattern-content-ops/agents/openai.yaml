@@ -1,0 +1,6 @@
+interface:
+  display_name: "MindPattern Content Ops"
+  short_description: "Diagnose and operate daily content stages"
+  default_prompt: "Use $mindpattern-content-ops to diagnose today's content pipeline and its artifacts."
+policy:
+  allow_implicit_invocation: true

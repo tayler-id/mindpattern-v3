@@ -1,0 +1,4 @@
+# Repeatable local verification commands for this repository.
+prefix_rule(pattern=["/Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python3", "-m", "pytest"], decision="allow")
+prefix_rule(pattern=[".venv/bin/python3", "-m", "pytest"], decision="allow")
+prefix_rule(pattern=[".venv/bin/python3", "-m", "uvicorn"], decision="allow")

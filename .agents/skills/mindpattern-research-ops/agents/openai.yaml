@@ -1,0 +1,6 @@
+interface:
+  display_name: "MindPattern Research Ops"
+  short_description: "Diagnose MindPattern research source workflows"
+  default_prompt: "Use $mindpattern-research-ops to investigate research-source health and routing."
+policy:
+  allow_implicit_invocation: true

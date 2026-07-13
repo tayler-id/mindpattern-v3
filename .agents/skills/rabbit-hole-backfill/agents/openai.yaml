@@ -1,0 +1,6 @@
+interface:
+  display_name: "Rabbit Hole Backfill"
+  short_description: "Operate the claim-based archive backfill"
+  default_prompt: "Use $rabbit-hole-backfill to resume and report the archive backfill safely."
+policy:
+  allow_implicit_invocation: false

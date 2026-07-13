@@ -1,0 +1,6 @@
+interface:
+  display_name: "MindPattern Goal Lifecycle"
+  short_description: "Plan and checkpoint durable MindPattern goals"
+  default_prompt: "Use $mindpattern-goal-lifecycle to start a durable goal with a runbook and handoff."
+policy:
+  allow_implicit_invocation: false

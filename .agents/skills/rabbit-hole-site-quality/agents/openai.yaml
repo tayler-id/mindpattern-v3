@@ -1,0 +1,11 @@
+interface:
+  display_name: "Rabbit Hole Site Quality"
+  short_description: "Audit Rabbit Hole content and site quality"
+  default_prompt: "Use $rabbit-hole-site-quality to audit the public site across content, graph, API, and frontend quality."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "chrome-devtools"
+      description: "Chrome DevTools MCP for browser validation"
+policy:
+  allow_implicit_invocation: true

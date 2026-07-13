@@ -1,8 +1,9 @@
-"""Drift control: the operator prompts must stay real goal prompts.
+"""Drift control: explicit operator surfaces must stay real goal prompts.
 
 The harness works only as well as the prose agents are handed. This locks
 the goal framing, the machine-checkable done condition, and the shared core
-block across every prompt surface.
+block across the Claude command and Codex skill reference without making the
+repository-wide AGENTS.md an operator prompt.
 """
 
 import re
@@ -11,7 +12,7 @@ from pathlib import Path
 V3 = Path(__file__).parent.parent
 HANDOFF = V3.parent / "mindpattern-rabbit-hole" / "docs" / "handoff" / "backfill-goal-prompt.md"
 COMMAND = V3 / ".claude" / "commands" / "backfill.md"
-AGENTS = V3 / "AGENTS.md"
+CODEX_SKILL = V3 / ".agents" / "skills" / "rabbit-hole-backfill" / "references" / "operator-goal.md"
 
 REQUIRED_TOKENS = [
     "/goal",
@@ -36,7 +37,7 @@ def _core(text: str) -> str:
 
 
 def _surfaces():
-    surfaces = [COMMAND, AGENTS]
+    surfaces = [COMMAND, CODEX_SKILL]
     if HANDOFF.exists():  # sibling repo may be absent in CI checkouts
         surfaces.append(HANDOFF)
     return surfaces

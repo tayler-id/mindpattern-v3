@@ -1,61 +1,129 @@
-# Rabbit Hole backfill operator goal: Rabbit Hole archive backfill (durable, any agent)
+# MindPattern v3 development guide
 
-Paste everything from the /goal line down into a fresh Claude Code or Codex
-session. The goal persists across sessions: state lives on disk (artifacts,
-claims, notebook), so any session resumes exactly where the last stopped.
+## Scope
 
-<!-- backfill-core-start -->
-/goal Convert the Rabbit Hole archive until no backfill work remains.
+This repository is the Python backend, autonomous research pipeline, FastAPI API/dashboard, Slack bot, and local improvement harness.
 
-Definition of done (machine-checkable): `status` reports
-`remaining_unclaimed == 0 AND in_progress == 0`. remaining_unclaimed alone
-is not done: work may be claimed by active agents; wait and re-check.
+The public Next.js site is a separate repository at `/Users/taylerramsay/Projects/mindpattern-rabbit-hole`. This repository has no `package.json`, `pyproject.toml`, Makefile, or JavaScript build step. Do not run `pnpm` from this root.
 
-You are an OPERATOR, not a developer: never edit/write/delete repo files,
-never commit, never kill processes you did not start, never run run.py,
-never deploy. Your only writes are the artifacts and notebook lines the
-backfill itself produces.
+Rabbit Hole archive backfill is an explicit operator workflow, not the default repository role. Use the dedicated `rabbit-hole-backfill` skill only when the task asks for backfill operations.
 
-Setup (once per session; every session gets its own worktree):
-1. AGENT=<unique name, e.g. claude-op-1421 / codex-op-1421>
-2. git -C /Users/taylerramsay/Projects/mindpattern-v3 worktree add "/tmp/backfill-$AGENT" HEAD
-3. cd "/tmp/backfill-$AGENT"
-4. PY=/Users/taylerramsay/Projects/mindpattern-v3/.venv/bin/python
-   ROOT=/Users/taylerramsay/Projects/mindpattern-v3/reports
-   export MP_REPORTS_DIR="$ROOT"
-   (every command below also takes --reports-root "$ROOT": artifacts, claims,
-   and the notebook must land in the canonical tree the site serves)
+## Before changing anything
 
-The loop (repeat until done or a stop condition):
-1. "$PY" -m orchestrator.site_backfill status --reports-root "$ROOT"
-   -> remaining_unclaimed == 0 AND in_progress == 0: report final status,
-      go to Cleanup, the goal is COMPLETE.
-   -> remaining_unclaimed == 0 but in_progress > 0: other agents own the
-      tail; wait 30 minutes and re-check status.
-2. Preconditions for a batch (if any fail: report why, wait, retry later):
-   - /tmp/mindpattern-ran-$(date +%F) and /tmp/mindpattern-synced-$(date +%F)
-     exist (today's newsletter delivered and synced) and it is after 13:00.
-   - No batch of yours already running.
-3. "$PY" -m orchestrator.site_backfill claim --size 50 --agent "$AGENT" --reports-root "$ROOT"
-4. In a Claude session: MP_SITE_STORY_WRITER=claude
-   In a Codex session:  MP_SITE_STORY_WRITER=codex   (spends Codex quota)
-   <writer env> "$PY" -m orchestrator.site_backfill run --claim <claim_id> --workers 2 --reports-root "$ROOT"
-   Watch live: tail -f "$ROOT/ramsay/site-backfill-notebook.md"
-5. Report after every batch: outcomes JSON, any ABORTED reason, fresh
-   status JSON, and the notebook lines for your claim id.
-6. Stop conditions:
-   - ABORTED (usage_limit or failure streak): stop for the day. Do not retry.
-   - At most 2 batches per day per agent, at least 2 hours apart.
-   - failed:* outcomes are normal (the critic refusing unpublishable copy);
-     they auto-release and later batches retry them. Do not "fix" them.
+- Work from this repository root and inspect `git status --short`.
+- Preserve unrelated user changes and generated/runtime state.
+- Read the relevant spec or runbook under `docs/` before changing a subsystem.
+- For `harness/`, also read `harness/CLAUDE.md`.
+- Instructions in `knowledge/AGENTS.md` apply inside `knowledge/`.
+- For cross-module architecture questions, consult `graphify-out/GRAPH_REPORT.md` and `docs/ARCHITECTURE.md`.
 
-Cleanup:
-7. cd / && git -C /Users/taylerramsay/Projects/mindpattern-v3 worktree remove "/tmp/backfill-$AGENT" --force
-   (nothing to merge: operators change no code; artifacts already live in
-   the canonical data root)
-<!-- backfill-core-end -->
+## Project map
 
-Done-tracking (source of truth): a story is finished iff
-reports/ramsay/site-stories/{date}/{slug}.json exists with
-provenance.writer set. `status` also prints the notebook path; the notebook
-is the human-readable trail of every batch and story.
+- `run.py`: single local pipeline entry point and concurrency guard.
+- `orchestrator/`: pipeline phases, agent dispatch, newsletter, sync, site content, backfill, media, and observability.
+- `preflight/` and `tools/`: source collection and normalization.
+- `core/`: shared database, migrations, time, LLM, and outbound-receipt helpers.
+- `memory/` and `kg/`: SQLite-backed memory and knowledge-graph logic.
+- `social/`: drafting, approvals, engagement, and posting.
+- `slack_bot/`: Socket Mode service and Slack handlers.
+- `dashboard/`: canonical FastAPI/Jinja dashboard and public API. Production runs `dashboard.app`; `dashboard/server.ts` is not the deployed frontend.
+- `harness/`: Mac-only autonomous engineering harness.
+- `agents/` and `verticals/ai-tech/agents/`: runtime agent prompt files.
+- `tests/`: offline pytest suite, with files named `test_*.py`.
+- `data/` and `reports/`: personal/runtime state and generated artifacts; treat them as user-owned unless the task explicitly targets them.
+- `docs/specs/`, `docs/runbooks/`, and `docs/adr/`: product decisions and implementation state.
+
+## Environment setup
+
+Use Python 3.14 and the repository virtual environment. Do not use the system `python3` for project commands.
+
+```sh
+python3.14 -m venv .venv
+.venv/bin/python3 -m pip install --upgrade pip
+.venv/bin/python3 -m pip install -r requirements.txt pytest
+```
+
+Tests must run without API keys or network access. Mock Claude CLI subprocesses and external services.
+
+## Backend commands
+
+Focused test:
+
+```sh
+.venv/bin/python3 -m pytest tests/test_<area>.py -x -q
+```
+
+Full local suite:
+
+```sh
+.venv/bin/python3 -m pytest tests/ -x -q
+```
+
+`.github/workflows/test.yml` is the source of truth for the exact CI split and critical runner/backfill contract tests.
+
+Run the FastAPI service locally:
+
+```sh
+.venv/bin/python3 -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8010
+```
+
+There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development.
+
+A pipeline smoke can write local databases, reports, and checkpoints even when outbound calls are disabled. Run one only when the task requires it:
+
+```sh
+MP_DISABLE_OUTBOUND=1 .venv/bin/python3 run.py --user ramsay --dry-run --skip-social
+```
+
+Never use `run-launchd.sh` or `start.sh` as local development commands. `run-launchd.sh` can pull Git and run the scheduled pipeline; `start.sh` is the Fly container entrypoint and starts both Uvicorn and the live Slack bot.
+
+## Public frontend
+
+For public-site work, switch to the sibling repository and obey its `CLAUDE.md`:
+
+```sh
+cd /Users/taylerramsay/Projects/mindpattern-rabbit-hole
+pnpm install
+pnpm lint
+pnpm exec tsc --noEmit --incremental false
+pnpm build
+```
+
+That package currently has no automated test script. For a production-style local smoke, first run this backend on port 8010, then from the site repository:
+
+```sh
+BACKEND_API_URL=http://127.0.0.1:8010 pnpm start --hostname 127.0.0.1 --port 3010
+```
+
+Use `pnpm dev --hostname 127.0.0.1 --port 3010` during normal interactive UI development.
+
+## Engineering conventions
+
+- Use `logging.getLogger(__name__)`.
+- Use context managers or explicit `close()` for database connections; retain SQLite WAL behavior.
+- Order imports as standard library, third party, then local.
+- Prefer `str | None` to `Optional[str]`.
+- Use parameterized SQL and numbered `user_version` migrations.
+- Give every new behavior a focused regression test.
+- Keep tests deterministic, offline, and independent of personal state.
+- Preserve public API response contracts used by the Rabbit Hole site.
+
+## Safety and ownership boundaries
+
+- Do not run the full live pipeline, send newsletters, post to social media, connect a live Slack bot, deploy Fly/Vercel, alter launchd, or enable live providers unless the task explicitly authorizes it.
+- Ask before adding dependencies, changing database or KG schemas, or changing a frontend-consumed API response shape.
+- Preserve unrelated files under `data/`, `reports/`, and local identity or editorial state. Never clean or rewrite them as incidental work.
+- Never commit secrets, `.env`, credentials, PII, databases, `users.json`, `social-config.json`, logs, or generated reports.
+- Make every outbound side effect honor `MP_DISABLE_OUTBOUND=1` and use the receipt/idempotency boundary.
+- Keep private routes default-deny. Never serve `data/` as static files or add unauthenticated state-changing endpoints.
+- Do not commit, push, merge, deploy, or change external services unless the task includes that action.
+
+## Verification
+
+- Run the smallest relevant tests while iterating.
+- Before commit or merge, run the full local suite unless a documented baseline failure prevents it.
+- For API/auth work, include the relevant contract and auth tests.
+- For public-site work, run lint, TypeScript checking, build, and a browser smoke against the local backend.
+- After Python code changes, run `graphify update .` and `graphify check-update .`.
+- Finish with `git diff --check` and `git status --short`.
+- Report exact commands, outcomes, and anything not run.

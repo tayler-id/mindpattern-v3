@@ -1,0 +1,5 @@
+# Project-only browser tooling. Keep the version pinned so sessions are reproducible.
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["--yes", "chrome-devtools-mcp@1.5.0"]
+default_tools_approval_mode = "writes"

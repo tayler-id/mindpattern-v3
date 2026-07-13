@@ -57,7 +57,22 @@ Thumbs.db
 .claude/skills/*
 !.claude/skills/session-handoff
 .agent/
-.agents/
+# Keep local agent state ignored, but version the curated Codex project skills.
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/rabbit-hole-backfill/
+!.agents/skills/rabbit-hole-backfill/**
+!.agents/skills/mindpattern-goal-lifecycle/
+!.agents/skills/mindpattern-goal-lifecycle/**
+!.agents/skills/mindpattern-content-ops/
+!.agents/skills/mindpattern-content-ops/**
+!.agents/skills/mindpattern-research-ops/
+!.agents/skills/mindpattern-research-ops/**
+!.agents/skills/mindpattern-repo-release/
+!.agents/skills/mindpattern-repo-release/**
+!.agents/skills/rabbit-hole-site-quality/
+!.agents/skills/rabbit-hole-site-quality/**
 .pi/
 .kiro/
 

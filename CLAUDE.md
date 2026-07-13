@@ -8,11 +8,11 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 
 - **Python 3.14** codebase, no type stubs needed
 - **SQLite databases**: `data/ramsay/memory.db` (user data, 17+ tables), `data/ramsay/traces.db` (observability, 14 tables)
-- **Pipeline**: `orchestrator/runner.py` — 12 phases in fixed order (INIT → TREND_SCAN → RESEARCH → SYNTHESIS → DELIVER → LEARN → SOCIAL → ENGAGEMENT → EVOLVE → IDENTITY → MIRROR → SYNC)
+- **Pipeline**: `orchestrator/pipeline.py` defines the `Phase` state machine (INIT → TREND_SCAN → RESEARCH → SYNTHESIS → DELIVER → SITE_CONTENT → LEARN → SOCIAL → ENGAGEMENT → IDENTITY → MIRROR → SYNC → COMPLETED); `orchestrator/runner.py` executes the phases
 - **Agent dispatch**: `orchestrator/agents.py` — `run_single_agent()`, `run_claude_prompt()`, `dispatch_research_agents()`
 - **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern. Runs 24/7 on Fly.io (app `mindpattern`, alongside the dashboard via `start.sh`); harness commands stay Mac-only. Secrets come from Fly secrets (env vars) in the container, macOS Keychain locally.
 - **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
-- **Scheduling**: macOS launchd via `run-launchd.sh` (7 AM daily)
+- **Scheduling**: macOS launchd via `run-launchd.sh` (`deploy/com.mindpattern.pipeline.plist` fires hourly 07:00–11:00; the script's lock and window guard ensure one run per day)
 
 ## Code Conventions
 

@@ -1,0 +1,6 @@
+interface:
+  display_name: "MindPattern Repo Release"
+  short_description: "Verify and release MindPattern repository work"
+  default_prompt: "Use $mindpattern-repo-release to prepare verified changes for an intentional release."
+policy:
+  allow_implicit_invocation: false
