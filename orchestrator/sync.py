@@ -557,6 +557,76 @@ def upload_bundle(bundle_path: Path, remote_path: str, app_name: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+def warm_public_site(
+    *,
+    date: str,
+    backend_url: str = "https://mindpattern.fly.dev",
+    site_url: str = "https://mindpattern.ai",
+    backend_wait_minutes: float = 10.0,
+) -> dict:
+    """Seed the public site's CDN cache right after the post-sync restart.
+
+    The restart wipes the dashboard's in-memory caches, and Vercel's page
+    cache only fills per-click — without this, the morning's first readers
+    rendered every page against a cold backend. Waits for the backend's own
+    warm-up (dashboard/warmup.py) to finish or a deadline, then serially
+    requests the day's new pages plus the entry points so the CDN copy exists
+    before anyone wakes up. Best-effort throughout: never raises.
+    """
+    import urllib.request
+
+    def _get(url: str, timeout: float = 45.0) -> bytes:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return response.read()
+
+    result: dict = {"backend_warm": False, "crawled": 0, "failed": 0}
+
+    # 1. Backend restarted + its cache warm-up finished (best-effort deadline;
+    #    a partial warm still beats a fully cold crawl).
+    deadline = time.monotonic() + backend_wait_minutes * 60
+    while time.monotonic() < deadline:
+        try:
+            status = json.loads(_get(f"{backend_url}/api/warmup/status", timeout=20))
+            phase = status.get("phase")
+            if phase == "done":
+                result["backend_warm"] = True
+                break
+            if phase in ("failed", "cancelled"):
+                log.warning("Site warm-up: backend warm-up phase=%s; crawling anyway", phase)
+                break
+        except Exception:
+            pass  # machine still restarting / old build without the endpoint
+        time.sleep(15)
+
+    # 2. The day's new pages + the entry points, one at a time — each render
+    #    fans out to the backend on its own, so serial keeps the box calm.
+    pages = [
+        f"{site_url}/briefings/{date}",
+        f"{site_url}/blog/{date}",
+        f"{site_url}/briefings",
+        f"{site_url}/",
+    ]
+    try:
+        stories = json.loads(_get(f"{backend_url}/api/stories?user=ramsay&limit=50", timeout=30))
+        pages.extend(
+            f"{site_url}/s/{item['slug']}"
+            for item in stories.get("items", [])
+            if item.get("issue_date") == date and item.get("slug")
+        )
+    except Exception as exc:
+        log.warning("Site warm-up: story list unavailable, crawling entry points only: %s", exc)
+
+    for url in pages:
+        try:
+            _get(url)
+            result["crawled"] += 1
+        except Exception as exc:
+            result["failed"] += 1
+            log.warning("Site warm-up: %s failed: %s", url, exc)
+
+    return result
+
+
 def restart_app(app_name: str) -> dict:
     """Restart the Fly.io app. Only call ONCE after ALL users synced.
 

@@ -1,5 +1,7 @@
 """FastAPI dashboard app factory — Research Agent Dashboard."""
 
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -17,10 +19,22 @@ from dashboard.routes import (
 )
 
 from dashboard.auth import enforce_auth
+from dashboard import warmup
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-app = FastAPI(title="Research Agent Dashboard")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Rebuild the public caches after every boot: the nightly sync restarts
+    # this machine right after new data lands, which wipes every in-memory
+    # cache — without this the first readers of the day paid the cold computes.
+    warm_task = asyncio.create_task(warmup.startup_warmup())
+    yield
+    warm_task.cancel()
+
+
+app = FastAPI(title="Research Agent Dashboard", lifespan=_lifespan)
 
 # Default-deny: everything not on auth.PUBLIC_PREFIXES requires a bearer
 # token. Registered before CORS so it wraps every route including mounts.

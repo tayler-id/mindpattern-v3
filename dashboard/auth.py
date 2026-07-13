@@ -58,6 +58,7 @@ PUBLIC_PREFIXES = [
     "/api/health",
     "/api/reports",
     "/api/audio-briefings",
+    "/api/warmup",       # read-only warm-up progress, polled by the pipeline
     "/healthz",
     "/mcp",               # MCP server for the site's chat tab (lands in v4 M1)
 ]

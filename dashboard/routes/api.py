@@ -1678,22 +1678,38 @@ def _structured_issue_from_report_file_uncached(*, date: str, user: str) -> dict
         return None
 
 
-def _published_story_refs_for_issue(*, date: str, user: str) -> list[dict]:
-    refs: list[dict] = []
-    seen_story_units: set[str] = set()
+_PUBLISHED_REFS_INDEX_CACHE: dict[str, tuple[float, dict[str, list[dict]]]] = {}
+
+
+def _published_story_refs_index(user: str) -> dict[str, list[dict]]:
+    """date → published-story refs, built in ONE pass per content change.
+
+    Every structured-issue request used to re-rglob and re-parse the whole
+    site-stories tree (~376 JSONs) just to keep the stories for one date, so
+    serving or warming N dates cost N full-tree scans."""
+    fingerprint = _story_sources_fingerprint(user)
+    cached = _PUBLISHED_REFS_INDEX_CACHE.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    index: dict[str, list[dict]] = {}
+    seen_by_date: dict[str, set[str]] = {}
     for path in _public_story_files(user):
         story = _load_public_story_file(path)
-        if story is None or story.get("issue_date") != date:
+        if story is None:
+            continue
+        date = str(story.get("issue_date") or "")
+        if not date:
             continue
         story_unit_id = str(
             story.get("story_unit_id")
             or story.get("provenance", {}).get("source_story_unit_id")
             or ""
         ).strip()
-        if not story_unit_id or story_unit_id in seen_story_units:
+        seen = seen_by_date.setdefault(date, set())
+        if not story_unit_id or story_unit_id in seen:
             continue
-        seen_story_units.add(story_unit_id)
-        refs.append(
+        seen.add(story_unit_id)
+        index.setdefault(date, []).append(
             {
                 "story_unit_id": story_unit_id,
                 "slug": story["slug"],
@@ -1704,7 +1720,14 @@ def _published_story_refs_for_issue(*, date: str, user: str) -> list[dict]:
                 "entity_ids": story.get("graph_connectors", {}).get("entity_ids", []),
             }
         )
-    return sorted(refs, key=lambda item: item["story_unit_id"])
+    for refs in index.values():
+        refs.sort(key=lambda item: item["story_unit_id"])
+    _PUBLISHED_REFS_INDEX_CACHE[user] = (fingerprint, index)
+    return index
+
+
+def _published_story_refs_for_issue(*, date: str, user: str) -> list[dict]:
+    return list(_published_story_refs_index(user).get(date, []))
 
 
 def _enrich_issue_with_published_stories(*, issue: dict, user: str) -> dict:
@@ -1724,6 +1747,17 @@ def _enrich_issue_with_published_stories(*, issue: dict, user: str) -> dict:
         for story in issue.get("story_units", [])
     ]
     return enriched
+
+
+@router.get("/api/warmup/status")
+async def get_warmup_status():
+    """Public: post-restart cache warm-up progress.
+
+    The pipeline's post-sync site warm-up polls this before crawling the
+    public site, so Vercel pages render against a hot backend."""
+    from dashboard import warmup
+
+    return warmup.warmup_status()
 
 
 @router.get("/api/issues")

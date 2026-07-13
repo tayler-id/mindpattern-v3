@@ -2308,7 +2308,7 @@ class ResearchPipeline:
 
         Bundle memory.db + reports → upload → dashboard gets fresh data.
         """
-        from .sync import restart_app, sync_to_fly, write_synced_marker
+        from .sync import restart_app, sync_to_fly, warm_public_site, write_synced_marker
 
         data_dir = PROJECT_ROOT / "data"
         result = sync_to_fly(
@@ -2326,6 +2326,14 @@ class ResearchPipeline:
             if restart.get("success"):
                 logger.info("Fly app restarted to pick up synced data")
                 write_synced_marker(self.date_str)
+                # Phase 3 (precompute at publish): the restart wiped the
+                # dashboard caches, so wait for its warm-up and seed the
+                # public site's CDN before the morning's first readers.
+                try:
+                    warm = warm_public_site(date=self.date_str)
+                    logger.info(f"Public site warm-up: {warm}")
+                except Exception as exc:
+                    logger.warning(f"Public site warm-up failed (non-fatal): {exc}")
             else:
                 logger.warning(f"Fly restart failed: {restart.get('error')}")
         else:
