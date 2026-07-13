@@ -50,16 +50,43 @@ def test_summary_splits_crawlers_from_humans(client, monkeypatch):
     assert payload["totals"]["events"] == 4
     assert payload["totals"]["crawler_hits"] == 1
     assert payload["totals"]["human_events"] == 3
+    assert payload["totals"]["reader_events"] == 3
+    assert payload["totals"]["owner_events"] == 0
     assert payload["totals"]["crawler_share"] == 25.0
     assert payload["totals"]["story_views"] == 1
     assert payload["agents"]["by_bot"][0]["target"] == "GPTBot"
-    # daily series covers today with the bot/human split
+    # daily series covers today with the bot/reader/owner split
     assert payload["daily"][-1]["bots"] == 1
-    assert payload["daily"][-1]["human"] == 3
+    assert payload["daily"][-1]["readers"] == 3
+    assert payload["daily"][-1]["owner"] == 0
     assert payload["daily"][-1]["views"] == 1
     # human event mix excludes crawler hits
     assert {m["type"] for m in payload["mix"]} == {"story_view", "scroll_depth", "related_click"}
     assert payload["scroll"] == [{"value": 50, "n": 1}]
+
+
+def test_owner_events_marked_not_counted_as_readers(client, monkeypatch):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+
+    client.post("/api/event", json={"type": "story_view", "target": "hot-story", "anon_id": "visitor1"})
+    client.post("/api/event", json={"type": "story_view", "target": "hot-story", "anon_id": "tayler01", "owner": 1})
+    client.post("/api/event", json={"type": "story_view", "target": "own-story", "anon_id": "tayler01", "owner": 1})
+    client.post("/api/event", json={"type": "search_query", "target": "agents", "anon_id": "tayler01", "owner": 1})
+
+    payload = client.get("/api/site-analytics/summary?window=7d", headers=headers).json()
+    assert payload["totals"]["owner_events"] == 3
+    assert payload["totals"]["reader_events"] == 1
+    assert payload["totals"]["readers"] == 1  # tayler01 is not a reader
+    assert payload["totals"]["story_views"] == 1  # owner views not reader views
+    hot = next(s for s in payload["top_stories"] if s["target"] == "hot-story")
+    assert hot["views"] == 1 and hot["owner_views"] == 1
+    own = next(s for s in payload["top_stories"] if s["target"] == "own-story")
+    assert own["views"] == 0 and own["owner_views"] == 1
+    assert payload["daily"][-1]["owner"] == 3
+    assert payload["search_terms"][0]["count"] == 0
+    assert payload["search_terms"][0]["owner_count"] == 1
 
 
 def test_page_escapes_user_supplied_targets(client, monkeypatch):

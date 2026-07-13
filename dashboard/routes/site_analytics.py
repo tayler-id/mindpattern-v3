@@ -46,16 +46,22 @@ def _summary(window: str) -> dict:
     cutoff = int(time.time() - days * 86400)
     conn = open_events_db()
     try:
+        # Reader metrics exclude owner-flagged events; owner activity is
+        # reported alongside, marked, never blended into reader counts.
         top_stories = [
             dict(r) for r in conn.execute(
-                """SELECT target, COUNT(*) views, COUNT(DISTINCT anon_id) readers
+                """SELECT target,
+                          SUM(owner=0) views,
+                          COUNT(DISTINCT CASE WHEN owner=0 THEN anon_id END) readers,
+                          SUM(owner=1) owner_views
                    FROM events WHERE type='story_view' AND ts>=? AND target!=''
-                   GROUP BY target ORDER BY views DESC LIMIT 25""", (cutoff,))
+                   GROUP BY target ORDER BY views DESC, owner_views DESC
+                   LIMIT 25""", (cutoff,))
         ]
         clicks = [
             dict(r) for r in conn.execute(
                 """SELECT type, COUNT(*) count FROM events
-                   WHERE ts>=? AND type IN ('related_click','entity_click',
+                   WHERE ts>=? AND owner=0 AND type IN ('related_click','entity_click',
                      'source_click','briefing_click','outbound_source_click',
                      'search_query')
                    GROUP BY type ORDER BY count DESC""", (cutoff,))
@@ -63,13 +69,14 @@ def _summary(window: str) -> dict:
         referrers = [
             dict(r) for r in conn.execute(
                 """SELECT ref_domain, COUNT(*) count FROM events
-                   WHERE ts>=? AND ref_domain!='' GROUP BY ref_domain
+                   WHERE ts>=? AND owner=0 AND ref_domain!='' GROUP BY ref_domain
                    ORDER BY count DESC LIMIT 15""", (cutoff,))
         ]
         subs = {
             r["type"]: r["c"] for r in conn.execute(
                 """SELECT type, COUNT(*) c FROM events
-                   WHERE ts>=? AND type IN ('subscribe_submitted','subscribe_success')
+                   WHERE ts>=? AND owner=0
+                     AND type IN ('subscribe_submitted','subscribe_success')
                    GROUP BY type""", (cutoff,))
         }
         agent_hits = [
@@ -86,45 +93,51 @@ def _summary(window: str) -> dict:
         ]
         search_terms = [
             dict(r) for r in conn.execute(
-                """SELECT target, COUNT(*) count FROM events
-                   WHERE type='search_query' AND ts>=? AND target!=''
+                """SELECT target, SUM(owner=0) count, SUM(owner=1) owner_count
+                   FROM events WHERE type='search_query' AND ts>=? AND target!=''
                    GROUP BY target ORDER BY count DESC LIMIT 20""", (cutoff,))
         ]
         daily = [
             dict(r) for r in conn.execute(
                 """SELECT date(ts,'unixepoch') d,
                           SUM(type='agent_hit') bots,
-                          SUM(type!='agent_hit') human,
-                          SUM(type='story_view') views
+                          SUM(type!='agent_hit' AND owner=0) readers,
+                          SUM(type!='agent_hit' AND owner=1) owner,
+                          SUM(type='story_view' AND owner=0) views
                    FROM events WHERE ts>=? GROUP BY d ORDER BY d""", (cutoff,))
         ][-_MAX_DAILY_COLUMNS:]
         mix = [
             {"type": r["type"], "label": _MIX_LABELS.get(r["type"], r["type"]),
-             "count": r["n"]}
+             "count": r["readers"], "owner_count": r["owner_n"]}
             for r in conn.execute(
-                """SELECT type, COUNT(*) n FROM events
-                   WHERE ts>=? AND type!='agent_hit'
-                   GROUP BY type ORDER BY n DESC""", (cutoff,))
+                """SELECT type, SUM(owner=0) readers, SUM(owner=1) owner_n
+                   FROM events WHERE ts>=? AND type!='agent_hit'
+                   GROUP BY type ORDER BY readers DESC, owner_n DESC""", (cutoff,))
         ]
         scroll = [
             dict(r) for r in conn.execute(
                 """SELECT value, COUNT(*) n FROM events
-                   WHERE type='scroll_depth' AND ts>=? AND value>0
+                   WHERE type='scroll_depth' AND ts>=? AND value>0 AND owner=0
                    GROUP BY value ORDER BY value""", (cutoff,))
         ]
         totals = dict(conn.execute(
             """SELECT COUNT(*) events,
-                      COUNT(DISTINCT CASE WHEN anon_id!='' THEN anon_id END) readers,
+                      COUNT(DISTINCT CASE WHEN anon_id!='' AND owner=0
+                            AND type!='agent_hit' THEN anon_id END) readers,
                       SUM(type='agent_hit') crawler_hits,
-                      SUM(type='story_view') story_views
+                      SUM(type='story_view' AND owner=0) story_views,
+                      SUM(type!='agent_hit' AND owner=1) owner_events
                FROM events WHERE ts>=?""", (cutoff,)).fetchone())
     finally:
         conn.close()
     events = totals["events"] or 0
     crawler_hits = totals["crawler_hits"] or 0
+    owner_events = totals["owner_events"] or 0
     totals["crawler_hits"] = crawler_hits
+    totals["owner_events"] = owner_events
     totals["story_views"] = totals["story_views"] or 0
     totals["human_events"] = events - crawler_hits
+    totals["reader_events"] = events - crawler_hits - owner_events
     totals["crawler_share"] = round(crawler_hits / events * 100, 1) if events else 0.0
     submitted = subs.get("subscribe_submitted", 0)
     success = subs.get("subscribe_success", 0)
@@ -195,12 +208,14 @@ _PAGE = """<!doctype html><html lang="en"><head>
     --paper: #ffffff; --panel: #f2f2f4; --ink: #0e0e0f; --ink-prose: #1d1d20;
     --ink-soft: #55555a; --line: #e8e8ea; --line-strong: #0e0e0f;
     --human: #e63b12; --human-wash: #fdeae4; --crawler: #0797a6; --crawler-wash: #e2f4f6;
+    --owner: #b98900;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --paper: #141416; --panel: #1e1e21; --ink: #f0f0f2; --ink-prose: #d8d8dc;
       --ink-soft: #9a9aa2; --line: #2a2a2e; --line-strong: #f0f0f2;
       --human: #f0552b; --human-wash: #2c1a14; --crawler: #12a8b8; --crawler-wash: #10262a;
+      --owner: #d9a80f;
     }
   }
   * { box-sizing: border-box; }
@@ -252,6 +267,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
   .tile .v .unit { font-size: 14px; font-weight: 600; color: var(--ink-soft); margin-left: 2px; }
   .tile.human .v { color: var(--human); }
   .tile.crawler .v { color: var(--crawler); }
+  .tile.owner .v { color: var(--owner); }
   section { margin-top: 52px; }
   .kicker {
     display: flex; align-items: baseline; gap: 12px;
@@ -263,6 +279,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
   .kicker .dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; flex: none; }
   .dot.h { background: var(--human); }
   .dot.c { background: var(--crawler); }
+  .dot.o { background: var(--owner); }
   .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
   @media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
   .cols { display: flex; align-items: flex-end; gap: 6px; height: 150px; margin-top: 26px; }
@@ -270,6 +287,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
   .col .bar { border-radius: 3px 3px 0 0; min-height: 2px; }
   .col.human .bar { background: var(--human); }
   .col.crawler .bar { background: var(--crawler); }
+  .col .bar.owner { background: var(--owner); border-radius: 3px 3px 0 0; }
+  .col .bar.under { border-radius: 0; }
   .col .top {
     position: absolute; left: 50%; transform: translateX(-50%);
     font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -301,6 +320,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
     font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums;
   }
   .rrow .num small { color: var(--ink-soft); font-size: 10px; display: block; }
+  .rrow .num small.you { color: var(--owner); }
   .rrow.more { border-bottom: none; }
   .rrow.more .name { color: var(--ink-soft); font-weight: 500; font-size: 12px; }
   .empty {
@@ -365,7 +385,9 @@ _PAGE = """<!doctype html><html lang="en"><head>
       </div>
       <div>
         <div class="kicker" style="border-bottom:1px solid var(--line); margin-top:22px;">
-          <span class="dot h"></span><span>Human events / day</span><span class="sub" id="humanPeak"></span>
+          <span class="dot h"></span><span>Readers</span>
+          <span class="dot o"></span><span>You</span>
+          <span class="sub" id="humanPeak"></span>
         </div>
         <div class="cols" id="humanCols"></div>
         <div class="xaxis" id="humanAxis"></div>
@@ -458,7 +480,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
     `<b>${share}%</b> were AI crawlers` +
     (topBots ? ` — led by ${topBots}` : "") +
     `. The human side: <b>${fmt(t.readers)} readers</b>, ` +
-    `<b>${fmt(t.story_views)} story views</b>, ${fmt(t.human_events)} human events in total. ` +
+    `<b>${fmt(t.story_views)} story views</b>, ${fmt(t.reader_events)} reader events — ` +
+    `plus <b>${fmt(t.owner_events)} of your own</b>, tracked but marked in gold. ` +
     `Live numbers, honestly reported.`;
 
   // Stat tiles
@@ -466,30 +489,43 @@ _PAGE = """<!doctype html><html lang="en"><head>
     ["", "Total events", fmt(t.events)],
     ["crawler", "Crawler hits", fmt(t.crawler_hits)],
     ["crawler", "Crawler share", `${share}<span class="unit">%</span>`],
-    ["human", "Human events", fmt(t.human_events)],
+    ["human", "Reader events", fmt(t.reader_events)],
     ["human", "Story views", fmt(t.story_views)],
     ["human", "Unique readers", fmt(t.readers)],
+    ["owner", "Your events", fmt(t.owner_events)],
   ].map(([cls, k, v]) =>
     `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`
   ).join("");
 
-  // Daily columns
-  function columns(elId, axisId, key, cls) {
+  // Daily columns. keys: single series, or [base, stackedOnTop] for the
+  // reader+owner split — owner rides on top of the reader bar in gold.
+  function columns(elId, axisId, keys, cls, tipLabels) {
     const el = document.getElementById(elId);
     const ax = document.getElementById(axisId);
-    const max = Math.max(...DATA.daily.map((r) => r[key] || 0), 0);
-    const peakIdx = DATA.daily.findIndex((r) => (r[key] || 0) === max);
+    const totalOf = (r) => keys.reduce((a, k) => a + (r[k] || 0), 0);
+    const max = Math.max(...DATA.daily.map(totalOf), 0);
+    const peakIdx = DATA.daily.findIndex((r) => totalOf(r) === max);
     const showEvery = Math.ceil(DATA.daily.length / 10);
     DATA.daily.forEach((r, i) => {
-      const n = r[key] || 0;
+      const n = totalOf(r);
       const c = document.createElement("div");
       c.className = "col " + cls;
-      const h = max ? Math.round((n / max) * 118) : 0;
-      const extra = key === "human" ? `\\nstory views ${fmt(r.views)}` : "";
-      c.dataset.tip = `${r.d}\\n${key === "bots" ? "crawler hits" : "human events"} ${fmt(n)}${extra}`;
+      c.dataset.tip = `${r.d}\\n` +
+        keys.map((k, j) => `${tipLabels[j]} ${fmt(r[k] || 0)}`).join("\\n") +
+        (keys.includes("readers") ? `\\nstory views ${fmt(r.views)}` : "");
+      const hTotal = max ? Math.round((n / max) * 118) : 0;
+      let bars = "";
+      if (keys.length === 1) {
+        bars = `<div class="bar" style="height:${Math.max(hTotal, 2)}px"></div>`;
+      } else {
+        const hBase = max ? Math.round(((r[keys[0]] || 0) / max) * 118) : 0;
+        const hTop = Math.max(hTotal - hBase, 0);
+        bars =
+          (hTop ? `<div class="bar owner" style="height:${hTop}px"></div>` : "") +
+          `<div class="bar${hTop ? " under" : ""}" style="height:${Math.max(hBase, hTop ? 0 : 2)}px"></div>`;
+      }
       c.innerHTML =
-        (i === peakIdx && max > 0 ? `<span class="top" style="bottom:${h + 6}px">${fmt(n)}</span>` : "") +
-        `<div class="bar" style="height:${Math.max(h, 2)}px"></div>`;
+        (i === peakIdx && max > 0 ? `<span class="top" style="bottom:${hTotal + 6}px">${fmt(n)}</span>` : "") + bars;
       el.appendChild(c);
       const s = document.createElement("span");
       s.textContent = i % showEvery === 0 ? r.d.slice(5) : "";
@@ -499,8 +535,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
     return max;
   }
   if (DATA.daily.length) {
-    const botMax = columns("botCols", "botAxis", "bots", "crawler");
-    const humanMax = columns("humanCols", "humanAxis", "human", "human");
+    const botMax = columns("botCols", "botAxis", ["bots"], "crawler", ["crawler hits"]);
+    const humanMax = columns("humanCols", "humanAxis", ["readers", "owner"], "human", ["readers", "you"]);
     document.getElementById("botPeak").textContent = `peak ${fmt(botMax)}`;
     document.getElementById("humanPeak").textContent = `peak ${fmt(humanMax)}`;
   } else {
@@ -515,16 +551,18 @@ _PAGE = """<!doctype html><html lang="en"><head>
       el.innerHTML = `<div class="empty">${opts.empty || "none in this window"}</div>`;
       return;
     }
-    const max = Math.max(...rows.map((r) => r.n));
+    const max = Math.max(...rows.map((r) => r.n), 1);
     rows.forEach((r, i) => {
       const row = document.createElement("div");
       row.className = "rrow " + cls;
       const w = Math.max((r.n / max) * 100, 0.6);
-      const readers = r.readers != null ? `<small>${fmt(r.readers)} rdr</small>` : "";
+      const readers = (r.readers != null && r.readers > 0 ? `<small>${fmt(r.readers)} rdr</small>` : "") +
+        (r.you ? `<small class="you">you ${fmt(r.you)}</small>` : "");
       let name = opts.mono ? `<span class="mono-name">${esc(r.name)}</span>` : esc(r.name);
       if (r.href) name = `<a href="${esc(r.href)}" target="_blank" rel="noopener">${name}</a>`;
       row.dataset.tip = `${r.name}\\n${fmt(r.n)} ${opts.unit || ""}`.trim() +
-        (r.readers != null ? ` · ${fmt(r.readers)} unique readers` : "");
+        (r.readers != null && r.readers > 0 ? ` · ${fmt(r.readers)} unique readers` : "") +
+        (r.you ? ` · ${fmt(r.you)} by you` : "");
       row.innerHTML =
         `<span class="idx">${String(i + 1).padStart(2, "0")}</span>` +
         `<span class="name">${name}</span>` +
@@ -557,14 +595,14 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   ranked("storyRank",
     DATA.top_stories.slice(0, 12).map((s) => ({
-      name: s.title || s.target, n: s.views, readers: s.readers,
+      name: s.title || s.target, n: s.views, readers: s.readers, you: s.owner_views,
       href: "https://mindpattern.ai/s/" + encodeURIComponent(s.target),
     })),
-    "h", { unit: "views", empty: "no story views in this window" });
+    "h", { unit: "reader views", empty: "no story views in this window" });
 
   ranked("mixRank",
-    DATA.mix.map((m) => ({ name: m.label, n: m.count })),
-    "h", { unit: "events", empty: "no human events in this window" });
+    DATA.mix.map((m) => ({ name: m.label, n: m.count, you: m.owner_count })),
+    "h", { unit: "reader events", empty: "no human events in this window" });
 
   // Scroll depth
   const dEl = document.getElementById("depthRows");
@@ -591,7 +629,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
     DATA.referrers.map((r) => ({ name: r.ref_domain, n: r.count })),
     "h", { unit: "visits", mono: true, empty: "direct / no referrers in this window" });
   ranked("searchRank",
-    DATA.search_terms.map((r) => ({ name: r.target, n: r.count })),
+    DATA.search_terms.map((r) => ({ name: r.target, n: r.count, you: r.owner_count })),
     "h", { unit: "searches", mono: true, empty: "no searches in this window" });
 
   // Computed briefing: drill-through, subscribes — only when there is signal.

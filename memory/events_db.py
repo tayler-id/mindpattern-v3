@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS events (
     path TEXT NOT NULL DEFAULT '',
     ref_domain TEXT NOT NULL DEFAULT '',
     anon_id TEXT NOT NULL DEFAULT '',
-    value INTEGER NOT NULL DEFAULT 0
+    value INTEGER NOT NULL DEFAULT 0,
+    owner INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_target ON events(target, type, ts);
@@ -67,6 +68,11 @@ def open_events_db(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
+    try:  # additive migration for databases created before the owner flag
+        conn.execute("ALTER TABLE events ADD COLUMN owner INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     return conn
 
 
@@ -92,9 +98,13 @@ def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
         value = max(0, min(int(payload.get("value") or 0), 100))
     except (TypeError, ValueError):
         value = 0
+    # Self-declared owner flag ("this is Tayler browsing") — set client-side
+    # via ?mp_owner=1. Unauthenticated by design: worst case someone hides
+    # their own events from the counts, which stays privacy-safe.
+    owner = 1 if payload.get("owner") in (1, "1", True) else 0
     conn.execute(
-        "INSERT INTO events (ts, type, target, path, ref_domain, anon_id, value)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events (ts, type, target, path, ref_domain, anon_id, value, owner)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             int(time.time()),
             event_type,
@@ -103,6 +113,7 @@ def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
             ref,
             anon,
             value,
+            owner,
         ),
     )
     conn.commit()
