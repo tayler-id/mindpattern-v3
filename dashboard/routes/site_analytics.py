@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from memory.events_db import open_events_db
 
@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _WINDOWS = {"today": 1, "7d": 7, "all": 3650}
+#: Campaign attribution windows (pilot spec section 11): CampaignOS imports
+#: aggregates at 24 hours and 7 days; mature 28-day data may land later.
+_CAMPAIGN_WINDOWS = {"24h": 1, "7d": 7, "28d": 28}
 _WINDOW_LABELS = {"today": "last 24 hours", "7d": "last 7 days", "all": "all time"}
 _MAX_DAILY_COLUMNS = 60
 
@@ -38,6 +41,7 @@ _MIX_LABELS = {
     "search_query": "Searches",
     "subscribe_submitted": "Subscribe submitted",
     "subscribe_success": "Subscribe confirmed",
+    "share": "Shares",
 }
 
 
@@ -193,6 +197,70 @@ async def site_analytics_summary(window: str = Query("7d")):
     if window not in _WINDOWS:
         window = "7d"
     return await _summary_with_titles(window)
+
+
+@router.get("/api/site-analytics/campaigns")
+async def site_analytics_campaigns(window: str = Query("7d")):
+    """Private: campaign attribution aggregate (pilot spec section 11).
+
+    Reader events grouped by campaign/channel/window — aggregate counts
+    only. No anon_id, path, referrer, or any per-visitor field leaves this
+    endpoint; ``readers`` is a distinct count, not an identifier list.
+    Owner-flagged events are excluded. ``subscribe_success`` counts a
+    tagged form/provider success in that session; it never proves the
+    contact was new. An unknown window is a 400, never a silent default —
+    CampaignOS must know exactly which window it imported.
+    """
+    if window not in _CAMPAIGN_WINDOWS:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "window must be one of 24h|7d|28d"},
+        )
+    cutoff = int(time.time() - _CAMPAIGN_WINDOWS[window] * 86400)
+    conn = open_events_db()
+    try:
+        counts = conn.execute(
+            """SELECT campaign_id, source_channel, type, COUNT(*) n
+               FROM events
+               WHERE ts>=? AND owner=0 AND campaign_id!=''
+               GROUP BY campaign_id, source_channel, type""", (cutoff,)
+        ).fetchall()
+        readers = {
+            (r["campaign_id"], r["source_channel"]): r["readers"]
+            for r in conn.execute(
+                """SELECT campaign_id, source_channel,
+                          COUNT(DISTINCT CASE WHEN anon_id!='' THEN anon_id END)
+                            readers
+                   FROM events
+                   WHERE ts>=? AND owner=0 AND campaign_id!=''
+                   GROUP BY campaign_id, source_channel""", (cutoff,)
+            )
+        }
+    finally:
+        conn.close()
+    grouped: dict[tuple[str, str], dict] = {}
+    for row in counts:
+        key = (row["campaign_id"], row["source_channel"])
+        entry = grouped.setdefault(
+            key,
+            {
+                "campaign_id": row["campaign_id"],
+                "source_channel": row["source_channel"],
+                "counts": {},
+                "readers": readers.get(key, 0),
+            },
+        )
+        entry["counts"][row["type"]] = row["n"]
+    return {
+        "kind": "campaign_attribution",
+        "window": window,
+        "window_days": _CAMPAIGN_WINDOWS[window],
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "rows": sorted(
+            grouped.values(),
+            key=lambda e: (e["campaign_id"], e["source_channel"]),
+        ),
+    }
 
 
 # The page shell. Placeholders (__DATA__, __TABS__, __GENERATED__) are
