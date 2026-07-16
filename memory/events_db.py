@@ -6,8 +6,10 @@ every morning. site_events.db lives only where events happen and is never
 bundled by the sync.
 
 Privacy contract (test-enforced): rows contain event type, target, path,
-referrer domain, coarse timestamp, and an optional client-random anon_id.
-Never IP, user agent, geo, or anything derived from them.
+referrer domain, coarse timestamp, an optional client-random anon_id, and —
+for campaign-permitted event types only — normalized safe campaign/channel
+ids captured client-side from utm tags (pilot spec section 11). Never IP,
+user agent, geo, raw query strings, or anything derived from them.
 """
 
 from __future__ import annotations
@@ -29,6 +31,19 @@ ALLOWED_EVENTS = {
     "subscribe_submitted",
     "subscribe_success",
     "search_query","agent_hit",
+    "share",
+}
+
+#: Event types that may carry campaign attribution (pilot spec section 11:
+#: story, source-click, subscribe, and share events). Campaign fields on any
+#: other type are dropped server-side regardless of what the client sent.
+CAMPAIGN_EVENTS = {
+    "story_view",
+    "source_click",
+    "outbound_source_click",
+    "subscribe_submitted",
+    "subscribe_success",
+    "share",
 }
 
 _SCHEMA = """
@@ -41,13 +56,28 @@ CREATE TABLE IF NOT EXISTS events (
     ref_domain TEXT NOT NULL DEFAULT '',
     anon_id TEXT NOT NULL DEFAULT '',
     value INTEGER NOT NULL DEFAULT 0,
-    owner INTEGER NOT NULL DEFAULT 0
+    owner INTEGER NOT NULL DEFAULT 0,
+    campaign_id TEXT NOT NULL DEFAULT '',
+    source_channel TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_target ON events(target, type, ts);
 """
 
+# Additive migrations for databases created before each column existed.
+# The campaign index lives here (NOT in _SCHEMA) so it is only created
+# after the columns exist on older databases.
+_MIGRATIONS = (
+    "ALTER TABLE events ADD COLUMN owner INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE events ADD COLUMN campaign_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE events ADD COLUMN source_channel TEXT NOT NULL DEFAULT ''",
+)
+
 _ANON_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+# Normalized safe ids — never a raw query-string value. Campaign ids are
+# CampaignOS SHA-256 ids (64 hex chars) but the rule is the general safe set.
+_CAMPAIGN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+_CHANNEL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$")
 _TEXT_CAP = 200
 
 
@@ -68,11 +98,16 @@ def open_events_db(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
-    try:  # additive migration for databases created before the owner flag
-        conn.execute("ALTER TABLE events ADD COLUMN owner INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    for statement in _MIGRATIONS:
+        try:  # additive migration for databases created before the column
+            conn.execute(statement)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_campaign ON events(campaign_id, ts)"
+    )
+    conn.commit()
     return conn
 
 
@@ -81,6 +116,12 @@ def _clean(value: object, cap: int = _TEXT_CAP) -> str:
     # strip anything that could smuggle identity: querystrings and emails
     text = text.split("?")[0]
     return text.replace("\n", " ").strip()
+
+
+def _campaign_field(value: object, pattern: re.Pattern) -> str:
+    """Normalize one campaign attribution field to a safe id, else ''."""
+    text = str(value or "").strip().lower()
+    return text if pattern.fullmatch(text) else ""
 
 
 def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
@@ -102,9 +143,18 @@ def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
     # via ?mp_owner=1. Unauthenticated by design: worst case someone hides
     # their own events from the counts, which stays privacy-safe.
     owner = 1 if payload.get("owner") in (1, "1", True) else 0
+    # Campaign attribution (pilot spec section 11): normalized safe ids on
+    # permitted event types only, never a raw query-string value. Anything
+    # invalid — and any campaign field on a non-permitted type — stores ''.
+    campaign_id = ""
+    source_channel = ""
+    if event_type in CAMPAIGN_EVENTS:
+        campaign_id = _campaign_field(payload.get("campaign_id"), _CAMPAIGN_ID_RE)
+        source_channel = _campaign_field(payload.get("source_channel"), _CHANNEL_RE)
     conn.execute(
-        "INSERT INTO events (ts, type, target, path, ref_domain, anon_id, value, owner)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events (ts, type, target, path, ref_domain, anon_id, value,"
+        " owner, campaign_id, source_channel)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             int(time.time()),
             event_type,
@@ -114,6 +164,8 @@ def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
             anon,
             value,
             owner,
+            campaign_id,
+            source_channel,
         ),
     )
     conn.commit()

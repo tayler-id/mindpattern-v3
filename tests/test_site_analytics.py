@@ -17,6 +17,90 @@ def test_summary_requires_auth(client):
     assert client.get("/site-analytics").status_code == 401
 
 
+def test_campaigns_requires_auth(client):
+    assert client.get("/api/site-analytics/campaigns").status_code == 401
+    # a browser query token unlocks only the dash page, never the API
+    assert client.get(
+        "/api/site-analytics/campaigns?token=whatever").status_code == 401
+
+
+def test_campaigns_aggregates_counts_only(client, monkeypatch):
+    import json
+
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+
+    campaign_a, campaign_b = "a" * 64, "b" * 64
+    # campaign A via X: two views by two readers, a source click, a subscribe
+    for anon in ("reader01", "reader02"):
+        client.post("/api/event", json={
+            "type": "story_view", "target": "hot-story", "anon_id": anon,
+            "campaign_id": campaign_a, "source_channel": "x",
+        })
+    client.post("/api/event", json={
+        "type": "source_click", "target": "example.com", "anon_id": "reader01",
+        "campaign_id": campaign_a, "source_channel": "x",
+    })
+    client.post("/api/event", json={
+        "type": "subscribe_success", "target": "band", "anon_id": "reader02",
+        "campaign_id": campaign_a, "source_channel": "x",
+    })
+    # campaign A via bluesky: one view
+    client.post("/api/event", json={
+        "type": "story_view", "target": "hot-story", "anon_id": "reader03",
+        "campaign_id": campaign_a, "source_channel": "bluesky",
+    })
+    # campaign B: one share
+    client.post("/api/event", json={
+        "type": "share", "target": "copy:Hot", "anon_id": "reader04",
+        "campaign_id": campaign_b, "source_channel": "reddit",
+    })
+    # owner-flagged and untagged events never reach the aggregate
+    client.post("/api/event", json={
+        "type": "story_view", "target": "hot-story", "anon_id": "tayler01",
+        "owner": 1, "campaign_id": campaign_a, "source_channel": "x",
+    })
+    client.post("/api/event", json={
+        "type": "story_view", "target": "hot-story", "anon_id": "reader05",
+    })
+
+    payload = client.get(
+        "/api/site-analytics/campaigns?window=7d", headers=headers).json()
+    assert payload["kind"] == "campaign_attribution"
+    assert payload["window"] == "7d"
+    rows = payload["rows"]
+    assert [(r["campaign_id"], r["source_channel"]) for r in rows] == [
+        (campaign_a, "bluesky"), (campaign_a, "x"), (campaign_b, "reddit"),
+    ]
+    a_x = rows[1]
+    assert a_x["counts"] == {
+        "story_view": 2, "source_click": 1, "subscribe_success": 1}
+    assert a_x["readers"] == 2  # distinct count only — never ids
+    assert rows[0]["counts"] == {"story_view": 1}
+    assert rows[2]["counts"] == {"share": 1}
+    # aggregate counts only: no per-visitor identity, path, or referrer
+    serialized = json.dumps(payload)
+    for private in ("reader01", "reader02", "reader03", "reader04",
+                    "tayler01", "anon", "path", "ref_domain"):
+        assert private not in serialized
+
+
+def test_campaigns_rejects_unknown_window(client, monkeypatch):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+    for bad in ("today", "all", "1d", ""):
+        response = client.get(
+            f"/api/site-analytics/campaigns?window={bad}", headers=headers)
+        assert response.status_code == 400  # never a silent default window
+    for good in ("24h", "7d", "28d"):
+        response = client.get(
+            f"/api/site-analytics/campaigns?window={good}", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["rows"] == []
+
+
 def test_summary_shape_with_bearer(client, monkeypatch):
     import dashboard.auth as auth
     monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
