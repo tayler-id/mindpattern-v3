@@ -1,25 +1,69 @@
 {
-    "required_fields": ["title", "summary", "importance", "source_url", "source_name"],
-    "importance_values": ["high", "medium", "low"],
-    "max_findings_per_agent": 25,
-    "min_findings_per_agent": 1,
-    "max_summary_length": 1000,
-    "max_age_hours": 48,
-    "banned_entities": [
-        "(?i)synchrony\\s*bank",
-        "(?i)synchrony\\s*financial"
-    ],
-    "injection_patterns": [
-        "ignore previous instructions",
-        "ignore all instructions",
-        "you are now",
-        "system prompt",
-        "disregard",
-        "forget everything",
-        "new instructions",
-        "override",
-        "act as",
-        "pretend to be",
-        "jailbreak"
-    ]
+  "required_fields": [
+    "title",
+    "summary",
+    "importance",
+    "source_url",
+    "source_name"
+  ],
+  "importance_values": [
+    "high",
+    "medium",
+    "low"
+  ],
+  "max_findings_per_agent": 25,
+  "min_findings_per_agent": 1,
+  "max_summary_length": 1000,
+  "max_age_hours": 48,
+  "banned_entities": [
+    "(?i)synchrony\\s*bank",
+    "(?i)synchrony\\s*financial"
+  ],
+  "injection_regexes": [
+    {
+      "name": "ignore previous instructions",
+      "pattern": "\\b(?:ignore|disregard|forget)\\s+(?:all\\s+|any\\s+|the\\s+|every\\s+)?(?:previous|prior|above|earlier|preceding|foregoing)?\\s*(?:instruction|system\\s+prompt|rule|direction|guideline)s?\\b"
+    },
+    {
+      "name": "forget everything you were told",
+      "pattern": "\\bforget\\s+everything\\b[^.!?\\n]{0,30}\\b(?:you|above|before|prior|earlier|told)\\b"
+    },
+    {
+      "name": "role reassignment (you are now)",
+      "pattern": "\\byou\\s+are\\s+now\\s+(?:a|an|the|no\\s+longer)\\b"
+    },
+    {
+      "name": "override safety rules",
+      "pattern": "\\boverride\\s+(?:your|the|all|any|these|those)\\s+[^.!?\\n]{0,30}\\b(?:instruction|rule|guardrail|safety|constraint|restriction|polic)\\w*\\b"
+    },
+    {
+      "name": "system prompt exfiltration",
+      "pattern": "\\b(?:reveal|print|output|repeat|show|disclose|dump|leak)\\s+(?:me\\s+)?(?:your|the)\\s+(?:full\\s+|initial\\s+|original\\s+|hidden\\s+|exact\\s+)?system\\s+prompt\\b"
+    },
+    {
+      "name": "new instructions directive",
+      "pattern": "\\bnew\\s+instructions?\\s*:"
+    },
+    {
+      "name": "role-play command (act as / pretend to be)",
+      "pattern": "(?:^|[.!?;\\n]\\s*)(?:please\\s+)?(?:pretend\\s+to\\s+be|act\\s+as)\\s+(?:a|an|the)\\b"
+    },
+    {
+      "name": "disregard the above",
+      "pattern": "\\bdisregard\\s+(?:the\\s+)?(?:above|foregoing|preceding|previous)\\b"
+    }
+  ],
+  "injection_patterns_retired_2026_07_24": [
+    "ignore previous instructions",
+    "ignore all instructions",
+    "you are now",
+    "system prompt",
+    "disregard",
+    "forget everything",
+    "new instructions",
+    "override",
+    "act as",
+    "pretend to be",
+    "jailbreak"
+  ]
 }

@@ -459,26 +459,43 @@ class PolicyEngine:
     def scan_for_injection(
         self, text: str, patterns: list[str] = None
     ) -> list[str]:
-        """Scan text for prompt injection patterns.
+        """Scan text for prompt injection directed at the pipeline.
+
+        Matches DIRECTIVE STRUCTURE, not topic vocabulary. Until 2026-07-24
+        this was a naive substring test over a list that included "jailbreak",
+        "system prompt", "override" and "act as" — ordinary vocabulary for an
+        AI-research newsletter. It silently deleted ~3.6 findings per day,
+        including "Agentjacking: A Public Sentry DSN Is Enough to Hijack
+        Claude" and "DARWIN Evolves Jailbreaks Automatically"; replayed over
+        the 17,499-finding corpus it flagged 231 published stories and zero
+        real injections. Regexes now require an imperative aimed at a model
+        ("ignore previous instructions", "you are now a ...") so a summary can
+        describe an attack without being mistaken for one.
 
         Args:
             text: The text to scan.
-            patterns: List of injection pattern strings to check.
-                      Defaults to the policy file's injection_patterns.
+            patterns: Optional literal substrings to check instead of the
+                      configured regexes (kept for callers that pass their own).
 
         Returns:
             List of matched pattern strings. Empty means clean.
         """
-        if patterns is None:
-            patterns = self.rules.get("injection_patterns", [])
+        if patterns is not None:
+            # Explicit patterns stay literal substrings (caller-supplied).
+            text_lower = text.lower()
+            return [p for p in patterns if p.lower() in text_lower]
 
         detected = []
-        text_lower = text.lower()
-
-        for pattern in patterns:
-            if pattern.lower() in text_lower:
-                detected.append(pattern)
-
+        for rule in self.rules.get("injection_regexes", []):
+            # Rules carry a human label so the operator-facing log reads
+            # "matched pattern 'ignore previous instructions'" rather than
+            # the raw regex source.
+            if isinstance(rule, dict):
+                pattern, name = rule.get("pattern", ""), rule.get("name", "")
+            else:
+                pattern = name = rule
+            if pattern and re.search(pattern, text, re.IGNORECASE):
+                detected.append(name or pattern)
         return detected
 
     # ── Private helpers ──────────────────────────────────────────────
