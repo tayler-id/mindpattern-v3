@@ -1,4 +1,4 @@
-"""Preflight: Twitter/X posts via xreach or twitter-cli search."""
+"""Preflight: Twitter/X posts via the twitter-cli search command."""
 
 import json
 import logging
@@ -20,9 +20,13 @@ DEFAULT_QUERIES = [
 
 
 def _search_command(query: str, count: int) -> list[str] | None:
-    """Return the best installed Twitter/X search command."""
-    if shutil.which("xreach"):
-        return ["xreach", "search", query, "--count", str(count), "--json"]
+    """Return the best installed Twitter/X search command.
+
+    The legacy `xreach` branch was removed 2026-07-24: xreach cannot be
+    installed from any package registry (retired 2026-06-23) so the check
+    never matched. `twitter` is agent-reach's active Twitter/X backend.
+    _extract_items still tolerates the legacy {"items": [...]} shape.
+    """
     if shutil.which("twitter"):
         return [
             "twitter",

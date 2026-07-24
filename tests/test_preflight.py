@@ -405,13 +405,14 @@ def test_twitter_fetch_falls_back_to_twitter_cli(monkeypatch):
     assert entries[0]["metrics"]["views"] == 50000
 
 
-def test_twitter_fetch_prefers_xreach(monkeypatch):
+def test_twitter_fetch_uses_twitter_cli(monkeypatch):
+    """xreach was retired 2026-06-23; twitter-cli is the only search backend."""
     import preflight.twitter as twitter
 
     calls = []
 
     def fake_which(name):
-        return f"/bin/{name}" if name == "xreach" else None
+        return f"/bin/{name}" if name == "twitter" else None
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
@@ -422,7 +423,7 @@ def test_twitter_fetch_prefers_xreach(monkeypatch):
                 "items": [
                     {
                         "id": "legacy123",
-                        "text": "Legacy xreach shape",
+                        "text": "Tolerated legacy items shape",
                         "createdAt": "Sun Mar 16 10:00:00 +0000 2026",
                         "likeCount": 7,
                         "retweetCount": 2,
@@ -438,9 +439,31 @@ def test_twitter_fetch_prefers_xreach(monkeypatch):
 
     entries = twitter.fetch(queries=["AI agents"], count=2)
 
-    assert calls == [["xreach", "search", "AI agents", "--count", "2", "--json"]]
+    assert calls == [[
+        "twitter", "search", "AI agents", "-n", "2", "--json",
+        "--exclude", "retweets", "--exclude", "replies",
+    ]]
     assert entries[0]["url"] == "https://x.com/i/status/legacy123"
     assert entries[0]["metrics"] == {"likes": 7, "retweets": 2, "views": 900}
+
+
+def test_twitter_search_command_is_none_without_twitter_cli(monkeypatch):
+    """No installed backend must yield no command, not a bogus one."""
+    import preflight.twitter as twitter
+
+    monkeypatch.setattr(twitter.shutil, "which", lambda name: None)
+    assert twitter._search_command("AI agents", 5) is None
+
+
+def test_twitter_never_invokes_retired_xreach(monkeypatch):
+    """Even if a stray xreach binary exists on PATH, it must not be used."""
+    import preflight.twitter as twitter
+
+    monkeypatch.setattr(
+        twitter.shutil, "which", lambda name: f"/bin/{name}"
+    )
+    cmd = twitter._search_command("AI agents", 5)
+    assert cmd is not None and cmd[0] == "twitter"
 
 
 def test_twitter_fetch_with_diagnostics_cli_failure(monkeypatch):
