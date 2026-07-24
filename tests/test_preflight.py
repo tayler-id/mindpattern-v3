@@ -319,6 +319,7 @@ def test_reddit_transform():
 
 
 def test_reddit_fetch_with_diagnostics_unavailable(monkeypatch):
+    """Legacy JSON-API path diagnostics (machine without OpenCLI)."""
     import preflight.reddit as reddit
 
     stderr = json.dumps({
@@ -330,6 +331,8 @@ def test_reddit_fetch_with_diagnostics_unavailable(monkeypatch):
         assert cmd[0] == sys.executable
         return subprocess.CompletedProcess(cmd, 2, stdout="", stderr=stderr)
 
+    # No OpenCLI on this hypothetical machine — force the legacy path.
+    monkeypatch.setattr(reddit.shutil, "which", lambda name: None)
     monkeypatch.setattr(reddit.subprocess, "run", fake_run)
 
     items, diagnostics = reddit.fetch_with_diagnostics(subreddits="MachineLearning")
@@ -961,3 +964,99 @@ def test_dedup_batch_decay_annotations_include_age():
     assert info["age_days"] == 3
     assert "effective_threshold" in info
     assert isinstance(info["effective_threshold"], float)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Reddit via OpenCLI (2026-07-24)
+#
+# tools/reddit-fetch.py hits reddit.com/r/<sub>/top.json unauthenticated,
+# which Reddit now blocks: HTTP 403 on every logged day since 2026-06-26,
+# so the reddit source contributed 0 items for a month. OpenCLI reuses the
+# browser session via its Chrome extension and returns real posts.
+# ═══════════════════════════════════════════════════════════════════════
+
+OPENCLI_POST = {
+    "id": "1ul5bgf",
+    "title": "Transformers get a new attention kernel",
+    "subreddit": "r/MachineLearning",     # note: already carries the r/ prefix
+    "author": "someone",
+    "upvotes": 320,                        # note: not "score"
+    "comments": 72,
+    "url": "https://www.reddit.com/r/MachineLearning/comments/1ul5bgf/x/",
+    "created_utc": 1782958527,
+    "selftext": "Body text here.",
+}
+
+
+def _opencli_run(payload, *, calls=None):
+    def fake_run(cmd, **kwargs):
+        if calls is not None:
+            calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+    return fake_run
+
+
+class TestRedditViaOpenCli:
+    def test_prefers_opencli_when_installed(self, monkeypatch):
+        import preflight.reddit as reddit
+
+        calls = []
+        monkeypatch.setattr(reddit.shutil, "which",
+                            lambda n: "/bin/opencli" if n == "opencli" else None)
+        monkeypatch.setattr(reddit.subprocess, "run",
+                            _opencli_run([OPENCLI_POST], calls=calls))
+
+        items, diag = reddit.fetch_with_diagnostics(subreddits="MachineLearning")
+
+        assert diag["status"] == "ok"
+        assert len(items) == 1
+        assert calls and calls[0][:4] == ["opencli", "reddit", "subreddit", "MachineLearning"]
+        assert "-f" in calls[0] and "json" in calls[0]
+
+    def test_maps_upvotes_to_score(self, monkeypatch):
+        import preflight.reddit as reddit
+        monkeypatch.setattr(reddit.shutil, "which",
+                            lambda n: "/bin/opencli" if n == "opencli" else None)
+        monkeypatch.setattr(reddit.subprocess, "run", _opencli_run([OPENCLI_POST]))
+
+        items, _ = reddit.fetch_with_diagnostics(subreddits="MachineLearning")
+        assert items[0]["metrics"] == {"score": 320, "comments": 72}
+
+    def test_does_not_double_the_r_prefix(self, monkeypatch):
+        import preflight.reddit as reddit
+        monkeypatch.setattr(reddit.shutil, "which",
+                            lambda n: "/bin/opencli" if n == "opencli" else None)
+        monkeypatch.setattr(reddit.subprocess, "run", _opencli_run([OPENCLI_POST]))
+
+        items, _ = reddit.fetch_with_diagnostics(subreddits="MachineLearning")
+        assert items[0]["source_name"] == "r/MachineLearning"
+        assert "r/r/" not in items[0]["source_name"]
+
+    def test_applies_min_score_filter(self, monkeypatch):
+        import preflight.reddit as reddit
+        low = {**OPENCLI_POST, "upvotes": 3}
+        monkeypatch.setattr(reddit.shutil, "which",
+                            lambda n: "/bin/opencli" if n == "opencli" else None)
+        monkeypatch.setattr(reddit.subprocess, "run", _opencli_run([low]))
+
+        items, diag = reddit.fetch_with_diagnostics(
+            subreddits="MachineLearning", min_score=50
+        )
+        assert items == []
+        assert diag["status"] == "empty"
+
+    def test_falls_back_to_json_api_without_opencli(self, monkeypatch):
+        """No OpenCLI must still use the legacy tool, not silently return nothing."""
+        import preflight.reddit as reddit
+
+        calls = []
+        monkeypatch.setattr(reddit.shutil, "which", lambda n: None)
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(reddit.subprocess, "run", fake_run)
+        reddit.fetch_with_diagnostics(subreddits="MachineLearning")
+
+        assert calls and "reddit-fetch.py" in " ".join(calls[0])
