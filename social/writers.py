@@ -13,6 +13,7 @@ data/social-drafts/{platform}-draft.md; Python reads the result back.
 
 import json
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -349,6 +350,69 @@ def _strip_envelope(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _deterministic_trim(content: str, max_graphemes: int) -> str:
+    """Trim to fit under max_graphemes without an LLM. Always succeeds.
+
+    The guaranteed backstop behind _shrink_pass: a draft a few graphemes over
+    the limit must never be the reason a post fails to ship. Cuts at a
+    sentence boundary when one fits, otherwise at a word boundary, and keeps
+    a trailing URL attached (the link is the point of the post).
+    """
+    from policies.engine import count_graphemes
+
+    content = content.strip()
+    if count_graphemes(content) <= max_graphemes:
+        return content
+
+    # Keep a trailing URL pinned to the end and budget the prose around it.
+    tail_url = ""
+    match = re.search(r"(https?://\S+)\s*$", content)
+    if match:
+        candidate = match.group(1)
+        if count_graphemes(candidate) + 2 < max_graphemes:
+            tail_url = candidate
+            content = content[: match.start()].strip()
+
+    budget = max_graphemes - (count_graphemes(tail_url) + 1 if tail_url else 0)
+
+    def _fits(text: str) -> bool:
+        return count_graphemes(text) <= budget
+
+    body = content
+    if not _fits(body):
+        # Prefer ending on a complete sentence.
+        sentences = re.split(r"(?<=[.!?])\s+", content)
+        kept = ""
+        for sentence in sentences:
+            trial = f"{kept} {sentence}".strip() if kept else sentence
+            if _fits(trial):
+                kept = trial
+            else:
+                break
+        body = kept
+
+    if not body:
+        # No whole sentence fits — fall back to whole words, with an ellipsis.
+        words = content.split()
+        kept = ""
+        for word in words:
+            trial = f"{kept} {word}".strip() if kept else word
+            if _fits(f"{trial}…"):
+                kept = trial
+            else:
+                break
+        body = f"{kept}…" if kept else ""
+
+    if not body:
+        # Pathological input (e.g. one enormous token): hard cut.
+        body = content[:budget].rstrip()
+
+    out = f"{body} {tail_url}".strip() if tail_url else body
+    while count_graphemes(out) > max_graphemes and out:
+        out = out[:-1].rstrip()
+    return out
+
+
 def _shrink_pass(content: str, platform: str, max_graphemes: int) -> str:
     """Last-resort shrink-only LLM pass to bring a draft under the grapheme limit.
 
@@ -387,21 +451,25 @@ Output ONLY the shortened post — no preamble, no quotes, no explanation."""
 
     if exit_code != 0:
         logger.warning(
-            f"[{platform}] Shrink pass failed (exit={exit_code}); keeping original"
+            f"[{platform}] Shrink pass failed (exit={exit_code}); "
+            f"trimming deterministically"
         )
-        return content
+        return _deterministic_trim(content, max_graphemes)
 
     shrunk = output.strip()
     if not shrunk:
-        return content
+        return _deterministic_trim(content, max_graphemes)
 
     new_len = count_graphemes(shrunk)
     if new_len > max_graphemes:
+        # Never hand back over-limit content: policy_errors would stay set and
+        # the Expeditor auto-FAILs any draft with errors, killing the whole
+        # package over a few graphemes (2026-07-24: bluesky 327/300).
         logger.warning(
             f"[{platform}] Shrink pass returned {new_len} graphemes "
-            f"(still over {max_graphemes}); keeping original"
+            f"(still over {max_graphemes}); trimming deterministically"
         )
-        return content
+        return _deterministic_trim(shrunk, max_graphemes)
 
     logger.info(f"[{platform}] Shrink pass: {current} → {new_len} graphemes")
     return shrunk

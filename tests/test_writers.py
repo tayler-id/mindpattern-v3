@@ -181,3 +181,76 @@ def test_load_voice_guide_returns_empty_string_when_missing():
         result = _load_voice_guide()
 
     assert result == ""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Length shrink must never give up (2026-07-24)
+#
+# _shrink_pass made ONE LLM attempt and, if the result was still over the
+# limit, returned the ORIGINAL over-limit draft. policy_errors then stayed
+# non-empty, and the Expeditor's "any draft with non-empty policy_errors:
+# FAIL" rule killed the whole package. A Bluesky draft 27 graphemes over
+# (327/300) was enough to stop a post from ever shipping.
+# ═══════════════════════════════════════════════════════════════════════
+
+from social.writers import _deterministic_trim, _shrink_pass
+from policies.engine import count_graphemes
+
+
+class TestDeterministicTrim:
+    def test_brings_content_under_the_limit(self):
+        text = "word " * 200
+        out = _deterministic_trim(text, 300)
+        assert count_graphemes(out) <= 300
+
+    def test_does_not_cut_mid_word(self):
+        text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+        out = _deterministic_trim(text, 30)
+        assert count_graphemes(out) <= 30
+        assert not text.startswith(out + "x")   # no dangling partial token
+        assert out == out.strip()
+        assert all(w in text.split() for w in out.replace("…", "").split())
+
+    def test_preserves_a_trailing_url(self):
+        url = "https://example.com/a-fairly-long-story-slug"
+        text = ("some quite wordy lede that runs on and on and on " * 6) + url
+        out = _deterministic_trim(text, 200)
+        assert count_graphemes(out) <= 200
+        assert url in out
+
+    def test_returns_content_untouched_when_already_short(self):
+        text = "Short and sweet."
+        assert _deterministic_trim(text, 300) == text
+
+    def test_handles_content_that_is_only_a_long_url(self):
+        url = "https://example.com/" + "x" * 400
+        out = _deterministic_trim(url, 300)
+        assert count_graphemes(out) <= 300
+
+
+class TestShrinkPassNeverReturnsOverLimit:
+    def test_falls_back_to_trim_when_llm_stays_over_limit(self, monkeypatch):
+        long_draft = "word " * 200          # ~1000 graphemes
+        # LLM "shrinks" but is still over the limit — the old bug's trigger
+        monkeypatch.setattr(
+            "social.writers.run_claude_prompt",
+            lambda *a, **k: ("still " * 100, 0),
+        )
+        out = _shrink_pass(long_draft, "bluesky", 300)
+        assert count_graphemes(out) <= 300
+
+    def test_falls_back_to_trim_when_llm_call_fails(self, monkeypatch):
+        long_draft = "word " * 200
+        monkeypatch.setattr(
+            "social.writers.run_claude_prompt", lambda *a, **k: ("", 1)
+        )
+        out = _shrink_pass(long_draft, "bluesky", 300)
+        assert count_graphemes(out) <= 300
+
+    def test_prefers_a_good_llm_result(self, monkeypatch):
+        long_draft = "word " * 200
+        good = "A tight rewrite that fits comfortably."
+        monkeypatch.setattr(
+            "social.writers.run_claude_prompt", lambda *a, **k: (good, 0)
+        )
+        assert _shrink_pass(long_draft, "bluesky", 300) == good
