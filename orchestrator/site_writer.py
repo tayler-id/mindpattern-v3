@@ -25,8 +25,10 @@ from orchestrator.site_copy_lint import (
     BANNED_WORDS,
     COPY_FIELDS,
     MAX_FIELD_CHARS,
+    CopyLintIssue,
     copy_allowed_urls_from_refs,
     first_voice_violation,
+    format_lint_issues_for_prompt,
     hard_fail_issues,
     lint_site_copy,
 )
@@ -240,6 +242,36 @@ def diagnose_writer_output(stdout: str, *, allowed_urls: set[str]) -> str:
     return "unknown"
 
 
+def _gate_rejection_prompt(prompt: str, stdout: str, *, allowed_urls: set[str]) -> str:
+    """One rewrite instruction for a draft the mechanical copy gate rejected."""
+    text = stdout.strip()
+    issues: list[CopyLintIssue] = []
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match is not None:
+        try:
+            payload = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            issues = hard_fail_issues(
+                lint_site_copy(payload, allowed_urls=allowed_urls, include_revise=False)
+            )
+    notes = (
+        format_lint_issues_for_prompt(issues)
+        if issues
+        else f"- {diagnose_writer_output(stdout, allowed_urls=allowed_urls)}"
+    )
+    return f"""{prompt}
+
+## Your previous draft
+{text[:3000]}
+
+## It was rejected by the mechanical copy gate (fix every item)
+{notes}
+
+Rewrite the full story fixing every rejection. Keep what already works. JSON only."""
+
+
 def write_story_copy_with_agent(
     graph_pack: dict[str, Any],
     expert_results: list[dict[str, Any]],
@@ -297,6 +329,31 @@ def write_story_copy_with_agent(
             diagnose_writer_output(process.stdout or "", allowed_urls=allowed_urls),
             (process.stdout or "").strip()[:300],
         )
+        # A gate rejection is fixable feedback, not a dead process: give the
+        # writer the lint notes and one rewrite, same shape as the critic loop.
+        retry_prompt = _gate_rejection_prompt(
+            prompt, process.stdout or "", allowed_urls=allowed_urls
+        )
+        cmd, stdin_text = writer_command(retry_prompt, model=model)
+        try:
+            try:
+                process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT, input_text=stdin_text)
+            except TypeError:
+                process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+        except Exception as exc:
+            logger.warning("site_writer %s: gate-rejection retry exception %s", candidate, exc)
+            return None
+        if getattr(process, "returncode", 1) != 0 or getattr(process, "timed_out", False):
+            if _is_limit_response(process):
+                raise UsageLimitReached(f"claude usage limit while writing {candidate}")
+            return None
+        copy = parse_writer_output(process.stdout or "", allowed_urls=allowed_urls)
+        if copy is None:
+            logger.warning(
+                "site_writer %s: gate-rejection retry rejected (%s)",
+                candidate,
+                diagnose_writer_output(process.stdout or "", allowed_urls=allowed_urls),
+            )
     return copy
 
 

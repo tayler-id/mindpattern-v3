@@ -286,14 +286,14 @@ class TestRouter:
         assert get_model("trend_scan") == "haiku"
 
     def test_get_model_research_agent(self):
-        assert get_model("research_agent") == "claude-opus-4-8[1m]"
+        assert get_model("research_agent") == "claude-opus-5[1m]"
 
     def test_get_model_synthesis(self):
-        assert get_model("synthesis_pass1") == "claude-opus-4-8[1m]"
-        assert get_model("synthesis_pass2") == "claude-opus-4-8[1m]"
+        assert get_model("synthesis_pass1") == "claude-opus-5[1m]"
+        assert get_model("synthesis_pass2") == "claude-opus-5[1m]"
 
     def test_get_model_social_tasks(self):
-        assert get_model("eic") == "claude-opus-4-8[1m]"
+        assert get_model("eic") == "claude-opus-5[1m]"
         assert get_model("writer") == "sonnet"
         assert get_model("critic") == "sonnet"
 

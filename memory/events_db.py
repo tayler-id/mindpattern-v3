@@ -29,6 +29,8 @@ ALLOWED_EVENTS = {
     "subscribe_submitted",
     "subscribe_success",
     "search_query","agent_hit",
+    "share",
+    "web_vital",
 }
 
 _SCHEMA = """

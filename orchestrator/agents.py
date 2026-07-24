@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import random
+import re
+import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -95,15 +97,62 @@ def _agent_env(agent_name: str) -> dict[str, str]:
     env["MINDPATTERN_VAULT"] = str(vault)
     return env
 
-# Research agents need the full Claude Code research surface. Do not pass
-# allowed/disallowed tool fences here; the newsletter depends on Exa/Jina/X/
-# YouTube-style shell tools and subagents for breadth and verification.
-AGENT_ALLOWED_TOOLS = None
+# Pre-approvals for headless `claude -p` runs — NOT a fence. --allowedTools
+# grants the listed rules without prompting; every other tool stays available
+# subject to normal permissions (read-only tools need none). History: the
+# 2026-06-26 "restore tool access" commit set this to None, which silently
+# revoked WebFetch/WebSearch approval in headless mode and starved research
+# agents for 17 days (refusals + degraded quality floor every run). Raw curl
+# is deliberately NOT granted (audit C6: scraped content must not reach a
+# shell that can POST); Jina deep reads go through WebFetch instead.
+#
+# Every Bash rule here must name a binary that is actually installed. On
+# 2026-07-24 this list granted `Bash(xreach *)` and the research prompt told
+# all 13 agents to run `xreach search`, but xreach had been replaced by the
+# `twitter` CLI on 2026-06-23 and was not on PATH. Grant and prompt agreed
+# with each other and were both wrong, so consistency alone does not catch
+# it — missing_granted_binaries() checks PATH at dispatch time.
+AGENT_ALLOWED_TOOLS = [
+    "WebSearch",
+    "WebFetch",
+    "Bash(mcporter call *)",  # Exa semantic search
+    "Bash(twitter *)",        # Twitter/X search (agent-reach's active backend)
+    "Bash(yt-dlp *)",         # YouTube transcripts
+]
 RESEARCH_DISALLOWED_TOOLS = None
 FILE_AGENT_DEFAULT_ALLOWED_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep"]
 FILE_AGENT_DISALLOWED_TOOLS = "Agent"
 PROMPT_DEFAULT_ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
-PROMPT_DISALLOWED_TOOLS = "Agent,Write,Edit,NotebookEdit,Skill"
+# Workflow is disallowed: in headless runs its permission prompt auto-denies
+# and the model narrates the denial into stdout, which for the newsletter
+# writer IS the published output (2026-07-14 incident).
+PROMPT_DISALLOWED_TOOLS = "Agent,Write,Edit,NotebookEdit,Skill,Workflow"
+
+_BASH_GRANT_RE = re.compile(r"^Bash\(\s*(\S+)")
+
+
+def granted_shell_binaries(allowed_tools: list[str] | None) -> set[str]:
+    """Binaries named by the `Bash(...)` rules in an --allowedTools list."""
+    binaries = set()
+    for rule in allowed_tools or []:
+        match = _BASH_GRANT_RE.match(str(rule))
+        if match:
+            binaries.add(match.group(1))
+    return binaries
+
+
+def missing_granted_binaries(allowed_tools: list[str] | None) -> list[str]:
+    """Granted shell binaries that are not on PATH.
+
+    A grant for an uninstalled binary is worse than no grant: the prompt
+    tells the agent to run it, the run fails, and the agent refuses rather
+    than fabricate (2026-07-24 xreach incident).
+    """
+    return sorted(
+        name for name in granted_shell_binaries(allowed_tools)
+        if not shutil.which(name)
+    )
+
 
 # Per-agent findings target quoted in the research prompt. Must never exceed
 # policies/research.json max_findings_per_agent — a contract test binds them.
@@ -298,10 +347,10 @@ The preflight data covers known sources. Now find what it MISSED.
 Use these tools to discover 3-5 additional findings:
 
 - Exa semantic search: mcporter call exa.web_search_exa query="..." numResults=5
-- Jina Reader (deep read any URL): curl -s "https://r.jina.ai/{{URL}}" 2>/dev/null | head -300
-- Twitter search: xreach search "query" --count 10 --json
+- Deep read any URL: WebFetch the URL directly, or WebFetch "https://r.jina.ai/{{URL}}" for hard-to-parse pages
+- Twitter/X search: twitter search "query" -n 10 --json --exclude retweets
 - YouTube transcripts: yt-dlp --dump-json "URL"
-- WebSearch (last resort): only if Exa doesn't cover it
+- WebSearch: broad discovery when Exa doesn't cover it
 
 Look for:
 - Stories that broke in the last 6 hours (too recent for RSS/feeds)
@@ -522,6 +571,29 @@ def _run_agent_attempt(
     return result
 
 
+def _corrective_retry_suffix(agent_name: str) -> str:
+    """Appended to the prompt when a clean run yields no parseable findings.
+
+    That outcome is almost always the model refusing/explaining instead of
+    emitting JSON (2026-07-13: three agents decided the prompt had "landed in
+    an interactive session" and returned essays). Explicit headless framing
+    recovers most of these without inviting fabrication.
+    """
+    return f"""
+
+---
+ATTEMPT 2 — HEADLESS PIPELINE REMINDER: You are the {agent_name} subprocess of
+the automated MindPattern research pipeline, launched by a scheduler with no
+human present. This is not an interactive Claude Code session; your stdout is
+machine-parsed. Output ONLY the JSON findings object — no prose, no questions,
+no commentary. Ground every finding in a real, current source you accessed
+THIS run; preflight items and WebSearch results count as verification when
+deep-read tools are unavailable. If sources are thin today, return fewer real
+findings — an honest short list beats the target count. If genuinely nothing
+qualifies, output {{"findings": []}}. Never refuse in prose; never fabricate.
+"""
+
+
 def run_single_agent(
     agent_name: str,
     prompt: str,
@@ -578,8 +650,25 @@ def run_single_agent(
     env = _agent_env(agent_name)
 
     result = AgentResult(agent_name=agent_name)
+    corrective_retry_used = False
     for attempt in range(max_attempts):
         result = _run_agent_attempt(agent_name, cmd, env, timeout, start)
+
+        if result.classification == "parse_error" and not corrective_retry_used:
+            corrective_retry_used = True
+            logger.warning(
+                f"Agent {agent_name} exited cleanly with no parseable findings "
+                f"(likely refusal; preview: '{(result.raw_output or '').strip()[:120]}'); "
+                f"retrying once with corrective headless framing"
+            )
+            cmd = _build_claude_command(
+                prompt + _corrective_retry_suffix(agent_name),
+                model=model,
+                max_turns=max_turns,
+                allowed_tools=AGENT_ALLOWED_TOOLS,
+                disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
+            )
+            continue
 
         if result.classification not in _TRANSIENT_CLASSIFICATIONS:
             if result.classification not in ("success", "parse_error"):
@@ -848,6 +937,16 @@ def dispatch_research_agents(
     soul_path = PROJECT_ROOT / "verticals" / vertical / "SOUL.md"
 
     logger.info(f"Dispatching {len(agents)} research agents (max {max_workers} parallel)")
+
+    # A grant for an uninstalled binary silently starves every agent that the
+    # prompt tells to use it (2026-07-24: xreach). Surface it once per run.
+    absent = missing_granted_binaries(AGENT_ALLOWED_TOOLS)
+    if absent:
+        logger.warning(
+            "Granted shell tools missing from PATH: %s — agents instructed to use "
+            "them will fail and may refuse rather than fabricate",
+            ", ".join(absent),
+        )
 
     results: list[AgentResult] = []
 

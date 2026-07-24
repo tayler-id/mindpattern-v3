@@ -257,9 +257,52 @@ def test_quality_floor_flags_repeated_adjacent_day_angle():
         },
     )
 
-    assert result["status"] == "degraded"
-    assert any("duplicate story risk" in reason for reason in result["reasons"])
+    # The detector must still SEE the repeat — that diagnostic is the point.
     assert result["duplicate_story_risk"]["repeated_angles"]
+    # ...but one follow-up in 80 findings (risk 0.0125) is normal coverage, not
+    # a quality failure. Before the 2026-07-24 recalibration the ceiling was
+    # exactly 0.0, so this degraded every issue that ever followed up a story.
+    assert result["metrics"]["duplicate_story_risk"] < 0.15
+    assert result["status"] == "pass"
+
+
+def test_quality_floor_degrades_when_repeats_dominate_the_issue():
+    """Recalibrated ceiling still fires when an issue is mostly rehash."""
+    current = _synthetic_findings(count=10, agents=13, sources=5)
+    recent = []
+    for idx in range(4):
+        current[idx] = {
+            "agent": "agent-0",
+            "title": f"OpenAI agent SDK automates developer workflows {idx}",
+            "summary": "The SDK coordinates tool calls, coding agents, and workflow steps for developers.",
+            "source_url": f"https://fresh.example/openai-agent-sdk-followup-{idx}",
+            "source_name": "Fresh Source",
+        }
+        recent.append({
+            "agent": "agent-1",
+            "title": f"OpenAI launches agent SDK for workflow automation {idx}",
+            "summary": "The launch coordinates tool calls, coding agents, and developer workflow steps.",
+            "source_url": f"https://old.example/openai-agent-sdk-{idx}",
+            "source_name": "Old Source",
+            "run_date": "2026-06-25",
+        })
+
+    result = assess_quality_floor(
+        {"overall": 0.86, "coverage": 0.9, "dedup": 0.95, "sources": 0.9},
+        findings=current,
+        recent_findings=recent,
+        preflight_data={
+            "source_counts": {"rss": 20, "hn": 20, "reddit": 15, "twitter": 10, "exa": 10},
+            "source_health_summary": {
+                "expected_source_count": 8,
+                "responsive_source_count": 8,
+            },
+        },
+    )
+
+    assert result["metrics"]["duplicate_story_risk"] >= 0.15
+    assert result["status"] != "pass"
+    assert any("duplicate story risk" in reason for reason in result["reasons"])
 
 
 def test_duplicate_story_risk_does_not_overblock_related_story():
@@ -278,3 +321,97 @@ def test_duplicate_story_risk_does_not_overblock_related_story():
 
     assert risk["duplicate_count"] == 0
     assert risk["risk"] == 0.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Quality-floor recalibration (2026-07-24)
+#
+# The floor returned degraded/fail on all 27 logged verdicts and never once
+# passed. Two thresholds were unreachable by construction:
+#
+#  * max_duplicate_story_risk = 0.0 — a ceiling of literally zero. Observed
+#    healthy runs sit at 0.046-0.108, so it fired every single day.
+#  * max_single_source_ratio = 0.35 applied to `single_source_ratio`, which
+#    counted RAW PREFLIGHT CANDIDATES. RSS dominates that pool because feeds
+#    are verbose (176 items vs github 123 vs arxiv 30), not because the
+#    newsletter is narrow. July range was 0.367-0.550; even with reddit
+#    restored it breaches 0.35 on 19 of 24 days.
+#
+# The concentration that matters is among findings that actually reached
+# the newsletter. That is top_domain_ratio, whose observed July range is
+# 0.138-0.298 — a 0.35 ceiling on it is both meaningful and achievable.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _findings_with_domains(domain_counts: dict[str, int]):
+    rows = []
+    idx = 0
+    for domain, n in domain_counts.items():
+        for _ in range(n):
+            rows.append({
+                "agent": f"agent-{idx % 13}",
+                "title": f"Story {idx}",
+                "source_url": f"https://{domain}/story-{idx}",
+                "source_name": domain,
+            })
+            idx += 1
+    return rows
+
+
+class TestTopDomainRatio:
+    def test_measures_findings_not_preflight_candidates(self):
+        """A verbose RSS candidate pool must not fail an otherwise diverse issue."""
+        findings = _findings_with_domains(
+            {"arxiv.org": 19, "github.com": 10, "x.com": 8, "techcrunch.com": 7,
+             "aws.amazon.com": 5, "theverge.com": 3, "openai.com": 3}
+        )
+        result = assess_quality_floor(
+            {"overall": 0.8, "coverage": 0.8, "dedup": 0.9, "sources": 0.8},
+            findings=findings,
+            # rss is 43% of raw candidates — the old gate failed on this alone
+            preflight_data={
+                "source_counts": {"rss": 176, "github": 123, "arxiv": 30,
+                                  "exa": 25, "hn": 21, "twitter": 18, "youtube": 15},
+                "source_health_summary": {
+                    "expected_source_count": 8, "responsive_source_count": 8,
+                },
+            },
+        )
+        assert result["metrics"]["top_domain_ratio"] < 0.35
+        assert not any("dominance" in r for r in result["reasons"])
+
+    def test_flags_a_genuinely_single_source_issue(self):
+        findings = _findings_with_domains({"arxiv.org": 40, "github.com": 5})
+        result = assess_quality_floor(
+            {"overall": 0.8, "coverage": 0.8, "dedup": 0.9, "sources": 0.8},
+            findings=findings,
+            preflight_data={
+                "source_counts": {"rss": 50, "github": 50, "arxiv": 50, "hn": 50},
+                "source_health_summary": {
+                    "expected_source_count": 8, "responsive_source_count": 8,
+                },
+            },
+        )
+        assert result["metrics"]["top_domain_ratio"] > 0.50
+        assert result["status"] == "fail_retryable"
+        assert any("domain concentration" in r for r in result["reasons"])
+
+    def test_ignores_www_and_scheme_when_grouping(self):
+        findings = _findings_with_domains({"www.arxiv.org": 5, "arxiv.org": 5})
+        result = assess_quality_floor(
+            {}, findings=findings, preflight_data={}
+        )
+        assert result["metrics"]["top_domain_ratio"] == 1.0
+
+
+class TestDuplicateStoryRiskCeiling:
+    def test_zero_ceiling_is_gone(self):
+        """A ceiling of exactly 0.0 made every run fail; follow-up coverage is normal."""
+        from orchestrator.evaluator import QUALITY_FLOOR_THRESHOLDS as T
+        assert T["max_duplicate_story_risk"] > 0.0
+        assert T["retryable_max_duplicate_story_risk"] > T["max_duplicate_story_risk"]
+
+    def test_observed_healthy_risk_does_not_degrade(self):
+        """0.046-0.108 was the real July range on issues Tayler judged fine."""
+        from orchestrator.evaluator import QUALITY_FLOOR_THRESHOLDS as T
+        assert T["max_duplicate_story_risk"] > 0.108

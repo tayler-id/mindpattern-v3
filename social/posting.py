@@ -875,9 +875,15 @@ class BlueskyClient:
                     rkey = parts[-1]
                     web_url = f"https://bsky.app/profile/{handle}/post/{rkey}"
 
+            # If the post is itself a reply, its record declares the thread
+            # root; replying without it would detach our reply from the thread.
+            root_ref = record.get("reply", {}).get("root", {})
+
             results.append({
                 "uri": uri,
                 "cid": post_view.get("cid", ""),
+                "root_uri": root_ref.get("uri", ""),
+                "root_cid": root_ref.get("cid", ""),
                 "text": record.get("text", ""),
                 "author_did": author.get("did", ""),
                 "author_handle": handle,

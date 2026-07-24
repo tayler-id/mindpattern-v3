@@ -351,7 +351,10 @@ class TestBuildClaudeCommand:
             "--disallowedTools", "Agent",
         ]
 
-    def test_research_command_has_no_tool_fence(self):
+    def test_research_command_grants_web_tools_without_fence(self):
+        """Research agents get web-tool pre-approvals (headless runs cannot
+        answer permission prompts) but no --disallowedTools fence — the full
+        Claude Code surface stays available."""
         cmd = _build_claude_command(
             "research prompt",
             model="opus",
@@ -361,7 +364,9 @@ class TestBuildClaudeCommand:
         )
 
         assert cmd[0:2] == ["claude", "-p"]
-        assert "--allowedTools" not in cmd
+        granted = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--allowedTools"]
+        assert "WebSearch" in granted
+        assert "WebFetch" in granted
         assert "--disallowedTools" not in cmd
 
 
@@ -484,6 +489,94 @@ class TestRunSingleAgentInvalidJson:
         assert result.exit_code == 0
         assert result.findings == []
         assert result.error is None  # No error — just no findings parsed
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.run_claude_process")
+class TestRunSingleAgentCorrectiveRetry:
+    """A clean-exit run with no parseable findings (usually a model refusal)
+    gets exactly one corrective retry with explicit headless framing."""
+
+    def _router(self, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+
+    def test_refusal_then_json_recovers(self, mock_run_process, mock_router):
+        self._router(mock_router)
+        mock_run_process.side_effect = [
+            _process_result(
+                stdout="I think this prompt landed in the wrong place.",
+                returncode=0,
+            ),
+            _process_result(
+                stdout='{"findings": [{"title": "T", "summary": "S"}]}',
+                returncode=0,
+            ),
+        ]
+
+        result = run_single_agent("hn-researcher", "test prompt")
+
+        assert result.classification == "success"
+        assert len(result.findings) == 1
+        assert mock_run_process.call_count == 2
+        retry_cmd = mock_run_process.call_args_list[1].args[0]
+        retry_prompt = retry_cmd[2]  # ["claude", "-p", <prompt>, ...]
+        assert "HEADLESS PIPELINE REMINDER" in retry_prompt
+        assert "hn-researcher" in retry_prompt
+        assert retry_prompt.startswith("test prompt")
+
+    def test_persistent_refusal_stops_after_one_retry(
+        self, mock_run_process, mock_router
+    ):
+        self._router(mock_router)
+        mock_run_process.side_effect = [
+            _process_result(stdout="Refusing, take one.", returncode=0),
+            _process_result(stdout="Refusing, take two.", returncode=0),
+        ]
+
+        result = run_single_agent("stubborn-agent", "test prompt")
+
+        assert result.findings == []
+        assert result.classification == "parse_error"
+        assert mock_run_process.call_count == 2
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.run_claude_process")
+class TestRunSingleAgentToolGrants:
+    """Research agents are dispatched with web tools pre-approved — the
+    2026-06-26 regression removed --allowedTools and starved them headlessly."""
+
+    def test_prompt_calls_disallow_workflow_tool(
+        self, mock_run_process, mock_router
+    ):
+        """Headless prompt runs (synthesis writer, learn, evolve) must not
+        offer Workflow: its permission prompt auto-denies and the model
+        narrates the denial into stdout — the published newsletter."""
+        from orchestrator.agents import PROMPT_DISALLOWED_TOOLS
+        assert "Workflow" in PROMPT_DISALLOWED_TOOLS
+        assert "Skill" in PROMPT_DISALLOWED_TOOLS
+
+    def test_dispatch_grants_web_and_research_tools(
+        self, mock_run_process, mock_router
+    ):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+        mock_run_process.return_value = _process_result(
+            stdout='{"findings": [{"title": "T", "summary": "S"}]}',
+            returncode=0,
+        )
+
+        run_single_agent("news-researcher", "test prompt")
+
+        cmd = mock_run_process.call_args.args[0]
+        granted = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--allowedTools"]
+        assert "WebSearch" in granted
+        assert "WebFetch" in granted
+        assert "Bash(mcporter call *)" in granted
+        assert "--disallowedTools" not in cmd
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -777,8 +870,11 @@ class TestBuildAgentPromptResearchBreadth:
         assert "## Phase 2: Explore Beyond Preflight" in prompt
         expected_prompt_fragments = (
             "mcporter call",
-            "curl -s",
-            "xreach search",
+            # Jina deep reads go through WebFetch, not raw curl (audit C6:
+            # scraped content must never reach a shell that can POST)
+            'WebFetch "https://r.jina.ai/',
+            # xreach was retired 2026-06-23; the installed CLI is `twitter`
+            "twitter search",
             "yt-dlp",
             "Subagent Delegation",
             "Agent tool",
@@ -900,17 +996,22 @@ class TestRunSingleAgentRetry:
         assert mock_run_process.call_count == 2
         sleeper.assert_called_once()
 
-    def test_does_not_retry_parse_error(self, mock_run_process, mock_router):
+    def test_parse_error_gets_one_corrective_retry_without_backoff(
+        self, mock_run_process, mock_router
+    ):
         self._router(mock_router)
-        mock_run_process.side_effect = [_process_result(stdout="not json", returncode=0)]
+        mock_run_process.side_effect = [
+            _process_result(stdout="not json", returncode=0),
+            _process_result(stdout="still not json", returncode=0),
+        ]
         sleeper = MagicMock()
 
         result = run_single_agent("a", "p", _sleep=sleeper, _rng=_random.Random(0))
 
         assert result.classification == "parse_error"
         assert result.findings == []
-        assert mock_run_process.call_count == 1     # no retry
-        sleeper.assert_not_called()
+        assert mock_run_process.call_count == 2     # one corrective retry, no more
+        sleeper.assert_not_called()                 # refusals don't back off
 
     def test_does_not_retry_timeout(self, mock_run_process, mock_router):
         self._router(mock_router)
@@ -945,3 +1046,106 @@ class TestRunSingleAgentRetry:
         assert sleeper.call_count == 2         # sleep between attempts, not after the last
         # The real cause is recorded — no more useless "Non-zero exit code".
         assert "overloaded" in (result.error or "").lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Tool-grant / prompt contract (2026-07-24)
+#
+# The research prompt told all 13 agents to run `xreach search`, and
+# AGENT_ALLOWED_TOOLS granted `Bash(xreach *)` to match — but xreach was
+# replaced by the `twitter` CLI on 2026-06-23 and is not installed. Prompt
+# and grant agreed with each other and were both wrong, so a pure
+# prompt<->grant contract cannot catch this class of bug on its own.
+# Two guards are needed: consistency (below) AND a runtime PATH check.
+# ═══════════════════════════════════════════════════════════════════════
+
+import re as _re
+import shutil as _shutil
+
+from orchestrator.agents import (
+    granted_shell_binaries,
+    missing_granted_binaries,
+)
+
+
+@pytest.fixture
+def research_prompt(tmp_path) -> str:
+    """A representative research prompt, for contract assertions."""
+    soul_path = tmp_path / "SOUL.md"
+    soul_path.write_text("Soul")
+    skill_path = tmp_path / "agent.md"
+    skill_path.write_text("Skill")
+    return build_agent_prompt(
+        agent_name="hn-researcher",
+        user_id="ramsay",
+        date_str="2026-07-24",
+        soul_path=soul_path,
+        agent_skill_path=skill_path,
+        context="Recent Findings: none",
+        # Non-empty: the "Explore Beyond Preflight" section that lists the
+        # shell tools only renders when there is preflight data to go beyond.
+        preflight_items=[
+            {
+                "source": "rss",
+                "source_name": "Example",
+                "title": "Example release",
+                "url": "https://example.com/release",
+                "content_preview": "A recent item.",
+            }
+        ],
+    )
+
+
+class TestToolGrantContract:
+    def test_granted_shell_binaries_parses_bash_rules(self):
+        assert granted_shell_binaries(
+            ["WebSearch", "Bash(mcporter call *)", "Bash(yt-dlp *)"]
+        ) == {"mcporter", "yt-dlp"}
+
+    def test_no_grant_for_retired_xreach(self):
+        """xreach was replaced by the twitter CLI on 2026-06-23."""
+        assert "xreach" not in granted_shell_binaries(AGENT_ALLOWED_TOOLS)
+
+    def test_twitter_cli_is_granted(self):
+        assert "twitter" in granted_shell_binaries(AGENT_ALLOWED_TOOLS)
+
+    def test_prompt_does_not_instruct_retired_xreach(self, research_prompt):
+        assert "xreach" not in research_prompt
+
+    def test_every_granted_binary_is_named_in_the_prompt(self, research_prompt):
+        """A grant nothing instructs is dead weight; drift shows up here."""
+        for binary in granted_shell_binaries(AGENT_ALLOWED_TOOLS):
+            assert binary in research_prompt, f"{binary} granted but never instructed"
+
+    def test_every_instructed_shell_binary_is_granted(self, research_prompt):
+        """An instructed command with no grant is denied in headless mode."""
+        prompt = research_prompt
+        granted = granted_shell_binaries(AGENT_ALLOWED_TOOLS)
+        section = prompt.split("Use these tools")[-1].split("Look for:")[0]
+        for binary in ("mcporter", "twitter", "yt-dlp"):
+            if binary in section:
+                assert binary in granted, f"{binary} instructed but not granted"
+
+
+class TestMissingGrantedBinaries:
+    """Runtime PATH check — the guard that would have caught the xreach bug."""
+
+    def test_reports_binary_absent_from_path(self, monkeypatch):
+        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        assert missing_granted_binaries(["Bash(xreach *)"]) == ["xreach"]
+
+    def test_silent_when_all_present(self, monkeypatch):
+        monkeypatch.setattr(_shutil, "which", lambda name: f"/usr/bin/{name}")
+        assert missing_granted_binaries(["Bash(twitter *)", "Bash(yt-dlp *)"]) == []
+
+    def test_ignores_non_bash_grants(self, monkeypatch):
+        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        assert missing_granted_binaries(["WebSearch", "WebFetch"]) == []
+
+    def test_reports_only_the_missing_ones(self, monkeypatch):
+        monkeypatch.setattr(
+            _shutil, "which", lambda name: None if name == "mcporter" else "/usr/bin/x"
+        )
+        assert missing_granted_binaries(
+            ["Bash(mcporter call *)", "Bash(twitter *)"]
+        ) == ["mcporter"]

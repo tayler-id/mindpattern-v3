@@ -28,10 +28,20 @@ QUALITY_FLOOR_THRESHOLDS = {
     "retryable_min_responsive_source_ratio": 0.50,
     "min_unique_url_ratio": 0.80,
     "retryable_min_unique_url_ratio": 0.65,
-    "max_single_source_ratio": 0.35,
-    "retryable_max_single_source_ratio": 0.60,
-    "max_duplicate_story_risk": 0.0,
-    "retryable_max_duplicate_story_risk": 0.20,
+    # Concentration is measured over findings that actually reached the
+    # newsletter, NOT over raw preflight candidates. The old
+    # max_single_source_ratio gated the candidate pool, which RSS dominates
+    # purely because feeds are verbose — it breached 0.35 on every one of 29
+    # logged days and made a passing run impossible (2026-07-24 recalibration).
+    # Observed healthy top_domain_ratio: 0.138-0.298.
+    "max_top_domain_ratio": 0.35,
+    "retryable_max_top_domain_ratio": 0.50,
+    # Was 0.0 — a ceiling of literally zero, so any repeat at all failed.
+    # Findings already survive a hard sim>0.90 / 180-day dedup before they get
+    # here, so a small residue is normal follow-up coverage, not a defect.
+    # Observed healthy range: 0.046-0.108.
+    "max_duplicate_story_risk": 0.15,
+    "retryable_max_duplicate_story_risk": 0.30,
     "near_title_similarity": 0.70,
     "angle_similarity": 0.48,
 }
@@ -114,7 +124,7 @@ def assess_quality_floor(
     flag_min_count("source_class_count", "source diversity", thresholds["min_source_classes"], thresholds["retryable_min_source_classes"])
     flag("responsive_source_ratio", "responsive source ratio", thresholds["min_responsive_source_ratio"], thresholds["retryable_min_responsive_source_ratio"])
     flag("unique_url_ratio", "unique URL ratio", thresholds["min_unique_url_ratio"], thresholds["retryable_min_unique_url_ratio"])
-    flag_max_ratio("single_source_ratio", "single-source dominance", thresholds["max_single_source_ratio"], thresholds["retryable_max_single_source_ratio"])
+    flag_max_ratio("top_domain_ratio", "top-domain concentration", thresholds["max_top_domain_ratio"], thresholds["retryable_max_top_domain_ratio"])
     flag_max_ratio("duplicate_story_risk", "duplicate story risk", thresholds["max_duplicate_story_risk"], thresholds["retryable_max_duplicate_story_risk"])
 
     status = "pass"
@@ -521,12 +531,23 @@ def _quality_floor_metrics(
         for finding in findings
     ]
     urls = [url for url in urls if url]
+    # source_class_count stays preflight-based: "how many of the 8 sources
+    # actually responded" is a real health signal. Only the concentration
+    # metric moved to findings (see QUALITY_FLOOR_THRESHOLDS).
     source_counts = _source_counts_for_floor(findings, preflight_data)
     source_class_count = sum(1 for count in source_counts.values() if count > 0)
-    total_source_items = sum(count for count in source_counts.values() if count > 0)
-    single_source_ratio = (
-        max(source_counts.values()) / total_source_items
-        if total_source_items > 0 and source_counts else 0.0
+
+    domain_counts = Counter(
+        domain for domain in (
+            _registrable_domain(
+                _field(finding, "source_url", "") or _field(finding, "url", "")
+            )
+            for finding in findings
+        ) if domain
+    )
+    top_domain_ratio = (
+        max(domain_counts.values()) / sum(domain_counts.values())
+        if domain_counts else 0.0
     )
 
     source_health_summary = preflight_data.get("source_health_summary") or {}
@@ -549,8 +570,27 @@ def _quality_floor_metrics(
         "source_class_count": source_class_count,
         "responsive_source_ratio": responsive_source_ratio,
         "unique_url_ratio": unique_url_ratio,
-        "single_source_ratio": single_source_ratio,
+        "top_domain_ratio": top_domain_ratio,
+        "distinct_domain_count": len(domain_counts),
     }
+
+
+def _registrable_domain(url: str | None) -> str:
+    """Host of a URL, lowercased and stripped of a leading www.
+
+    Groups www.arxiv.org with arxiv.org so concentration is not understated.
+    """
+    if not url:
+        return ""
+    from urllib.parse import urlsplit
+
+    try:
+        host = urlsplit(str(url).strip()).netloc.lower()
+    except ValueError:
+        return ""
+    if host.startswith("www."):
+        host = host[4:]
+    return host.split(":")[0]
 
 
 def _field(row, key: str, default=None):

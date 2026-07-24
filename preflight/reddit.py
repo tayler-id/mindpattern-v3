@@ -2,6 +2,7 @@
 
 import json
 import logging
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -66,10 +67,118 @@ def _summarize_errors(errors: list[dict]) -> str:
     return "; ".join(parts)
 
 
+def _transform_opencli(raw: dict) -> dict:
+    """Normalize an OpenCLI reddit post into the shared preflight entry shape.
+
+    OpenCLI differs from the public JSON API in two ways that silently
+    corrupt entries if copied straight through: the score field is
+    `upvotes`, and `subreddit` already carries its own `r/` prefix.
+    """
+    created = raw.get("created_utc")
+    published = ""
+    if created:
+        try:
+            published = datetime.fromtimestamp(int(created), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (ValueError, OSError):
+            pass
+
+    subreddit = str(raw.get("subreddit", "")).strip()
+    if not subreddit.startswith("r/"):
+        subreddit = f"r/{subreddit}"
+
+    return make_entry(
+        source="reddit",
+        source_name=subreddit,
+        title=raw.get("title", ""),
+        url=raw.get("url", ""),
+        published=published,
+        content_preview=(raw.get("selftext") or "")[:500],
+        metrics={
+            "score": raw.get("upvotes", raw.get("score", 0)),
+            "comments": raw.get("comments", 0),
+        },
+    )
+
+
+def _fetch_via_opencli(
+    subreddits: str, min_score: int, limit: int = 50
+) -> tuple[list[dict], list[dict]]:
+    """Fetch each subreddit through OpenCLI, which reuses the browser session.
+
+    Returns (entries, errors). One failing subreddit does not sink the rest.
+    """
+    entries: list[dict] = []
+    errors: list[dict] = []
+    for name in [s.strip() for s in subreddits.split(",") if s.strip()]:
+        cmd = [
+            "opencli", "reddit", "subreddit", name,
+            "--sort", "top", "--time", "day", "--limit", str(limit),
+            "-f", "json",
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            errors.append({"error": str(e), "context": f"r/{name}", "tool": "opencli"})
+            continue
+
+        if proc.returncode != 0:
+            errors.append({
+                "error": (proc.stderr or "").strip()[:200] or f"opencli exited {proc.returncode}",
+                "context": f"r/{name}",
+                "tool": "opencli",
+            })
+            continue
+
+        try:
+            posts = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError as e:
+            errors.append({"error": f"unparseable opencli output: {e}",
+                           "context": f"r/{name}", "tool": "opencli"})
+            continue
+
+        for post in posts if isinstance(posts, list) else []:
+            if not isinstance(post, dict):
+                continue
+            score = post.get("upvotes", post.get("score", 0)) or 0
+            try:
+                if int(score) < min_score:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            entries.append(_transform_opencli(post))
+
+    return entries, errors
+
+
 def fetch_with_diagnostics(
     subreddits: str | None = None,
     min_score: int = 50,
 ) -> tuple[list[dict], dict]:
+    targets = subreddits or DEFAULT_SUBREDDITS
+
+    # OpenCLI first: the public JSON API path below has returned HTTP 403 on
+    # every logged run since 2026-06-26 because Reddit blocks unauthenticated
+    # .json requests. OpenCLI reuses the browser session via its extension.
+    if shutil.which("opencli"):
+        items, errors = _fetch_via_opencli(targets, min_score)
+        if items:
+            return items, {
+                "status": "partial" if errors else "ok",
+                "reason": _summarize_errors(errors),
+                "subreddits": targets,
+                "errors": errors,
+            }
+        if errors:
+            logger.warning("opencli reddit returned nothing: %s", _summarize_errors(errors))
+        else:
+            return [], {
+                "status": "empty",
+                "reason": "no reddit items",
+                "subreddits": targets,
+                "errors": [],
+            }
+        # errors and no items -> fall through to the legacy tool
+
     cmd = [
         sys.executable, str(TOOLS_DIR / "reddit-fetch.py"),
         "--subreddits", subreddits or DEFAULT_SUBREDDITS,

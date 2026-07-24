@@ -203,3 +203,48 @@ def test_engine_applies_agent_copy_and_falls_back_on_bad_copy(tmp_path):
     story = json.loads(story_files[0].read_text())
     assert "[link]" not in story["take"]
     assert story["provenance"].get("writer") != "claude-cli"
+
+
+def test_write_story_copy_retries_once_after_gate_rejection():
+    @dataclass
+    class OkProcess:
+        stdout: str
+        stderr: str = ""
+        returncode: int = 0
+        timed_out: bool = False
+
+    bad = _valid_copy()
+    bad["body_markdown"] = "A claim — with an em dash the gate rejects."
+    outputs = [json.dumps(bad), json.dumps(_valid_copy())]
+    calls = []
+
+    def runner(cmd, **kwargs):
+        calls.append(cmd)
+        return OkProcess(stdout=outputs[len(calls) - 1])
+
+    result = write_story_copy_with_agent(_graph_pack(), [], voice_text="v", runner=runner)
+    assert result == _valid_copy()
+    assert len(calls) == 2
+    retry_prompt = calls[1][2] if calls[1][:2] == ["claude", "-p"] else str(calls[1])
+    assert "rejected by the mechanical copy gate" in str(retry_prompt)
+
+
+def test_write_story_copy_fails_closed_when_retry_also_rejected():
+    @dataclass
+    class OkProcess:
+        stdout: str
+        stderr: str = ""
+        returncode: int = 0
+        timed_out: bool = False
+
+    bad = _valid_copy()
+    bad["body_markdown"] = "A claim — with an em dash the gate rejects."
+    calls = []
+
+    def runner(cmd, **kwargs):
+        calls.append(cmd)
+        return OkProcess(stdout=json.dumps(bad))
+
+    result = write_story_copy_with_agent(_graph_pack(), [], voice_text="v", runner=runner)
+    assert result is None
+    assert len(calls) == 2

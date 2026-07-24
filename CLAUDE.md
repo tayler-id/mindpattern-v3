@@ -74,15 +74,37 @@ The knowledge graph (`harness/knowledge/`) is a set of interconnected markdown f
 
 The harness (`harness/`) is a self-improving outer loop. See `harness/CLAUDE.md` for ticket schema and agent workflows. Agents in the harness use TDD: write failing tests first, then implement.
 
-## graphify
+## graphify (code navigation — for coding agents, not the pipeline)
 
-This project has a graphify knowledge graph at graphify-out/.
+`graphify-out/` is an AST-derived graph of this repo's Python source, built so a **coding
+agent can navigate the codebase** without grepping 505 files. No pipeline code imports it.
+
+This repo has four different "graphs" — do not confuse them:
+
+| Graph | Built from | Who consumes it |
+|-------|-----------|-----------------|
+| `graphify-out/` | this repo's Python source | **coding agents (you)** |
+| `harness/knowledge/` | 33 hand-written `.md` files | harness self-improvement agents |
+| `kg/` | research **findings** (newsletter content) | the pipeline (`MP_KG_BUILD_ENABLED=1`) |
+| `orchestrator/site_graph.py` | published stories | the public website |
 
 Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+- Symbol-anchored commands are precise and beat grep. Use them first:
+  - `graphify explain "<symbol>"` — file:line, community, and every caller/callee
+  - `graphify affected "<symbol>" --depth 2` — reverse deps with file:line (blast radius)
+  - `graphify path "<A>" "<B>"` — shortest call/import chain between two symbols
+- `graphify query "<question>"` is weak: it picks start nodes by naive keyword match and
+  frequently traverses from the wrong ones. Prefer the three commands above, or grep.
+- `GRAPH_REPORT.md` is ~190KB. **Never read it whole.** Grep it for a named community
+  (`### <name>`) or use the CLI commands above.
+- After modifying code files, run `graphify update .` (AST-only, no LLM, no API cost).
+- **Never run `graphify label` or pass `--force-relabel`.** No LLM backend is configured
+  (no API key, by design — this machine runs on the Claude subscription), so a forced
+  relabel silently overwrites every community name with a `Community N` placeholder.
+  Names live in `graphify-out/.graphify_labels.json` and are re-attached across
+  re-clustering by node overlap, so `cluster-only`/`update` are safe.
+- `graphify-out/` files are marked `skip-worktree`, so `git status` will not show changes
+  to them. That is intentional; the graph is regenerated locally.
 
 ## Agent skills
 
