@@ -1149,3 +1149,120 @@ class TestMissingGrantedBinaries:
         assert missing_granted_binaries(
             ["Bash(mcporter call *)", "Bash(twitter *)"]
         ) == ["mcporter"]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# run_claude_prompt retries transient API failures (2026-07-24)
+#
+# run_single_agent has had max_attempts=3 + full-jitter backoff since the
+# 2026-06-23 529 incident. run_claude_prompt — which drives EVERY non-agent
+# call (newsletter writer, humanizer, critics, trend scan, and the Slack
+# social writers) — had none: one 529/429/dropped connection returned
+# ("", 1) and the caller silently lost the draft. Real symptom: "Failed to
+# generate drafts for: linkedin" in #mp-tips on an otherwise healthy day.
+#
+# The catch: here stdout IS the content, so classification must never fire
+# on a post that merely TALKS about rate limits.
+# ═══════════════════════════════════════════════════════════════════════
+
+import random as _rnd
+
+
+@patch("orchestrator.agents.router")
+@patch("orchestrator.agents.run_claude_process")
+class TestRunClaudePromptRetries:
+    def test_retries_overloaded_then_succeeds(self, mock_proc, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 15
+        mock_router.get_timeout.return_value = 300
+        mock_proc.side_effect = [
+            _process_result(stdout=OVERLOAD_MSG, returncode=1),
+            _process_result(stdout="A good LinkedIn post.", returncode=0),
+        ]
+        sleeper = MagicMock()
+
+        out, code = run_claude_prompt(
+            "write it", "writer", _sleep=sleeper, _rng=_rnd.Random(0)
+        )
+
+        assert out == "A good LinkedIn post."
+        assert code == 0
+        assert mock_proc.call_count == 2
+        sleeper.assert_called_once()
+
+    def test_retries_a_timeout(self, mock_proc, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 15
+        mock_router.get_timeout.return_value = 300
+        mock_proc.side_effect = [
+            _process_result(timed_out=True, returncode=1),
+            _process_result(stdout="Recovered draft.", returncode=0),
+        ]
+        out, code = run_claude_prompt(
+            "write it", "writer", _sleep=MagicMock(), _rng=_rnd.Random(0)
+        )
+        assert out == "Recovered draft."
+        assert mock_proc.call_count == 2
+
+    def test_does_not_retry_a_clean_success(self, mock_proc, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 15
+        mock_router.get_timeout.return_value = 300
+        mock_proc.return_value = _process_result(stdout="First try.", returncode=0)
+
+        out, _ = run_claude_prompt("write it", "writer", _sleep=MagicMock())
+
+        assert out == "First try."
+        assert mock_proc.call_count == 1
+
+    def test_content_mentioning_rate_limits_is_not_a_transient_failure(
+        self, mock_proc, mock_router
+    ):
+        """stdout IS the post here — a story about 429s must not trigger retries."""
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 15
+        mock_router.get_timeout.return_value = 300
+        post = (
+            "Tayler'd Tip!\n\nTwitter's API now returns 429 rate limit errors "
+            "under load, and the 529 overloaded path is worth handling too."
+        )
+        mock_proc.return_value = _process_result(stdout=post, returncode=0)
+
+        out, code = run_claude_prompt("write it", "writer", _sleep=MagicMock())
+
+        assert out == post
+        assert code == 0
+        assert mock_proc.call_count == 1
+
+    def test_bare_api_error_on_stdout_is_not_returned_as_content(
+        self, mock_proc, mock_router
+    ):
+        """Otherwise the error text becomes the published post."""
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 15
+        mock_router.get_timeout.return_value = 300
+        err = "API Error: Connection closed mid-response. The response above may be incomplete.\n"
+        mock_proc.return_value = _process_result(stdout=err, returncode=0)
+
+        out, code = run_claude_prompt(
+            "write it", "writer", _sleep=MagicMock(), _rng=_rnd.Random(0)
+        )
+
+        assert out == ""
+        assert code == 1
+
+    def test_gives_up_after_max_attempts(self, mock_proc, mock_router):
+        mock_router.get_model.return_value = "sonnet"
+        mock_router.get_max_turns.return_value = 15
+        mock_router.get_timeout.return_value = 300
+        mock_proc.return_value = _process_result(stdout=OVERLOAD_MSG, returncode=1)
+        sleeper = MagicMock()
+
+        out, code = run_claude_prompt(
+            "write it", "writer", max_attempts=3, _sleep=sleeper, _rng=_rnd.Random(0)
+        )
+
+        assert out == ""
+        assert code == 1
+        assert mock_proc.call_count == 3
+        assert sleeper.call_count == 2

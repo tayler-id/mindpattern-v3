@@ -1107,17 +1107,44 @@ def run_agent_with_files(
         return {"text": content}
 
 
+def _is_bare_api_error(text: str) -> bool:
+    """True when stdout is a CLI API-error notice rather than generated content.
+
+    The claude CLI writes API errors to stdout, sometimes with exit 0. Callers
+    here treat any non-empty stdout as the deliverable, so without this check
+    "API Error: Connection closed mid-response." becomes the published post.
+    Anchored at the start so a story *about* API errors is unaffected.
+    """
+    return text.strip().lower().startswith("api error")
+
+
 def run_claude_prompt(
     prompt: str,
     task_type: str,
     *,
     system_prompt_file: str | None = None,
     allowed_tools: list[str] | None = None,
+    max_attempts: int = 3,
+    base_delay: float = 2.0,
+    max_delay: float = 30.0,
+    _sleep=time.sleep,
+    _rng: random.Random | None = None,
 ) -> tuple[str, int]:
     """Run a single claude -p call for non-agent tasks (synthesis, trends, etc.).
 
     For large prompts (>100K chars), writes to a temp file and pipes via stdin
     to avoid OS argument length limits.
+
+    Transient API failures (529 overloaded, 429 rate limit, 5xx, timeouts,
+    dropped connections) are retried with full-jitter backoff, matching
+    run_single_agent. Before 2026-07-24 this function had no retry at all: a
+    single blip returned ("", 1) and the caller silently lost its output —
+    which is how a healthy #mp-tips run reported "Failed to generate drafts
+    for: linkedin". Every non-agent call shares this path (newsletter writer,
+    humanizer, critics, trend scan, Slack social writers).
+
+    Classification only runs on FAILED calls. stdout here is the deliverable,
+    so a post that merely discusses rate limits must never look transient.
 
     Returns (output_text, exit_code).
     """
@@ -1154,32 +1181,61 @@ def run_claude_prompt(
         + (f", system_prompt_file={system_prompt_file}" if system_prompt_file else "")
         + (f", stdin_mode=True" if use_stdin else "")
     )
-    call_start = time.monotonic()
+    rng = _rng or random.Random()
 
-    result = run_claude_process(
-        cmd,
-        input_text=prompt if use_stdin else None,
-        timeout=timeout,
-        cwd=PROJECT_ROOT,
-        env=env,
-    )
-    call_duration = time.monotonic() - call_start
-    if result.timed_out:
+    for attempt in range(max_attempts):
+        call_start = time.monotonic()
+        result = run_claude_process(
+            cmd,
+            input_text=prompt if use_stdin else None,
+            timeout=timeout,
+            cwd=PROJECT_ROOT,
+            env=env,
+        )
+        call_duration = time.monotonic() - call_start
+
+        if result.timed_out:
+            classification = "server_error"
+            detail = f"timeout after {timeout}s"
+        elif result.error:
+            classification = "server_error"
+            detail = str(result.error)
+        elif result.returncode != 0 or not (result.stdout or "").strip():
+            classification = classify_agent_failure(
+                result.returncode, result.stdout, result.stderr
+            )
+            detail = (result.stdout or result.stderr or "")[:200]
+        elif _is_bare_api_error(result.stdout):
+            # Exit 0, but the CLI printed an API error instead of content.
+            classification = classify_agent_failure(
+                result.returncode, result.stdout, result.stderr
+            )
+            detail = result.stdout[:200]
+        else:
+            logger.info(
+                f"run_claude_prompt END: task_type={task_type}, "
+                f"exit_code={result.returncode}, output_len={len(result.stdout)}, "
+                f"duration={call_duration:.1f}s"
+                + (f", attempts={attempt + 1}" if attempt else "")
+            )
+            return result.stdout, result.returncode
+
+        retryable = classification in _TRANSIENT_CLASSIFICATIONS
+        if retryable and attempt < max_attempts - 1:
+            delay = _retry_delay(attempt, base_delay, max_delay, rng)
+            logger.warning(
+                f"run_claude_prompt transient failure ({classification}) for "
+                f"task_type={task_type}; retry {attempt + 1}/{max_attempts - 1} "
+                f"in {delay:.1f}s: {detail}"
+            )
+            _sleep(delay)
+            continue
+
         logger.error(
-            f"run_claude_prompt TIMEOUT: task_type={task_type}, "
-            f"timeout={timeout}s, duration={call_duration:.1f}s"
+            f"run_claude_prompt FAILED: task_type={task_type}, "
+            f"classification={classification}, attempts={attempt + 1}, "
+            f"duration={call_duration:.1f}s, detail={detail}"
         )
         return "", 1
-    if result.error:
-        logger.error(
-            f"run_claude_prompt ERROR: task_type={task_type}, "
-            f"error={result.error}, duration={call_duration:.1f}s"
-        )
-        return "", 1
 
-    logger.info(
-        f"run_claude_prompt END: task_type={task_type}, "
-        f"exit_code={result.returncode}, output_len={len(result.stdout)}, "
-        f"duration={call_duration:.1f}s"
-    )
-    return result.stdout, result.returncode
+    return "", 1
