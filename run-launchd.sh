@@ -32,14 +32,19 @@ if [ -f "$MARKER" ] && [ -f "$SYNC_MARKER" ]; then
     exit 0
 fi
 
+# Delivered but not synced: retry ONLY the sync. A full rerun here redoes
+# research + synthesis, doubling the day's findings and rewriting the
+# published issue (2026-07-14: a sync upload flake caused exactly that).
+SYNC_ONLY=0
 if [ -f "$MARKER" ] && [ ! -f "$SYNC_MARKER" ]; then
-    log "Delivery marker exists but sync marker is missing — retrying to complete sync"
+    log "Delivery marker exists but sync marker is missing — retrying sync only"
+    SYNC_ONLY=1
 fi
 
-# Only run between 6 AM and 12 PM (prevents midnight/late-night triggers)
+# Only run between 5 AM and 10 AM (prevents midnight/late-night triggers)
 HOUR=$(date +%H)
-if [ "$HOUR" -lt 6 ] || [ "$HOUR" -ge 12 ]; then
-    log "SKIP: Outside run window (hour=$HOUR, allowed=06-11)"
+if [ "$HOUR" -lt 5 ] || [ "$HOUR" -ge 10 ]; then
+    log "SKIP: Outside run window (hour=$HOUR, allowed=05-09)"
     exit 0
 fi
 
@@ -83,6 +88,9 @@ CAFF_PID=$!
 RUN_ARGS=()
 if [ "${MP_LAUNCHD_SKIP_SOCIAL:-1}" = "1" ]; then
     RUN_ARGS+=(--skip-social)
+fi
+if [ "$SYNC_ONLY" = "1" ]; then
+    RUN_ARGS+=(--sync-only)
 fi
 
 # Rabbit Hole site stories are written by the live writer agent in the house

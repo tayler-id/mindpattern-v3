@@ -134,6 +134,10 @@ def main():
     parser.add_argument("--date", help="Date to run for (YYYY-MM-DD, default: today)")
     parser.add_argument("--dry-run", action="store_true", help="Skip actual claude calls")
     parser.add_argument("--skip-social", action="store_true", help="Skip social + engagement phases")
+    parser.add_argument(
+        "--sync-only", action="store_true",
+        help="Only re-run the Fly sync phase (wrapper retry when the "
+             "newsletter was delivered but the sync upload failed)")
     args = parser.parse_args()
 
     # --dry-run is REAL: force the global outbound kill switch so no
@@ -179,7 +183,7 @@ def main():
                 from orchestrator.runner import ResearchPipeline
 
                 pipeline = ResearchPipeline(user_id, date_str, dry_run=args.dry_run)
-                result = pipeline.run()
+                result = pipeline.run_sync_only() if args.sync_only else pipeline.run()
 
                 if result != 0:
                     exit_code = 1
@@ -198,7 +202,7 @@ def main():
         logger.info(f"Pipeline finished: {total_duration}s, exit={exit_code}")
 
         # ── Slack summary ─────────────────────────────────────────────
-        if not args.dry_run:
+        if not args.dry_run and not args.sync_only:
             try:
                 from memory import get_stats, open_db
                 with open_db(user_id=users[0]["id"]) as db:
