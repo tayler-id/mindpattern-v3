@@ -290,6 +290,9 @@ def pipeline(memory_db, traces_conn):
         p.traces_run_id = "test-run-001"
         p.prompt_tracker = None
         p.prompt_changes = {}
+        # Stub the Slack alert so no test in this file can reach the network;
+        # individual tests assert on it.
+        p._send_alert = MagicMock()
 
         yield p
 
@@ -780,9 +783,12 @@ class TestPhaseSynthesis:
             db.execute(
                 "INSERT INTO findings (run_date, agent, title, summary, importance, source_url, source_name) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                # Distinct hosts per source: the quality floor measures
+                # top-domain concentration over findings, so a fixture that
+                # parks every story on one host reads as a single-source issue.
                 (date_str, f"agent-{i % 13}", f"Title {i}", f"Summary {i}",
                  "high" if i == 0 else "medium",
-                 f"https://example.com/{i}", f"Source {i % 6}"),
+                 f"https://source{i % 6}.example/{i}", f"Source {i % 6}"),
             )
         db.commit()
 
@@ -848,9 +854,74 @@ class TestPhaseSynthesis:
 
         assert result["word_count"] > 0
         assert mock_claude.call_count == 4
-        assert "Coverage note" in report_text
+        assert result["quality_fallback"] is True
+        # Diagnostics never ship to subscribers — they go to Slack instead
+        assert "Coverage note" not in report_text
         assert "Title 0" in report_text
-        assert "Source: [Source 0](https://example.com/0)" in report_text
+        assert "Source: [Source 0](https://source0.example/0)" in report_text
+        alert_texts = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert any("writer FAILED" in t for t in alert_texts)
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_pass2_narration_preamble_is_stripped_before_publish(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+
+        narrated = (
+            "The workflow needs interactive approval, which I can't give in "
+            "this non-interactive session, so I'm writing it directly.\n\n"
+            "# Newsletter\n\nActual issue body here.\n" + ("word " * 3500)
+        )
+        mock_claude.side_effect = [
+            ("Selected stories", 0),  # pass1
+            (narrated, 0),            # pass2 with narration preamble
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            result = pipeline._phase_synthesis()
+
+        report_text = (
+            tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md"
+        ).read_text()
+
+        assert result["word_count"] > 0
+        assert report_text.startswith("# Test Newsletter")
+        assert "Actual issue body here." in report_text
+        assert "interactive approval" not in report_text
+        assert "I'm writing it directly" not in report_text
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_pass2_narration_only_output_is_rejected_and_retried(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+
+        narration_only = (
+            "I can't run the publishing workflow in this non-interactive "
+            "session, so here is a summary of what I would have done."
+        )
+        mock_claude.side_effect = [
+            ("Selected stories", 0),   # pass1
+            (narration_only, 0),       # pass2 attempt 1: no headings → reject
+            ("# Newsletter\n\nRecovered issue.\n" + ("word " * 3500), 0),
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            result = pipeline._phase_synthesis()
+
+        report_text = (
+            tmp_path / "reports" / "testuser" / f"{pipeline.date_str}.md"
+        ).read_text()
+
+        assert result["quality_fallback"] is False
+        assert "Recovered issue." in report_text
+        assert "non-interactive" not in report_text
+        assert mock_claude.call_count == 3
 
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
@@ -959,20 +1030,26 @@ class TestPhaseSynthesis:
         assert "FALLBACK STORY SELECTION" in pass2_prompt
         assert "Title 0" in pass2_prompt
         assert result["quality_floor"]["status"] == "fail_retryable"
-        assert result["quality_fallback"] is True
-        assert "Coverage note" in report_path.read_text()
+        # The writer succeeded, so its issue ships as written; the floor
+        # failure alerts instead of replacing the newsletter.
+        assert result["quality_fallback"] is False
+        report_text = report_path.read_text()
+        assert "Fallback-written daily brief." in report_text
+        assert "Coverage note" not in report_text
+        alert_texts = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert any("Quality floor FAILED" in t for t in alert_texts)
 
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
-    def test_retryable_quality_floor_uses_deterministic_fallback(
+    def test_retryable_quality_floor_publishes_written_issue_and_alerts(
         self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
     ):
         self._seed_findings(pipeline.db, pipeline.date_str, count=25)
 
         mock_claude.side_effect = [
             ("Selected stories", 0),
-            ("# Newsletter\n\nWeak first draft that should not ship silently.", 0),
+            ("# Newsletter\n\nThin-corpus draft that still ships.", 0),
         ]
 
         with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
@@ -982,14 +1059,16 @@ class TestPhaseSynthesis:
         report_text = report_path.read_text()
 
         assert result["quality_floor"]["status"] == "fail_retryable"
-        assert result["quality_fallback"] is True
-        assert "Coverage note" in report_text
-        assert "Weak first draft" not in report_text
+        assert result["quality_fallback"] is False
+        assert "Thin-corpus draft that still ships." in report_text
+        assert "Coverage note" not in report_text
+        alert_texts = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert any("Quality floor FAILED" in t for t in alert_texts)
 
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
-    def test_degraded_quality_floor_adds_visible_notice(
+    def test_degraded_quality_floor_alerts_without_notice(
         self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
     ):
         self._seed_findings(pipeline.db, pipeline.date_str, count=75)
@@ -1017,8 +1096,12 @@ class TestPhaseSynthesis:
 
         assert result["quality_floor"]["status"] == "degraded"
         assert result["quality_fallback"] is False
-        assert report_text.startswith("> Degraded issue notice:")
+        # No notice injected into the published issue — Slack carries it
+        assert not report_text.startswith(">")
+        assert report_text.startswith("# Test Newsletter")
         assert "Useful but degraded draft." in report_text
+        alert_texts = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert any("Quality floor degraded" in t for t in alert_texts)
 
     def test_source_balance_caps_single_source_candidate_dominance(self):
         from collections import Counter
@@ -2269,10 +2352,17 @@ class TestHelpers:
         pipeline._send_alert("test message")
 
     def test_send_alert_with_phone(self, pipeline):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # The fixture stubs _send_alert; rebind the real method to test it
+        from orchestrator.runner import ResearchPipeline
+        pipeline._send_alert = ResearchPipeline._send_alert.__get__(pipeline)
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="xoxb-test")
             pipeline._send_alert("test alert")
         mock_run.assert_called_once()
+        mock_urlopen.assert_called_once()
 
     def test_close(self, pipeline):
         mock_db = MagicMock()
