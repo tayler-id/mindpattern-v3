@@ -1,8 +1,10 @@
 """Research-agent tool policy and dry-run kill-switch tests.
 
-Daily newsletter research agents intentionally run without default Claude tool
-allow/deny fences. Source breadth depends on shell-backed tools, Agent Reach,
-and subagents. Harness research keeps its own narrower guard because harness
+Daily newsletter research agents run with web tools PRE-APPROVED (headless
+`claude -p` cannot answer permission prompts — losing these grants in June
+2026 starved agents into refusals) but without a --disallowedTools fence:
+source breadth still depends on shell-backed tools, Agent Reach, and
+subagents. Harness research keeps its own narrower guard because harness
 agents run with repo-write access.
 """
 
@@ -19,11 +21,16 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 
 class TestResearchAgentTools:
-    def test_research_agents_have_unfenced_tool_policy(self):
-        assert AGENT_ALLOWED_TOOLS is None
+    def test_research_agents_have_grants_but_no_fence(self):
+        """--allowedTools entries are pre-approvals, not a fence: the rest of
+        the tool surface stays available. Raw curl must never be granted
+        (audit C6 — scraped content must not reach a shell that can POST)."""
+        assert "WebSearch" in AGENT_ALLOWED_TOOLS
+        assert "WebFetch" in AGENT_ALLOWED_TOOLS
+        assert not any(rule.startswith("Bash(curl") for rule in AGENT_ALLOWED_TOOLS)
         assert RESEARCH_DISALLOWED_TOOLS is None
 
-    def test_research_cmd_omits_tool_fences_by_default(self):
+    def test_research_cmd_grants_web_tools_without_fence(self):
         cmd = _build_claude_command(
             "research prompt",
             model="opus",
@@ -31,7 +38,9 @@ class TestResearchAgentTools:
             allowed_tools=AGENT_ALLOWED_TOOLS,
             disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
         )
-        assert "--allowedTools" not in cmd
+        granted = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--allowedTools"]
+        assert "WebSearch" in granted
+        assert "WebFetch" in granted
         assert "--disallowedTools" not in cmd
 
     def test_dispatch_cmd_preserves_explicit_tool_fences(self):

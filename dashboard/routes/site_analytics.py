@@ -38,6 +38,8 @@ _MIX_LABELS = {
     "search_query": "Searches",
     "subscribe_submitted": "Subscribe submitted",
     "subscribe_success": "Subscribe confirmed",
+    "share": "Shares",
+    "web_vital": "Web vitals (sampled)",
 }
 
 

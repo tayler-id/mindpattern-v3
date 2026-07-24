@@ -301,3 +301,124 @@ def test_corpus_candidates_survive_titles_with_path_separators():
     assert ledger["status"] == "completed"
     assert ledger["selected_candidates"]
     assert "/" not in ledger["selected_candidates"][0]
+
+
+def _corpus_conn_with_finding(summary: str, source_url: str | None = "https://openai.com/news/agent-runtime"):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE findings (
+            id INTEGER PRIMARY KEY, run_date TEXT, agent TEXT, title TEXT,
+            summary TEXT, importance TEXT, category TEXT, source_url TEXT,
+            source_name TEXT, created_at TEXT);
+        CREATE TABLE entity_graph (
+            entity_a TEXT, entity_a_type TEXT, entity_b TEXT, entity_b_type TEXT,
+            relationship TEXT, strength REAL, evidence TEXT, finding_id INTEGER,
+            run_date TEXT);
+        """
+    )
+    conn.execute(
+        "INSERT INTO findings VALUES (601, '2026-07-01', 'agents-researcher', "
+        "'OpenAI runtime control plane outage changes agent deployment risk', "
+        "?, 'high', 'agents', ?, 'OpenAI', '2026-07-01T08:00:00')",
+        (summary, source_url),
+    )
+    conn.execute(
+        "INSERT INTO entity_graph VALUES ('OpenAI', 'company', 'Agent runtime', "
+        "'topic', 'operates', 0.9, 'Source-backed finding links OpenAI to agent "
+        "runtime controls.', 601, '2026-07-01')"
+    )
+    conn.commit()
+    return conn
+
+
+CLEAN_COPY = {
+    "title": "OpenAI outage changes agent deployment risk",
+    "dek": "Runtime controls arrived after an outage exposed reliability dependencies.",
+    "take": "Agent builders now own a dependency they cannot see into.",
+    "why_now": "The outage and the controls landed in the same week.",
+    "body_markdown": "OpenAI published runtime controls after an outage. "
+    "Agent builders depend on them for reliability.",
+}
+
+
+def test_corpus_run_rescues_lint_degraded_draft_with_writer(tmp_path):
+    """Evidence with em dashes fails the lint gate; the writer's rewrite must
+    still run and publish the story instead of shipping a degraded artifact."""
+    conn = _corpus_conn_with_finding(
+        "OpenAI published runtime controls — an outage exposed reliability "
+        "dependencies for agent builders."
+    )
+    calls: list[str] = []
+
+    def copywriter(pack, experts):
+        calls.append(pack["candidate_id"])
+        return dict(CLEAN_COPY)
+
+    result = run_site_content_for_date(
+        date="2026-07-01",
+        user="ramsay",
+        reports_root=tmp_path / "reports",
+        conn=conn,
+        max_stories=2,
+        story_copywriter=copywriter,
+    )
+
+    assert calls, "writer was never invoked for the lint-degraded draft"
+    assert result["generated_story_count"] == 1
+    assert result["degraded_story_count"] == 0
+    story_path = site_artifact_path(
+        kind="site_story",
+        date="2026-07-01",
+        slug="openai-runtime-control-plane-outage-changes-agent-deployment-risk",
+        user="ramsay",
+        reports_root=tmp_path / "reports",
+    )
+    story = json.loads(story_path.read_text())
+    assert story["status"] == "published"
+    assert story["confidence"] == "high"
+    assert story["title"] == CLEAN_COPY["title"]
+    assert "rejection_reasons" not in story
+    assert is_publishable_site_story(story)
+
+
+def test_corpus_run_keeps_degraded_artifact_when_writer_fails(tmp_path):
+    """If the writer returns nothing, the lint-degraded draft stays degraded."""
+    conn = _corpus_conn_with_finding(
+        "OpenAI published runtime controls — an outage exposed reliability "
+        "dependencies for agent builders."
+    )
+
+    result = run_site_content_for_date(
+        date="2026-07-01",
+        user="ramsay",
+        reports_root=tmp_path / "reports",
+        conn=conn,
+        max_stories=2,
+        story_copywriter=lambda pack, experts: None,
+    )
+
+    assert result["generated_story_count"] == 0
+    assert result["degraded_story_count"] == 1
+
+
+def test_corpus_run_never_sends_structural_degradation_to_writer(tmp_path):
+    """Missing source evidence is fatal; the writer must not be invoked."""
+    conn = _corpus_conn_with_finding("A summary with evidence.", source_url=None)
+    calls: list[str] = []
+
+    def copywriter(pack, experts):
+        calls.append(pack["candidate_id"])
+        return dict(CLEAN_COPY)
+
+    run_site_content_for_date(
+        date="2026-07-01",
+        user="ramsay",
+        reports_root=tmp_path / "reports",
+        conn=conn,
+        max_stories=2,
+        story_copywriter=copywriter,
+    )
+
+    assert calls == []

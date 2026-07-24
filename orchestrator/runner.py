@@ -7,6 +7,7 @@ or a Python-only step. The LLM never decides what phase comes next.
 import json
 import logging
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -349,24 +350,47 @@ def _format_newsletter_date(date_str: str) -> str:
     return date_obj.strftime("%B %-d, %Y")
 
 
+_WRITER_NARRATION_RE = re.compile(
+    r"(?i)(non-interactive|interactive approval|as an ai|this session|"
+    r"system prompt|my (instructions|prompt)|i('| a)m |i can('|no)?t)"
+)
+
+
+def _strip_writer_preamble(text: str) -> tuple[str, str | None]:
+    """Drop process narration the writer emits before the newsletter proper.
+
+    The newsletter always starts at a markdown heading; first-person prose
+    before the first heading is the model talking about its own situation
+    (2026-07-14: an "interactive approval" preamble reached subscribers).
+    Returns (clean_text, dropped_preamble_or_None). Text with no heading at
+    all is returned unchanged — the caller rejects that attempt outright.
+    """
+    body = text.strip()
+    if body.startswith("#"):
+        return body, None
+    match = re.search(r"^#{1,2} ", body, re.M)
+    if not match:
+        return body, None
+    preamble = body[:match.start()]
+    if _WRITER_NARRATION_RE.search(preamble):
+        return body[match.start():], preamble.strip()
+    return body, None
+
+
 def _build_deterministic_newsletter(
     *,
     newsletter_title: str,
     date_str: str,
     findings: list[dict],
-    reason: str,
 ) -> str:
-    """Last-resort daily newsletter when the writer model does not complete."""
+    """Last-resort daily newsletter when the writer model does not complete.
+
+    No diagnostic notes in subscriber-facing output — the failure reason goes
+    to logs, traces, and the Slack alert at the call site instead.
+    """
     selected = _fallback_ranked_findings(findings)
-    agents = sorted({str(f.get("agent") or "unknown") for f in findings})
     lines = [
         f"# {newsletter_title} - {_format_newsletter_date(date_str)}",
-        "",
-        (
-            "> Coverage note: Today's brief was generated from stored research "
-            f"findings after the writing agent did not complete ({reason}). "
-            "Each item below is source-grounded from the research database."
-        ),
         "",
         "## Top Stories",
         "",
@@ -385,21 +409,6 @@ def _build_deterministic_newsletter(
             "",
         ])
 
-    lines.extend([
-        "## Source Coverage",
-        "",
-        f"- Findings available: {len(findings)}",
-        f"- Agents represented: {len(agents)}",
-        f"- Agent list: {', '.join(agents) if agents else 'none'}",
-        "",
-        "## Follow-Up",
-        "",
-        (
-            "Retry the full synthesis path after source and model health recover. "
-            "This fallback is intentionally conservative and avoids unsupported claims."
-        ),
-        "",
-    ])
     return "\n".join(lines)
 
 
@@ -413,17 +422,6 @@ def _recent_findings_for_quality(db, date_str: str, days: int = 3) -> list[dict]
         (cutoff, date_str),
     ).fetchall()
     return [dict(row) for row in rows]
-
-
-def _quality_floor_notice(quality_floor: dict) -> str:
-    reasons = "; ".join((quality_floor.get("reasons") or [])[:4])
-    if not reasons:
-        reasons = quality_floor.get("status", "degraded")
-    return (
-        "> Degraded issue notice: quality floor "
-        f"{quality_floor.get('status', 'degraded')} ({reasons}). "
-        "This issue was generated from available stored findings and should be reviewed."
-    )
 
 
 class ResearchPipeline:
@@ -479,6 +477,22 @@ class ResearchPipeline:
             run_id=self.pipeline.run_id,
             status="running",
         )
+
+    def run_sync_only(self) -> int:
+        """Re-run only the Fly sync phase.
+
+        Wrapper retry path for a delivered-but-unsynced day: a full rerun
+        would redo research and synthesis, doubling the day's findings corpus
+        and re-writing the published issue (2026-07-14 incident — a sync
+        upload flake triggered a second full pipeline at 11:00).
+        """
+        logger.info(f"Sync-only run for {self.user_id} ({self.date_str})")
+        try:
+            result = self._phase_sync()
+        except Exception as e:
+            logger.error(f"Sync-only run crashed: {e}", exc_info=True)
+            return 1
+        return 0 if result.get("success") else 1
 
     def run(self) -> int:
         """Execute the full pipeline. Returns exit code (0=success, 1=failure)."""
@@ -1485,6 +1499,11 @@ class ResearchPipeline:
             )
 
         pass2_prompt = (
+            "OUTPUT CONTRACT: Your stdout is published verbatim to subscribers "
+            "as today's newsletter. Output ONLY finished newsletter markdown, "
+            "beginning with the `#` title line. Never mention tools, skills, "
+            "workflows, approvals, sessions, or your own process. Do not "
+            "invoke any tools — everything you need is in this prompt.\n\n"
             f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
             f"{soul_text}"
             f"{voice_text}"
@@ -1504,6 +1523,7 @@ class ResearchPipeline:
         )
 
         max_attempts = 3
+        writer_fallback = False
         for attempt in range(1, max_attempts + 1):
             attempt_start = time.monotonic()
             self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(
@@ -1513,13 +1533,28 @@ class ResearchPipeline:
             attempt_duration = time.monotonic() - attempt_start
             output_len = len(self.newsletter_text) if self.newsletter_text else 0
 
-            if exit_code == 0 and self.newsletter_text.strip():
+            raw_output = (self.newsletter_text or "").strip()
+            has_structure = bool(raw_output) and (
+                raw_output.startswith("#")
+                or re.search(r"^#{1,2} ", raw_output, re.M) is not None
+            )
+            if exit_code == 0 and has_structure:
+                body, dropped_preamble = _strip_writer_preamble(raw_output)
+                if dropped_preamble:
+                    logger.warning(
+                        "Synthesis pass 2 emitted process narration before the "
+                        "newsletter; stripped %d chars: '%s'",
+                        len(dropped_preamble), dropped_preamble[:160],
+                    )
+                    log_event(self.traces_conn, self.traces_run_id,
+                              "synthesis_preamble_stripped",
+                              json.dumps({"chars": len(dropped_preamble),
+                                          "preview": dropped_preamble[:300]}))
                 # Enforce deterministic title: strip any LLM-generated H1 and prepend ours
                 from datetime import datetime
                 date_obj = datetime.strptime(self.date_str, "%Y-%m-%d")
                 formatted_date = date_obj.strftime("%B %-d, %Y")
                 deterministic_title = f"# {newsletter_title} — {formatted_date}\n\n"
-                body = self.newsletter_text.strip()
                 # Strip LLM-generated title if present (H1 line or bold title)
                 if body.startswith("# "):
                     body = body.split("\n", 1)[1].strip()
@@ -1561,11 +1596,17 @@ class ResearchPipeline:
                     newsletter_title=newsletter_title,
                     date_str=self.date_str,
                     findings=today_findings,
-                    reason=reason,
                 )
+                writer_fallback = True
                 logger.error(
                     "Synthesis pass 2 exhausted; wrote deterministic daily "
                     "brief from stored findings instead of failing completely"
+                )
+                self._send_alert(
+                    f":rotating_light: Newsletter writer FAILED for {self.date_str} — "
+                    f"published a deterministic source-list brief instead.\n"
+                    f"Reason: {reason}\n"
+                    f"A manual rerun (`python3 run.py`) will produce a full issue."
                 )
                 log_event(self.traces_conn, self.traces_run_id,
                           "synthesis_pass2_fallback",
@@ -1626,7 +1667,6 @@ class ResearchPipeline:
             "reasons": [],
             "metrics": {},
         }
-        quality_fallback = False
         try:
             recent_findings = _recent_findings_for_quality(self.db, self.date_str)
             quality_floor = assess_quality_floor(
@@ -1650,39 +1690,41 @@ class ResearchPipeline:
                     for reason in source_balance.get("reasons", [])
                 )
 
+            # The floor never rewrites a written newsletter and never injects
+            # notices into subscriber-facing output (2026-07-13 incident: a
+            # finished issue was replaced by the bare fallback list over a
+            # thin research corpus). Diagnostics go to traces + Slack instead.
             if quality_floor["status"] == "fail_retryable":
                 reason = "; ".join(quality_floor.get("reasons", [])[:5])
-                self.newsletter_text = _build_deterministic_newsletter(
-                    newsletter_title=newsletter_title,
-                    date_str=self.date_str,
-                    findings=today_findings,
-                    reason=f"quality floor fail_retryable: {reason}",
-                )
-                quality_fallback = True
-                report_path.write_text(self.newsletter_text)
-                word_count = len(self.newsletter_text.split())
                 log_event(self.traces_conn, self.traces_run_id,
                           "newsletter_quality_floor_retryable",
                           json.dumps(quality_floor))
                 logger.error(
-                    "Newsletter quality floor retryable failure; wrote "
-                    "deterministic fallback before delivery: %s",
+                    "Newsletter quality floor retryable failure; publishing "
+                    "the written issue as-is and alerting: %s",
                     reason,
                 )
-            elif quality_floor["status"] == "degraded":
-                self.newsletter_text = (
-                    _quality_floor_notice(quality_floor)
-                    + "\n\n"
-                    + self.newsletter_text
+                metrics = quality_floor.get("metrics", {})
+                self._send_alert(
+                    f":rotating_light: Quality floor FAILED for {self.date_str} "
+                    f"(fail_retryable): {reason}\n"
+                    f"Findings: {metrics.get('finding_count', '?')} from "
+                    f"{metrics.get('agent_count', '?')} agents. The written "
+                    f"newsletter was still published — check agent traces for "
+                    f"refusals/zero-finding agents and consider a rerun."
                 )
-                report_path.write_text(self.newsletter_text)
-                word_count = len(self.newsletter_text.split())
+            elif quality_floor["status"] == "degraded":
+                reason = "; ".join(quality_floor.get("reasons", [])[:5])
                 log_event(self.traces_conn, self.traces_run_id,
                           "newsletter_quality_floor_degraded",
                           json.dumps(quality_floor))
                 logger.warning(
-                    "Newsletter quality floor degraded; notice added: %s",
-                    "; ".join(quality_floor.get("reasons", [])[:5]),
+                    "Newsletter quality floor degraded (published as written): %s",
+                    reason,
+                )
+                self._send_alert(
+                    f":warning: Quality floor degraded for {self.date_str}: "
+                    f"{reason}\nNewsletter published as written."
                 )
         except Exception as e:
             logger.warning(f"Newsletter quality floor failed (non-critical): {e}")
@@ -1701,7 +1743,7 @@ class ResearchPipeline:
                 "eval_scores": eval_scores, "source_balance": source_balance,
                 "narrative_arcs_count": narrative_arcs_count,
                 "quality_floor": quality_floor,
-                "quality_fallback": quality_fallback,
+                "quality_fallback": writer_fallback,
                 "degraded": quality_floor.get("degraded", False)}
 
     def _phase_deliver(self) -> dict:

@@ -58,8 +58,10 @@ def test_no_identity_dir_uses_soul_path(tmp_path):
     assert "Fallback Soul" in prompt
 
 
-def test_research_agent_command_does_not_add_default_tool_fences():
-    """Research agents need the full Claude Code research surface."""
+def test_research_agent_command_grants_web_tools_without_fence():
+    """Research agents keep the full Claude Code research surface (no
+    --disallowedTools fence) while web tools are pre-approved for headless
+    runs, which cannot answer permission prompts."""
     cmd = _build_claude_command(
         "research prompt",
         model="opus",
@@ -67,5 +69,7 @@ def test_research_agent_command_does_not_add_default_tool_fences():
         allowed_tools=AGENT_ALLOWED_TOOLS,
         disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
     )
-    assert "--allowedTools" not in cmd
+    granted = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--allowedTools"]
+    assert "WebSearch" in granted
+    assert "WebFetch" in granted
     assert "--disallowedTools" not in cmd

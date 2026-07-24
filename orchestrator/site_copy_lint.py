@@ -92,7 +92,16 @@ INTERNAL_MACHINERY_PATTERNS = [
 ]
 
 UNSUPPORTED_TEMPORAL_PATTERNS = [
-    re.compile(r"\b(?:today|this week|this month|recently|currently|just)\b", re.I),
+    re.compile(r"\b(?:today|this week|this month|recently|currently)\b", re.I),
+    # Bare "just" is usually quantitative ("just 86%") — only the temporal
+    # "just <verb>" construction is an unsupported relative-time claim. The
+    # unqualified word was rejecting ~90% of writer drafts (2026-07-07..13).
+    re.compile(
+        r"\bjust\s+(?:shipped|launched|released|announced|dropped|landed|"
+        r"published|debuted|arrived|closed|raised|hit|crossed|passed|became|"
+        r"got|went|added|introduced|unveiled|rolled)\b",
+        re.I,
+    ),
     re.compile(
         r"\bnow (?:ships?|shipped|launched|released|announced|adds?|offers?|made|"
         r"became|becomes|has|is|are)\b",

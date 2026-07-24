@@ -209,6 +209,26 @@ def _copy_lint_reason(code: str) -> str:
     return f"copy_lint:{code}"
 
 
+def _writer_can_rescue(story: dict[str, Any]) -> bool:
+    """Whether the live writer can rescue a degraded deterministic draft.
+
+    Deterministic copy is raw finding evidence, so it routinely fails the copy
+    lint (em dashes, overlong fields, raw markdown) that the writer's rewrite
+    replaces wholesale. Only copy-quality reasons qualify; structural gaps
+    (missing evidence, redaction, skeptic kill) stay fatal and never reach
+    the writer.
+    """
+    if story.get("status") == "published":
+        return False
+    reasons = [str(reason) for reason in story.get("rejection_reasons") or []]
+    if not reasons:
+        return False
+    return all(
+        reason.startswith("copy_lint:") or reason == "raw_markdown_in_public_fields"
+        for reason in reasons
+    )
+
+
 def generate_site_story(
     graph_pack: dict[str, Any],
     *,
@@ -639,10 +659,20 @@ def run_site_content_for_date(
 
         expert_results = run_site_expert_loop(graph_pack, context={"date": run_date, "user": user})
         story = generate_site_story(graph_pack, expert_results=expert_results)
-        if story_copywriter is not None and story.get("status") == "published":
+        if story_copywriter is not None and (
+            story.get("status") == "published" or _writer_can_rescue(story)
+        ):
             copy = story_copywriter(graph_pack, expert_results)
             if copy:
                 agent_story = apply_story_copy(story, copy)
+                if agent_story.get("status") != "published":
+                    # The rewrite replaced every public copy field, so the
+                    # copy-quality degradation no longer describes this story;
+                    # re-gate it as a fresh draft.
+                    agent_story["status"] = "published"
+                    agent_story["confidence"] = "high"
+                    agent_story["json_ld_ready"] = True
+                    agent_story.pop("rejection_reasons", None)
                 gate = evaluate_site_story_confidence(agent_story)
                 if gate["publishable"]:
                     story = sanitize_site_artifact(agent_story)

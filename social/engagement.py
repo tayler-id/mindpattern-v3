@@ -694,6 +694,8 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
                 "platform": "bluesky",
                 "post_id": uri,
                 "post_cid": post.get("cid", ""),
+                "post_root_uri": post.get("root_uri", ""),
+                "post_root_cid": post.get("root_cid", ""),
                 "author": handle,
                 "author_id": post.get("author_did", ""),
                 "content": post.get("text", ""),
@@ -1080,6 +1082,8 @@ engagement (quality content in our space)."""
                     content=our_reply,
                     parent_uri=post_id,
                     parent_cid=post_cid,
+                    root_uri=candidate.get("post_root_uri") or None,
+                    root_cid=candidate.get("post_root_cid") or None,
                 )
             else:
                 logger.warning(f"Reply not supported for platform: {platform}")

@@ -328,3 +328,122 @@ def test_upload_blob_cleans_up_on_failure(bluesky_client, tmp_path):
     assert result is None
     # Even on failure, the compressed temp file must be cleaned up
     assert not compressed.exists(), "Compressed temp file was not cleaned up after failed upload"
+
+
+# ── Bluesky reply threading ───────────────────────────────────────────────
+
+
+def _created_record(mock_api_call):
+    """Extract the record payload sent to createRecord from the mock."""
+    _, kwargs = mock_api_call.call_args
+    return kwargs["json"]["record"]
+
+
+def test_reply_threads_to_provided_root(bluesky_client):
+    """reply() must keep the true thread root distinct from the parent."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "uri": "at://did:plc:testuser123/app.bsky.feed.post/reply1",
+        "cid": "cid-reply1",
+    }
+
+    with patch("social.posting._api_call_with_retry", return_value=mock_resp) as mock_api:
+        result = bluesky_client.reply(
+            "Good point",
+            parent_uri="at://did:plc:other/app.bsky.feed.post/nested",
+            parent_cid="cid-nested",
+            root_uri="at://did:plc:op/app.bsky.feed.post/origin",
+            root_cid="cid-origin",
+        )
+
+    assert result["success"] is True
+    reply_block = _created_record(mock_api)["reply"]
+    assert reply_block["root"] == {
+        "uri": "at://did:plc:op/app.bsky.feed.post/origin",
+        "cid": "cid-origin",
+    }
+    assert reply_block["parent"] == {
+        "uri": "at://did:plc:other/app.bsky.feed.post/nested",
+        "cid": "cid-nested",
+    }
+
+
+def test_reply_defaults_root_to_parent(bluesky_client):
+    """Replying to a top-level post: parent IS the root."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "uri": "at://did:plc:testuser123/app.bsky.feed.post/reply2",
+        "cid": "cid-reply2",
+    }
+
+    with patch("social.posting._api_call_with_retry", return_value=mock_resp) as mock_api:
+        bluesky_client.reply(
+            "Nice thread",
+            parent_uri="at://did:plc:op/app.bsky.feed.post/toplevel",
+            parent_cid="cid-toplevel",
+        )
+
+    reply_block = _created_record(mock_api)["reply"]
+    assert reply_block["root"] == reply_block["parent"]
+
+
+def test_search_extracts_thread_root(bluesky_client):
+    """search() surfaces the record's declared thread root so engagement replies thread correctly."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "posts": [
+            {
+                "uri": "at://did:plc:op/app.bsky.feed.post/toplevel",
+                "cid": "cid-toplevel",
+                "record": {"text": "original post"},
+                "author": {"did": "did:plc:op", "handle": "op.bsky.social"},
+            },
+            {
+                "uri": "at://did:plc:other/app.bsky.feed.post/nested",
+                "cid": "cid-nested",
+                "record": {
+                    "text": "a nested reply",
+                    "reply": {
+                        "root": {
+                            "uri": "at://did:plc:op/app.bsky.feed.post/origin",
+                            "cid": "cid-origin",
+                        },
+                        "parent": {
+                            "uri": "at://did:plc:mid/app.bsky.feed.post/middle",
+                            "cid": "cid-middle",
+                        },
+                    },
+                },
+                "author": {"did": "did:plc:other", "handle": "other.bsky.social"},
+            },
+        ]
+    }
+
+    with patch("social.posting._api_call_with_retry", return_value=mock_resp):
+        results = bluesky_client.search("mindpattern")
+
+    top_level, nested = results
+    assert top_level["root_uri"] == ""
+    assert top_level["root_cid"] == ""
+    assert nested["root_uri"] == "at://did:plc:op/app.bsky.feed.post/origin"
+    assert nested["root_cid"] == "cid-origin"
+
+
+def test_engagement_candidate_carries_root_refs():
+    """_post_to_candidate must forward root refs from search results."""
+    from social.engagement import EngagementPipeline
+
+    post = {
+        "uri": "at://did:plc:other/app.bsky.feed.post/nested",
+        "cid": "cid-nested",
+        "root_uri": "at://did:plc:op/app.bsky.feed.post/origin",
+        "root_cid": "cid-origin",
+        "author_handle": "other.bsky.social",
+        "author_did": "did:plc:other",
+        "text": "a nested reply",
+    }
+
+    candidate = EngagementPipeline._post_to_candidate(None, post, "bluesky")
+
+    assert candidate["post_root_uri"] == "at://did:plc:op/app.bsky.feed.post/origin"
+    assert candidate["post_root_cid"] == "cid-origin"
