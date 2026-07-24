@@ -9,7 +9,7 @@ MODELS = {
     "haiku": "haiku",
     "sonnet": "sonnet",
     "opus": "opus",
-    "opus_1m": "claude-opus-4-8[1m]",
+    "opus_1m": "claude-opus-5[1m]",
 }
 
 # Map each task type to its optimal model
