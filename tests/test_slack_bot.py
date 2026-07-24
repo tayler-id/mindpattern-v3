@@ -1514,3 +1514,64 @@ class TestBriefingFollowupCommand:
         kwargs = client.chat_postMessage.call_args.kwargs
         assert kwargs["thread_ts"] == "123.456"
         assert "specific" in kwargs["text"].lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Draft approval loop must not die on a typo (2026-07-24)
+#
+# Real failure in #mp-tips: the LinkedIn writer returned empty, so
+# `platforms = list(drafts.keys())` was ["bluesky"] only. Then:
+#   "edit linkedin: <text>" -> "Unknown platform for edit: linkedin"
+#       (locked out of supplying a draft for the platform that failed)
+#   "edit linkedin"          -> no colon, not an approval -> "Skipped.
+#                               Nothing posted." and the thread ENDED
+# Any unrecognized reply silently cancelled the whole post.
+# ═══════════════════════════════════════════════════════════════════════
+
+from slack_bot.approval import is_explicit_skip, parse_platform_approval
+from slack_bot.drafts import apply_draft_edit, parse_draft_edit, DraftEdit
+
+
+class TestExplicitSkipDetection:
+    def test_recognises_skip_words(self):
+        for word in ["skip", "SKIP", " skip ", "cancel", "no", "stop", "abort"]:
+            assert is_explicit_skip(word) is True
+
+    def test_typos_and_edits_are_not_skips(self):
+        """The bug: these fell through to the skip branch and killed the thread."""
+        for text in ["edit linkedin", "edit linked", "edti bluesky: x", "wat", ""]:
+            assert is_explicit_skip(text) is False
+
+    def test_approval_words_are_not_skips(self):
+        for word in ["all", "bluesky", "linkedin"]:
+            assert is_explicit_skip(word) is False
+
+
+class TestEditingAPlatformWhoseDraftFailed:
+    def test_can_target_a_platform_with_no_draft(self):
+        """LinkedIn generation failed; the owner must still be able to supply one."""
+        edit, err = parse_draft_edit(
+            "edit linkedin: my own copy", ["bluesky", "linkedin"]
+        )
+        assert err is None
+        assert edit is not None and edit.platform == "linkedin"
+
+    def test_apply_can_add_a_missing_platform(self):
+        drafts = {"bluesky": "short post"}
+        edit = DraftEdit(platform="linkedin", content="my own copy")
+        out = apply_draft_edit(drafts, edit, allow_new=True)
+        assert out["linkedin"] == "my own copy"
+        assert out["bluesky"] == "short post"
+
+    def test_apply_still_guards_unknown_platform_by_default(self):
+        drafts = {"bluesky": "short post"}
+        edit = DraftEdit(platform="mastodon", content="x")
+        with pytest.raises(KeyError):
+            apply_draft_edit(drafts, edit)
+
+    def test_editing_in_a_draft_makes_it_approvable(self):
+        drafts = apply_draft_edit(
+            {"bluesky": "b"}, DraftEdit(platform="linkedin", content="l"),
+            allow_new=True,
+        )
+        assert parse_platform_approval("linkedin", list(drafts.keys())) == ["linkedin"]

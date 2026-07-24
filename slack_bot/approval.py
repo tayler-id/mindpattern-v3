@@ -41,3 +41,19 @@ def parse_platform_approval(reply: str | None, platforms: list[str]) -> list[str
         return list(dict.fromkeys(platform_map[token] for token in tokens))
 
     return []
+
+
+# Replies that explicitly abandon the post. Anything NOT in this set and not a
+# valid approval/edit is treated as a mistake worth re-prompting, never as a
+# cancel: a typo like "edit linkedin" (no colon) used to silently end the
+# thread and discard finished drafts (2026-07-24).
+SKIP_REPLIES = {
+    "skip", "cancel", "no", "nope", "stop", "abort", "n", "nah", "never mind",
+    "nevermind",
+}
+
+
+def is_explicit_skip(reply: str | None) -> bool:
+    """True only for an unambiguous cancel reply."""
+    text = (reply or "").lower().strip().rstrip("!.").strip()
+    return text in SKIP_REPLIES

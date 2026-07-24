@@ -12,7 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
-from slack_bot.approval import parse_platform_approval
+from slack_bot.approval import is_explicit_skip, parse_platform_approval
 from slack_bot.drafts import apply_draft_edit, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
 from slack_bot.handlers.followup import (
@@ -71,7 +71,11 @@ class TipsHandler(BaseHandler):
                 thread_ts=ts,
             )
 
-        platforms = list(drafts.keys())
+        # Edit targets are the EXPECTED platforms, not just the ones that
+        # generated. A writer returning empty must not lock the owner out of
+        # supplying that draft by hand (2026-07-24: linkedin failed, and
+        # `edit linkedin: ...` was rejected as an unknown platform).
+        edit_targets = sorted(expected)
         self.reply(self._format_drafts(drafts), thread_ts=ts)
 
         # Wait for approval. Edit replies revise drafts and require a new
@@ -88,14 +92,14 @@ class TipsHandler(BaseHandler):
             if handle_followup_reply(self, reply_text, ts, channel_type="tips"):
                 continue
 
-            edit, edit_error = parse_draft_edit(reply_text, platforms)
+            edit, edit_error = parse_draft_edit(reply_text, edit_targets)
             if edit_error:
                 self.reply(edit_error, thread_ts=ts)
                 continue
 
             if edit:
                 try:
-                    drafts = apply_draft_edit(drafts, edit)
+                    drafts = apply_draft_edit(drafts, edit, allow_new=True)
                 except KeyError as e:
                     self.reply(str(e), thread_ts=ts)
                     continue
@@ -105,11 +109,23 @@ class TipsHandler(BaseHandler):
                 )
                 continue
 
-            approved = parse_platform_approval(reply_text, platforms)
-            if not approved:
+            if is_explicit_skip(reply_text):
                 self.reply("Skipped. Nothing posted.", thread_ts=ts)
                 return
-            break
+
+            approved = parse_platform_approval(reply_text, list(drafts.keys()))
+            if approved:
+                break
+
+            # Anything unrecognised is a mistake, not a cancel. Re-prompt
+            # instead of discarding finished drafts over a missing colon.
+            self.reply(
+                "I didn't catch that. Reply *ALL*, "
+                f"*{'* or *'.join(p.upper() for p in drafts)}*, or *SKIP* — "
+                "or `edit <platform>: your text` to replace a draft "
+                f"({', '.join(edit_targets)}).",
+                thread_ts=ts,
+            )
 
         # Post
         self.reply(f"Posting to: {', '.join(approved)}...", thread_ts=ts)

@@ -20,7 +20,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from slack_bot.approval import parse_platform_approval
+from slack_bot.approval import is_explicit_skip, parse_platform_approval
 from slack_bot.drafts import apply_draft_edit, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
 from slack_bot.handlers.followup import (
@@ -568,14 +568,15 @@ class PostsHandler(BaseHandler):
             if handle_followup_reply(self, reply_text, ts, channel_type="posts"):
                 continue
 
-            edit, edit_error = parse_draft_edit(reply_text, list(drafts.keys()))
+            edit_targets = sorted({"bluesky", "linkedin"} | set(drafts))
+            edit, edit_error = parse_draft_edit(reply_text, edit_targets)
             if edit_error:
                 self.reply(edit_error, thread_ts=ts)
                 continue
 
             if edit:
                 try:
-                    drafts = apply_draft_edit(drafts, edit)
+                    drafts = apply_draft_edit(drafts, edit, allow_new=True)
                 except KeyError as e:
                     self.reply(str(e), thread_ts=ts)
                     continue
@@ -587,11 +588,21 @@ class PostsHandler(BaseHandler):
                 )
                 continue
 
-            approved_platforms = self._parse_approval(reply_text, list(drafts.keys()))
-            if not approved_platforms:
+            if is_explicit_skip(reply_text):
                 self.reply("Skipped. Nothing posted.", thread_ts=ts)
                 return
-            break
+
+            approved_platforms = self._parse_approval(reply_text, list(drafts.keys()))
+            if approved_platforms:
+                break
+
+            self.reply(
+                "I didn't catch that. Reply *ALL*, "
+                f"*{'* or *'.join(p.upper() for p in drafts)}*, or *SKIP* — "
+                "or `edit <platform>: your text` to replace a draft "
+                f"({', '.join(edit_targets)}).",
+                thread_ts=ts,
+            )
 
         # Post to platforms
         self.reply(f"Posting to: {', '.join(approved_platforms)}...", thread_ts=ts)

@@ -45,10 +45,17 @@ def parse_draft_edit(
     return DraftEdit(platform=platform, content=content), None
 
 
-def apply_draft_edit(drafts: dict[str, str], edit: DraftEdit) -> dict[str, str]:
-    """Return a copy of `drafts` with one platform draft replaced."""
+def apply_draft_edit(
+    drafts: dict[str, str], edit: DraftEdit, *, allow_new: bool = False
+) -> dict[str, str]:
+    """Return a copy of `drafts` with one platform draft replaced.
+
+    `allow_new` lets the owner supply a draft for a platform whose writer
+    returned nothing. Without it, a failed LinkedIn draft could not be fixed
+    by hand — the exact dead end hit in #mp-tips on 2026-07-24.
+    """
     updated = dict(drafts)
-    if edit.platform not in updated:
+    if edit.platform not in updated and not allow_new:
         raise KeyError(f"No draft exists for platform: {edit.platform}")
     updated[edit.platform] = edit.content
     return updated
