@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 ALLOWED_EVENTS = {
+    "page_view",
     "story_view",
     "related_click",
     "entity_click",

@@ -28,6 +28,7 @@ _WINDOW_LABELS = {"today": "last 24 hours", "7d": "last 7 days", "all": "all tim
 _MAX_DAILY_COLUMNS = 60
 
 _MIX_LABELS = {
+    "page_view": "Page views",
     "story_view": "Story views",
     "scroll_depth": "Scroll-depth pings",
     "related_click": "Related-story clicks",
@@ -70,8 +71,10 @@ def _summary(window: str) -> dict:
         ]
         referrers = [
             dict(r) for r in conn.execute(
-                """SELECT ref_domain, COUNT(*) count FROM events
-                   WHERE ts>=? AND owner=0 AND ref_domain!='' GROUP BY ref_domain
+                """SELECT ref_domain, COUNT(DISTINCT anon_id) count FROM events
+                   WHERE ts>=? AND type='page_view' AND owner=0
+                     AND anon_id!='' AND ref_domain!=''
+                   GROUP BY ref_domain
                    ORDER BY count DESC LIMIT 15""", (cutoff,))
         ]
         subs = {
@@ -421,7 +424,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
   </section>
 
   <section>
-    <div class="kicker"><span class="dot h"></span><span>Where readers came from</span><span class="sub">— referrer domain · searches on site</span></div>
+    <div class="kicker"><span class="dot h"></span><span>Where readers came from</span><span class="sub">— referrer domain · unique readers · searches on site</span></div>
     <div class="duo">
       <div><div class="ranked" id="refRank"></div></div>
       <div><div class="ranked" id="searchRank"></div></div>
@@ -629,7 +632,10 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   ranked("refRank",
     DATA.referrers.map((r) => ({ name: r.ref_domain, n: r.count })),
-    "h", { unit: "visits", mono: true, empty: "direct / no referrers in this window" });
+    "h", {
+      unit: "unique readers", mono: true,
+      empty: "direct / no identified referrer readers in this window",
+    });
   ranked("searchRank",
     DATA.search_terms.map((r) => ({ name: r.target, n: r.count, you: r.owner_count })),
     "h", { unit: "searches", mono: true, empty: "no searches in this window" });

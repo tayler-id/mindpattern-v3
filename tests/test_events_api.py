@@ -34,6 +34,44 @@ def test_event_post_is_public_and_stores_allowlisted(client):
     assert row["anon_id"] == "abc12345"
 
 
+def test_page_view_stores_valid_anon_id(client):
+    http, db_path = client
+    response = http.post("/api/event", json={
+        "type": "page_view",
+        "target": "home",
+        "path": "/",
+        "anon_id": "page_reader-01",
+    })
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "ok"
+    conn = open_events_db(db_path)
+    row = conn.execute("SELECT type, target, path, anon_id FROM events").fetchone()
+    assert dict(row) == {
+        "type": "page_view",
+        "target": "home",
+        "path": "/",
+        "anon_id": "page_reader-01",
+    }
+    conn.close()
+
+
+def test_invalid_anon_id_is_blanked_but_page_view_is_stored(client):
+    http, db_path = client
+    response = http.post("/api/event", json={
+        "type": "page_view",
+        "path": "/topics/agents",
+        "anon_id": "short",
+    })
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "ok"
+    conn = open_events_db(db_path)
+    row = conn.execute("SELECT type, anon_id FROM events").fetchone()
+    assert dict(row) == {"type": "page_view", "anon_id": ""}
+    conn.close()
+
+
 def test_stored_rows_contain_no_pii_columns(client):
     http, db_path = client
     http.post("/api/event", json={"type": "story_view", "target": "x"},

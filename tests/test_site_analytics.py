@@ -65,6 +65,68 @@ def test_summary_splits_crawlers_from_humans(client, monkeypatch):
     assert payload["scroll"] == [{"value": 50, "n": 1}]
 
 
+def test_page_view_counts_reader_and_has_human_label(client, monkeypatch):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+
+    client.post("/api/event", json={
+        "type": "page_view",
+        "target": "home",
+        "path": "/",
+        "anon_id": "reader01",
+    })
+
+    payload = client.get("/api/site-analytics/summary?window=7d", headers=headers).json()
+    assert payload["totals"]["readers"] == 1
+    assert payload["totals"]["reader_events"] == 1
+    assert payload["totals"]["story_views"] == 0
+    page_views = next(item for item in payload["mix"] if item["type"] == "page_view")
+    assert page_views == {
+        "type": "page_view",
+        "label": "Page views",
+        "count": 1,
+        "owner_count": 0,
+    }
+
+
+def test_referrers_deduplicate_identified_non_owner_page_view_readers(
+    client, monkeypatch
+):
+    import dashboard.auth as auth
+    monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
+    headers = {"Authorization": "Bearer test-token"}
+
+    for payload in (
+        {"type": "page_view", "path": "/", "anon_id": "reader01",
+         "ref_domain": "linkedin.com"},
+        {"type": "page_view", "path": "/topics/agents", "anon_id": "reader01",
+         "ref_domain": "linkedin.com"},
+        {"type": "page_view", "path": "/", "anon_id": "reader02",
+         "ref_domain": "linkedin.com"},
+        {"type": "page_view", "path": "/", "anon_id": "reader03",
+         "ref_domain": "news.ycombinator.com"},
+        {"type": "story_view", "target": "story", "anon_id": "reader04",
+         "ref_domain": "linkedin.com"},
+        {"type": "related_click", "target": "story", "anon_id": "reader05",
+         "ref_domain": "linkedin.com"},
+        {"type": "page_view", "path": "/", "anon_id": "reader06",
+         "ref_domain": "linkedin.com", "owner": 1},
+        {"type": "page_view", "path": "/", "anon_id": "short",
+         "ref_domain": "linkedin.com"},
+    ):
+        client.post("/api/event", json=payload)
+
+    payload = client.get("/api/site-analytics/summary?window=7d", headers=headers).json()
+    assert payload["referrers"] == [
+        {"ref_domain": "linkedin.com", "count": 2},
+        {"ref_domain": "news.ycombinator.com", "count": 1},
+    ]
+    page = client.get("/site-analytics?window=7d", headers=headers)
+    assert 'unit: "unique readers"' in page.text
+    assert 'unit: "visits"' not in page.text
+
+
 def test_owner_events_marked_not_counted_as_readers(client, monkeypatch):
     import dashboard.auth as auth
     monkeypatch.setattr(auth, "_token_valid", lambda token: token == "test-token")
