@@ -258,6 +258,11 @@ def sync_to_fly(
             "error": f"Upload failed: {upload_result['error']}",
         }
 
+    # Non-zero once an extract leaves empty JSON behind: the run still ships
+    # its newsletter, but the public story list is stale and the caller must
+    # not record a clean sync.
+    artifacts_empty = 0
+
     # Step 5: Verify the upload arrived intact before extracting. A machine
     # restart (deploy, scale) mid-transfer leaves a truncated bundle that
     # tar fails on with "Unexpected EOF"; retry the upload once.
@@ -293,11 +298,44 @@ def sync_to_fly(
             f"{user_id}/memory.db-wal {user_id}/memory.db-shm "
             f"{user_id}/traces.db-wal {user_id}/traces.db-shm"
         )
+        # tar needs far longer than a status probe: the bundle passed 50 MB in
+        # July 2026 and unpacking ~2,300 files on shared-cpu-2x runs past the
+        # 60s default. A killed tar does not fail cleanly — it leaves the files
+        # it had not reached yet at zero bytes, which is how 2026-07-27 shipped
+        # 86 empty story files that the public API then served as nothing.
         extract_result = _fly_ssh(
             app_name,
             f"cd /data && tar xzf {remote_bundle} "
             f"&& rm -f {remote_bundle} {stale_sidecars}",
+            timeout=600,
         )
+
+        # Extraction reporting success is not proof the artifacts survived, so
+        # look for the signature of a half-finished unpack before trusting it.
+        # The SFTP fallback below only re-sends .md reports and the databases,
+        # so a broken unpack of the site-* JSON would otherwise go unnoticed.
+        if extract_result["success"] and _count_empty_artifacts(app_name, user_id):
+            # A timed-out tar leaves the bundle in place: `rm -f` only runs on
+            # tar's success, so re-extracting can still repair it where it sits.
+            log.warning("Zero-byte JSON artifacts after extract — re-extracting")
+            extract_result = _fly_ssh(
+                app_name,
+                f"cd /data && tar xzf {remote_bundle} "
+                f"&& rm -f {remote_bundle} {stale_sidecars}",
+                timeout=600,
+            )
+            empty_count = _count_empty_artifacts(app_name, user_id)
+            if empty_count:
+                artifacts_empty = empty_count
+                log.error(
+                    "Re-extract still left %d zero-byte JSON artifact(s) on %s; "
+                    "the public site will serve a stale story list until this "
+                    "syncs cleanly", empty_count, app_name,
+                )
+                extract_result = {
+                    "success": False,
+                    "error": f"{empty_count} zero-byte JSON artifacts after re-extract",
+                }
 
     if not extract_result["success"]:
         log.warning(f"Bundle extraction failed: {extract_result['error']}. Falling back to direct SFTP.")
@@ -354,12 +392,42 @@ def sync_to_fly(
         except Exception as e:
             log.debug(f"Failed to log sync event: {e}")
 
+    if artifacts_empty:
+        return {
+            "success": False,
+            "bytes_uploaded": bundle_size,
+            "files_included": files_included,
+            "error": (
+                f"{artifacts_empty} zero-byte JSON artifacts on {app_name}; "
+                "public story list is stale"
+            ),
+        }
+
     return {
         "success": True,
         "bytes_uploaded": bundle_size,
         "files_included": files_included,
         "error": None,
     }
+
+
+def _count_empty_artifacts(app_name: str, user_id: str) -> int:
+    """Count zero-byte JSON artifacts under the user's remote reports tree.
+
+    A tar killed by its timeout leaves every file it had not reached yet at
+    zero bytes. The public story API skips those silently, so the site drops a
+    day of stories while the sync still looks like it worked (2026-07-27).
+    """
+    result = _fly_ssh(
+        app_name,
+        f"find /data/reports/{user_id} -name '*.json' -size 0 | wc -l",
+    )
+    if not result["success"] or not result["output"].strip().split():
+        return 0
+    try:
+        return int(result["output"].split()[0])
+    except ValueError:
+        return 0
 
 
 def create_bundle(
@@ -726,13 +794,17 @@ def _wal_checkpoint(db_path: Path) -> dict:
         return {"success": False, "error": str(e)}
 
 
-def _fly_ssh(app_name: str, command: str) -> dict:
+def _fly_ssh(app_name: str, command: str, timeout: int = 60) -> dict:
     """Run a command on the Fly.io app via ssh console.
 
     Wraps the command in ``sh -c '...'`` so shell builtins (cd, etc.) and
     operators (&&, ||, ;) work correctly.  flyctl's ``-C`` flag execs the
     command directly — without a shell — so bare builtins like ``cd`` cause
     ``exec: "cd": executable file not found in $PATH``.
+
+    ``timeout`` is per-call because the default suits status probes but not
+    extraction: unpacking the bundle grew past 60s as the archive grew, and a
+    killed tar leaves half-written files behind rather than failing cleanly.
 
     Returns dict with keys: success, output, error.
     """
@@ -744,7 +816,7 @@ def _fly_ssh(app_name: str, command: str) -> dict:
             [FLYCTL, "ssh", "console", "-a", app_name, "-C", wrapped],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=timeout,
             env=_fly_env(),
         )
 

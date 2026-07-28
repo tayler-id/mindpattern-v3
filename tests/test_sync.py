@@ -80,10 +80,13 @@ def data_tree(tmp_path):
 
 def _ssh_success_with_uploaded_bundle_size(upload_mock):
     """Return an _fly_ssh mock responder for the normal upload/extract path."""
-    def _respond(app_name, cmd):
+    def _respond(app_name, cmd, timeout=60):
         if "wc -c" in cmd and "sync-bundle.tar.gz" in cmd:
             bundle_path = Path(upload_mock.call_args.args[0])
             return {"success": True, "output": str(bundle_path.stat().st_size), "error": None}
+        # The post-extract audit counts zero-byte JSON; a clean unpack has none.
+        if "-size 0" in cmd:
+            return {"success": True, "output": "0", "error": None}
         return {"success": True, "output": "", "error": None}
 
     return _respond
@@ -91,7 +94,7 @@ def _ssh_success_with_uploaded_bundle_size(upload_mock):
 
 def _ssh_bundle_truncated_then_fallback_sizes(data_tree):
     """Return an _fly_ssh responder that forces bundle fallback but verifies DB uploads."""
-    def _respond(app_name, cmd):
+    def _respond(app_name, cmd, timeout=60):
         if "wc -c" not in cmd:
             return {"success": True, "output": "", "error": None}
         if "sync-bundle.tar.gz" in cmd:
@@ -475,6 +478,98 @@ class TestRestartApp:
 
 class TestSyncToFly:
     """Integration tests for sync_to_fly() with all subprocess mocked."""
+
+    @patch("orchestrator.sync._fly_sftp_put")
+    @patch("orchestrator.sync._fly_ssh")
+    @patch("orchestrator.sync.upload_bundle")
+    @patch("orchestrator.sync.subprocess.run")
+    def test_extract_gets_a_long_timeout(
+        self, mock_subprocess, mock_upload, mock_ssh, mock_sftp, data_tree
+    ):
+        """tar must outlive the 60s default; a killed tar leaves empty files."""
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="")
+        mock_upload.return_value = {"success": True, "error": None}
+        mock_ssh.side_effect = _ssh_success_with_uploaded_bundle_size(mock_upload)
+
+        sync_to_fly(data_tree["user_id"], data_tree["data_dir"], app_name="testapp")
+
+        extract_calls = [
+            c for c in mock_ssh.call_args_list if "tar xzf" in c.args[1]
+        ]
+        assert extract_calls, "expected an extract call"
+        assert all(c.kwargs.get("timeout", 60) >= 600 for c in extract_calls)
+
+    @patch("orchestrator.sync._fly_sftp_put")
+    @patch("orchestrator.sync._fly_ssh")
+    @patch("orchestrator.sync.upload_bundle")
+    @patch("orchestrator.sync.subprocess.run")
+    def test_zero_byte_artifacts_trigger_a_re_extract(
+        self, mock_subprocess, mock_upload, mock_ssh, mock_sftp, data_tree
+    ):
+        """A half-finished unpack is repaired in place, not left to the site."""
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="")
+        mock_upload.return_value = {"success": True, "error": None}
+        base = _ssh_success_with_uploaded_bundle_size(mock_upload)
+        audits = {"n": 0}
+
+        def _respond(app_name, cmd, timeout=60):
+            if "-size 0" in cmd:
+                audits["n"] += 1
+                # Empty on the first audit, clean once re-extracted.
+                return {"success": True,
+                        "output": "86" if audits["n"] == 1 else "0",
+                        "error": None}
+            return base(app_name, cmd, timeout)
+
+        mock_ssh.side_effect = _respond
+        result = sync_to_fly(
+            data_tree["user_id"], data_tree["data_dir"], app_name="testapp")
+
+        extracts = [c for c in mock_ssh.call_args_list if "tar xzf" in c.args[1]]
+        assert len(extracts) == 2, "expected one re-extract after empty artifacts"
+        assert result["success"] is True
+
+    @patch("orchestrator.sync._fly_sftp_put")
+    @patch("orchestrator.sync._fly_ssh")
+    @patch("orchestrator.sync.upload_bundle")
+    @patch("orchestrator.sync.subprocess.run")
+    def test_persistent_zero_byte_artifacts_fail_the_sync(
+        self, mock_subprocess, mock_upload, mock_ssh, mock_sftp, data_tree
+    ):
+        """Never report a clean sync while the public story list is stale.
+
+        2026-07-27 shipped 86 empty story files and still wrote the synced
+        marker, so the site served a day-old list with nothing to retry it.
+        """
+        mock_subprocess.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr="")
+        mock_upload.return_value = {"success": True, "error": None}
+        base = _ssh_success_with_uploaded_bundle_size(mock_upload)
+
+        def _respond(app_name, cmd, timeout=60):
+            if "-size 0" in cmd:
+                return {"success": True, "output": "86", "error": None}
+            # Let the SFTP fallback's DB verification pass, so the artifact
+            # failure is what surfaces rather than an unrelated fallback error.
+            if cmd.endswith("/memory.db"):
+                return {"success": True,
+                        "output": str(data_tree["db_path"].stat().st_size),
+                        "error": None}
+            if cmd.endswith("/traces.db"):
+                return {"success": True,
+                        "output": str(data_tree["traces_path"].stat().st_size),
+                        "error": None}
+            return base(app_name, cmd, timeout)
+
+        mock_ssh.side_effect = _respond
+        mock_sftp.return_value = True
+        result = sync_to_fly(
+            data_tree["user_id"], data_tree["data_dir"], app_name="testapp")
+
+        assert result["success"] is False
+        assert "zero-byte" in result["error"]
 
     @patch("orchestrator.sync._fly_sftp_put")
     @patch("orchestrator.sync._fly_ssh")
