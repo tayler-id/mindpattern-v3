@@ -825,6 +825,41 @@ class TestPhaseSynthesis:
         assert "report_path" in result
         assert pipeline.newsletter_text != ""
 
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_prose_gate_strips_em_dashes_before_the_report_is_written(
+        self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path
+    ):
+        """Prompting cannot hold this rule, so the gate runs at the choke point.
+
+        The published file, not just the in-memory text, must be clean — the
+        newsletter is written to disk and synced verbatim.
+        """
+        self._seed_findings(pipeline.db, pipeline.date_str)
+        body = 'They call it "unhobbling" — stripping guardrails. ' * 40
+        mock_claude.side_effect = [
+            ("Selected stories: 1, 2, 3", 0),
+            (f"# Newsletter\n\n{body}\n" + ("word " * 3500), 0),
+        ]
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            report_dir = tmp_path / "reports" / "testuser"
+            report_dir.mkdir(parents=True, exist_ok=True)
+
+            with patch("orchestrator.runner.NewsletterEvaluator") as mock_eval_cls:
+                mock_evaluator = MagicMock()
+                mock_evaluator.evaluate.return_value = {
+                    "overall": 0.85, "coverage": 0.9, "dedup": 0.95, "sources": 0.8,
+                }
+                mock_eval_cls.return_value = mock_evaluator
+
+                result = pipeline._phase_synthesis()
+
+        assert "—" not in pipeline.newsletter_text.split("\n", 1)[1]
+        assert 'unhobbling": stripping guardrails.' in pipeline.newsletter_text
+        assert "—" not in Path(result["report_path"]).read_text().split("\n", 1)[1]
+
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt",
            return_value=("", 1))

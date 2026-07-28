@@ -24,6 +24,7 @@ from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
+from .prose_gate import sanitize as prose_sanitize
 from .traces_db import (
     get_db as get_traces_db,
     create_pipeline_run,
@@ -1619,6 +1620,16 @@ class ResearchPipeline:
                               "reason": reason,
                           }))
                 break
+
+        # Deterministic prose gate, applied to whichever text the loop produced
+        # (written or fallback) and before anything reads it. Style rules a
+        # regex can enforce are enforced here rather than asked for in the
+        # prompt: on 2026-07-25/26/27 the same model, prompt and voice guide
+        # emitted 42, 2 and 52 em-dashes, so prompting alone cannot hold it.
+        self.newsletter_text, prose_report = prose_sanitize(self.newsletter_text)
+        if prose_report["replaced"] or prose_report["remaining_over_budget"]:
+            log_event(self.traces_conn, self.traces_run_id,
+                      "prose_gate", json.dumps(prose_report))
 
         # Save the report with timestamp so multiple runs per day work
         report_dir = PROJECT_ROOT / "reports" / self.user_id
