@@ -9,8 +9,10 @@ import logging
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -2409,23 +2411,33 @@ class ResearchPipeline:
         except subprocess.CalledProcessError:
             return None
 
-    def _send_alert(self, message: str):
-        try:
-            import json
-            import subprocess
-            import urllib.request
+    def _send_alert(self, message: str) -> bool:
+        """Post an operator alert to Slack. Returns True only if Slack accepted it.
 
+        chat.postMessage answers HTTP 200 with {"ok": false, "error": ...} for a
+        bad token, bad channel, or a revoked scope. The old implementation called
+        urlopen() and never read the body, so every delivery failure was silent —
+        the 2026-07-24 quality alert logged as "fired" and was never seen. Alerting
+        is the feedback loop the rest of the pipeline is judged by, so a failure to
+        deliver is logged at ERROR with Slack's own error code.
+
+        Never raises: a broken alert path must not take a run down.
+        """
+        channel = os.environ.get("MP_ALERT_SLACK_CHANNEL", "C0ALSRHAATH")
+        try:
             result = subprocess.run(
                 ["security", "find-generic-password", "-s", "slack-bot-token", "-w"],
                 capture_output=True, text=True, timeout=10,
             )
             if result.returncode != 0:
-                logger.warning(f"No Slack token for alert: {message}")
-                return
+                logger.error(
+                    "ALERT NOT DELIVERED (no slack-bot-token in keychain): %s", message
+                )
+                return False
 
             token = result.stdout.strip()
             payload = json.dumps({
-                "channel": "C0ALSRHAATH",
+                "channel": channel,
                 "text": message[:2000],
             }).encode("utf-8")
             req = urllib.request.Request(
@@ -2436,9 +2448,21 @@ class ResearchPipeline:
                     "Content-Type": "application/json",
                 },
             )
-            urllib.request.urlopen(req, timeout=15)
+            with urllib.request.urlopen(req, timeout=15) as response:
+                body = json.loads(response.read().decode("utf-8"))
         except Exception as e:
-            logger.warning(f"Slack alert failed: {e}")
+            logger.error("ALERT NOT DELIVERED (%s: %s): %s", type(e).__name__, e, message)
+            return False
+
+        if not body.get("ok"):
+            logger.error(
+                "ALERT NOT DELIVERED (slack error '%s', channel %s): %s",
+                body.get("error", "unknown"), channel, message,
+            )
+            return False
+
+        logger.info("Alert delivered to Slack %s", channel)
+        return True
 
     def close(self):
         if self.db:

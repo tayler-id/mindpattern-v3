@@ -8,7 +8,9 @@ are mocked.
 """
 
 import json
+import logging
 import sqlite3
+import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -2374,3 +2376,81 @@ class TestHelpers:
 
         mock_db.close.assert_called_once()
         mock_traces.close.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# _send_alert must verify Slack actually accepted the message (2026-07-24)
+#
+# The old implementation called urlopen() and never read the response.
+# chat.postMessage returns HTTP 200 with {"ok": false, "error": "..."} for a
+# bad token, bad channel, or revoked scope — so every delivery failure was
+# invisible. The 2026-07-24 quality alert logged as "fired" at 12:43:56 and
+# Tayler never saw it. Alerting is the feedback loop every other fix depends
+# on, so it has to fail loudly.
+# ═══════════════════════════════════════════════════════════════════════
+
+import io as _io
+
+
+def _fake_slack_response(body: dict):
+    return _io.BytesIO(json.dumps(body).encode())
+
+
+class TestSendAlertVerifiesDelivery:
+    def _pipeline(self, tmp_path):
+        # _send_alert touches no instance state — bare instance is enough.
+        from orchestrator.runner import ResearchPipeline
+        return ResearchPipeline.__new__(ResearchPipeline)
+
+    @patch("orchestrator.runner.subprocess.run")
+    @patch("orchestrator.runner.urllib.request.urlopen")
+    def test_returns_true_when_slack_accepts(self, mock_open, mock_run, tmp_path, caplog):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="xoxb-token\n", stderr="")
+        mock_open.return_value = _fake_slack_response({"ok": True, "ts": "1.2"})
+
+        assert self._pipeline(tmp_path)._send_alert("hello") is True
+
+    @patch("orchestrator.runner.subprocess.run")
+    @patch("orchestrator.runner.urllib.request.urlopen")
+    def test_detects_ok_false_despite_http_200(self, mock_open, mock_run, tmp_path, caplog):
+        """The exact silent-failure mode: HTTP 200 with ok:false."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="xoxb-token\n", stderr="")
+        mock_open.return_value = _fake_slack_response(
+            {"ok": False, "error": "channel_not_found"}
+        )
+
+        with caplog.at_level(logging.ERROR):
+            ok = self._pipeline(tmp_path)._send_alert("quality floor failed")
+
+        assert ok is False
+        assert "channel_not_found" in caplog.text
+
+    @patch("orchestrator.runner.subprocess.run")
+    @patch("orchestrator.runner.urllib.request.urlopen")
+    def test_invalid_auth_is_reported(self, mock_open, mock_run, tmp_path, caplog):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="bad\n", stderr="")
+        mock_open.return_value = _fake_slack_response({"ok": False, "error": "invalid_auth"})
+
+        with caplog.at_level(logging.ERROR):
+            assert self._pipeline(tmp_path)._send_alert("x") is False
+        assert "invalid_auth" in caplog.text
+
+    @patch("orchestrator.runner.subprocess.run")
+    def test_missing_token_returns_false(self, mock_run, tmp_path):
+        mock_run.return_value = subprocess.CompletedProcess([], 1, stdout="", stderr="not found")
+        assert self._pipeline(tmp_path)._send_alert("x") is False
+
+    @patch("orchestrator.runner.subprocess.run")
+    @patch("orchestrator.runner.urllib.request.urlopen")
+    def test_network_error_returns_false_and_never_raises(self, mock_open, mock_run, tmp_path):
+        """Alerting must never take the pipeline down."""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="xoxb\n", stderr="")
+        mock_open.side_effect = OSError("connection reset")
+        assert self._pipeline(tmp_path)._send_alert("x") is False
+
+    @patch("orchestrator.runner.subprocess.run")
+    @patch("orchestrator.runner.urllib.request.urlopen")
+    def test_unparseable_body_returns_false(self, mock_open, mock_run, tmp_path):
+        mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="xoxb\n", stderr="")
+        mock_open.return_value = _io.BytesIO(b"<html>gateway timeout</html>")
+        assert self._pipeline(tmp_path)._send_alert("x") is False
