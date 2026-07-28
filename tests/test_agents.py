@@ -1266,3 +1266,82 @@ class TestRunClaudePromptRetries:
         assert code == 1
         assert mock_proc.call_count == 3
         assert sleeper.call_count == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Headless framing lives in the SYSTEM prompt (2026-07-24)
+#
+# run_single_agent passed no system prompt at all, so the entire task arrived
+# as user text — which is why 7 of 13 agents read it as a transcript someone
+# pasted into an interactive session and declined:
+#   "this prompt ... pasted into an interactive Claude Code session"
+#   "complying means fabricating a JSON payload of 20-25 findings"
+# The count is now described as a normal harvest rather than a quota, and the
+# execution context is asserted where user text cannot masquerade as it.
+# ═══════════════════════════════════════════════════════════════════════
+
+from orchestrator.agents import RESEARCH_SYSTEM_PROMPT
+
+
+class TestResearchAgentSystemPrompt:
+    def test_system_prompt_file_exists(self):
+        assert RESEARCH_SYSTEM_PROMPT.exists(), RESEARCH_SYSTEM_PROMPT
+
+    def test_it_asserts_headless_execution(self):
+        text = RESEARCH_SYSTEM_PROMPT.read_text().lower()
+        assert "no human is present" in text
+        assert "not a transcript" in text or "pasted" in text
+
+    def test_it_defuses_the_quota_reading(self):
+        text = RESEARCH_SYSTEM_PROMPT.read_text().lower()
+        assert "not a quota" in text
+        assert "never invent" in text
+
+    def test_it_forbids_prose_refusals(self):
+        text = RESEARCH_SYSTEM_PROMPT.read_text().lower()
+        assert "do not answer in prose" in text
+
+    @patch("orchestrator.agents.router")
+    @patch("orchestrator.agents.run_claude_process")
+    def test_run_single_agent_passes_the_system_prompt(self, mock_proc, mock_router):
+        mock_router.get_model.return_value = "opus"
+        mock_router.get_max_turns.return_value = 35
+        mock_router.get_timeout.return_value = 1800
+        mock_proc.return_value = _process_result(
+            stdout='{"findings": [{"title": "t", "summary": "s"}]}', returncode=0
+        )
+
+        run_single_agent("hn-researcher", "do research")
+
+        cmd = mock_proc.call_args.args[0]
+        assert "--append-system-prompt-file" in cmd
+        assert str(RESEARCH_SYSTEM_PROMPT) in cmd
+
+
+class TestFindingsTargetIsNotAQuota:
+    def test_prompt_frames_the_count_as_a_guide(self, research_prompt):
+        assert "not a quota" in research_prompt
+        assert "never invent one to reach it" in research_prompt
+
+
+class TestCorrectiveRetryKeepsSystemPrompt:
+    """The retry must not run with weaker framing than the first attempt."""
+
+    @patch("orchestrator.agents.router")
+    @patch("orchestrator.agents.run_claude_process")
+    def test_retry_command_still_carries_the_system_prompt(self, mock_proc, mock_router):
+        mock_router.get_model.return_value = "opus"
+        mock_router.get_max_turns.return_value = 35
+        mock_router.get_timeout.return_value = 1800
+        mock_proc.side_effect = [
+            _process_result(stdout='{"findings": []}', returncode=0),   # refusal
+            _process_result(stdout='{"findings": [{"title": "t", "summary": "s"}]}',
+                            returncode=0),
+        ]
+
+        run_single_agent("hn-researcher", "do research", _sleep=MagicMock())
+
+        assert mock_proc.call_count == 2
+        retry_cmd = mock_proc.call_args_list[1].args[0]
+        assert "--append-system-prompt-file" in retry_cmd
+        assert str(RESEARCH_SYSTEM_PROMPT) in retry_cmd

@@ -154,6 +154,11 @@ def missing_granted_binaries(allowed_tools: list[str] | None) -> list[str]:
     )
 
 
+# Execution-context system prompt for research agents. Kept out of the task text
+# on purpose: user input cannot credibly assert "no human is present", which is
+# how 7 of 13 agents talked themselves into declining on 2026-07-24.
+RESEARCH_SYSTEM_PROMPT = PROJECT_ROOT / "prompts" / "research-agent-system.md"
+
 # Per-agent findings target quoted in the research prompt. Must never exceed
 # policies/research.json max_findings_per_agent — a contract test binds them.
 FINDINGS_TARGET_MIN = 20
@@ -357,7 +362,10 @@ Look for:
 - Primary sources not in our feed list
 - Reactions and follow-ups to stories in the preflight data
 
-Target: {FINDINGS_TARGET_MIN}-{FINDINGS_TARGET_MAX} total findings (15-20 from Phase 1 + 3-5 from Phase 2).
+A healthy day yields roughly {FINDINGS_TARGET_MIN}-{FINDINGS_TARGET_MAX} findings
+(~15-20 from Phase 1 + 3-5 from Phase 2). That is a description of a normal
+harvest, not a quota — report what you actually found and no more. Fewer real,
+well-sourced findings beats padding to a number, and never invent one to reach it.
 
 """
 
@@ -632,10 +640,16 @@ def run_single_agent(
     max_turns = router.get_max_turns(task_type)
     timeout = router.get_timeout(task_type)
 
+    # The execution context goes in the SYSTEM prompt, not the task text. When
+    # everything arrived as user input, agents read the task as a transcript
+    # pasted into an interactive session and declined it (2026-07-24: 7 of 13).
+    system_prompt = str(RESEARCH_SYSTEM_PROMPT) if RESEARCH_SYSTEM_PROMPT.exists() else None
+
     cmd = _build_claude_command(
         prompt,
         model=model,
         max_turns=max_turns,
+        system_prompt_file=system_prompt,
         allowed_tools=AGENT_ALLOWED_TOOLS,
         disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
     )
@@ -661,10 +675,14 @@ def run_single_agent(
                 f"(likely refusal; preview: '{(result.raw_output or '').strip()[:120]}'); "
                 f"retrying once with corrective headless framing"
             )
+            # Keep system_prompt_file: the retry previously rebuilt the command
+            # without it, so the corrective attempt ran with WEAKER framing than
+            # the first one and re-refused in ~2s (2026-07-24).
             cmd = _build_claude_command(
                 prompt + _corrective_retry_suffix(agent_name),
                 model=model,
                 max_turns=max_turns,
+                system_prompt_file=system_prompt,
                 allowed_tools=AGENT_ALLOWED_TOOLS,
                 disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
             )
