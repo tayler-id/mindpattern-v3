@@ -82,7 +82,6 @@ class PolicyEngine:
         max_findings = self.rules.get("max_findings_per_agent", 15)
         min_findings = self.rules.get("min_findings_per_agent", 1)
         max_summary_length = self.rules.get("max_summary_length", 1000)
-        injection_patterns = self.rules.get("injection_patterns", [])
 
         findings = output.get("findings", [])
 
@@ -131,7 +130,6 @@ class PolicyEngine:
         required_fields = self.rules.get("required_fields", [])
         valid_importance = self.rules.get("importance_values", [])
         max_summary_length = self.rules.get("max_summary_length", 1000)
-        injection_patterns = self.rules.get("injection_patterns", [])
         prefix = f"[{agent_name}] Finding {index + 1}"
 
         # Required fields
@@ -175,9 +173,7 @@ class PolicyEngine:
         for field in text_fields:
             value = finding.get(field, "")
             if value:
-                injections = self.scan_for_injection(
-                    value, patterns=injection_patterns
-                )
+                injections = self.scan_for_injection(value)
                 for pattern in injections:
                     errors.append(
                         f"{prefix}: prompt injection detected in '{field}': "
@@ -476,11 +472,17 @@ class PolicyEngine:
             text: The text to scan.
             patterns: Optional literal substrings to check instead of the
                       configured regexes (kept for callers that pass their own).
+                      An empty list falls through to the configured regexes:
+                      "scan for nothing" is never a useful request, and reading
+                      it literally is what silently disabled this scan between
+                      2026-07-24 and 2026-07-28. Callers were passing
+                      rules.get("injection_patterns", []) for a key the same
+                      commit had renamed, so every finding scanned clean.
 
         Returns:
             List of matched pattern strings. Empty means clean.
         """
-        if patterns is not None:
+        if patterns:
             # Explicit patterns stay literal substrings (caller-supplied).
             text_lower = text.lower()
             return [p for p in patterns if p.lower() in text_lower]
