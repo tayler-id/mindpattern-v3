@@ -104,8 +104,11 @@ class TestStaleSidecarRemoval:
 
         commands = []
 
-        def fake_ssh(app, cmd):
+        def fake_ssh(app, cmd, timeout=60):
             commands.append(cmd)
+            if "-size 0" in cmd:
+                # Post-extract audit: a clean unpack leaves no empty JSON.
+                return {"success": True, "output": "0", "error": None}
             if cmd.startswith("wc -c"):
                 # Report the true local bundle size so verification passes
                 import tempfile as tf_mod
