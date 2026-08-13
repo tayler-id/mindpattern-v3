@@ -467,6 +467,26 @@ MAX_BROADCAST_CONTACTS = 50
 BROADCAST_DELAY_SECONDS = 2
 
 
+def canonical_email(email: str) -> str:
+    """Collapse an address to the mailbox it actually delivers to.
+
+    The owner is excluded from the broadcast by address, but a plus-tagged
+    alias of that address lands in the same inbox — so
+    `ramsay.tayler+subscriber@gmail.com` sitting in the audience delivered a
+    second copy of every newsletter to the owner. Plus-tags are stripped for
+    every domain; dots only for Gmail, where they are genuinely ignored.
+    """
+    email = email.strip().lower()
+    if "@" not in email:
+        return email
+    local, _, domain = email.partition("@")
+    local = local.split("+", 1)[0]
+    if domain in {"gmail.com", "googlemail.com"}:
+        local = local.replace(".", "")
+        domain = "gmail.com"
+    return f"{local}@{domain}"
+
+
 def broadcast_to_subscribers(
     report_content: str,
     date_str: str,
@@ -508,8 +528,9 @@ def broadcast_to_subscribers(
         result["errors"].append(f"No {audience_keychain_service} in Keychain")
         return result
 
-    # Normalize exclusion list
-    excluded = {e.strip().lower() for e in (exclude_emails or [])}
+    # Normalize exclusion list to canonical mailboxes, so aliases of an
+    # excluded address are excluded too.
+    excluded = {canonical_email(e) for e in (exclude_emails or []) if e.strip()}
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -539,7 +560,7 @@ def broadcast_to_subscribers(
             if contact.get("unsubscribed"):
                 result["skipped_count"] += 1
                 continue
-            if email in excluded:
+            if canonical_email(email) in excluded:
                 result["skipped_count"] += 1
                 continue
             contacts.append(email)
