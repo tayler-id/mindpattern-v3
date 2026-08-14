@@ -287,12 +287,15 @@ class TestSkillsTipsStrictApproval:
     ])
     def test_unclear_replies_do_not_post(self, handler_class, channel_id, reply):
         handler, client = self._handler_with_drafts(handler_class, channel_id)
-        handler.wait_for_reply.return_value = reply
+        # One unclear reply, then silence. A plain return_value would feed the
+        # approval loop the same unclear reply forever and spin the suite.
+        handler.wait_for_reply.side_effect = [reply, ""]
 
         handler.handle({"text": "This is a concrete tip long enough to draft.", "ts": "123.456"})
 
         handler._post.assert_not_called()
-        assert "skipped" in client.chat_postMessage.call_args_list[-1].kwargs["text"].lower()
+        last_text = client.chat_postMessage.call_args_list[-1].kwargs["text"].lower()
+        assert "cancelled" in last_text or "skipped" in last_text
 
     @pytest.mark.parametrize("reply,expected", [
         ("all", ["bluesky", "linkedin"]),
