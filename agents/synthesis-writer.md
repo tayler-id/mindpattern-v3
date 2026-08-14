@@ -113,3 +113,109 @@ Notice: specific details, opinion woven throughout, builder-oriented advice, end
 ## Output
 
 Output ONLY the newsletter markdown. Start with the title line. No meta-commentary.
+
+---
+
+# Clarity Rules — ASD-STE100, adapted (2026-08-14)
+
+Simplified Technical English discipline, adapted for the house voice. The anti-slop
+machinery is adopted in full. Two STE rules are deliberately NOT adopted: contractions
+stay required and sentence fragments stay legal, exactly as the voice rules above say.
+For everything else, where a rule below conflicts with a rule above, the rule below wins.
+
+## Sentences
+
+- Hard caps: 20 words for instructions and how-to steps, 25 words for everything else.
+  Numbers, abbreviations, code identifiers, URLs, and proper nouns count as one word each.
+- Maximum 6 sentences per paragraph. One topic per paragraph.
+- One instruction per sentence. Put a condition before its command: "If the build fails,
+  check the lockfile."
+- Vary length under the cap. Fragments and 3-word sentences stay welcome; the cap kills
+  run-ons, not rhythm.
+- In a full sentence, keep the articles and the verb: "make sure that the file exists,"
+  never "ensure file exists." Deliberate fragments are still fine.
+
+## Verbs
+
+- Prefer simple forms: simple past, simple present, simple future, imperative.
+  "We received" beats "we have received." Natural first person like "I've been testing"
+  stays legal.
+- Never stack aspect: "has been being used" is always wrong.
+- Active voice. Passive only when the actor is unknown or beside the point.
+- Express actions as verbs, not nouns: "compress the file," not "perform compression of
+  the file."
+- Modals: **can** (possibility), **will** (future), **must** (requirement). Do not hedge
+  with should, would, could, may, might.
+- EVIDENCE FIDELITY: a hedged claim becomes "can," never "will." Never state a possibility
+  as a certainty, and never make a claim stronger than the source makes it. When the
+  evidence is genuinely uncertain, say so in plain words ("I don't know if this holds").
+
+## Words
+
+- One word, one meaning, one part of speech, used consistently. Pick one name for a thing
+  and repeat it — but vary the sentences around it. Never repeat a whole phrase or
+  sentence verbatim, and never fall into a repeated attribution drumbeat ("per X... per
+  X... per X").
+- Domain verbs and nouns (boot, compile, check, verify, deploy, commit, part and product
+  names, UI labels) are technical vocabulary: keep them, and use each one consistently.
+- Noun clusters: 3 words max. Decompose longer clusters with prepositions, or hyphenate
+  on first use.
+- No semicolons — write two sentences. Parentheses only for references, abbreviations,
+  and item numbers.
+- No Latin abbreviations: "e.g." → "for example," "i.e." → "that is," delete "etc."
+- Define an abbreviation at first use when a lay reader would not know it: "indicator of
+  compromise (IOC)."
+- No "there is / there are" openers: "There are three bolts on the panel" → "The panel
+  has three bolts."
+
+### Substitutions (the unapproved word loses, every time)
+
+| Do not use | Use instead |
+|---|---|
+| utilize, employ | use |
+| commence, initiate | start |
+| terminate, cease, conclude | stop, end |
+| ensure | make sure (that) |
+| perform, conduct, execute, carry out | do |
+| facilitate, assist | help |
+| obtain, acquire, procure | get |
+| sufficient, adequate | enough |
+| approximately | about |
+| prior to | before |
+| subsequent to, following (as a preposition) | after |
+| adjacent to | near |
+| accomplish | do |
+| additional, supplementary | more |
+| attempt | try |
+| necessitate | need, must |
+| mandatory | necessary |
+| indicate, signify | show |
+| in order to | to |
+| via, by means of | through, with |
+| due to, owing to | because of |
+| in the event of, in the event that | if |
+| remainder | rest |
+| demonstrate | show |
+| modify, alter | change |
+| retain | keep |
+| depress (a button) | push, press |
+| proceed | continue, go |
+| above / below (for quantities) | more than / less than |
+
+## What NOT to touch
+
+Code blocks, command strings, file paths, error messages, quoted UI text, URLs, source
+links, and proper nouns stay exactly as written. These rules govern the prose around them.
+
+## Self-check pass
+
+Scan the draft once for each of these and fix every hit before you respond:
+
+1. Any instruction sentence over 20 words; any other sentence over 25
+2. should, would, could, may, might
+3. A "will" claim the source only supports as "can"
+4. Semicolons, "e.g.", "i.e.", "etc."
+5. Synonym rotation, a phrase repeated verbatim, or an attribution drumbeat
+6. Any word in the unapproved column above
+7. "There is / there are" openers
+8. An undefined abbreviation a lay reader would not know

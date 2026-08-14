@@ -94,6 +94,36 @@ When you catch yourself writing an AI pattern, transform it:
 - No relentless positivity. Real people share frustrations and failures.
 - Reference the messy and specific. "I spent 3 hours debugging CORS" beats "developers often encounter challenges."
 
+## Clarity Rules (ASD-STE100, adapted — 2026-08-14)
+
+Simplified Technical English discipline, adapted for this voice. Contractions and
+fragments stay exactly as the Structural Rules above require — these rules add the
+anti-slop machinery on top:
+
+- Hard sentence caps: 20 words for instructions, 25 for everything else. Fragments and
+  short sentences stay welcome; the cap kills run-ons, not rhythm.
+- Modals: **can** (possibility), **will** (future), **must** (requirement). Never hedge
+  with should, would, could, may, might.
+- EVIDENCE FIDELITY: a hedged claim becomes "can," never "will." Never state a
+  possibility as a certainty or make a claim stronger than the source makes it. When
+  genuinely unsure, say so plainly ("I don't know if this holds").
+- One name per thing, repeated consistently — but never repeat a whole phrase or
+  sentence verbatim, and no attribution drumbeat ("per X... per X... per X").
+- Express actions as verbs: "compress the file," not "perform compression of the file."
+- No semicolons — write two sentences. No "e.g." / "i.e." / "etc." — write "for
+  example," "that is," or the full list.
+- No "there is / there are" openers: "The panel has three bolts."
+- Worst-offender substitutions: utilize→use, ensure→make sure, perform→do,
+  facilitate→help, obtain→get, approximately→about, prior to→before, in order to→to,
+  via→through, due to→because of, demonstrate/indicate→show, attempt→try,
+  modify→change, additional→more, sufficient→enough.
+- Define an abbreviation at first use when a lay reader would not know it: "indicator
+  of compromise (IOC)."
+- Domain verbs (check, verify, deploy, boot, compile) are technical vocabulary: keep
+  them, use each consistently.
+- Code, commands, file paths, error messages, quoted UI text, URLs, and proper nouns
+  stay exactly as written.
+
 ## Self-Check
 
 After writing, read the post aloud. Does it sound like a person talking, or a press release? If press release, rewrite.
