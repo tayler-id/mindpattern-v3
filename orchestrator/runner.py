@@ -25,6 +25,7 @@ from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
 from .prose_gate import sanitize as prose_sanitize
+from . import published_history
 from .traces_db import (
     get_db as get_traces_db,
     create_pipeline_run,
@@ -110,6 +111,30 @@ def _site_content_trace_payload(result: dict) -> dict:
         "degraded_story_count": result.get("degraded_story_count", 0),
         "artifacts_written": len(result.get("artifacts_written") or []),
     }
+
+
+def _selected_titles_from_pass1(pass1_output: str) -> list[str]:
+    """Best-effort parse of the selector's JSON array into story titles.
+
+    The selector is prompted to emit bare JSON, but retries and fallbacks can
+    hand back fenced or prose-wrapped output. Returns [] when no titles can be
+    recovered — the republish tripwire then simply has nothing to check.
+    """
+    text = pass1_output.strip()
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        selections = json.loads(match.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(selections, list):
+        return []
+    titles = []
+    for entry in selections:
+        if isinstance(entry, dict) and entry.get("story_title"):
+            titles.append(str(entry["story_title"]))
+    return titles
 
 
 def _assess_agent_coverage(agent_results: list) -> dict:
@@ -1362,13 +1387,29 @@ class ResearchPipeline:
 
         newsletter_title = self.user_config.get("newsletter_title", "Research Agent")
 
+        # Published-issue history: the one dedup layer that looks at what past
+        # issues actually ran, not at stored findings (2026-08-17 audit: 26
+        # re-reported stories in 20 issues while every findings-level gate
+        # passed). Best-effort — an empty archive just yields no block.
+        published_block = ""
+        published_stories = []
+        try:
+            published_stories = published_history.published_stories(
+                PROJECT_ROOT / "reports" / self.user_id, self.date_str,
+            )
+            published_block = published_history.format_published_block(
+                published_stories)
+        except Exception as e:
+            logger.warning(f"Published-history load failed (non-critical): {e}")
+
         # Pass 1: Story selection
         pass1_prompt = (
             f"Select exactly 5 stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
-            f"## Findings\n" + "\n".join(summaries)
+            + (f"{published_block}\n\n" if published_block else "")
+            + f"## Findings\n" + "\n".join(summaries)
         )
 
         logger.info(
@@ -1379,6 +1420,7 @@ class ResearchPipeline:
         pass1_output = ""
         pass1_degraded = False
         pass1_max_attempts = 3
+        republish_repick_done = False
         for attempt in range(1, pass1_max_attempts + 1):
             pass1_start = time.monotonic()
             pass1_output, exit_code = agent_dispatch.run_claude_prompt(
@@ -1393,6 +1435,70 @@ class ResearchPipeline:
                 f"duration={pass1_duration:.1f}s"
             )
             if exit_code == 0 and pass1_output.strip():
+                # Republish tripwire: deterministic check of the selection
+                # against the published-issue archive. One forced re-pick,
+                # then publish with a loud alert — never a silent repeat.
+                republish_flags = []
+                if published_stories:
+                    try:
+                        republish_flags = published_history.flag_republished(
+                            _selected_titles_from_pass1(pass1_output),
+                            published_stories,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Republish check failed (non-critical): {e}")
+                if (republish_flags and not republish_repick_done
+                        and attempt < pass1_max_attempts):
+                    republish_repick_done = True
+                    log_event(self.traces_conn, self.traces_run_id,
+                              "selection_republish_repick",
+                              json.dumps(republish_flags))
+                    logger.warning(
+                        "Selection repeats %d published stor%s; forcing one "
+                        "re-pick: %s",
+                        len(republish_flags),
+                        "y" if len(republish_flags) == 1 else "ies",
+                        "; ".join(
+                            f"'{f['selected_title'][:60]}' ran {f['published_date']}"
+                            for f in republish_flags[:3]
+                        ),
+                    )
+                    pass1_prompt += (
+                        "\n\n## REPUBLISH CORRECTION (attempt "
+                        f"{attempt} rejected)\n"
+                        "Your selection repeated these already-published "
+                        "stories:\n"
+                        + "\n".join(
+                            f"- \"{f['selected_title']}\" — already ran on "
+                            f"{f['published_date']} as \"{f['published_title']}\""
+                            for f in republish_flags
+                        )
+                        + "\nReplace each one with a different story, unless "
+                        "there is a genuinely new development — in that case "
+                        "keep it and name the new development and the prior "
+                        "run date in its \"reason\" field."
+                    )
+                    continue
+                if republish_flags:
+                    log_event(self.traces_conn, self.traces_run_id,
+                              "selection_republish_flag",
+                              json.dumps(republish_flags))
+                    pairs = "\n".join(
+                        f"- '{f['selected_title'][:80]}' ≈ "
+                        f"'{f['published_title'][:80]}' ({f['published_date']}, "
+                        f"sim={f['similarity']})"
+                        for f in republish_flags
+                    )
+                    logger.warning(
+                        "Selection still repeats published stories after "
+                        f"re-pick:\n{pairs}")
+                    self._send_alert(
+                        f":warning: Newsletter {self.date_str} re-selects "
+                        f"{len(republish_flags)} previously published "
+                        f"stor{'y' if len(republish_flags) == 1 else 'ies'} "
+                        f"after a forced re-pick:\n{pairs}"
+                    )
                 break
 
             output_preview = (pass1_output or "")[:200].replace("\n", "\\n")
