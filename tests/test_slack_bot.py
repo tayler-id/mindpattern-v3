@@ -1578,3 +1578,49 @@ class TestEditingAPlatformWhoseDraftFailed:
             allow_new=True,
         )
         assert parse_platform_approval("linkedin", list(drafts.keys())) == ["linkedin"]
+
+
+class TestWaitForReplyConsumesMessages:
+    """wait_for_reply() must never hand back a reply it already returned.
+
+    2026-08-18 incident: every call rebuilt its seen-set from scratch, so the
+    first poll always returned the OLDEST owner reply in the thread. One
+    unparseable reply put the approval loop into permanent "I didn't catch
+    that" spam, and later legitimate `edit <platform>:` replies were never
+    read. Existing tests mocked wait_for_reply itself, which hid this.
+    """
+
+    def _handler(self, thread_batches):
+        from slack_bot.handlers.base import BaseHandler
+
+        handler = BaseHandler(MagicMock(), "C123", "UOWNER")
+        batches = iter(thread_batches)
+        last = thread_batches[-1]
+        handler.get_thread_replies = lambda ts: next(batches, last)
+        return handler
+
+    def test_second_call_returns_second_reply_not_first_again(self):
+        first = {"ts": "1.001", "user": "UOWNER", "text": "gibberish reply"}
+        second = {"ts": "1.002", "user": "UOWNER",
+                  "text": "edit linkedin: better text"}
+        handler = self._handler([[first], [first, second]])
+
+        assert handler.wait_for_reply("1.0", poll_interval=0) == "gibberish reply"
+        assert (
+            handler.wait_for_reply("1.0", poll_interval=0)
+            == "edit linkedin: better text"
+        )
+
+    def test_all_replies_consumed_times_out_instead_of_reprocessing(self):
+        only = {"ts": "1.001", "user": "UOWNER", "text": "gibberish reply"}
+        handler = self._handler([[only]])
+
+        assert handler.wait_for_reply("1.0", poll_interval=0) == "gibberish reply"
+        assert handler.wait_for_reply("1.0", timeout=0, poll_interval=0) is None
+
+    def test_non_owner_replies_are_never_returned(self):
+        other = {"ts": "1.001", "user": "USOMEONE", "text": "not the owner"}
+        owner = {"ts": "1.002", "user": "UOWNER", "text": "ALL"}
+        handler = self._handler([[other, owner]])
+
+        assert handler.wait_for_reply("1.0", poll_interval=0) == "ALL"
