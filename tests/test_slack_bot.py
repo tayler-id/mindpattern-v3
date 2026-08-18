@@ -1624,3 +1624,150 @@ class TestWaitForReplyConsumesMessages:
         handler = self._handler([[other, owner]])
 
         assert handler.wait_for_reply("1.0", poll_interval=0) == "ALL"
+
+
+class TestParseDraftRevision:
+    """`revise platform: notes` replies parse like edits but carry notes."""
+
+    def test_valid_revision(self):
+        from slack_bot.drafts import parse_draft_revision
+
+        revision, err = parse_draft_revision(
+            "revise linkedin: drop the vendor bit, mention the books",
+            ["bluesky", "linkedin"],
+        )
+        assert err is None
+        assert revision.platform == "linkedin"
+        assert revision.instructions == "drop the vendor bit, mention the books"
+
+    def test_case_insensitive_and_multiline(self):
+        from slack_bot.drafts import parse_draft_revision
+
+        revision, err = parse_draft_revision(
+            "REVISE Bluesky: shorter.\nAnd friendlier.", ["bluesky"],
+        )
+        assert err is None
+        assert revision.platform == "bluesky"
+        assert "friendlier" in revision.instructions
+
+    def test_unknown_platform_errors(self):
+        from slack_bot.drafts import parse_draft_revision
+
+        revision, err = parse_draft_revision("revise twitter: x", ["bluesky"])
+        assert revision is None
+        assert "Unknown platform" in err
+
+    def test_empty_notes_error_and_non_revise_passthrough(self):
+        from slack_bot.drafts import parse_draft_revision
+
+        revision, err = parse_draft_revision("revise bluesky:   ", ["bluesky"])
+        assert revision is None and "No revision notes" in err
+        assert parse_draft_revision("ALL", ["bluesky"]) == (None, None)
+        assert parse_draft_revision("edit bluesky: text", ["bluesky"]) == (None, None)
+
+
+class TestReviseDraft:
+    """revise_draft() runs the platform writer over draft + owner notes."""
+
+    def test_success_passes_draft_and_notes_to_writer(self):
+        from slack_bot.drafts import revise_draft
+
+        calls = {}
+
+        def runner(prompt, system_prompt_file=None):
+            calls["prompt"] = prompt
+            calls["skill"] = system_prompt_file
+            return "revised post", 0
+
+        out = revise_draft("bluesky", "old draft", "make it shorter", runner=runner)
+        assert out == "revised post"
+        assert "old draft" in calls["prompt"]
+        assert "make it shorter" in calls["prompt"]
+        assert "300 characters" in calls["prompt"]
+
+    def test_fenced_output_is_unwrapped(self):
+        from slack_bot.drafts import revise_draft
+
+        out = revise_draft(
+            "bluesky", "d", "n", runner=lambda p, system_prompt_file=None:
+            ("```\nclean text\n```", 0),
+        )
+        assert out == "clean text"
+
+    def test_failure_and_empty_output_raise(self):
+        from slack_bot.drafts import revise_draft
+
+        with pytest.raises(RuntimeError):
+            revise_draft("bluesky", "d", "n",
+                         runner=lambda p, system_prompt_file=None: ("out", 1))
+        with pytest.raises(RuntimeError):
+            revise_draft("bluesky", "d", "n",
+                         runner=lambda p, system_prompt_file=None: ("", 0))
+
+
+class TestHandleDraftRevision:
+    """The approval-loop hook: consume revise replies, keep drafts safe on failure."""
+
+    def test_success_updates_draft_and_previews(self):
+        from slack_bot import drafts as drafts_mod
+
+        handler = MagicMock()
+        drafts = {"bluesky": "old", "linkedin": "keep"}
+        with patch.object(drafts_mod, "revise_draft", return_value="new text"):
+            consumed = drafts_mod.handle_draft_revision(
+                handler, "revise bluesky: tighten it", drafts,
+                ["bluesky", "linkedin"], "1.0",
+                format_drafts=lambda d: "PREVIEW",
+            )
+        assert consumed is True
+        assert drafts == {"bluesky": "new text", "linkedin": "keep"}
+        assert "PREVIEW" in handler.reply.call_args[0][0]
+
+    def test_failure_keeps_previous_draft(self):
+        from slack_bot import drafts as drafts_mod
+
+        handler = MagicMock()
+        drafts = {"bluesky": "old"}
+        with patch.object(drafts_mod, "revise_draft",
+                          side_effect=RuntimeError("writer died")):
+            consumed = drafts_mod.handle_draft_revision(
+                handler, "revise bluesky: tighten", drafts, ["bluesky"], "1.0",
+                format_drafts=lambda d: "PREVIEW",
+            )
+        assert consumed is True
+        assert drafts == {"bluesky": "old"}
+        assert "unchanged" in handler.reply.call_args[0][0]
+
+    def test_missing_draft_hints_edit(self):
+        from slack_bot.drafts import handle_draft_revision
+
+        handler = MagicMock()
+        consumed = handle_draft_revision(
+            handler, "revise linkedin: fix", {"bluesky": "x"},
+            ["bluesky", "linkedin"], "1.0", format_drafts=lambda d: "",
+        )
+        assert consumed is True
+        assert "edit linkedin:" in handler.reply.call_args[0][0]
+
+    def test_clears_policy_errors_on_success(self):
+        from slack_bot import drafts as drafts_mod
+
+        handler = MagicMock()
+        policy_errors = {"bluesky": ["too long"]}
+        with patch.object(drafts_mod, "revise_draft", return_value="new"):
+            drafts_mod.handle_draft_revision(
+                handler, "revise bluesky: shorten", {"bluesky": "old"},
+                ["bluesky"], "1.0",
+                format_drafts=lambda d: "", policy_errors=policy_errors,
+            )
+        assert policy_errors["bluesky"] == []
+
+    def test_non_revise_reply_not_consumed(self):
+        from slack_bot.drafts import handle_draft_revision
+
+        handler = MagicMock()
+        assert handle_draft_revision(
+            handler, "ALL", {"bluesky": "x"}, ["bluesky"], "1.0",
+            format_drafts=lambda d: "",
+        ) is False
+        handler.reply.assert_not_called()
