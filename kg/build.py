@@ -215,7 +215,10 @@ def _run_one_batch(
     if process.returncode != 0 or process.timed_out:
         logger.warning(
             "kg batch failed rc=%s timed_out=%s err=%s",
-            process.returncode, process.timed_out, (process.error or process.stderr or "")[:200],
+            process.returncode, process.timed_out,
+            # The claude CLI reports usage-limit and auth errors on stdout
+            # with an empty stderr; log both so failed days are diagnosable.
+            (process.error or process.stderr or process.stdout or "")[:200],
         )
         return {}
     validated: dict[int, dict[str, Any]] = {}
