@@ -33,6 +33,14 @@ _TOP_STORY_RE = re.compile(r"^###\s*\d+\.\s*(.+?)\s*$")
 _SECTION_ITEM_RE = re.compile(r"^\*\*(.+?)\*\*")
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$")
 _DATE_FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
+_MD_LINK_RE = re.compile(r"\((https?://[^)\s]+)\)")
+
+# A URL cited in this many distinct past issues is a standing tracker page
+# (a changelog, a docs page) whose reappearance is release tracking, not a
+# re-reported story. 2026-08-18 calibration: the Claude Code changelog ran in
+# 11 issues in 30 days by design, while genuinely re-reported repos (caveman,
+# ai-memory, rakazo) had 1-3 prior appearances.
+TRACKER_URL_THRESHOLD = 5
 
 # Recurring-by-design sections whose entries repeat legitimately.
 _SKIP_SECTIONS = {
@@ -84,22 +92,29 @@ def published_stories(
 
 
 def _extract_stories(markdown: str, date: str) -> list[dict]:
-    stories = []
+    stories: list[dict] = []
     section = ""
+    current: dict | None = None
     for line in markdown.splitlines():
         h2 = _H2_RE.match(line)
         if h2:
             section = h2.group(1).strip().lower()
+            current = None
             continue
         if section in _SKIP_SECTIONS:
             continue
         top = _TOP_STORY_RE.match(line)
-        if top:
-            stories.append({"date": date, "title": top.group(1), "kind": "top"})
-            continue
         item = _SECTION_ITEM_RE.match(line)
-        if item:
-            stories.append({"date": date, "title": item.group(1), "kind": "item"})
+        if top or item:
+            current = {
+                "date": date,
+                "title": (top or item).group(1),
+                "kind": "top" if top else "item",
+                "urls": [],
+            }
+            stories.append(current)
+        if current is not None:
+            current["urls"].extend(_MD_LINK_RE.findall(line))
     return stories
 
 
@@ -122,6 +137,46 @@ def format_published_block(stories: list[dict], max_items: int = 500) -> str:
         "previously ran. Re-reporting the same event with new wording is "
         "forbidden.\n\n" + "\n".join(lines)
     )
+
+
+def flag_republished_urls(
+    newsletter_markdown: str,
+    stories: list[dict],
+    *,
+    date: str = "today",
+    tracker_threshold: int = TRACKER_URL_THRESHOLD,
+) -> list[dict]:
+    """Which stories in a written issue cite a source URL a past issue cited?
+
+    Catches the re-report class that survives title matching: same repo or
+    article re-covered with fresh wording (2026-08-18: caveman's 4th
+    appearance, ai-memory, rakazo — all URL-identical, title-distinct).
+    URLs cited by `tracker_threshold`+ distinct past issues are standing
+    tracker pages and exempt. One flag per story, on its first matching URL.
+    """
+    history_by_url: dict[str, list[dict]] = {}
+    for story in stories:
+        for url in story.get("urls", []):
+            history_by_url.setdefault(url.rstrip("/"), []).append(story)
+
+    flags = []
+    for story in _extract_stories(newsletter_markdown, date):
+        for url in dict.fromkeys(story.get("urls", [])):
+            prior = history_by_url.get(url.rstrip("/"))
+            if not prior:
+                continue
+            prior_dates = sorted({p["date"] for p in prior})
+            if len(prior_dates) >= tracker_threshold:
+                continue
+            flags.append({
+                "title": story["title"],
+                "kind": story["kind"],
+                "url": url.rstrip("/"),
+                "prior_dates": prior_dates,
+                "prior_title": prior[-1]["title"],
+            })
+            break
+    return flags
 
 
 def flag_republished(

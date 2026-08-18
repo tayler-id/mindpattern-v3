@@ -24,13 +24,13 @@ Body paragraph.
 
 ## Security
 
-**A llama.cpp build shipped today fixes an out-of-bounds read on LoRA adapters.** Rest of the item.
+**A llama.cpp build shipped today fixes an out-of-bounds read on LoRA adapters.** Rest of the item ([llama.cpp](https://github.com/ggml-org/llama.cpp/releases/tag/b10451)).
 
 Plain paragraph without a bold lead is not a story.
 
 ## Skills of the Day
 
-**This bold lead must be skipped.** Recurring-by-design section.
+**This bold lead must be skipped.** Recurring-by-design section ([skip](https://example.com/skip-me)).
 
 ## How This Newsletter Learns From You
 
@@ -154,3 +154,67 @@ def test_selected_titles_from_pass1_variants():
     assert _selected_titles_from_pass1("no json here") == []
     assert _selected_titles_from_pass1('{"story_title": "not a list"}') == []
     assert _selected_titles_from_pass1("[not, valid, json") == []
+
+
+class TestFlagRepublishedUrls:
+    """URL tripwire: same source cited again = same story reworded."""
+
+    def _history(self, dates, url="https://github.com/owner/repo"):
+        return [
+            {"date": d, "title": f"story on {d}", "kind": "item", "urls": [url]}
+            for d in dates
+        ]
+
+    def test_story_extraction_captures_urls_per_story(self, tmp_path):
+        _write_issue(tmp_path, "2026-08-16")
+        stories = published_stories(tmp_path, "2026-08-17", days=14)
+        by_title = {s["title"][:12]: s for s in stories}
+        assert (
+            "https://github.com/ggml-org/llama.cpp/releases/tag/b10451"
+            in by_title["A llama.cpp "]["urls"]
+        )
+        # Skipped sections contribute no stories and no URLs
+        assert all(
+            "skip-me" not in u for s in stories for u in s["urls"]
+        )
+
+    def test_repeat_url_flags_with_prior_dates(self):
+        from orchestrator.published_history import flag_republished_urls
+
+        issue = (
+            "## Hot Projects\n\n"
+            "**repo hit 99k stars with fresh wording.** Body "
+            "([repo](https://github.com/owner/repo/)).\n"
+        )
+        flags = flag_republished_urls(issue, self._history(["2026-08-09", "2026-08-17"]))
+        assert len(flags) == 1
+        assert flags[0]["prior_dates"] == ["2026-08-09", "2026-08-17"]
+        assert flags[0]["url"] == "https://github.com/owner/repo"
+
+    def test_tracker_url_is_exempt(self):
+        from orchestrator.published_history import flag_republished_urls
+
+        issue = (
+            "## Tools\n\n"
+            "**New release notes landed.** Body "
+            "([changelog](https://docs.example.com/changelog)).\n"
+        )
+        history = self._history(
+            ["2026-08-01", "2026-08-03", "2026-08-05", "2026-08-08", "2026-08-11"],
+            url="https://docs.example.com/changelog",
+        )
+        assert flag_republished_urls(issue, history) == []
+
+    def test_fresh_url_not_flagged_and_one_flag_per_story(self):
+        from orchestrator.published_history import flag_republished_urls
+
+        issue = (
+            "## Tools\n\n"
+            "**Story citing two repeats.** Body "
+            "([a](https://github.com/owner/repo)) and "
+            "([b](https://github.com/owner/repo)).\n"
+            "**Brand new story.** Body ([new](https://example.com/new)).\n"
+        )
+        flags = flag_republished_urls(issue, self._history(["2026-08-09"]))
+        assert len(flags) == 1
+        assert flags[0]["title"] == "Story citing two repeats."

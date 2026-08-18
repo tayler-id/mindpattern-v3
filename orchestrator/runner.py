@@ -1394,8 +1394,12 @@ class ResearchPipeline:
         published_block = ""
         published_stories = []
         try:
+            # 21 days: the longest observed re-report gap that word overlap
+            # could have caught was 17 days (the MCP 2026-07-28 spec re-led
+            # an issue on 08-14).
             published_stories = published_history.published_stories(
                 PROJECT_ROOT / "reports" / self.user_id, self.date_str,
+                days=21,
             )
             published_block = published_history.format_published_block(
                 published_stories)
@@ -1620,7 +1624,17 @@ class ResearchPipeline:
             f"{fallback_mode_text}"
             f"## Story Selection\n{pass1_output}\n\n"
             f"{narrative_arcs_context}\n\n"
-            f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
+            + (
+                "## Section-Item Dedup\n"
+                "The Already Published list below binds every section item, "
+                "not just the Top 5. Do not write an item that re-reports a "
+                "listed story — including a repo already covered whose star "
+                "count merely moved — unless there is a genuinely new "
+                "development, and then name it and the prior run date.\n\n"
+                f"{published_block}\n\n"
+                if published_block else ""
+            )
+            + f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"{failure_text}"
         )
@@ -1733,7 +1747,9 @@ class ResearchPipeline:
         # prompt: on 2026-07-25/26/27 the same model, prompt and voice guide
         # emitted 42, 2 and 52 em-dashes, so prompting alone cannot hold it.
         self.newsletter_text, prose_report = prose_sanitize(self.newsletter_text)
-        if prose_report["replaced"] or prose_report["remaining_over_budget"]:
+        if (prose_report["replaced"]
+                or prose_report["length_claims_corrected"]
+                or prose_report["remaining_over_budget"]):
             log_event(self.traces_conn, self.traces_run_id,
                       "prose_gate", json.dumps(prose_report))
 
@@ -1747,6 +1763,35 @@ class ResearchPipeline:
 
         word_count = len(self.newsletter_text.split())
         logger.info(f"Newsletter written: {word_count} words → {report_path}")
+
+        # URL tripwire: stories citing a source a past issue already cited
+        # (30 days, standing tracker pages exempt). Visibility only — the
+        # issue is published as written, but a repeat is never silent.
+        try:
+            url_history = published_history.published_stories(
+                report_dir, self.date_str, days=30,
+            )
+            url_flags = published_history.flag_republished_urls(
+                self.newsletter_text, url_history, date=self.date_str,
+            )
+            if url_flags:
+                log_event(self.traces_conn, self.traces_run_id,
+                          "newsletter_republish_urls", json.dumps(url_flags))
+                lines = "\n".join(
+                    f"- '{f['title'][:70]}' cites {f['url'][:60]} "
+                    f"(ran: {', '.join(f['prior_dates'])})"
+                    for f in url_flags[:8]
+                )
+                logger.warning(
+                    f"{len(url_flags)} stories cite already-published "
+                    f"sources:\n{lines}")
+                self._send_alert(
+                    f":warning: Newsletter {self.date_str}: {len(url_flags)} "
+                    f"stor{'y' if len(url_flags) == 1 else 'ies'} cite "
+                    f"sources a past issue already covered:\n{lines}"
+                )
+        except Exception as e:
+            logger.warning(f"URL republish check failed (non-critical): {e}")
 
         # Evaluate newsletter quality with NewsletterEvaluator
         eval_scores = {}
