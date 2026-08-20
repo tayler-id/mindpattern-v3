@@ -126,6 +126,47 @@ def _split_protected(markdown: str) -> list[tuple[str, bool]]:
     return segments
 
 
+# Self-referential length claims: "the next 4,000 words", "these 900 words".
+# The model cannot know its own final length while writing, so the number is
+# invented — 2026-08-04 promised "the next 4,000 words" above an 8,100-word
+# issue, and the site surfaces that lede as the homepage preview. Same rule as
+# the em-dash budget: a fact a regex can check is corrected here, not asked for
+# in the prompt.
+_LENGTH_CLAIM = re.compile(
+    r"(?P<lead>\b(?:next|these|this|following|remaining)\s+)"
+    r"(?P<count>\d{1,3}(?:,\d{3})+|\d{3,6})"
+    r"(?P<tail>[\s-]+words?\b)",
+    re.IGNORECASE,
+)
+
+
+def _round_words(count: int) -> str:
+    """Round to the nearest 500 so the claim reads as prose, not telemetry."""
+    if count < 500:
+        return str(max(count, 0))
+    return f"{int(round(count / 500.0) * 500):,}"
+
+
+def correct_length_claims(markdown: str) -> tuple[str, int]:
+    """Rewrite self-referential word-count claims to the real length.
+
+    Returns (corrected_markdown, number_of_claims_rewritten). Only claims that
+    point at this document ("the next N words") are touched; a story quoting
+    someone else's "4,000 words" has no such lead-in and is left alone.
+    """
+    actual = _round_words(len(markdown.split()))
+    corrected = 0
+
+    def _fix(match: re.Match) -> str:
+        nonlocal corrected
+        if match.group("count").replace(",", "") == actual.replace(",", ""):
+            return match.group(0)
+        corrected += 1
+        return f"{match.group('lead')}{actual}{match.group('tail')}"
+
+    return _LENGTH_CLAIM.sub(_fix, markdown), corrected
+
+
 def scan(markdown: str) -> dict:
     """Measure prose markers without changing anything.
 
@@ -176,6 +217,7 @@ def sanitize(markdown: str) -> tuple[str, dict]:
         out_lines.append("".join(rebuilt))
 
     clean = "\n".join(out_lines)
+    clean, length_claims = correct_length_claims(clean)
     after = scan(clean)
 
     report = {
@@ -183,6 +225,7 @@ def sanitize(markdown: str) -> tuple[str, dict]:
         "em_dashes_before": before["em_dashes"],
         "em_dashes_after": after["em_dashes"],
         "replaced": replaced,
+        "length_claims_corrected": length_claims,
         "remaining_over_budget": after["em_dashes"] > EM_DASH_BUDGET,
         "budget": EM_DASH_BUDGET,
         "per_500w_before": before["em_dashes_per_500w"],
