@@ -137,6 +137,44 @@ def _selected_titles_from_pass1(pass1_output: str) -> list[str]:
     return titles
 
 
+def _on_battery_power(pmset_output: str | None = None) -> bool:
+    """True when macOS reports the machine is drawing from battery."""
+    if pmset_output is None:
+        if sys.platform != "darwin":
+            return False
+        proc = subprocess.run(
+            ["pmset", "-g", "batt"], capture_output=True, text=True, timeout=10,
+        )
+        pmset_output = proc.stdout
+    return "Battery Power" in (pmset_output or "")
+
+
+def _failed_agent_names(agent_results: list) -> list[str]:
+    """Agents whose run produced an error and no findings — worth one retry.
+
+    2026-08-19: the Mac slept mid-run, 12 of 13 agents died mid-response, and
+    the day's issue was written from 12 findings because nothing re-dispatched
+    them even though the machine was awake again by synthesis time.
+    """
+    return [
+        r.agent_name for r in agent_results
+        if r.error and not r.findings
+    ]
+
+
+def _merge_retry_results(original: list, retried: list) -> list:
+    """Replace a failed result with its retry when the retry found anything."""
+    by_name = {r.agent_name: r for r in retried}
+    merged = []
+    for result in original:
+        retry = by_name.get(result.agent_name)
+        if retry is not None and retry.findings:
+            merged.append(retry)
+        else:
+            merged.append(result)
+    return merged
+
+
 def _assess_agent_coverage(agent_results: list) -> dict:
     """Summarize research agent coverage before storage/dedup side effects."""
     target = max(13, len(agent_results))
@@ -853,6 +891,21 @@ class ResearchPipeline:
 
     def _phase_init(self) -> dict:
         """Phase 1: Init (Python only, no LLM)."""
+        # On battery, caffeinate -s is inert and a closed lid sleeps the Mac
+        # regardless of assertions. 2026-08-19: the machine slept mid-run and
+        # 12 of 13 research agents died mid-response. Software cannot prevent
+        # that sleep — but it can say so loudly at the moment it still helps.
+        try:
+            if _on_battery_power():
+                logger.warning("Pipeline starting on battery power")
+                self._send_alert(
+                    ":battery: The pipeline is starting on BATTERY power. "
+                    "If the lid closes or the Mac sleeps, research agents "
+                    "will die mid-response (2026-08-19 incident). Plug it in."
+                )
+        except Exception as e:
+            logger.debug(f"Battery check failed: {e}")
+
         prefs = memory.list_preferences(self.db, email=self.user_config.get("email"), effective=True)
         logger.info(f"Loaded {len(prefs)} preferences")
 
@@ -1116,6 +1169,44 @@ class ResearchPipeline:
             max_workers=6,
             preflight_data=preflight_data,
         )
+
+        # One corrective re-dispatch for agents that errored with nothing to
+        # show. Transient causes (a sleep window, a server error burst) have
+        # usually passed by the time the first wave finishes.
+        failed_agents = _failed_agent_names(self.agent_results)
+        if failed_agents:
+            logger.warning(
+                f"Re-dispatching {len(failed_agents)} failed agents once: "
+                f"{', '.join(sorted(failed_agents))}"
+            )
+            log_event(self.traces_conn, self.traces_run_id,
+                      "research_agent_retry",
+                      json.dumps({"agents": sorted(failed_agents)}))
+            try:
+                retry_results = agent_dispatch.dispatch_research_agents(
+                    user_id=self.user_id,
+                    date_str=self.date_str,
+                    context_fn=context_fn,
+                    trends=self.trends,
+                    max_workers=6,
+                    preflight_data=preflight_data,
+                    only=set(failed_agents),
+                )
+                self.agent_results = _merge_retry_results(
+                    self.agent_results, retry_results)
+                recovered = [
+                    r.agent_name for r in self.agent_results
+                    if r.agent_name in failed_agents and r.findings
+                ]
+                logger.info(
+                    f"Agent retry recovered {len(recovered)}/"
+                    f"{len(failed_agents)}: {', '.join(sorted(recovered))}"
+                )
+                log_event(self.traces_conn, self.traces_run_id,
+                          "research_agent_retry_result",
+                          json.dumps({"recovered": sorted(recovered)}))
+            except Exception as e:
+                logger.warning(f"Agent retry dispatch failed (non-critical): {e}")
 
         agent_coverage = _assess_agent_coverage(self.agent_results)
         self.research_quality = {"agent_coverage": agent_coverage}
@@ -1615,8 +1706,15 @@ class ResearchPipeline:
             "OUTPUT CONTRACT: Your stdout is published verbatim to subscribers "
             "as today's newsletter. Output ONLY finished newsletter markdown, "
             "beginning with the `#` title line. Never mention tools, skills, "
-            "workflows, approvals, sessions, or your own process. Do not "
-            "invoke any tools — everything you need is in this prompt.\n\n"
+            "workflows, approvals, sessions, or your own process. That "
+            "includes editorial mechanics: never state how many findings, "
+            "agents, or sources the pipeline had, never mention story "
+            "selection, dedup, or coverage constraints, and never apologize "
+            "for or explain the shape of the issue (2026-08-19: a degraded "
+            "run opened by telling subscribers the selection pass could only "
+            "clear one story). Write the best issue the material supports and "
+            "let it stand without commentary. Do not invoke any tools — "
+            "everything you need is in this prompt.\n\n"
             f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
             f"{soul_text}"
             f"{voice_text}"
@@ -1630,7 +1728,9 @@ class ResearchPipeline:
                 "not just the Top 5. Do not write an item that re-reports a "
                 "listed story — including a repo already covered whose star "
                 "count merely moved — unless there is a genuinely new "
-                "development, and then name it and the prior run date.\n\n"
+                "development, and then name it and the prior run date. This "
+                "list is working material: never mention it, dedup, or prior "
+                "coverage constraints in the newsletter itself.\n\n"
                 f"{published_block}\n\n"
                 if published_block else ""
             )
@@ -1747,9 +1847,7 @@ class ResearchPipeline:
         # prompt: on 2026-07-25/26/27 the same model, prompt and voice guide
         # emitted 42, 2 and 52 em-dashes, so prompting alone cannot hold it.
         self.newsletter_text, prose_report = prose_sanitize(self.newsletter_text)
-        if (prose_report["replaced"]
-                or prose_report["length_claims_corrected"]
-                or prose_report["remaining_over_budget"]):
+        if prose_report["replaced"] or prose_report["remaining_over_budget"]:
             log_event(self.traces_conn, self.traces_run_id,
                       "prose_gate", json.dumps(prose_report))
 

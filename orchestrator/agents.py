@@ -937,6 +937,7 @@ def dispatch_research_agents(
     max_workers: int = 6,
     vertical: str = "ai-tech",
     preflight_data: dict | None = None,
+    only: set[str] | None = None,
 ) -> list[AgentResult]:
     """Dispatch all research agents in parallel via concurrent.futures.
 
@@ -947,11 +948,15 @@ def dispatch_research_agents(
         trends: Trending topics from Phase 2.
         max_workers: Max parallel agents.
         vertical: Vertical config to use.
+        only: Restrict dispatch to these agent names (corrective re-dispatch
+            of agents that failed the first pass). None = all agents.
 
     Returns:
         List of AgentResult, one per agent.
     """
     agents, agents_dir = get_agent_list(user_id, vertical)
+    if only is not None:
+        agents = [a for a in agents if a in only]
     soul_path = PROJECT_ROOT / "verticals" / vertical / "SOUL.md"
 
     logger.info(f"Dispatching {len(agents)} research agents (max {max_workers} parallel)")
