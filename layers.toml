@@ -1,0 +1,37 @@
+# Layer manifest for mindpattern-v3 — consumed by `python3 -m harness.layers check`
+# and, later, by the abstraction-police routine.
+#
+# Philosophy: this is a RATCHET, not an aspiration. [rules] blesses the
+# cross-package imports that exist today, so the checker stays green on the
+# current tree and flags only NEW edges. Tightening a rule is a deliberate,
+# reviewed edit to this file. The [container] section is the exception: it
+# encodes a hard invariant (harness/ never ships to Fly) that local test
+# runs structurally cannot catch, because locally harness/ is always present.
+
+[container]
+# Packages that run in the Fly image. They must not import an excluded
+# package at module level — a deferred (function-local) import is allowed
+# only with an [[allow.deferred]] entry below.
+packages = ["dashboard", "slack_bot"]
+excluded = ["harness"]
+
+[rules]
+# package = internal packages it may import (any level). "tests" is exempt.
+core = []
+hooks = []
+memory = ["core"]
+policies = ["memory"]
+preflight = ["memory"]
+mcp = ["memory"]
+kg = ["core", "memory", "orchestrator"]
+knowledge = ["memory", "orchestrator"]
+orchestrator = ["core", "memory", "kg", "policies", "preflight", "social", "dashboard"]
+social = ["core", "memory", "orchestrator", "policies"]
+dashboard = ["memory", "orchestrator", "slack_bot", "social"]
+slack_bot = ["core", "memory", "orchestrator", "policies", "social"]
+harness = []
+
+[[allow.deferred]]
+file = "slack_bot/handlers/harness.py"
+package = "harness"
+reason = "Owner harness commands. Deliberate function-local imports with a documented run-on-the-Mac fallback; the Fly container has no harness/."

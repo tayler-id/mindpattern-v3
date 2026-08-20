@@ -7,6 +7,7 @@ Ported from v2 with enhancements:
 """
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -295,6 +296,9 @@ def send_newsletter(
     Sends BOTH HTML and plain text versions. Uses retry logic with
     exponential backoff (max 3 attempts).
 
+    Guarded: refuses to send while an autonomous-routine sandbox is
+    active (no harness import — this module ships in the container).
+
     Args:
         report_path: Path to the markdown report file.
         user_config: User configuration dict with email, newsletter_title, reply_to.
@@ -311,6 +315,11 @@ def send_newsletter(
 
     Returns dict with keys: success, resend_id, error, skipped.
     """
+    if os.environ.get("MP_SANDBOX") == "1":
+        raise RuntimeError(
+            "MP_SANDBOX=1: refusing real Resend send (autonomous sandbox active)"
+        )
+
     start = time.monotonic()
     agent_run_id = _trace_start(traces_conn, pipeline_run_id, "newsletter-sending")
 

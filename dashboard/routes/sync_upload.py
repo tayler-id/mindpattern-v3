@@ -40,6 +40,28 @@ def _member_allowed(name: str, user: str) -> bool:
     return normalized.startswith((f"{user}/", f"reports/{user}/"))
 
 
+def _short_extractions(members: list[tarfile.TarInfo], root: Path) -> list[str]:
+    """Names of regular files whose on-disk size is short of the archive's.
+
+    tar reporting success is not proof the bytes landed: a killed or
+    half-flushed unpack leaves files truncated (usually to zero) while the
+    call still returns cleanly. Comparing each member against its extracted
+    size is the only check that catches it before the caller is told the
+    sync was clean.
+    """
+    short: list[str] = []
+    for member in members:
+        if not member.isreg():
+            continue
+        target = root / member.name.lstrip("./")
+        try:
+            if target.stat().st_size != member.size:
+                short.append(member.name)
+        except OSError:
+            short.append(member.name)
+    return short
+
+
 @router.post("/api/sync/bundle")
 async def receive_sync_bundle(
     request: Request,
@@ -78,7 +100,8 @@ async def receive_sync_bundle(
 
         extracted = 0
         with tarfile.open(tmp_path, "r:gz") as bundle:
-            for member in bundle.getmembers():
+            members = bundle.getmembers()
+            for member in members:
                 if not _member_allowed(member.name, user):
                     return JSONResponse(status_code=400, content={
                         "error": f"member outside allowed layout: {member.name[:80]}",
@@ -91,11 +114,30 @@ async def receive_sync_bundle(
             bundle.extractall(root, filter="data")
             extracted = len(bundle.getnames())
 
+        # Push the extracted tree to stable storage BEFORE reporting success.
+        # The pipeline restarts this machine ~20s after reading the response,
+        # and a restart landing on unflushed page cache leaves every file the
+        # kernel had not written back at zero bytes. That is how 2026-08-04
+        # shipped 65 empty story artifacts: extraction genuinely succeeded,
+        # the restart ate it, and the public API served the empty files as a
+        # missing day while the run still recorded a clean sync.
+        os.sync()
+
+        short = _short_extractions(members, root)
+        if short:
+            return JSONResponse(status_code=500, content={
+                "error": "extracted files are short of the bundle",
+                "short_count": len(short),
+                "short_files": short[:10],
+                "extracted_files": extracted,
+            })
+
         return {
             "status": "ok",
             "received_bytes": received,
             "sha256": digest.hexdigest(),
             "extracted_files": extracted,
+            "short_count": 0,
         }
     except tarfile.TarError as exc:
         return JSONResponse(status_code=400, content={"error": f"bad bundle: {exc}"})

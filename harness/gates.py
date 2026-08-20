@@ -46,10 +46,16 @@ def _load_config() -> dict:
     return {}
 
 
-def _run(cmd: str, cwd: str | None = None) -> tuple[str, int]:
+def _run(
+    cmd: str,
+    cwd: str | None = None,
+    *,
+    timeout: int = 120,
+    env: dict | None = None,
+) -> tuple[str, int]:
     result = subprocess.run(
         cmd, shell=True, capture_output=True, text=True,
-        timeout=120, cwd=cwd or str(PROJECT_ROOT),
+        timeout=timeout, cwd=cwd or str(PROJECT_ROOT), env=env,
     )
     return result.stdout + result.stderr, result.returncode
 
@@ -243,6 +249,153 @@ def gate_diff_scoped(ticket_path: str, branch: str, cwd: str | None = None) -> d
     return {"pass": True, "allowed": list(allowed), "changed": list(changed)}
 
 
+# ── Verify gates (autonomous routines) ───────────────────────────────
+#
+# The /verify contract every routine PR must satisfy: the repro command
+# FAILS on the pre-fix tree and PASSES on the post-fix tree, both runs
+# sandboxed. A fix whose repro already passed on the base fixed nothing
+# a reviewer can see; one that still fails post-fix fixed nothing at all.
+
+def _verify_env() -> dict:
+    """Environment for repro runs: current env plus the sandbox guards,
+    so a repro can never fire a real send/post/sync while verifying."""
+    import os
+
+    from harness.sandbox import GUARD_ENV
+
+    env = dict(os.environ)
+    env.update(GUARD_ENV)
+    return env
+
+
+# A git ref a routine may hand us: branch/tag/sha path chars only. Anything
+# else is rejected before it reaches a command line (audit I-18: agent-
+# influenced strings must not be able to alter command structure).
+_SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+def _run_argv(
+    argv: list[str],
+    cwd: str | None = None,
+    *,
+    timeout: int = 120,
+) -> tuple[str, int]:
+    """Run a command as an argv list — no shell, no interpolation."""
+    result = subprocess.run(
+        argv, capture_output=True, text=True,
+        timeout=timeout, cwd=cwd or str(PROJECT_ROOT),
+    )
+    return result.stdout + result.stderr, result.returncode
+
+
+def gate_repro_flips(
+    repro_cmd: str,
+    *,
+    base_ref: str = "main",
+    cwd: str | None = None,
+    timeout: int = 300,
+) -> dict:
+    """Run the repro at base_ref (must FAIL) and in the tree (must PASS).
+
+    ``repro_cmd`` is a shell command by contract (routines hand us pytest
+    invocations and the like). ``base_ref`` is NOT: it is validated and the
+    git plumbing runs as argv so a hostile ref cannot become shell.
+    """
+    import tempfile
+
+    if not _SAFE_REF_RE.match(base_ref):
+        return {
+            "pass": False,
+            "failures": [f"base_ref rejected (unsafe characters): {base_ref!r}"],
+        }
+
+    root = cwd or str(PROJECT_ROOT)
+    env = _verify_env()
+
+    with tempfile.TemporaryDirectory(prefix="mp-verify-") as tmp:
+        pre_tree = str(Path(tmp) / "pre")
+        out, code = _run_argv(
+            ["git", "worktree", "add", "--detach", pre_tree, base_ref], cwd=root
+        )
+        if code != 0:
+            return {
+                "pass": False,
+                "failures": [f"cannot create pre-fix worktree at {base_ref}: {out[-300:]}"],
+            }
+        try:
+            pre_output, pre_exit = _run(repro_cmd, cwd=pre_tree, timeout=timeout, env=env)
+        finally:
+            _run_argv(["git", "worktree", "remove", "--force", pre_tree], cwd=root)
+
+    post_output, post_exit = _run(repro_cmd, cwd=root, timeout=timeout, env=env)
+
+    failures = []
+    if pre_exit == 0:
+        failures.append(
+            f"repro PASSED on pre-fix tree ({base_ref}) — it does not "
+            "demonstrate the bug"
+        )
+    if post_exit != 0:
+        failures.append("repro FAILED on post-fix tree — the fix does not fix it")
+
+    return {
+        "pass": not failures,
+        "failures": failures,
+        "pre_exit": pre_exit,
+        "post_exit": post_exit,
+        "pre_output": pre_output[-1000:],
+        "post_output": post_output[-1000:],
+    }
+
+
+def format_truth_table(rows: list[dict]) -> str:
+    """Render the PR truth table (harness contract, §6 of the routines plan).
+
+    Each row: {"input": ..., "expected": ..., "pre": ..., "post": ...}
+    """
+    if not rows:
+        return ""
+    lines = [
+        "| # | Input / state | Expected | Pre-fix | Post-fix |",
+        "|---|---|---|---|---|",
+    ]
+    for i, row in enumerate(rows, 1):
+        lines.append(
+            f"| {i} | {row.get('input', '')} | {row.get('expected', '')} "
+            f"| {row.get('pre', '')} | {row.get('post', '')} |"
+        )
+    return "\n".join(lines)
+
+
+def gate_graphify_updated(cwd: str | None = None) -> dict:
+    """Deterministic: refresh the code graph after a fix (AST-only)."""
+    output, code = _run("graphify update .", cwd=cwd, timeout=300)
+    return {
+        "pass": code == 0,
+        "failures": [] if code == 0 else [f"graphify update failed: {output[-300:]}"],
+    }
+
+
+def run_verify(
+    repro_cmd: str,
+    *,
+    truth_rows: list[dict] | None = None,
+    base_ref: str = "main",
+    cwd: str | None = None,
+    graphify: bool = True,
+) -> dict:
+    """The full /verify bundle a routine PR carries."""
+    results = {}
+    results["repro"] = gate_repro_flips(repro_cmd, base_ref=base_ref, cwd=cwd)
+    results["truth_table"] = format_truth_table(truth_rows or [])
+    results["graphify"] = (
+        gate_graphify_updated(cwd=cwd) if graphify else {"pass": True, "skipped": True}
+    )
+
+    all_pass = results["repro"]["pass"] and results["graphify"]["pass"]
+    return {"pass": all_pass, "results": results}
+
+
 # ── Run all gates ────────────────────────────────────────────────────
 
 def run_pre_fix_gates(ticket_path: str) -> dict:
@@ -292,5 +445,13 @@ if __name__ == "__main__":
         branch = sys.argv[3] if len(sys.argv) > 3 else "HEAD"
         files = sys.argv[4:] if len(sys.argv) > 4 else []
         result = run_post_fix_gates(ticket, branch, files)
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if result["pass"] else 1)
+
+    elif cmd == "verify":
+        # verify "<repro command>" [base_ref] — ticket arg slot carries the command
+        repro = ticket
+        base = sys.argv[3] if len(sys.argv) > 3 else "main"
+        result = run_verify(repro, base_ref=base)
         print(json.dumps(result, indent=2))
         sys.exit(0 if result["pass"] else 1)

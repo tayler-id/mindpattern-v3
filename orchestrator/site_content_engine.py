@@ -8,6 +8,7 @@ models, network, Slack, email, social APIs, Fly, Vercel, or full daily pipeline.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from pathlib import Path
@@ -29,6 +30,8 @@ from orchestrator.site_copy_lint import copy_allowed_urls_from_refs, hard_fail_i
 from orchestrator.site_experts import run_site_expert_loop
 from orchestrator.site_writer import apply_story_copy
 from orchestrator.site_graph import CorpusGraphReadModel
+
+logger = logging.getLogger(__name__)
 
 _GENERIC_PUBLIC_TITLES = {
     "top 5 stories today",
@@ -505,7 +508,10 @@ def write_issue_stories_for_date(
     from orchestrator.site_content import build_structured_issue
 
     run_date = validate_run_date(date)
-    outcome = {"kind": "issue_story_run", "date": run_date, "written": 0, "fallback": 0, "skipped": 0}
+    outcome = {
+        "kind": "issue_story_run", "date": run_date,
+        "written": 0, "fallback": 0, "skipped": 0, "withheld": 0,
+    }
     report_path = reports_root / user / f"{run_date}.md"
     if not report_path.exists():
         outcome["skipped"] = -1
@@ -567,6 +573,18 @@ def write_issue_stories_for_date(
 
             artifact = apply_story_copy(artifact, copy)
             result = "written"
+        if story_copywriter is not None and not str(artifact.get("take") or "").strip():
+            # The writer was asked for editorial copy and did not deliver it
+            # (API drop, 300s timeout, or a copy gate that rejected both the
+            # draft and its revision). Writing the artifact anyway publishes a
+            # headline over an empty "the take" block, which is what shipped on
+            # 2026-08-04. Leaving it unwritten keeps the reader on the
+            # newsletter-backed excerpt and lets the next run retry the unit,
+            # since an existing artifact is what makes a run skip it.
+            logger.warning(
+                "issue_story_writer %s: withheld, no take after copywriting", slug
+            )
+            return "withheld"
         provenance = dict(artifact.get("provenance") or {})
         provenance["generated_by"] = "mindpattern.site_content_engine.issue_story_writer"
         artifact["provenance"] = provenance
@@ -596,7 +614,7 @@ def write_issue_stories_for_date(
             user, reports_root,
             f"- {stamp} daily-run date={run_date} "
             f"written={outcome['written']} fallback={outcome['fallback']} "
-            f"skipped={outcome['skipped']}",
+            f"skipped={outcome['skipped']} withheld={outcome['withheld']}",
         )
     except Exception:
         pass  # tracking must never fail the run

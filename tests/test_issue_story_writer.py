@@ -56,23 +56,57 @@ def test_writes_every_source_backed_unit(tmp_path):
         assert d["graph_connectors"]["source_urls"]
 
 
-def test_failed_copy_falls_back_and_stays_rewritable(tmp_path):
+def test_failed_copy_is_withheld_not_published_without_a_take(tmp_path):
+    """A writer that fails must not publish a headline over an empty take.
+
+    2026-08-04 shipped 5 such stubs: the copywriter died (API drop, 300s
+    timeout) or the copy gate rejected both draft and revision, and the
+    evidence-only artifact went live with take/dek/why_now blank.
+    """
     (tmp_path / "ramsay").mkdir()
     (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
 
     outcome = write_issue_stories_for_date(
         date="2026-07-02", user="ramsay", reports_root=tmp_path, story_copywriter=lambda p, e: None
     )
-    assert outcome["fallback"] == 3
-    files = list((tmp_path / "ramsay" / "site-stories" / "2026-07-02").glob("*.json"))
-    assert len(files) == 3
-    payload = json.loads(files[0].read_text())
-    assert not payload["provenance"].get("writer")
+    assert outcome["withheld"] == 3
+    assert outcome["fallback"] == 0
+    assert not list((tmp_path / "ramsay" / "site-stories" / "2026-07-02").glob("*.json"))
 
-    from orchestrator.site_backfill import _already_backfilled
 
-    slug = files[0].stem
-    assert not _already_backfilled(slug, "2026-07-02", user="ramsay", reports_root=tmp_path)
+def test_withheld_unit_is_retried_by_the_next_run(tmp_path):
+    """No artifact on disk is what makes the next run pick the unit back up."""
+    (tmp_path / "ramsay").mkdir()
+    (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+
+    write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path, story_copywriter=lambda p, e: None
+    )
+    recovered = write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path,
+        story_copywriter=lambda p, e: _copy(),
+    )
+    assert recovered["written"] == 3
+    assert recovered["skipped"] == 0
+    payload = json.loads(
+        next((tmp_path / "ramsay" / "site-stories" / "2026-07-02").glob("*.json")).read_text()
+    )
+    assert payload["take"].strip()
+
+
+def test_copy_without_a_take_is_withheld(tmp_path):
+    """The gate is the take itself, not merely whether the writer returned."""
+    (tmp_path / "ramsay").mkdir()
+    (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+
+    takeless = dict(_copy())
+    takeless["take"] = "   "
+    outcome = write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path,
+        story_copywriter=lambda p, e: takeless,
+    )
+    assert outcome["withheld"] == 3
+    assert not list((tmp_path / "ramsay" / "site-stories" / "2026-07-02").glob("*.json"))
 
 
 def test_rerun_skips_existing(tmp_path):

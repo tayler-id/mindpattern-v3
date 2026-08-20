@@ -50,6 +50,15 @@ def _pipeline_secret() -> str:
         return ""
 
 
+def _refuse_in_sandbox(action: str) -> None:
+    """Hard guard for autonomous-routine sandboxes. Checked via env on
+    purpose — no harness import, this module stays dependency-free."""
+    if os.environ.get("MP_SANDBOX") == "1":
+        raise RuntimeError(
+            f"MP_SANDBOX=1: refusing {action} (autonomous sandbox active)"
+        )
+
+
 def upload_bundle_http(
     bundle_path: Path,
     *,
@@ -63,6 +72,7 @@ def upload_bundle_http(
     sha256 the server verifies before extracting. Preferred over sftp since
     the 2026-07-02 tunnel truncation incident.
     """
+    _refuse_in_sandbox("HTTP bundle upload to Fly")
     import hashlib
     import http.client
     import ssl
@@ -157,6 +167,7 @@ def sync_to_fly(
     Returns:
         Dict with keys: success, bytes_uploaded, files_included, error.
     """
+    _refuse_in_sandbox("Fly sync")
     start = time.monotonic()
     # Use LOCAL date — reports are named with local date by the pipeline
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -706,6 +717,7 @@ def restart_app(app_name: str) -> dict:
     Returns:
         Dict with keys: success, error.
     """
+    _refuse_in_sandbox("Fly app restart")
     try:
         # Get machine ID
         list_result = subprocess.run(
@@ -808,6 +820,7 @@ def _fly_ssh(app_name: str, command: str, timeout: int = 60) -> dict:
 
     Returns dict with keys: success, output, error.
     """
+    _refuse_in_sandbox("Fly ssh command")
     try:
         # Wrap in sh -c so shell builtins and compound commands work.
         # Single quotes inside the command are escaped for the sh -c wrapper.
@@ -839,6 +852,7 @@ def _fly_ssh(app_name: str, command: str, timeout: int = 60) -> dict:
 
 def _fly_sftp_put(app_name: str, local_path: str, remote_path: str) -> bool:
     """Upload a single file via flyctl sftp."""
+    _refuse_in_sandbox("Fly sftp upload")
     try:
         result = subprocess.run(
             [FLYCTL, "ssh", "sftp", "shell", "-a", app_name],
