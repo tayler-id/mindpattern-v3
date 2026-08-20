@@ -29,7 +29,10 @@ logger = logging.getLogger(__name__)
 # job of the prompt-side skip-list, which shows the selector the real titles.
 REPUBLISH_SIMILARITY = 0.45
 
-_TOP_STORY_RE = re.compile(r"^###\s*\d+\.\s*(.+?)\s*$")
+# The leading "N." is optional: a writer-skill change on 2026-08-19 dropped the
+# numbering and every top story silently vanished from published history, which
+# is the one place dedup looks. Format drift must not blind the guard.
+_TOP_STORY_RE = re.compile(r"^###\s*(?:\d+\.\s*)?(.+?)\s*$")
 _SECTION_ITEM_RE = re.compile(r"^\*\*(.+?)\*\*")
 _H2_RE = re.compile(r"^##\s+(.+?)\s*$")
 _DATE_FILE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.md$")
@@ -136,6 +139,46 @@ def format_published_block(stories: list[dict], max_items: int = 500) -> str:
         "\"reason\" field must name that new development and the date it "
         "previously ran. Re-reporting the same event with new wording is "
         "forbidden.\n\n" + "\n".join(lines)
+    )
+
+
+def published_url_dates(
+    stories: list[dict],
+    *,
+    tracker_threshold: int = TRACKER_URL_THRESHOLD,
+) -> dict[str, list[str]]:
+    """Map each already-cited source URL to the dates it was published on.
+
+    Standing tracker pages (cited by `tracker_threshold`+ distinct issues) are
+    left out: a changelog reappearing is release tracking, not a repeat.
+    """
+    by_url: dict[str, set[str]] = {}
+    for story in stories:
+        for url in story.get("urls", []):
+            by_url.setdefault(url.rstrip("/"), set()).add(story["date"])
+    return {
+        url: sorted(dates)
+        for url, dates in by_url.items()
+        if len(dates) < tracker_threshold
+    }
+
+
+def covered_marker(source_url: str | None, url_dates: dict[str, list[str]]) -> str:
+    """Inline warning for a finding whose source a past issue already used.
+
+    A 500-title "already published" list in the prompt does not work: the
+    2026-08-19 writer test reproduced all seven URL-level repeats with that
+    list present. The warning has to sit on the finding the writer is reading.
+    """
+    if not source_url:
+        return ""
+    dates = url_dates.get(source_url.rstrip("/"))
+    if not dates:
+        return ""
+    return (
+        f"[ALREADY COVERED on {', '.join(dates)} — do NOT write this up again. "
+        f"Use it only if this finding contains a development the earlier "
+        f"coverage did not have, and then say what is new.] "
     )
 
 

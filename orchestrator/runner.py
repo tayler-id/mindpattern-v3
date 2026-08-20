@@ -1457,11 +1457,39 @@ class ResearchPipeline:
                       json.dumps(source_balance))
 
         # Build summaries for pass 1 — full text, not truncated (we have 1M context)
+        # Per-finding "already covered" markers, keyed on source URL against
+        # 30 days of published issues. The prompt-level list alone does not
+        # work — the 2026-08-19 writer test reproduced every URL-level repeat
+        # with that list present, because the writer will not cross-reference
+        # hundreds of titles against hundreds of findings. The warning goes on
+        # the finding itself.
+        covered_url_dates: dict[str, list[str]] = {}
+        try:
+            covered_url_dates = published_history.published_url_dates(
+                published_history.published_stories(
+                    PROJECT_ROOT / "reports" / self.user_id,
+                    self.date_str, days=30,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Covered-URL map unavailable (non-critical): {e}")
+
+        def _covered(finding: dict) -> str:
+            return published_history.covered_marker(
+                finding.get("source_url"), covered_url_dates)
+
+        marked_count = sum(1 for f in story_findings if _covered(f))
+        if marked_count:
+            logger.info(
+                f"Marked {marked_count}/{len(story_findings)} candidate "
+                f"findings as already-covered by source URL"
+            )
+
         summaries = []
         for f in story_findings:
             source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or ''
             summaries.append(
-                f"[{f['agent']}] ({f['importance']}) {f['title']}\n"
+                f"[{f['agent']}] ({f['importance']}) {_covered(f)}{f['title']}\n"
                 f"  Source: {source}\n"
                 f"  {f['summary']}"
             )
@@ -1641,7 +1669,7 @@ class ResearchPipeline:
         for f in today_findings:
             source = _format_source(f.get("source_name"), f.get("source_url"))
             full_findings.append(
-                f"### [{f['agent']}] {f['title']} ({f['importance']})\n"
+                f"### [{f['agent']}] {_covered(f)}{f['title']} ({f['importance']})\n"
                 f"Source: {source}\n{f['summary']}\n"
             )
 
@@ -1847,7 +1875,9 @@ class ResearchPipeline:
         # prompt: on 2026-07-25/26/27 the same model, prompt and voice guide
         # emitted 42, 2 and 52 em-dashes, so prompting alone cannot hold it.
         self.newsletter_text, prose_report = prose_sanitize(self.newsletter_text)
-        if prose_report["replaced"] or prose_report["remaining_over_budget"]:
+        if (prose_report["replaced"]
+                or prose_report["length_claims_corrected"]
+                or prose_report["remaining_over_budget"]):
             log_event(self.traces_conn, self.traces_run_id,
                       "prose_gate", json.dumps(prose_report))
 

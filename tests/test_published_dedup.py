@@ -218,3 +218,36 @@ class TestFlagRepublishedUrls:
         flags = flag_republished_urls(issue, self._history(["2026-08-09"]))
         assert len(flags) == 1
         assert flags[0]["title"] == "Story citing two repeats."
+
+
+class TestCoveredMarkers:
+    """Per-finding already-covered markers, keyed on source URL."""
+
+    def test_published_url_dates_excludes_trackers(self):
+        from orchestrator.published_history import published_url_dates
+
+        stories = [
+            {"date": d, "title": "t", "kind": "item",
+             "urls": ["https://docs.example.com/changelog"]}
+            for d in ("2026-08-01", "2026-08-03", "2026-08-05",
+                      "2026-08-08", "2026-08-11")
+        ] + [
+            {"date": "2026-08-11", "title": "t", "kind": "item",
+             "urls": ["https://github.com/owner/repo/"]},
+            {"date": "2026-08-16", "title": "t", "kind": "item",
+             "urls": ["https://github.com/owner/repo"]},
+        ]
+        dates = published_url_dates(stories)
+        assert "https://docs.example.com/changelog" not in dates
+        assert dates["https://github.com/owner/repo"] == ["2026-08-11", "2026-08-16"]
+
+    def test_covered_marker_text_and_absence(self):
+        from orchestrator.published_history import covered_marker
+
+        url_dates = {"https://github.com/owner/repo": ["2026-08-11", "2026-08-16"]}
+        marker = covered_marker("https://github.com/owner/repo/", url_dates)
+        assert "ALREADY COVERED on 2026-08-11, 2026-08-16" in marker
+        assert "do NOT write this up again" in marker
+        assert covered_marker("https://example.com/fresh", url_dates) == ""
+        assert covered_marker(None, url_dates) == ""
+        assert covered_marker("https://github.com/owner/repo", {}) == ""
