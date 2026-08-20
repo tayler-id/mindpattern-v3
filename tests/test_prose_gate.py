@@ -154,11 +154,25 @@ class TestUnslopReachesEveryWriter:
         assert "Prefer the plain word" in voice      # rule 31, the last one
         assert "Platform rules win" in voice         # precedence note
 
-    def test_newsletter_writer_skill_carries_the_pass(self):
+    def test_newsletter_writer_invokes_the_pass_without_copying_it(self):
+        """The skill points at the pass; voice.md carries the only copy.
+
+        The rules lived in both files briefly. Two copies of 31 rules in one
+        prompt can disagree after an edit, so the skill keeps the pointer and
+        the structural precedence note, and nothing else.
+        """
         from pathlib import Path
         skill = Path("agents/synthesis-writer.md").read_text()
         assert "Humanize pass" in skill
-        assert "Prefer the plain word" in skill
+        assert "Prefer the plain word" not in skill   # rule 31 lives in voice.md
+
+    def test_newsletter_prompt_still_receives_the_pass(self):
+        """runner inlines voice.md into pass 2, so the rules do reach the writer."""
+        from pathlib import Path
+        runner_src = Path("orchestrator/runner.py").read_text()
+        assert 'voice_file = identity_dir / "voice.md"' in runner_src
+        assert "voice_text" in runner_src
+        assert "Prefer the plain word" in self._voice()
 
     def test_site_writer_prompt_carries_the_pass(self):
         from orchestrator.site_writer import build_site_writer_prompt
