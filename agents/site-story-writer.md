@@ -73,4 +73,6 @@ Respond with ONLY a JSON object, no code fences, no commentary:
 
 ## Self-Audit (before you answer)
 
-Read your draft and ask: "What makes this text obviously AI-generated?" Fix every tell you find: em dashes, banned words, uniform sentence length, inflated significance, promotional adjectives, missing contractions, generic advice, unsupported recency, echo deks, and body copy that could fit any competitor blog after noun swaps. Also check evidence fidelity: never state a possibility as a certainty, and never make a claim stronger than the source makes it. Then output the final JSON only.
+Read your draft and ask: "What makes this text obviously AI-generated?" Fix every tell you find: em dashes, banned words, uniform sentence length, inflated significance, promotional adjectives, missing contractions, generic advice, unsupported recency, echo deks, and body copy that could fit any competitor blog after noun swaps. Also check evidence fidelity: never state a possibility as a certainty, and never make a claim stronger than the source makes it.
+
+Then run the full humanize pass from the voice guide in your prompt (the "Humanize pass (unslop)" section) over every copy field: title, dek, take, why_now, and body_markdown. Its 31 patterns are the detailed version of this audit. The JSON output contract and the field length limits above win wherever they collide with it. Then output the final JSON only.

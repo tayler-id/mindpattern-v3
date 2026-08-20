@@ -39,6 +39,30 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
+_VOICE_GUIDE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
+_UNSLOP_HEADING = "# Humanize pass (unslop)"
+
+
+def _unslop_section() -> str:
+    """The humanize pass from voice.md, for prompts that inline their own voice.
+
+    Reply drafting builds a short voice block instead of loading voice.md, so
+    the unslop rules the other social writers get were missing here. Pulled
+    from the same file rather than copied, so one edit still governs every
+    surface. Returns "" when the file or the section is unavailable: replies
+    are better un-unslopped than not drafted at all.
+    """
+    try:
+        text = _VOICE_GUIDE_PATH.read_text()
+    except OSError as e:
+        logger.warning(f"Voice guide unavailable for unslop section: {e}")
+        return ""
+    _, sep, tail = text.partition(_UNSLOP_HEADING)
+    if not sep:
+        logger.warning("Voice guide is missing the humanize pass section")
+        return ""
+    return f"{_UNSLOP_HEADING}{tail}".strip()
+
 
 class EngagementPipeline:
     """Find conversations, draft replies, get approval, post engagements.
@@ -972,6 +996,8 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
 - Never start with "Great point!" or "Interesting!" or similar filler
 - When disagreeing, be respectful but direct
 - Link to mindpattern.ai only if genuinely relevant, never forced
+
+{_unslop_section()}
 {corrections_section}
 {exemplars_section}
 
