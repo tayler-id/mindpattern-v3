@@ -175,6 +175,94 @@ def _merge_retry_results(original: list, retried: list) -> list:
     return merged
 
 
+def _build_quality_drop_lesson(
+    quality: dict,
+    agent_coverage: dict | None = None,
+    source_health_summary: dict | None = None,
+) -> str:
+    """One line naming why the day's quality dropped.
+
+    This text is injected into the synthesis prompt as "Previous failures to
+    avoid", so it has to describe a cause the writer or a human can act on.
+    Every historical row instead read "Overall score 0.573 vs 7-day avg
+    0.719", which restates the number that already triggered the alert.
+    """
+    coverage = agent_coverage or {}
+    sources = source_health_summary or {}
+
+    score = quality.get("overall_score")
+    avg = quality.get("7day_avg")
+    score_txt = f"{score:.3f}" if isinstance(score, (int, float)) else str(score)
+    header = f"Quality {score_txt}"
+    if isinstance(avg, (int, float)):
+        header += f" vs 7-day avg {avg:.3f}"
+
+    causes: list[str] = []
+
+    contributing = coverage.get("contributing_agents")
+    target = coverage.get("target_agents")
+    if isinstance(contributing, int) and isinstance(target, int) and contributing < target:
+        causes.append(f"only {contributing}/{target} agents contributed")
+
+    def _named(items, label, limit=4):
+        items = [str(i) for i in (items or [])]
+        if not items:
+            return None
+        shown = ", ".join(items[:limit])
+        extra = f" +{len(items) - limit} more" if len(items) > limit else ""
+        return f"{label}: {shown}{extra}"
+
+    for part in (
+        _named(coverage.get("failed_agents"), "agents that errored"),
+        _named(coverage.get("zero_finding_agents"), "agents returning zero"),
+        _named(sources.get("degraded_sources"), "sources degraded"),
+    ):
+        if part:
+            causes.append(part)
+
+    if not causes:
+        return (
+            f"{header}. No degraded agents or sources recorded, so the drop is "
+            f"editorial rather than operational: check story selection and the "
+            f"dedup gates before blaming intake."
+        )
+
+    lesson = f"{header}. Likely cause, {'; '.join(causes)}."
+    return lesson[:400]
+
+
+def _store_agent_notes(db, agent_results: list, date_str: str) -> int:
+    """Persist agent self-improvement notes. Returns the count stored.
+
+    This is the input to memory.patterns.consolidate(). Nothing wrote this
+    table before 2026-08-21, so consolidate clustered an empty set on every
+    run and validated_patterns froze on 2026-04-09 while all 13 agents kept
+    reading that stale April snapshot as "cross-agent learnings".
+
+    Per-note try/except is deliberate: store_note() embeds each note, and one
+    embedding failure must not discard the rest of the day's observations.
+    Notes are enrichment — never raise out of here.
+    """
+    stored = 0
+    for result in agent_results:
+        for note in getattr(result, "notes", None) or []:
+            try:
+                memory.store_note(
+                    db,
+                    run_date=date_str,
+                    agent=result.agent_name,
+                    note_type=note["note_type"],
+                    content=note["content"],
+                )
+                stored += 1
+            except Exception as e:
+                logger.warning(
+                    "Failed to store note from %s (%s): %s",
+                    result.agent_name, note.get("note_type"), e,
+                )
+    return stored
+
+
 def _assess_agent_coverage(agent_results: list) -> dict:
     """Summarize research agent coverage before storage/dedup side effects."""
     target = max(13, len(agent_results))
@@ -1346,6 +1434,24 @@ class ResearchPipeline:
             except Exception as e:
                 logger.warning(f"Monitor record_agent_metrics failed for {result.agent_name}: {e}")
 
+        # Agent self-improvement notes → the input to consolidate() in LEARN.
+        # Enrichment only: never fail research over a note.
+        notes_stored = 0
+        try:
+            notes_stored = _store_agent_notes(
+                self.db, self.agent_results, self.date_str)
+            agents_with_notes = sum(
+                1 for r in self.agent_results if getattr(r, "notes", None))
+            logger.info(
+                f"Agent notes: {notes_stored} stored from "
+                f"{agents_with_notes}/{len(self.agent_results)} agents")
+            log_event(self.traces_conn, self.traces_run_id,
+                      "agent_notes_stored",
+                      json.dumps({"notes": notes_stored,
+                                  "agents": agents_with_notes}))
+        except Exception as e:
+            logger.warning(f"Agent note storage failed (non-critical): {e}")
+
         # Batch-level policy report (count envelope, summary length) — the
         # per-finding storage gate above already blocked invalid findings.
         if total_policy_skipped:
@@ -1392,6 +1498,7 @@ class ResearchPipeline:
             "agents_dispatched": len(self.agent_results),
             "agents_succeeded": successful,
             "findings_stored": total_stored,
+            "notes_stored": notes_stored,
             "research_degraded": agent_coverage["degraded"],
             "agent_coverage": agent_coverage,
         }
@@ -2286,7 +2393,15 @@ class ResearchPipeline:
             memory.store_failure(
                 self.db, self.date_str, "quality_drop",
                 quality["warning"],
-                f"Overall score {quality['overall_score']:.3f} vs 7-day avg {quality.get('7day_avg', 'N/A')}"
+                _build_quality_drop_lesson(
+                    quality,
+                    agent_coverage=getattr(
+                        self, "research_quality", {}).get("agent_coverage"),
+                    source_health_summary=(
+                        self.preflight_data.get("source_health_summary")
+                        if self.preflight_data else None
+                    ),
+                ),
             )
 
         # ── Prompt regression check ────────────────────────────────

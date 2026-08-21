@@ -1,0 +1,753 @@
+<title>MindPattern Pipeline Teardown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+:root {
+  --bg:        #E9EBEE;
+  --surface:   #FAFAFB;
+  --surface-2: #F1F2F5;
+  --ink:       #14171C;
+  --ink-2:     #3A4049;
+  --muted:     #676D78;
+  --hair:      #C9CDD4;
+  --hair-soft: #DCDFE4;
+  --py:        #2F5570;
+  --llm:       #8A5A12;
+  --warn:      #8C3B2E;
+  --shadow:    0 1px 0 rgba(20,23,28,.04), 0 8px 24px -18px rgba(20,23,28,.35);
+
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body:    "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:        #131519;
+    --surface:   #1B1E24;
+    --surface-2: #21252C;
+    --ink:       #E7E9ED;
+    --ink-2:     #BFC4CD;
+    --muted:     #8B929E;
+    --hair:      #333944;
+    --hair-soft: #272C34;
+    --py:        #86AECC;
+    --llm:       #D6A64C;
+    --warn:      #D98878;
+    --shadow:    0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.9);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg:        #131519;
+  --surface:   #1B1E24;
+  --surface-2: #21252C;
+  --ink:       #E7E9ED;
+  --ink-2:     #BFC4CD;
+  --muted:     #8B929E;
+  --hair:      #333944;
+  --hair-soft: #272C34;
+  --py:        #86AECC;
+  --llm:       #D6A64C;
+  --warn:      #D98878;
+  --shadow:    0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.9);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 56px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 32px 120px;
+}
+
+/* ── Rail ─────────────────────────────────────────────── */
+.rail { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 40px 0; }
+.rail-title { font-family: var(--f-display); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+.rail nav { display: flex; flex-direction: column; }
+.rail a {
+  font-family: var(--f-display);
+  font-size: 13.5px; font-weight: 500;
+  color: var(--ink-2); text-decoration: none;
+  padding: 6px 0 6px 12px;
+  border-left: 1px solid var(--hair-soft);
+  line-height: 1.35;
+}
+.rail a:hover, .rail a:focus-visible { color: var(--ink); background: var(--surface-2); border-left-color: var(--hair); }
+.rail a:focus-visible { outline: 2px solid var(--ink-2); outline-offset: -2px; }
+.rail .sub { padding-left: 26px; font-size: 12.5px; color: var(--muted); }
+
+/* ── Masthead ─────────────────────────────────────────── */
+header.mast { padding: 64px 0 40px; border-bottom: 1px solid var(--hair); }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 18px; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(38px, 5.4vw, 60px); line-height: 1.02; letter-spacing: -.02em; margin: 0 0 22px; text-wrap: balance; }
+.standfirst { font-size: 20px; line-height: 1.5; color: var(--ink-2); max-width: 62ch; margin: 0; }
+
+/* ── Stat strip ───────────────────────────────────────── */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 0; border: 1px solid var(--hair); border-radius: 3px; background: var(--surface); margin: 34px 0 0; overflow: hidden; }
+.stat { padding: 16px 18px; border-right: 1px solid var(--hair-soft); }
+.stat:last-child { border-right: 0; }
+.stat b { display: block; font-family: var(--f-display); font-weight: 700; font-size: 25px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.stat span { display: block; font-family: var(--f-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-top: 3px; }
+
+/* ── Sections ─────────────────────────────────────────── */
+section { padding: 54px 0 0; scroll-margin-top: 24px; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 31px; letter-spacing: -.015em; margin: 0 0 6px; text-wrap: balance; }
+h2 .num { font-family: var(--f-mono); font-weight: 500; font-size: 14px; color: var(--muted); display: block; margin-bottom: 8px; letter-spacing: .06em; }
+h3 { font-family: var(--f-display); font-weight: 600; font-size: 19px; margin: 34px 0 8px; letter-spacing: -.005em; }
+h4 { font-family: var(--f-display); font-weight: 600; font-size: 15px; margin: 24px 0 6px; }
+p { max-width: 68ch; margin: 0 0 15px; }
+.lede { font-size: 18.5px; color: var(--ink-2); max-width: 66ch; }
+ul, ol { max-width: 68ch; padding-left: 22px; margin: 0 0 16px; }
+li { margin-bottom: 7px; }
+strong { font-weight: 600; }
+a { color: var(--ink); text-underline-offset: 2px; }
+
+code, .path { font-family: var(--f-mono); font-size: .85em; background: var(--surface-2); padding: 1px 5px; border-radius: 2px; color: var(--ink-2); }
+
+pre {
+  font-family: var(--f-mono); font-size: 13px; line-height: 1.65;
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--hair-soft); border-radius: 3px;
+  padding: 16px 18px; overflow-x: auto; margin: 18px 0;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+pre .c { color: var(--muted); }
+
+/* ── Chips ────────────────────────────────────────────── */
+.chip {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  font-family: var(--f-mono); font-size: 10.5px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .07em;
+  background: var(--surface-2); border: 1px solid var(--hair-soft);
+  border-radius: 2px; padding: 2px 6px; white-space: nowrap;
+  color: var(--ink-2);
+}
+.chip .g { font-size: 9px; }
+.chip.py .g { color: var(--py); }
+.chip.llm .g { color: var(--llm); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 20px 0 0; font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+
+/* ── Tables ───────────────────────────────────────────── */
+.tw { overflow-x: auto; margin: 20px 0 8px; border: 1px solid var(--hair); border-radius: 3px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-family: var(--f-display); font-weight: 500; }
+th {
+  text-align: left; font-family: var(--f-mono); font-size: 10.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  padding: 10px 14px; border-bottom: 1px solid var(--hair); white-space: nowrap;
+}
+td { padding: 10px 14px; border-bottom: 1px solid var(--hair-soft); vertical-align: top; color: var(--ink-2); }
+tr:last-child td { border-bottom: 0; }
+td.m, th.m { font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+td.n { color: var(--ink); font-weight: 600; }
+
+/* ── Phase blocks ─────────────────────────────────────── */
+.phase { border-top: 1px solid var(--hair); padding: 26px 0 6px; }
+.phase:first-of-type { border-top: 0; }
+.phase-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.phase-num { font-family: var(--f-mono); font-size: 13px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.phase-name { font-family: var(--f-display); font-weight: 700; font-size: 21px; letter-spacing: -.01em; }
+.phase-enum { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.phase-meta { font-family: var(--f-mono); font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+
+/* ── Callout ──────────────────────────────────────────── */
+.note {
+  background: var(--surface); border: 1px solid var(--hair);
+  border-radius: 3px; padding: 16px 18px; margin: 22px 0; box-shadow: var(--shadow);
+}
+.note .kicker { font-family: var(--f-mono); font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 0 0 6px; }
+.note p:last-child { margin-bottom: 0; }
+.note.scar .kicker::before { content: "▲ "; color: var(--warn); }
+
+/* ── QA ───────────────────────────────────────────────── */
+.qa { border-top: 1px solid var(--hair-soft); padding: 18px 0 4px; }
+.qa .q { font-family: var(--f-display); font-weight: 600; font-size: 16.5px; margin: 0 0 6px; color: var(--ink); }
+.qa p { font-size: 16px; }
+
+figure { margin: 26px 0; }
+figcaption { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+svg { display: block; max-width: 100%; height: auto; }
+
+footer { margin-top: 70px; padding-top: 22px; border-top: 1px solid var(--hair); font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0,1fr); gap: 0; padding: 0 22px 80px; }
+  .rail { position: static; max-height: none; padding: 28px 0 0; }
+  .rail nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .rail .sub { display: none; }
+  header.mast { padding-top: 34px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<aside class="rail">
+  <p class="rail-title">Contents</p>
+  <nav>
+    <a href="#thesis">The one idea</a>
+    <a href="#headless">Calling Claude headlessly</a>
+    <a href="#timeline">A real morning</a>
+    <a href="#phases">The twelve phases</a>
+    <a href="#research" class="sub">Research, in depth</a>
+    <a href="#agents">The 13 research agents</a>
+    <a href="#routing">Model routing</a>
+    <a href="#memory">Memory and data</a>
+    <a href="#gates">Gates and dedup</a>
+    <a href="#failure">Failure handling</a>
+    <a href="#harness">The self-improving harness</a>
+    <a href="#deploy">Deploy and schedule</a>
+    <a href="#repo">Repo map</a>
+    <a href="#qa">Interview answers</a>
+  </nav>
+</aside>
+
+<main>
+
+<header class="mast">
+  <p class="eyebrow">MindPattern v3 · engineering teardown · 20 Aug 2026</p>
+  <h1>A newsletter that writes itself before you wake up</h1>
+  <p class="standfirst">Every morning at 5 AM a launchd job wakes a Mac, pulls from eight data sources, fans out thirteen headless Claude processes, dedupes what they bring back against 21,000 stored findings, writes a 10,000-word issue, emails it, publishes a public site, and then goes and edits its own prompts. This is how each of those pieces actually works.</p>
+
+  <div class="stats">
+    <div class="stat"><b>179</b><span>issues shipped</span></div>
+    <div class="stat"><b>21,307</b><span>findings stored</span></div>
+    <div class="stat"><b>2,531</b><span>sources tracked</span></div>
+    <div class="stat"><b>13</b><span>research agents</span></div>
+    <div class="stat"><b>~90k</b><span>lines of Python</span></div>
+    <div class="stat"><b>97</b><span>test files</span></div>
+  </div>
+  <div class="legend">
+    <span class="chip py"><span class="g">&#9632;</span> Deterministic Python</span>
+    <span class="chip llm"><span class="g">&#9670;</span> Claude call</span>
+    <span>Every phase below is tagged with which of the two it is.</span>
+  </div>
+</header>
+
+<section id="thesis">
+  <h2><span class="num">01</span>The one idea</h2>
+  <p class="lede">Python owns control flow. Claude owns judgment and prose. The model never decides what happens next.</p>
+
+  <p>That line is not a slogan, it is enforced in code. <span class="path">orchestrator/pipeline.py</span> is a 158-line state machine with a frozen phase order and a transition table. A phase can only move to the next phase in <code>PHASE_ORDER</code>, to <code>FAILED</code>, or to <code>COMPLETED</code>. Any other transition raises <code>ValueError</code>. There is no place in the codebase where an LLM's output selects the next step.</p>
+
+  <p>What the LLM does get is bounded and specific: read this evidence, form a judgment, produce text. Story selection, newsletter prose, social drafts, topic scoring, identity edits. Everything around those calls, the scheduling, retries, dedup, validation, storage, delivery, and quality scoring, is plain Python that behaves identically every run.</p>
+
+  <p>The split matters because prompting is stochastic and the pipeline is not allowed to be. On 25, 26 and 27 July 2026 the same model, the same synthesis prompt and the same voice guide produced 42, 2 and 52 em-dashes. Asking harder does not close that gap. So the em-dash rule moved out of the prompt and into <span class="path">orchestrator/prose_gate.py</span>, a regex pass over the finished text with a budget of 6 per issue, protected spans for code and URLs, and a repair step. Style you can detect, code enforces. Style that needs taste stays in the prompt.</p>
+
+  <div class="note">
+    <p class="kicker">The rule, stated plainly</p>
+    <p>If Python can do it reliably, Python does it. The model is called only where judgment is genuinely required, and its output is always parsed, validated, or scored by Python before anything downstream trusts it.</p>
+  </div>
+</section>
+
+<section id="headless">
+  <h2><span class="num">02</span>How Claude is actually called</h2>
+  <p class="lede">Not the API. The <code>claude</code> CLI, in headless mode, as a subprocess, on a personal Anthropic subscription.</p>
+
+  <p>There is no <code>anthropic</code> package in <span class="path">requirements.txt</span> and no API key anywhere in the pipeline. Every model call shells out to the Claude Code CLI with <code>-p</code> (print mode, no interactive session). One process boundary handles all of them: <span class="path">core/claude_cli.py</span>, 78 lines, wrapping <code>subprocess.Popen</code>.</p>
+
+  <pre><code>claude -p "&lt;the whole prompt&gt;" \
+  --model opus \
+  --max-turns 35 \
+  --output-format text \
+  --append-system-prompt-file prompts/research-agent-system.md \
+  --allowedTools WebSearch \
+  --allowedTools WebFetch \
+  --allowedTools "Bash(mcporter call *)" \
+  --allowedTools "Bash(twitter *)" \
+  --allowedTools "Bash(yt-dlp *)"</code></pre>
+
+  <p>Three details in that wrapper earn their place:</p>
+  <ul>
+    <li><strong>Own process group.</strong> <code>start_new_session=True</code>, so a timeout kills the CLI <em>and</em> every tool subprocess it spawned. Without it a 30-minute agent timeout leaves orphaned <code>yt-dlp</code> children behind.</li>
+    <li><strong>Environment carries identity.</strong> <code>MINDPATTERN_AGENT</code>, <code>MINDPATTERN_DATE</code> and <code>MINDPATTERN_VAULT</code> go into the child env so a <code>SessionEnd</code> hook can file that agent's transcript in the right folder for later analysis.</li>
+    <li><strong>Big prompts go through stdin.</strong> Above 100,000 characters the prompt argument becomes <code>-</code> and the text is piped in, because <code>ARG_MAX</code> would otherwise truncate it. Synthesis prompts routinely cross that line.</li>
+  </ul>
+
+  <h3>Three dispatch shapes</h3>
+  <div class="tw"><table>
+    <tr><th>Function</th><th>Where the output lands</th><th>Used by</th></tr>
+    <tr><td class="n m">run_single_agent()</td><td>JSON on stdout, parsed by a balanced-brace scanner</td><td class="m">13 research agents</td></tr>
+    <tr><td class="n m">run_claude_prompt()</td><td>stdout <em>is</em> the deliverable text</td><td class="m">newsletter, story selection, social drafts, identity</td></tr>
+    <tr><td class="n m">run_agent_with_files()</td><td>agent writes a .json/.md file, Python reads it back</td><td class="m">EIC, art director, critics, expeditor</td></tr>
+  </table></div>
+
+  <h3>Tool grants are pre-approvals, not a fence</h3>
+  <p><code>--allowedTools</code> grants the listed rules without a permission prompt. Read-only tools work regardless. Two rules govern what goes in the list. First, raw <code>curl</code> is deliberately never granted, because scraped content must not reach a shell that can POST; deep reads go through WebFetch and Jina instead. Second, every <code>Bash(...)</code> grant must name a binary that is actually installed, and <code>missing_granted_binaries()</code> checks <code>PATH</code> at dispatch time and warns.</p>
+
+  <div class="note scar">
+    <p class="kicker">Why that PATH check exists</p>
+    <p>On 24 July 2026 the grant list allowed <code>Bash(xreach *)</code> and the research prompt told all 13 agents to run <code>xreach search</code>. The tool had been replaced a month earlier and was not on PATH. Grant and prompt agreed with each other and were both wrong, so internal consistency caught nothing. Agents hit a missing binary and, rather than fabricate, several refused in prose. The whole day degraded.</p>
+  </div>
+
+  <h3>The system prompt does one specific job</h3>
+  <p>Execution context lives in <span class="path">prompts/research-agent-system.md</span>, appended with <code>--append-system-prompt-file</code>, and never in the task text. User input cannot credibly assert "no human is present", and that is the whole reason. On 24 July, 7 of 13 agents read their task as a transcript someone had pasted into an interactive session and declined it. Moving that framing into the system prompt fixed it. The same file also spells out that the findings count is a description of a normal day, not a quota, and that returning fewer real findings is always correct.</p>
+</section>
+
+<section id="timeline">
+  <h2><span class="num">03</span>A real morning, phase by phase</h2>
+  <p class="lede">Times below are the actual trace rows for run <code>research-2026-08-20-326ede</code>, read out of traces.db. Local time, Pacific.</p>
+
+  <div class="tw"><table>
+    <tr><th class="m">Start</th><th>Phase</th><th class="m">Duration</th><th>What it did</th></tr>
+    <tr><td class="m">05:00:05</td><td class="n">init</td><td class="m">14s</td><td>Loaded preferences, pulled email feedback, hashed prompt files</td></tr>
+    <tr><td class="m">05:00:19</td><td class="n">trend_scan</td><td class="m">3m 11s</td><td>8 sources fetched in parallel, dedup-annotated, trends clustered</td></tr>
+    <tr><td class="m">05:03:30</td><td class="n">research</td><td class="m">19m 50s</td><td>13 Claude processes, 6 at a time, 189 findings kept</td></tr>
+    <tr><td class="m">05:23:20</td><td class="n">synthesis</td><td class="m">6m 50s</td><td>Two Opus passes, 11,904 words written</td></tr>
+    <tr><td class="m">05:30:10</td><td class="n">deliver</td><td class="m">1s</td><td>Markdown to HTML, Resend send, receipt claimed</td></tr>
+    <tr><td class="m">05:30:11</td><td class="n">site_content</td><td class="m">2h 47m</td><td>Public site stories, dossiers, knowledge-graph extraction</td></tr>
+    <tr><td class="m">08:17:28</td><td class="n">learn</td><td class="m">24s</td><td>Quality scoring, pattern consolidation, prompt regression check</td></tr>
+    <tr><td class="m">08:17:52</td><td class="n">social / engagement / identity</td><td class="m">&lt;1s</td><td>Skipped, launchd passes <code>--skip-social</code></td></tr>
+    <tr><td class="m">08:18:35</td><td class="n">mirror</td><td class="m">2s</td><td>SQLite regenerated as Obsidian markdown</td></tr>
+    <tr><td class="m">08:18:37</td><td class="n">sync</td><td class="m">3m 6s</td><td>Bundle to Fly.io, restart, warm the public CDN</td></tr>
+  </table></div>
+
+  <p>One number carries this whole section. <strong>The newsletter is in the inbox 30 minutes after the run starts.</strong> The remaining 2 hours 51 minutes go to publishing the web version, learning, and syncing, and none of it can hold up the email. That is why delivery sits fifth in a twelve-phase pipeline instead of last.</p>
+</section>
+
+<section id="phases">
+  <h2><span class="num">04</span>The twelve phases</h2>
+  <p class="lede">Defined in <span class="path">orchestrator/pipeline.py</span>, executed by <span class="path">orchestrator/runner.py</span> (2,761 lines). Two are critical. A failure in either one ends the run. The other ten are skippable and log a warning instead.</p>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">01</span><span class="phase-name">Init</span><span class="phase-enum">Phase.INIT</span><span class="chip py"><span class="g">&#9632;</span> Python</span><span class="chip llm"><span class="g">&#9670;</span> 1 optional call</span></div>
+    <p class="phase-meta">skippable · ~14s · writes: traces.db rows, prompt version hashes</p>
+    <p>Checks whether the Mac is on battery and Slacks a warning if so. Ingests phone-posted journal entries from Fly. Fetches reply emails through Resend and, if any are unprocessed, sends them to Claude with <span class="path">agents/feedback-processor.md</span> to extract topic preference weights, clamped to plus or minus 3 and written to <code>user_preferences</code>. Then <span class="path">orchestrator/prompt_tracker.py</span> hashes every prompt file so the learn phase can attribute a quality drop to a prompt edit.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">02</span><span class="phase-name">Trend scan</span><span class="phase-enum">Phase.TREND_SCAN</span><span class="chip py"><span class="g">&#9632;</span> Python only</span></div>
+    <p class="phase-meta">skippable · ~3m · writes: <span class="path">trend_history</span> table, in-memory preflight payload</p>
+    <p>This phase used to be a Haiku call. It is now zero LLM. <span class="path">preflight/run_all.py</span> runs eight source modules concurrently on an 8-worker thread pool, then <span class="path">preflight/trends.py</span> clusters the items by embedding similarity and scores clusters on engagement and source diversity. Deterministic, so a resumed run can re-run it for free.</p>
+    <div class="tw"><table>
+      <tr><th>Source</th><th>Module</th><th>Mechanism</th><th>Primary agent</th></tr>
+      <tr><td class="n">RSS</td><td class="m">preflight/rss.py</td><td class="m">tools/rss-fetch.py, 48h window</td><td class="m">rss-researcher</td></tr>
+      <tr><td class="n">arXiv</td><td class="m">preflight/arxiv.py</td><td class="m">tools/arxiv-fetch.py, cs.AI/LG/CL/NE</td><td class="m">arxiv-researcher</td></tr>
+      <tr><td class="n">GitHub</td><td class="m">preflight/github.py</td><td class="m">tools/github-fetch.py, 50+ stars</td><td class="m">github-pulse-researcher</td></tr>
+      <tr><td class="n">Hacker News</td><td class="m">preflight/hn.py</td><td class="m">tools/hn-fetch.py, 50+ points</td><td class="m">hn-researcher</td></tr>
+      <tr><td class="n">Reddit</td><td class="m">preflight/reddit.py</td><td class="m">tools/reddit-fetch.py, 10 subs</td><td class="m">reddit-researcher</td></tr>
+      <tr><td class="n">Twitter/X</td><td class="m">preflight/twitter.py</td><td class="m"><code>twitter</code> CLI, 5 standing queries</td><td class="m">thought-leaders-researcher</td></tr>
+      <tr><td class="n">Exa</td><td class="m">preflight/exa.py</td><td class="m">semantic search via mcporter</td><td class="m">routed by topic</td></tr>
+      <tr><td class="n">YouTube</td><td class="m">preflight/youtube.py</td><td class="m">yt-dlp over 5 channels</td><td class="m">sources-researcher</td></tr>
+    </table></div>
+    <p>Python then embeds every item and compares it against ten days of stored findings. Matches above 0.85 get tagged <code>already_covered</code> with the matching date and agent, and that tag travels into the agent prompt as a strikethrough list. A time-decay curve loosens the threshold for older matches, so the gate does not kill a story that has genuinely moved on. Each source reports a health status (<code>ok</code>, <code>partial</code>, <code>empty</code>, <code>failed</code>, <code>timeout</code>, <code>missing</code>) which later feeds the quality floor.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">03</span><span class="phase-name">Research</span><span class="phase-enum">Phase.RESEARCH</span><span class="chip llm"><span class="g">&#9670;</span> 13&ndash;26 Claude processes</span></div>
+    <p class="phase-meta"><strong>critical</strong> · ~20m · writes: <span class="path">findings</span>, <span class="path">findings_embeddings</span>, <span class="path">sources</span>, <span class="path">agent_runs</span></p>
+    <p>Thirteen parallel Claude processes with a JSON contract each. Detailed in the next section.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">04</span><span class="phase-name">Synthesis</span><span class="phase-enum">Phase.SYNTHESIS</span><span class="chip llm"><span class="g">&#9670;</span> 2 Opus passes</span></div>
+    <p class="phase-meta"><strong>critical</strong> · ~7m · writes: <span class="path">reports/ramsay/YYYY-MM-DD.md</span></p>
+    <p><strong>Pass 1, story selection.</strong> Model <code>claude-opus-5[1m]</code>, system prompt <span class="path">agents/synthesis-selector.md</span>, max 10 turns, 600s timeout. Input is the day's findings after a source-balance rebalance, each one carrying an inline "already covered on {date}" marker keyed on its source URL against 30 days of published issues, plus user preference weights, trend topics, and a formatted block of the last 21 days of published stories. Output is exactly 5 stories with reasons.</p>
+    <p>A deterministic republish tripwire then compares the selection against the published archive by stemmed word-overlap. A repeat forces one re-pick with the offending titles named. If the second attempt still repeats, the issue publishes anyway and a Slack alert fires. Never a silent repeat, and never a blocked newsletter.</p>
+    <p><strong>Pass 2, writing.</strong> Same model, system prompt <span class="path">agents/synthesis-writer.md</span>, max 30 turns, 900s timeout. The prompt opens with an output contract: stdout is published verbatim, so emit only newsletter markdown, and never mention tools, sessions, finding counts, dedup or coverage constraints. All findings, soul.md, voice.md, narrative arcs, the published-history block and recent failure lessons go in. Three attempts. If all three fail, Python builds a deterministic source-list brief from stored findings and alerts loudly rather than shipping nothing.</p>
+    <p>Post-processing is all Python: strip any process narration before the first heading, replace the model's H1 with a deterministic <code>&#35; {title} &mdash; {date}</code>, run the prose gate, write the file, run the URL republish tripwire, score the issue on six dimensions, and assess the quality floor.</p>
+    <div class="note scar">
+      <p class="kicker">The quality floor never rewrites the issue</p>
+      <p>It used to. On 13 July 2026 a thin research corpus tripped the floor and a finished newsletter was replaced by a bare fallback list. Now the floor only reports. It writes to traces and alerts Slack, and the issue the writer produced goes out untouched.</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">05</span><span class="phase-name">Deliver</span><span class="phase-enum">Phase.DELIVER</span><span class="chip py"><span class="g">&#9632;</span> Python only</span></div>
+    <p class="phase-meta">skippable · ~1s · writes: the email, <span class="path">receipts</span> row, ran-marker file</p>
+    <p><span class="path">orchestrator/newsletter.py</span> validates the report, appends a feedback footer, converts markdown to HTML with markdown2, and posts to the Resend API with both HTML and plain-text bodies, retrying with backoff. Subscribers get a separate broadcast from the pre-footer copy.</p>
+    <p>A receipts table handles idempotency. The deliver phase claims the key <code>newsletter:{date}</code> <em>before</em> it sends, so a crash-and-resume cannot double-send. And the day's "done" marker in <code>/tmp</code> is written only on confirmed delivery, which is the reason the hourly retry windows are safe to run.</p>
+    <div class="note scar">
+      <p class="kicker">Why the marker moved</p>
+      <p>On 13 June 2026 the shell wrapper touched the done-marker before running the pipeline. The pipeline crashed at startup. The marker said the day was finished, so every retry window skipped, and no newsletter went out all day. A one-second bug became a full-day outage. The marker now belongs to the deliver phase alone.</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">06</span><span class="phase-name">Site content</span><span class="phase-enum">Phase.SITE_CONTENT</span><span class="chip py"><span class="g">&#9632;</span> Deterministic core</span><span class="chip llm"><span class="g">&#9670;</span> writer + critic</span></div>
+    <p class="phase-meta">skippable, fails open · ~2h47m · writes: <span class="path">reports/ramsay/site-*/</span> artifacts, kg_* tables</p>
+    <p>Builds the public site, Rabbit Hole. <span class="path">orchestrator/site_content_engine.py</span> reads a public-safe corpus model over memory.db, picks candidates, assembles a graph pack of evidence per story, runs an expert loop, and generates the story. The live writer (<span class="path">agents/site-story-writer.md</span>) and desk critic (<span class="path">agents/site-story-critic.md</span>) are optional and <em>fail closed to deterministic copy</em>. If the model is unavailable, or its draft fails <span class="path">site_copy_lint.py</span>, the deterministic version ships. Entity and source dossiers follow, then an opt-in knowledge-graph extraction over the day's findings.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">07</span><span class="phase-name">Learn</span><span class="phase-enum">Phase.LEARN</span><span class="chip py"><span class="g">&#9632;</span> Python</span><span class="chip llm"><span class="g">&#9670;</span> 1 Sonnet call</span></div>
+    <p class="phase-meta">skippable · ~24s · writes: <span class="path">run_quality</span>, <span class="path">validated_patterns</span>, <span class="path">entity_graph</span>, <span class="path">data/ramsay/learnings.md</span></p>
+    <p>Scores the run, compares against the 7-day average and stores a failure lesson on a drop. Attributes quality changes to prompt files edited since the last run and flags regressions. Extracts entity relationships from high-importance findings. Backfills which trends actually produced findings. Then runs the three memory lifecycle operations: <code>consolidate()</code> clusters agent notes into validated patterns at 0.80 similarity, <code>promote()</code> elevates patterns seen by 2+ agents with 3+ observations (or 5+ from one), and <code>prune()</code> archives stale notes and patterns. Finally one Sonnet call regenerates learnings.md, with a deterministic fallback if it fails.</p>
+    <p><strong>Caveat, and I checked this rather than assuming it.</strong> The three lifecycle calls are currently no-ops. Nothing in the daily pipeline writes <code>agent_notes</code>, the table consolidate reads from, so it has zero rows. The only production caller of <code>store_note()</code> is the Slack follow-up service. The 223 rows in <code>validated_patterns</code> were all created between 3 March and 9 April 2026 and have not moved since. Scoring, regression detection and failure lessons in this phase are live and working. The pattern-learning half is wired but starved.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">08</span><span class="phase-name">Social</span><span class="phase-enum">Phase.SOCIAL</span><span class="chip llm"><span class="g">&#9670;</span> ~8 sequential agents</span></div>
+    <p class="phase-meta">skippable, off by default in launchd · writes: <span class="path">social_posts</span>, <span class="path">data/social-drafts/*</span></p>
+    <p><span class="path">social/pipeline.py</span> replaced 1,259 lines of bash. Eleven steps: post any deferred drafts, check rate limits before spending any tokens, EIC picks the topic on Opus with up to 3 retries, human approval gate 1 in Slack, creative brief, optional art pipeline, per-platform writers in parallel, blind critics in up to 3 rounds, deterministic policy validation, humanizer, expeditor as the final quality firewall, approval gate 2 in Slack, then posting with random jitter inside a configured window. If the EIC finds nothing worth publishing it declares a kill day and the phase ends with no post.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">09</span><span class="phase-name">Engagement</span><span class="phase-enum">Phase.ENGAGEMENT</span><span class="chip llm"><span class="g">&#9670;</span> finder + writer</span></div>
+    <p class="phase-meta">skippable · writes: <span class="path">engagements</span> table</p>
+    <p>Finds the top conversations worth replying to based on the day's research, drafts substantive replies, routes them through the same Slack approval gateway, then posts and follows. A receipt on <code>follow:{platform}:{handle}</code> guards every follow.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">10</span><span class="phase-name">Identity</span><span class="phase-enum">Phase.IDENTITY</span><span class="chip llm"><span class="g">&#9670;</span> 1 Sonnet call</span></div>
+    <p class="phase-meta">skippable · writes: <span class="path">data/ramsay/mindpattern/{soul,user,voice,decisions}.md</span></p>
+    <p>The system edits its own identity files. It assembles a summary of the day (findings count, newsletter scores, which topic the EIC chose, how the human ruled at each gate) and asks the model for a JSON diff over four files. <span class="path">memory/identity_evolve.py</span> applies it with size limits and validation. Those same files are loaded back into every research agent prompt and both synthesis passes the next morning, and that is where the loop closes.</p>
+    <p>What actually changes, measured against the last commit: <span class="path">decisions.md</span> gains a substantive dated entry every run and is read back seven entries at a time. <span class="path">soul.md</span> changes in exactly one section, a running commentary on run statistics; its values and personality sections are static. <span class="path">voice.md</span> has not changed a single line since 26 June, and <span class="path">user.md</span> not since 1 July. Since the scheduled run passes <code>--skip-social</code>, four of the eight inputs to this prompt (topic, both gates, expeditor) arrive as "not available" every day. So the phase writes real analysis into a journal it reads back, but it is not currently changing how the system writes.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">11</span><span class="phase-name">Mirror</span><span class="phase-enum">Phase.MIRROR</span><span class="chip py"><span class="g">&#9632;</span> Python only</span></div>
+    <p class="phase-meta">skippable · ~2s · writes: Obsidian vault markdown</p>
+    <p>Regenerates the SQLite contents as browsable markdown in the Obsidian vault: daily notes, per-source pages (2,400+ of them), topics, people, newsletters. SQLite stays the source of truth. The vault is a second copy you can open in Obsidian and read by hand.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">12</span><span class="phase-name">Sync</span><span class="phase-enum">Phase.SYNC</span><span class="chip py"><span class="g">&#9632;</span> Python only</span></div>
+    <p class="phase-meta">skippable · ~3m · writes: Fly volume, synced-marker</p>
+    <p>Tars memory.db plus the day's reports into one bundle and uploads it over <code>flyctl sftp</code>, one connection instead of thirty. Then restarts the Fly app so the dashboard reopens the replaced database file, waits for its warm-up, and serially requests the day's new pages so Vercel's CDN copy exists before the first reader arrives. A failed sync alerts Slack with the count of unsynced local issues.</p>
+  </div>
+</section>
+
+<section id="research">
+  <h2><span class="num">05</span>Research, in depth</h2>
+  <p class="lede">One phase, thirteen Claude processes, one JSON contract each. This is the part interviewers usually want walked through slowly.</p>
+
+  <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="Diagram: eight preflight sources feed a router, which fans out to thirteen agent processes, whose findings pass through dedup and policy gates into the findings table" style="color: var(--muted)">
+      <g fill="none" stroke="currentColor" stroke-width="1">
+        <rect x="8" y="14" width="128" height="272" rx="2"/>
+        <rect x="228" y="14" width="150" height="272" rx="2"/>
+        <rect x="470" y="60" width="120" height="180" rx="2"/>
+        <rect x="628" y="118" width="84" height="64" rx="2"/>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" letter-spacing="1">
+        <text x="14" y="9">8 SOURCES · PARALLEL</text>
+        <text x="234" y="9">13 AGENTS · 6 CONCURRENT</text>
+        <text x="476" y="55">PYTHON GATES</text>
+        <text x="634" y="113">STORAGE</text>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">
+        <text x="20" y="42">rss</text><text x="20" y="72">arxiv</text><text x="20" y="102">github</text>
+        <text x="20" y="132">hn</text><text x="20" y="162">reddit</text><text x="20" y="192">twitter</text>
+        <text x="20" y="222">exa</text><text x="20" y="252">youtube</text>
+        <text x="240" y="42">news</text><text x="240" y="60">agents</text><text x="240" y="78">arxiv</text>
+        <text x="240" y="96">github-pulse</text><text x="240" y="114">hn</text><text x="240" y="132">reddit</text>
+        <text x="240" y="150">rss</text><text x="240" y="168">sources</text><text x="240" y="186">projects</text>
+        <text x="240" y="204">thought-leaders</text><text x="240" y="222">vibe-coding</text>
+        <text x="240" y="240">saas-disruption</text><text x="240" y="258">skill-finder</text>
+        <text x="480" y="88">cross-agent</text><text x="480" y="104">dedup 0.85</text>
+        <text x="480" y="134">policy engine</text><text x="480" y="150">injection scan</text>
+        <text x="480" y="180">stale-source</text><text x="480" y="196">30-day gate</text>
+        <text x="480" y="222">sim &gt; 0.90</text>
+        <text x="636" y="146">findings</text><text x="636" y="162">21,307</text>
+      </g>
+      <g stroke="currentColor" stroke-width="1" fill="none" opacity=".55">
+        <path d="M136 150 L 172 150"/>
+        <path d="M172 40 L 172 260"/>
+        <path d="M172 40 L 228 40 M172 90 L 228 90 M172 150 L 228 150 M172 210 L 228 210 M172 260 L 228 260"/>
+        <path d="M378 150 L 470 150"/>
+        <path d="M590 150 L 628 150"/>
+      </g>
+      <g fill="currentColor" opacity=".55">
+        <path d="M228 150 l -6 -3 v6 z"/><path d="M470 150 l -6 -3 v6 z"/><path d="M628 150 l -6 -3 v6 z"/>
+      </g>
+    </svg>
+    <figcaption>Preflight feeds a routing table. Agents run as independent OS processes. Four Python gates stand between a finding and memory.db.</figcaption>
+  </figure>
+
+  <h3>Why thirteen, and why they are not subagents</h3>
+  <p>The count is thirteen, one markdown skill file per agent in <span class="path">verticals/ai-tech/agents/</span>. They are not Claude subagents inside one session. Each is a separate <code>claude -p</code> OS process with its own context window, its own tool budget and its own 30-minute timeout. Python owns the fan-out via a <code>ThreadPoolExecutor</code> with <code>max_workers=6</code>, so six run at a time and the rest queue.</p>
+  <p>Six rather than thirteen is a deliberate throttle. When all thirteen hit rate limits simultaneously the retries themselves become the overload, which is why the backoff uses full jitter, <code>uniform(0, min(cap, base * 2**attempt))</code>, rather than a fixed delay. Jitter desynchronizes the wave.</p>
+
+  <h3>What goes into a single agent prompt</h3>
+  <p><code>build_agent_prompt()</code> assembles roughly nine blocks in a fixed order, with the output contract stated at both the top and the bottom because instruction-following degrades in the middle of a long prompt:</p>
+  <ol>
+    <li>The JSON schema and the words "output ONLY valid JSON"</li>
+    <li><span class="path">verticals/ai-tech/SOUL.md</span>, overridden by the vault's <span class="path">soul.md</span> when present</li>
+    <li><span class="path">data/ramsay/mindpattern/user.md</span></li>
+    <li>The agent's own skill file, 65 to 162 lines of domain, sources and quality bar</li>
+    <li>Memory context from <code>memory.get_context()</code>: this agent's findings from the last 7 days, its top sources, today's findings from other agents with semantic overlap flagged, its self-improvement notes (always empty, see phase 7), and cross-agent validated patterns (a frozen April 2026 snapshot)</li>
+    <li>Today's detected trends</li>
+    <li>Phase 1, the preflight items routed to this agent, with already-covered ones struck through and dated</li>
+    <li>Phase 2, explicit instructions for going beyond preflight (Exa, WebFetch, Jina, twitter CLI, yt-dlp, WebSearch)</li>
+    <li>The novelty requirement, research methodology, and a mandatory six-point self-critique gate the agent must apply before emitting anything</li>
+  </ol>
+  <p>The self-critique gate does the most work. Before emitting anything the agent must drop any finding whose primary source is older than 48 hours, any topic covered in the last 10 days without new data, and any rewrite that adds no information. Anything it can only single-source gets downgraded to low importance rather than dropped.</p>
+
+  <h3>Parsing what comes back</h3>
+  <p>Models emit JSON imperfectly, so <code>_parse_findings()</code> tries four strategies in order: direct <code>json.loads</code>, then a character-by-character balanced-brace scanner that tracks string state so braces inside values do not confuse it, then a balanced-bracket scan for a bare array, then a warning with the first 200 characters logged for forensics.</p>
+
+  <h3>Failure classification</h3>
+  <p>The CLI writes API errors to <em>stdout</em>, sometimes with exit code 0, so <code>classify_agent_failure()</code> inspects both streams and returns one of five classes:</p>
+  <div class="tw"><table>
+    <tr><th>Class</th><th>Detected by</th><th>Response</th></tr>
+    <tr><td class="n m">overloaded</td><td class="m">"overloaded" or "529"</td><td>retry, full-jitter backoff, up to 3 attempts</td></tr>
+    <tr><td class="n m">rate_limit</td><td class="m">"rate limit" or "429"</td><td>retry, same</td></tr>
+    <tr><td class="n m">server_error</td><td class="m">5xx, "connection closed mid-response"</td><td>retry, same</td></tr>
+    <tr><td class="n m">parse_error</td><td class="m">exit 0 but nothing parseable</td><td>one corrective retry with headless framing appended</td></tr>
+    <tr><td class="n m">other</td><td class="m">everything else</td><td>return immediately, record it</td></tr>
+  </table></div>
+  <p>Above that, the phase does one corrective re-dispatch of any agent that finished with an error and no findings, because a transient cause (a server-error burst, a sleep window) has usually passed by the time the first wave finishes.</p>
+
+  <div class="note scar">
+    <p class="kicker">Why the re-dispatch exists</p>
+    <p>On 19 August 2026 the Mac was on battery and slept mid-run. Twelve of thirteen agents died mid-response and a 12-finding issue shipped. Software cannot stop that sleep, so two things changed: a battery warning fires at INIT while it can still help, and failed agents get one automatic second pass.</p>
+  </div>
+
+  <h3>What survives into storage</h3>
+  <p>Findings do not go straight into the database. In order: cross-agent semantic dedup at 0.85 keeping the higher-quality copy of each pair, then the policy engine (required fields, valid importance value, URL sanity, banned entities, eight prompt-injection regexes) rejecting bad findings <em>before</em> storage, then a stale-source gate on any URL whose own path encodes a date more than 30 days old, then a semantic near-duplicate check at 0.90 against 180 days of history. On 20 August 2026, 189 findings survived all four from 13 agents. If zero survive, the phase raises and the run fails, because a newsletter with no research is worse than no newsletter.</p>
+</section>
+
+<section id="agents">
+  <h2><span class="num">06</span>The thirteen research agents</h2>
+  <p class="lede">Each is a markdown file. The file <em>is</em> the agent. Editing it changes behaviour the next morning, and the prompt tracker notices.</p>
+
+  <div class="tw"><table>
+    <tr><th>Agent</th><th class="m">Lines</th><th>Beat</th><th>Fed by</th></tr>
+    <tr><td class="n">news-researcher</td><td class="m">78</td><td>Model releases, funding, launches, policy, hardware, last 48h</td><td class="m">hn, twitter</td></tr>
+    <tr><td class="n">agents-researcher</td><td class="m">134</td><td>Agent frameworks and SDKs, production deployments, protocols</td><td class="m">arxiv</td></tr>
+    <tr><td class="n">arxiv-researcher</td><td class="m">75</td><td>Papers with practitioner implications, ID date-prefix verified</td><td class="m">arxiv</td></tr>
+    <tr><td class="n">github-pulse-researcher</td><td class="m">78</td><td>Repos gaining traction 1&ndash;2 weeks ahead of press</td><td class="m">github</td></tr>
+    <tr><td class="n">hn-researcher</td><td class="m">75</td><td>Community-validated stories, 100+ points, skeptic threads</td><td class="m">hn</td></tr>
+    <tr><td class="n">reddit-researcher</td><td class="m">89</td><td>Real adoption signals and failure modes across 10 subs</td><td class="m">reddit</td></tr>
+    <tr><td class="n">rss-researcher</td><td class="m">75</td><td>15+ practitioner blogs and lab feeds that never surface in search</td><td class="m">rss</td></tr>
+    <tr><td class="n">sources-researcher</td><td class="m">70</td><td>Named high-signal newsletters, podcasts and channels</td><td class="m">youtube, rss</td></tr>
+    <tr><td class="n">projects-researcher</td><td class="m">69</td><td>Viral repos, Show HN, Product Hunt, things people built</td><td class="m">github</td></tr>
+    <tr><td class="n">thought-leaders-researcher</td><td class="m">67</td><td>Named people: Amodei, Altman, Karpathy, LeCun, Chollet, Ng</td><td class="m">twitter</td></tr>
+    <tr><td class="n">vibe-coding-researcher</td><td class="m">113</td><td>Coding agents and workflows, with three mandatory output sections</td><td class="m">reddit, github, youtube</td></tr>
+    <tr><td class="n">saas-disruption-researcher</td><td class="m">162</td><td>Category cannibalization across every SaaS vertical</td><td class="m">rss (saas set)</td></tr>
+    <tr><td class="n">skill-finder</td><td class="m">65</td><td>10 concrete, non-obvious, sourced techniques per day</td><td class="m">none</td></tr>
+  </table></div>
+
+  <p>Preflight routing lives in <code>SOURCE_ROUTING</code> in <span class="path">preflight/run_all.py</span>: each source has one primary agent and a list of secondaries, and RSS items are split by publisher name into a SaaS set and a high-signal-sources set. Exa results go to whichever agent owns the topic. An agent with no routed items still runs, it just works entirely in Phase 2.</p>
+
+  <p>Agents can be overridden per user. <code>get_agent_list()</code> checks <span class="path">data/{user}/agent-overrides/agents.json</span> first and only falls back to the vertical directory, so the whole roster can move to a different domain without touching Python.</p>
+
+  <h3>The other twenty skill files</h3>
+  <p>Beyond research, <span class="path">agents/</span> holds twenty more prompt files driving synthesis, social and site content: <code>synthesis-selector</code>, <code>synthesis-writer</code>, <code>eic</code>, <code>creative-director</code>, <code>art-director</code>, <code>illustrator</code>, <code>art-style-guide</code>, <code>linkedin-writer</code> and <code>linkedin-critic</code>, <code>bluesky-writer</code> and <code>bluesky-critic</code>, <code>humanizer</code>, <code>expeditor</code>, <code>engagement-finder</code>, <code>engagement-writer</code>, <code>site-story-writer</code>, <code>site-story-critic</code>, <code>feedback-processor</code>, <code>learnings-updater</code>, <code>trend-scanner</code> (unused now, replaced by the deterministic trend detector). Thirty-three prompt files in total.</p>
+</section>
+
+<section id="routing">
+  <h2><span class="num">07</span>Model routing</h2>
+  <p class="lede"><span class="path">orchestrator/router.py</span> maps a task type to a model, a turn cap and a timeout. One table, one place to change cost.</p>
+
+  <div class="tw"><table>
+    <tr><th>Task type</th><th>Model</th><th class="m">Max turns</th><th class="m">Timeout</th><th>Why</th></tr>
+    <tr><td class="n m">research_agent</td><td class="m">opus</td><td class="m">35</td><td class="m">1800s</td><td>Deep tool use; peaks near 131K context</td></tr>
+    <tr><td class="n m">synthesis_pass1</td><td class="m">claude-opus-5[1m]</td><td class="m">10</td><td class="m">600s</td><td>Editorial judgment over every finding at once</td></tr>
+    <tr><td class="n m">synthesis_pass2</td><td class="m">claude-opus-5[1m]</td><td class="m">30</td><td class="m">900s</td><td>Writing quality; full corpus in a 1M window</td></tr>
+    <tr><td class="n m">eic</td><td class="m">claude-opus-5[1m]</td><td class="m">15</td><td class="m">600s</td><td>Kill-or-publish judgment</td></tr>
+    <tr><td class="n m">evolve</td><td class="m">claude-opus-5[1m]</td><td class="m">10</td><td class="m">600s</td><td>All traces plus all skill files in one context</td></tr>
+    <tr><td class="n m">learnings_update</td><td class="m">sonnet</td><td class="m">5</td><td class="m">120s</td><td>Summarization</td></tr>
+    <tr><td class="n m">writer / critic / humanizer</td><td class="m">sonnet</td><td class="m">5&ndash;15</td><td class="m">240&ndash;300s</td><td>Bounded writing and review</td></tr>
+    <tr><td class="n m">engagement_finder / writer</td><td class="m">sonnet</td><td class="m">5&ndash;10</td><td class="m">120&ndash;300s</td><td>Search, match, short replies</td></tr>
+    <tr><td class="n m">identity</td><td class="m">sonnet</td><td class="m">5</td><td class="m">300s</td><td>Small structured diff</td></tr>
+    <tr><td class="n m">trend_scan</td><td class="m">haiku</td><td class="m">5</td><td class="m">60s</td><td>Legacy; the phase is deterministic now</td></tr>
+  </table></div>
+
+  <p>Two footnotes to have ready. The research phase's docstring still says "13x Sonnet". The router has said <code>opus</code> for a while, and the router is what runs. And the <code>[1m]</code> suffix requests the 1M-token context variant, used only where the whole day's findings genuinely have to be in one window.</p>
+</section>
+
+<section id="memory">
+  <h2><span class="num">08</span>Memory and data</h2>
+  <p class="lede">Two SQLite files in WAL mode. No Postgres, no vector database, no external service.</p>
+
+  <div class="tw"><table>
+    <tr><th>Store</th><th class="m">Tables</th><th>Holds</th></tr>
+    <tr><td class="n m">data/ramsay/memory.db</td><td class="m">43</td><td>findings and their embeddings, sources, patterns, skills, preferences, feedback, social posts, engagements, signals, trend history, run quality, receipts, entity graph, kg_* tables</td></tr>
+    <tr><td class="n m">data/ramsay/traces.db</td><td class="m">18</td><td>pipeline_runs, agent_runs, phase_tracking, events, checkpoints, quality_history, prompt_tracker, agent_metrics, alerts</td></tr>
+  </table></div>
+
+  <h3>Embeddings run locally</h3>
+  <p><span class="path">memory/embeddings.py</span> loads <code>BAAI/bge-small-en-v1.5</code> through fastembed once at import, 384 dimensions, vectors already normalized so cosine similarity is a plain dot product. Similarity search is a numpy matrix multiply against a column of stored blobs. Nothing in this pipeline calls an embedding API, ever. The ONNX cache is pinned to <span class="path">~/.cache/mindpattern/fastembed</span> because macOS purges <code>/var/folders</code> and a dangling symlink there silently broke the research phase once.</p>
+
+  <h3>How much of that schema is actually alive</h3>
+  <p>61 tables sounds like more system than it is, so I counted. In memory.db, 14 tables get written every run and another 5 on event. Eight are frozen: <code>validated_patterns</code> stopped 9 April, <code>patterns</code> 11 March, <code>signals</code> 13 July, <code>social_metrics</code> 5 March. Five have never held a row at all: <code>agent_notes</code>, <code>agent_checks</code>, <code>claimed_topics</code>, <code>editorial_corrections</code> and the notes embedding table. There is also a <code>findings_fts</code> full-text index that was created over the findings table and never populated, so a MATCH query returns nothing. No code queries it, so it is dead weight rather than a broken feature.</p>
+  <p>traces.db is worse. Nine of its 18 tables are empty, and three of those nine are superseded duplicates of tables that <em>are</em> live: <code>prompt_versions</code> against <code>prompt_tracker</code>, <code>pipeline_phases</code> against <code>phase_tracking</code>, <code>quality_scores</code> against <code>quality_history</code>. <span class="path">traces_db.py</span> still creates the old names on every open while <span class="path">observability.py</span> and <span class="path">prompt_tracker.py</span> write the new ones. Two generations of schema, both shipping.</p>
+
+  <h3>Live contents</h3>
+  <div class="tw"><table>
+    <tr><th class="m">findings</th><th class="m">sources</th><th class="m">validated_patterns</th><th class="m">kg_entities</th><th class="m">kg_edges</th><th class="m">kg_communities</th><th class="m">entity_graph</th></tr>
+    <tr><td class="m">21,307</td><td class="m">2,531</td><td class="m">223</td><td class="m">12,987</td><td class="m">19,145</td><td class="m">6,978</td><td class="m">5,612</td></tr>
+  </table></div>
+
+  <h3>Checkpoint and resume</h3>
+  <p>Every completed phase writes a checkpoint row to traces.db. On start, <code>run()</code> looks for a resumable run for today and, if found, adopts its identity rather than creating a new one, so a single logical execution never splits across two run IDs. A resume targeting RESEARCH deliberately rewinds one step to TREND_SCAN, because preflight items are not checkpointed and research without them runs in a degraded mode.</p>
+</section>
+
+<section id="gates">
+  <h2><span class="num">09</span>Gates, dedup and quality</h2>
+
+  <h3>Five dedup layers, each looking at something different</h3>
+  <div class="tw"><table>
+    <tr><th class="m">#</th><th>Layer</th><th>Compares</th><th>Window</th><th>Threshold</th></tr>
+    <tr><td class="m">1</td><td class="n">Preflight annotation</td><td>incoming items vs stored findings</td><td class="m">10 days</td><td class="m">0.85, time-decayed</td></tr>
+    <tr><td class="m">2</td><td class="n">Cross-agent dedup</td><td>findings vs each other, this run</td><td class="m">same run</td><td class="m">0.85 cosine</td></tr>
+    <tr><td class="m">3</td><td class="n">Stale-source gate</td><td>date encoded in the URL path</td><td class="m">30 days</td><td class="m">exact, no embedding</td></tr>
+    <tr><td class="m">4</td><td class="n">Storage gate</td><td>finding vs finding history</td><td class="m">180 days</td><td class="m">0.90 cosine</td></tr>
+    <tr><td class="m">5</td><td class="n">Published history</td><td>selection vs <em>published issues</em></td><td class="m">21 / 30 days</td><td class="m">stemmed Jaccard</td></tr>
+  </table></div>
+
+  <div class="note scar">
+    <p class="kicker">Why layer 5 had to be added</p>
+    <p>Layers 1 to 4 all compare <em>findings</em>. None of them ever looked at what past issues actually published. A 17 August 2026 audit found 26 stories re-reported as new across 20 issues while every gate scored green. <span class="path">orchestrator/published_history.py</span> reads the published markdown itself. It is deliberately embedding-free, so the hard check keeps working in tests and when the model misbehaves.</p>
+  </div>
+
+  <h3>Six-dimension scoring</h3>
+  <p><span class="path">orchestrator/evaluator.py</span> is entirely deterministic. It scores coverage 0.25, dedup 0.20, sources 0.15, actionability 0.15, topic balance 0.15 and length 0.10 into a composite. <code>assess_quality_floor()</code> then compares against roughly twenty thresholds (minimum 11 of 13 agents active, minimum 70 findings, at least 4 source classes, top-domain concentration under 0.35, 75% source responsiveness) and returns pass, degraded, or fail_retryable. All three publish. Only the reporting changes.</p>
+  <p>Those thresholds come from measured runs, not from guesses. The old concentration ceiling gated the raw candidate pool, which RSS dominates purely because feeds are verbose, and it breached on all 29 logged days. It now measures findings that reached the newsletter, where the healthy observed range is 0.14 to 0.30.</p>
+
+  <h3>The policy engine</h3>
+  <p><span class="path">policies/research.json</span> is data, not code: required fields, allowed importance values, maximum findings per agent, maximum summary length, a 48-hour age limit, banned entities, and eight named prompt-injection regexes covering instruction override, role reassignment, system-prompt exfiltration and role-play commands. Preflight explicitly does <em>not</em> filter injection text out of scraped content. This engine is the one place that checks it, after the agent has seen it and before it enters memory.</p>
+
+  <h3>Kill switches</h3>
+  <div class="tw"><table>
+    <tr><th>Variable</th><th>Effect</th></tr>
+    <tr><td class="n m">MP_DRY_RUN=1</td><td>Every Claude call returns deterministic placeholder output; full orchestration still runs</td></tr>
+    <tr><td class="n m">MP_DISABLE_OUTBOUND=1</td><td>Global outbound kill switch, checked by every irreversible action; SYNC is skipped</td></tr>
+    <tr><td class="n m">MP_SITE_CONTENT_DISABLED=1</td><td>Skips the public site phase</td></tr>
+    <tr><td class="n m">MP_KG_BUILD_ENABLED=1</td><td>Opt-in knowledge-graph extraction, with tunable batch size, workers and timeout</td></tr>
+    <tr><td class="n m">MP_LAUNCHD_SKIP_SOCIAL=1</td><td>Default for scheduled runs; social needs a human at the Slack gates</td></tr>
+  </table></div>
+</section>
+
+<section id="failure">
+  <h2><span class="num">10</span>How it fails</h2>
+  <p class="lede">Two phases are critical. Everything else degrades. The design principle: publish something honest, alert loudly, never publish silently wrong.</p>
+
+  <ul>
+    <li><strong>RESEARCH or SYNTHESIS fails</strong> &rarr; run marked FAILED, Slack alert, exit 1, no marker written, next retry window picks it up.</li>
+    <li><strong>Any other phase fails</strong> &rarr; caught, logged, appended to <code>warnings</code>, run continues and finishes as <code>completed</code> with the warnings recorded.</li>
+    <li><strong>Story selection fails 3 times</strong> &rarr; Python builds a deterministic Top 5 from stored findings by importance and source quality, and the prompt tells the writer it is in recovery mode.</li>
+    <li><strong>The writer fails 3 times</strong> &rarr; Python publishes a deterministic source-list brief and an urgent Slack alert names the reason.</li>
+    <li><strong>Delivery fails</strong> &rarr; the run finishes as <code>completed_degraded</code> with exit code 1, so status, exit code and the missing marker all tell the same story instead of a false success.</li>
+    <li><strong>Sync fails after delivery</strong> &rarr; the next window runs <code>--sync-only</code>, never a full rerun. A full rerun would double the day's findings and rewrite a published issue, which is exactly what happened on 14 July 2026.</li>
+  </ul>
+
+  <div class="note">
+    <p class="kicker">Concurrency and idempotency</p>
+    <p>Three independent guards: an <code>flock</code> in <span class="path">run.py</span>, an atomic <code>mkdir</code> lock with stale-PID reclaim in <span class="path">run-launchd.sh</span>, and a receipts table claimed before every irreversible outbound action. The wrapper can fire twenty times a morning and at most one pipeline runs.</p>
+  </div>
+</section>
+
+<section id="harness">
+  <h2><span class="num">11</span>The harness that edits the code</h2>
+  <p class="lede">A second loop, outside the daily pipeline, where agents find issues in the repository, plan fixes, write tests first, and open pull requests. It shipped 16 merged PRs, then went dormant in April and has not run since.</p>
+
+  <p><span class="path">harness/</span> applies the same deterministic-versus-agentic split one level up. Deterministic: ticket schema validation, security-sensitivity detection by path match, review-depth routing, pytest execution, <code>ast.parse</code> syntax checks, regex secret scanning, debug-statement detection, diff scope checking against the ticket's declared files, ticket lifecycle, and knowledge-graph validation. Agentic: scouting for issues, architecture planning, threat modelling, writing the fix, and reviewing it.</p>
+
+  <p>The flow is a ticket, then a plan agent in its own git worktree, then a fix agent doing TDD in a branch, then five deterministic gates that must all pass, then a review agent in a <em>separate</em> worktree. That review runs three specialist subagents in parallel, testing, security and maintainability, and they compute a score. Seven or above passes, pushes the branch, and opens a PR with the evidence attached. GitHub Actions runs pytest as the final hard gate. A human merges or closes, and the harness writes that decision back to <span class="path">harness/feedback.json</span> so the scout learns what gets accepted.</p>
+
+  <div class="note scar">
+    <p class="kicker">Track record, checked not assumed</p>
+    <p>34 tickets exist, all created between 31 March and 2 April 2026. Their end states: 3 done, 12 failed, 4 stuck in progress, 15 never picked up. Sixteen pull requests came off <code>harness/*</code> branches and all sixteen merged, between 1 and 3 April. Nothing since. <span class="path">harness/audit.jsonl</span> holds one line, dated 7 May. <span class="path">harness/feedback.json</span> is an empty array, so the merge-decision loop that was supposed to teach the scout has never had a single data point. There is no launchd job for it; <code>bash harness/run.sh</code> is a manual invocation and nobody has invoked it in four months.</p>
+  </div>
+
+  <p>Claude Code hooks enforce it at the tool level. A <code>PreToolUse</code> hook blocks <code>git commit</code> inside harness worktrees when it finds syntax errors, secrets or debug statements. A <code>PostToolUse</code> hook appends every tool call to <span class="path">harness/audit.jsonl</span>. A third validates the knowledge graph after Python edits.</p>
+
+  <p>The knowledge graph itself is 31 hand-written markdown files linked with <code>[[slug]]</code> wiki-links, supporting section-level references like <code>[[orchestrator/runner#Error Handling]]</code>, with a stack-based section parser, a suffix index, a five-tier fuzzy search, four validation passes, and bidirectional links back into Python source through <code>&#35; @know:</code> comments.</p>
+</section>
+
+<section id="deploy">
+  <h2><span class="num">12</span>Where it runs</h2>
+
+  <h3>The Mac does the work</h3>
+  <p>A launchd agent, <span class="path">deploy/com.mindpattern.pipeline.plist</span>, fires <span class="path">run-launchd.sh</span> every 15 minutes from 05:00 to 09:45. Twenty triggers, and nineteen of them are no-ops. The wrapper enforces a 05:00&ndash;09:59 window, checks the delivery and sync markers, takes an atomic lock, fast-forwards <code>main</code>, holds <code>caffeinate -i -s</code> for the duration, and runs <code>run.py --skip-social</code>.</p>
+  <p>Dense triggers exist because of a real timezone problem. Powerd and launchd's calendar scheduler both drifted onto Pacific while the machine was elsewhere, and on battery macOS skips the scheduled wake entirely. Fifteen-minute spacing means the run starts within a quarter hour of the first manual wake rather than waiting for the next hour.</p>
+
+  <h3>Fly.io hosts the front</h3>
+  <p>One <code>shared-cpu-2x</code> machine, 2GB, region sjc, with a persistent volume at <code>/data</code>. <span class="path">start.sh</span> runs two processes under tini: a uvicorn server for the FastAPI dashboard on port 8080, and the Slack Socket Mode bot. Either dying exits nonzero so Fly restarts the machine. Secrets are Fly env vars in the container and macOS Keychain locally.</p>
+  <p>The dashboard mounts 18 routers: newsletters, findings, skills, traces, run history, prompts, metrics, performance, pipeline status, site search, site analytics, social and engagement history, an editor's desk, an SSE stream and a sync upload endpoint. <span class="path">mindpattern.ai</span> is the public face, served through Vercel with the Fly app as its backend.</p>
+
+  <h3>Slack is the control surface</h3>
+  <p>The bot runs channel-based handlers for approvals, posts, tips, skills, briefings, engagement, follow-ups and harness commands. Approval gates block the social pipeline until a human answers, and gate 1 accepts a custom topic that replaces the EIC's choice entirely. Harness commands stay Mac-only.</p>
+</section>
+
+<section id="repo">
+  <h2><span class="num">13</span>Repo map and languages</h2>
+
+  <div class="tw"><table>
+    <tr><th>Directory</th><th class="m">Files</th><th>Language</th><th>Role</th></tr>
+    <tr><td class="n m">orchestrator/</td><td class="m">33 py</td><td class="m">Python 3.14</td><td>Pipeline, phases, dispatch, synthesis, evaluation, site content, sync</td></tr>
+    <tr><td class="n m">tests/</td><td class="m">97 py</td><td class="m">pytest</td><td>No network, no API keys, subprocess calls mocked</td></tr>
+    <tr><td class="n m">dashboard/</td><td class="m">25 py</td><td class="m">FastAPI + Jinja</td><td>Newsletter viewer, traces UI, public site API</td></tr>
+    <tr><td class="n m">slack_bot/</td><td class="m">19 py</td><td class="m">Socket Mode</td><td>Approvals, drafts, commands, heartbeat</td></tr>
+    <tr><td class="n m">memory/</td><td class="m">16 py</td><td class="m">SQLite + numpy</td><td>Findings, embeddings, patterns, identity, mirror</td></tr>
+    <tr><td class="n m">harness/</td><td class="m">15 py</td><td class="m">Python</td><td>Self-improvement loop, gates, knowledge graph</td></tr>
+    <tr><td class="n m">preflight/</td><td class="m">11 py</td><td class="m">Python</td><td>8 sources, dedup annotation, trend detection</td></tr>
+    <tr><td class="n m">tools/</td><td class="m">10 py</td><td class="m">Python CLIs</td><td>Fetchers agents invoke directly via Bash</td></tr>
+    <tr><td class="n m">social/</td><td class="m">9 py</td><td class="m">Python</td><td>EIC, writers, critics, approval, posting</td></tr>
+    <tr><td class="n m">core/</td><td class="m">7 py</td><td class="m">Python</td><td>Claude CLI boundary, db, receipts, migrations</td></tr>
+    <tr><td class="n m">kg/</td><td class="m">6 py</td><td class="m">Python</td><td>Knowledge-graph extract, resolve, build</td></tr>
+    <tr><td class="n m">agents/ + verticals/</td><td class="m">33 md</td><td class="m">Markdown</td><td>The prompts. These are program text, not documentation.</td></tr>
+    <tr><td class="n m">policies/</td><td class="m">2 json</td><td class="m">JSON</td><td>Validation rules as data</td></tr>
+  </table></div>
+
+  <p>Roughly 90,000 lines of Python across those directories. Supporting languages: Bash for the two entrypoints, SQL inline, JSON for config and policies, TOML for Fly, XML plist for launchd, a Dockerfile for the Fly image, and one TypeScript file in the dashboard. No type stubs needed. The codebase uses <code>str | None</code> rather than <code>Optional[str]</code> throughout.</p>
+
+  <p>There is also <span class="path">graphify-out/</span>, an AST-derived call graph of this repo used by coding agents for navigation. No pipeline code imports it. Four things in this repo are called a graph, and they are unrelated. graphify navigates the source, <span class="path">harness/knowledge/</span> documents modules for the harness agents, <span class="path">kg/</span> extracts entities from research findings, and <span class="path">orchestrator/site_graph.py</span> serves the public website.</p>
+</section>
+
+<section id="qa">
+  <h2><span class="num">14</span>Answers you will need</h2>
+
+  <div class="qa">
+    <p class="q">Is this agentic, or is it a workflow?</p>
+    <p>Both, at different levels. The outer loop is a hard-coded state machine with no model in the control path. The inner work is genuinely agentic: each research agent runs up to 35 turns, decides which tools to use, follows leads, and applies its own critique gate before answering. Agency stops at the phase boundary.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">Which model, and how do you pay for it?</p>
+    <p>The Claude CLI in headless mode against a personal Anthropic subscription. Research agents and both synthesis passes run on Opus, with the 1M-context variant where the whole day's findings have to fit in one window. Sonnet handles bounded writing and review. Nothing calls the paid API, and there is no API key in the project.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">What stops it hallucinating a newsletter?</p>
+    <p>Four things in sequence. The system prompt says the finding count is a description, not a quota, and that fewer real findings is always correct. The policy engine rejects findings missing a source URL before storage. The stale-source and 180-day similarity gates drop recycled news. And the six-dimension evaluator scores source density in the published text. If the model refuses rather than fabricates, that is the outcome I designed for, and the pipeline records it.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">Why thirteen agents rather than one big prompt?</p>
+    <p>Three reasons. Context isolation, so a paper-heavy day cannot crowd out the security beat. Failure isolation, so one agent timing out costs one thirteenth of the day rather than everything. And prompt specificity, since each skill file names actual sources, people, subreddits and quality bars for its beat, which a single prompt cannot do at that depth.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">What was the hardest part?</p>
+    <p>Everything about non-determinism at the seams. The model refusing in prose where a parser expected JSON. The same prompt producing 42 em-dashes one day and 2 the next. A tool grant that named a binary nobody had installed. The pattern in every fix is the same: move the check out of the prompt and into code, at the point where the failure would actually do damage.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">How does it improve itself?</p>
+    <p>Three loops are built. One of them is running. I would rather say that in the room than get caught on it.</p>
+    <p><strong>Working:</strong> the daily quality loop. Every run is scored on six dimensions, compared against the 7-day average, and a drop writes a failure lesson. Prompt file hashes let the next run attribute a quality change to a specific prompt edit. That produces a real 175-run series, and the 19 August collapse from 0.719 to 0.573 showed up in it the same day.</p>
+    <p><strong>Half-working:</strong> identity. It writes genuine daily analysis into decisions.md and reads the last seven entries back. But voice.md, the file that actually shapes the prose, has not changed since June, so the loop turns without moving anything.</p>
+    <p><strong>Dormant:</strong> pattern consolidation and the harness. Consolidation reads a table nothing writes. The harness merged 16 PRs in April and has not been run since. Both are wired end to end and both would work if I fed them, which is a different problem from being broken, but it is not the same as running.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">What would you build differently?</p>
+    <p>The site content phase takes 2 hours 47 minutes and sits inside the same sequential run as everything else. It should be a separate job triggered after delivery. And thirteen agents at six-way concurrency is tuned for one machine's rate limits, not for throughput. The fan-out width is a config value I have never gone back and revisited.</p>
+  </div>
+</section>
+
+<footer>
+  <p>MindPattern v3 &middot; teardown generated 20 August 2026 from the working tree at <code>agent/linkedin-pageview-backend</code>. Numbers read live from memory.db and traces.db. Phase timings from run <code>research-2026-08-20-326ede</code>.</p>
+</footer>
+
+</main>
+</div>

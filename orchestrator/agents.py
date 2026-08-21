@@ -164,6 +164,21 @@ RESEARCH_SYSTEM_PROMPT = PROJECT_ROOT / "prompts" / "research-agent-system.md"
 FINDINGS_TARGET_MIN = 20
 FINDINGS_TARGET_MAX = 25
 
+# Self-improvement notes an agent may emit alongside its findings. This is the
+# input to memory.patterns.consolidate(); without it validated_patterns froze
+# on 2026-04-09 and every agent has been reading a stale April snapshot since.
+# Caps are deliberate: notes are secondary to findings and must never crowd
+# out the payload or become a second essay channel.
+MAX_NOTES_PER_AGENT = 6
+MAX_NOTE_CHARS = 400
+NOTE_TYPES = (
+    "source_quality",
+    "search_strategy",
+    "discovery",
+    "pattern",
+    "skip_list",
+)
+
 
 def _build_claude_command(
     prompt_arg: str,
@@ -199,6 +214,7 @@ class AgentResult:
     """Result from a single agent execution."""
     agent_name: str
     findings: list[dict] = field(default_factory=list)
+    notes: list[dict] = field(default_factory=list)
     raw_output: str = ""
     exit_code: int = 0
     duration_ms: int = 0
@@ -397,8 +413,31 @@ Do not explain your full reasoning — just output the finding.
       "source_name": "string",
       "date_found": "{date_str}"
     }}
+  ],
+  "notes": [
+    {{
+      "note_type": "source_quality|search_strategy|discovery|pattern|skip_list",
+      "content": "string (one sentence, concrete, names the source or method)"
+    }}
   ]
 }}
+
+"findings" is the payload and is required. "notes" is optional and secondary:
+up to {MAX_NOTES_PER_AGENT} short observations about YOUR OWN RUN, not about
+the news. They are clustered across agents over time into shared operating
+rules, so write them for the version of you that runs tomorrow:
+
+- source_quality — which source paid off or wasted the run, and why.
+  "arXiv cs.AI gave 6 builder-actionable papers; cs.NE gave none."
+- search_strategy — a query or tool that worked better than the obvious one.
+  "Exa semantic search beat WebSearch for agent-framework release notes."
+- discovery — a source or feed you found that is not in your skill file.
+- pattern — a recurring shape you noticed in your beat.
+- skip_list — something that reliably wastes time and should be skipped.
+
+Write a note only when you actually learned something this run. Zero notes is
+a valid and common answer. Never invent one, and never restate a finding as a
+note.
 
 ---
 
@@ -480,7 +519,8 @@ Drop any finding that fails checks 1, 2, or 3. Downgrade any finding that fails 
 {preflight_section}{search_section}
 ---
 
-CRITICAL REMINDER: Output ONLY the JSON object with "findings" array. No other text.
+CRITICAL REMINDER: Output ONLY the JSON object. "findings" is required;
+"notes" is optional and may be omitted or empty. No other text.
 """
     return prompt
 
@@ -560,6 +600,7 @@ def _run_agent_attempt(
     result.raw_output = stdout
 
     findings = _parse_findings(stdout, agent_name) if stdout and stdout.strip() else []
+    result.notes = _parse_notes(stdout, agent_name) if stdout and stdout.strip() else []
     if findings:
         # Success even with a non-zero exit (e.g. a post-output hook failed)
         # — we still got usable findings.
@@ -828,6 +869,64 @@ def _parse_findings(output: str, agent_name: str) -> list[dict]:
         f"({len(output)} chars): {output[:200]!r}"
     )
     return []
+
+
+def _parse_notes(output: str, agent_name: str) -> list[dict]:
+    """Parse the optional `notes` array from agent output.
+
+    Notes are self-observations ("arXiv gave 6 actionable papers today",
+    "Exa beat WebSearch for framework releases") that consolidate() clusters
+    into validated_patterns. They are strictly optional: an agent that emits
+    only findings is behaving correctly, so every failure path here returns
+    an empty list rather than raising. Findings must never be lost because a
+    note was malformed.
+    """
+    payload = None
+    try:
+        candidate = json.loads(output.strip())
+        if isinstance(candidate, dict):
+            payload = candidate
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    if payload is None:
+        for block in _extract_balanced_json_blocks(output or ""):
+            try:
+                candidate = json.loads(block)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and "notes" in candidate:
+                payload = candidate
+                break
+
+    if not isinstance(payload, dict):
+        return []
+
+    raw = payload.get("notes")
+    if not isinstance(raw, list):
+        return []
+
+    notes: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        note_type = str(item.get("note_type") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if not note_type or not content:
+            continue
+        if note_type not in NOTE_TYPES:
+            note_type = "pattern"
+        notes.append({
+            "note_type": note_type,
+            "content": content[:MAX_NOTE_CHARS],
+        })
+        if len(notes) >= MAX_NOTES_PER_AGENT:
+            break
+
+    if notes:
+        logger.info("Agent %s emitted %d self-improvement note(s)",
+                    agent_name, len(notes))
+    return notes
 
 
 def _finding_quality_score(finding: dict) -> float:
