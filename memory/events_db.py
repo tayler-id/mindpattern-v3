@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_target ON events(target, type, ts);
+-- Answers "has this anon_id been seen before timestamp T" with one index seek,
+-- which is what separates a new reader from a returning one. Without it the
+-- new/returning split on /site-analytics degrades to a table scan per reader.
+CREATE INDEX IF NOT EXISTS idx_events_anon_ts ON events(anon_id, ts);
 """
 
 _ANON_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")

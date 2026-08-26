@@ -67,7 +67,7 @@ Run the FastAPI service locally:
 .venv/bin/python3 -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8010
 ```
 
-There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development.
+There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development. When a deploy is authorized, it runs through `deploy/deploy.sh` (tests, 3.11 compile gate, `flyctl deploy`, then the site purge and warm crawl) rather than a bare `flyctl deploy`, which leaves the public site cold.
 
 A pipeline smoke can write local databases, reports, and checkpoints even when outbound calls are disabled. Run one only when the task requires it:
 

@@ -1,4 +1,62 @@
-# Deployment — launchd agents (macOS)
+# Deployment
+
+## Shipping the backend: `deploy/deploy.sh`
+
+This is the deploy. A bare `flyctl deploy` is not.
+
+Replacing the Fly machine empties every in-memory cache in
+`dashboard/routes/api.py`, and a Vercel deploy drops the whole Next.js ISR
+cache. Either way the next reader pays the cold render. On 2026-08-26 four
+deploys in one evening left mindpattern.ai cold, with nothing to recover it
+until the operator noticed and warmed it by hand.
+
+```sh
+deploy/deploy.sh                # tests, 3.11 compile gate, fly deploy, purge + warm
+deploy/deploy.sh --warm-only    # after a Vercel deploy: crawl the whole sitemap
+deploy/deploy.sh --skip-tests   # compile gate only (rare)
+```
+
+Steps, in order: `python3.11 -m py_compile` over `dashboard/ orchestrator/
+slack_bot/` (Fly runs 3.11, the venv is 3.14), `pytest tests/ -q`, `flyctl
+deploy --strategy immediate`, poll `/healthz` until the machine answers, poll
+`/api/warmup/status` until the phase leaves `running`, print any `incomplete`
+warm-up steps, then `python3 -m orchestrator.sync warm`. A warm-only run skips
+the compile gate and the tests: it ships nothing.
+
+### Two scopes, because the two failures are different
+
+`--scope changed` (the default after a backend deploy) purges the paths the
+day's publish wrote and crawls them back. `--scope site` (the default for
+`--warm-only`) crawls the site's own `sitemap.xml` and purges nothing, because
+a Vercel deploy has already dropped every entry a purge would drop. The
+sitemap set is ordered entry points, all `/e/`, all `/source/`, then the
+newest 30 briefings, 30 blog dates and 200 stories, roughly 370 pages. The
+whole sitemap is over 7,000 URLs and no serial crawl finishes it; the archive
+tail renders in 0.2-3.4s cold and crawlers re-warm it themselves.
+
+Getting this wrong is what the script was written for. `changed_site_paths`
+on a day with no publish yet returns exactly four paths, all of which answer
+200, so the earlier version printed "purged and warm" over a site where ~780
+story pages and 86 entity pages were still cold.
+
+The script exits nonzero if the crawl covered less than it was asked to cover:
+no paths, nothing crawled, any page erroring, or the crawl budget running out
+mid-set. Other exit codes: 2 unknown argument, 3 `MP_SANDBOX=1`, 4 no
+python3.11, 5 `/healthz` never returned.
+
+### Purge-on-publish secret
+
+`orchestrator/sync.py` POSTs the changed paths to the site's
+`/api/revalidate` with a shared secret in the `x-revalidate-secret` header.
+Set the same value in two places:
+
+- Vercel project env var `REVALIDATE_SECRET`.
+- This machine: `MP_REVALIDATE_SECRET`, or `~/.mindpattern-revalidate-secret`.
+
+Unset, the pipeline logs a warning, skips the purge, and the site falls back
+to its hour-long TTL. The publish still succeeds; readers just wait.
+
+## launchd agents (macOS)
 
 Two launchd agents keep MindPattern running on the host Mac. Copies live here
 so a machine move is reproducible (the `~/Library/LaunchAgents` originals are

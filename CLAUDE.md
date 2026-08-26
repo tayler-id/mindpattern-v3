@@ -13,6 +13,7 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern. Runs 24/7 on Fly.io (app `mindpattern`, alongside the dashboard via `start.sh`); harness commands stay Mac-only. Secrets come from Fly secrets (env vars) in the container, macOS Keychain locally.
 - **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
 - **Scheduling**: macOS launchd via `run-launchd.sh` (`deploy/com.mindpattern.pipeline.plist` fires hourly 07:00–11:00; the script's lock and window guard ensure one run per day)
+- **Deploy**: `deploy/deploy.sh` runs tests, the 3.11 compile gate, `flyctl deploy`, then the site warm crawl. Never deploy with a bare `flyctl deploy`: a deploy empties the dashboard's in-memory caches (and a Vercel deploy drops the whole ISR cache), and nothing else refills them. Run `deploy/deploy.sh --warm-only` after a Vercel deploy. See `deploy/README.md`.
 
 ## Code Conventions
 
