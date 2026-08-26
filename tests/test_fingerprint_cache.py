@@ -90,6 +90,38 @@ class TestFingerprintIsCached:
         assert seen == ["ramsay"]
 
 
+class TestSourcesFingerprintIsCachedToo:
+    """The story detail endpoint calls the primitive directly, not
+    _data_fingerprint. Six handlers do. Memoizing only the wrapper left a
+    second door onto the same 53-directory sweep, which is why a warm story
+    detail still measured 7.7s after the first fix."""
+
+    def test_the_primitive_is_memoized(self, story_tree, monkeypatch):
+        import pathlib as _pl
+
+        calls = {"n": 0}
+        api_mod._reset_fingerprint_cache()
+        real = _pl.Path.iterdir
+
+        def counting(self):
+            if "site-stories" in str(self):
+                calls["n"] += 1
+            return real(self)
+
+        monkeypatch.setattr(_pl.Path, "iterdir", counting)
+        for _ in range(30):
+            api_mod._story_sources_fingerprint("ramsay")
+        assert calls["n"] == 1, f"30 calls swept the tree {calls['n']} times"
+
+    def test_both_memos_clear_together(self, story_tree):
+        api_mod._data_fingerprint("ramsay")
+        api_mod._story_sources_fingerprint("ramsay")
+        assert api_mod._FINGERPRINT_CACHE and api_mod._SOURCES_FINGERPRINT_CACHE
+        api_mod._reset_fingerprint_cache()
+        assert not api_mod._FINGERPRINT_CACHE
+        assert not api_mod._SOURCES_FINGERPRINT_CACHE
+
+
 class TestStillCorrect:
     def test_a_fresh_process_computes_a_real_value(self, story_tree):
         api_mod._reset_fingerprint_cache()

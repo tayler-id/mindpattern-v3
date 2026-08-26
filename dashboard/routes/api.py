@@ -792,6 +792,103 @@ async def get_findings(
         conn.close()
 
 
+# ── Corpus indexes ───────────────────────────────────────────────────────
+#
+# Three whole-corpus indexes (finding ids, the ranked entity list, and the
+# slug -> issues map) each cost seconds and tens of MB to build. They do NOT
+# live in _PUBLIC_RESPONSE_CACHE. That dict is bounded at 4096 entries and
+# clears wholesale rather than evicting one entry (_public_cache_put), and
+# crawlers are 99.1% of traffic walking /f/ ids, each adding two keys — so
+# roughly 2,000 finding requests wipe it. Rebuilding a 98 MB index on the
+# request path because a bot walked past is not a cache. Each index gets its
+# own module-level dict, keyed on the data fingerprint, single-flight under
+# its own lock, and nothing else can evict it.
+
+
+def _fingerprint_index(cache: dict, lock: threading.Lock, user: str, build):
+    """Build `build(user)` once per content change. Blocking; call in a thread.
+
+    Single-flight: a crawl burst waits on one build instead of each request
+    starting its own. A None result is not stored, so a transient sqlite error
+    does not pin "no index" until the next publish.
+    """
+    fingerprint = _data_fingerprint(user)
+    cached = cache.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    with lock:
+        cached = cache.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        value = build(user)
+        if value is not None:
+            cache[user] = (fingerprint, value)
+        return value
+
+
+async def _offloaded_index(cache: dict, lock: threading.Lock, user: str, build):
+    """Same index, built off the event loop and behind the offload semaphore."""
+    fingerprint = _data_fingerprint(user)
+    cached = cache.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    async with _PUBLIC_OFFLOAD_SEMAPHORE:
+        cached = cache.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        return await asyncio.to_thread(_fingerprint_index, cache, lock, user, build)
+
+
+_FINDING_ID_INDEX_CACHE: dict[str, tuple[float, dict]] = {}
+_FINDING_ID_INDEX_LOCK = threading.Lock()
+
+
+def _finding_id_index_impl(user: str) -> dict | None:
+    """Every finding id the corpus holds, plus the highest one.
+
+    One indexed scan of the id column. Returns None on any doubt (no database,
+    no table, sqlite error) so the caller falls through to the real query
+    instead of inventing a 404.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    try:
+        if not _table_exists(conn, "findings"):
+            return None
+        ids = {int(row[0]) for row in conn.execute("SELECT id FROM findings")}
+    except sqlite3.Error as exc:
+        logger.warning("finding id index unavailable for %s: %s", user, exc)
+        return None
+    finally:
+        conn.close()
+    return {"ids": ids, "max_id": max(ids) if ids else 0}
+
+
+async def _finding_is_missing(user: str, finding_id: int) -> bool:
+    """Answer "no such finding" without paying for the finding page.
+
+    A dead /f/ link used to cost what a live one costs. _finding_impl walks the
+    related-paths graph before it can report the miss, and it queues on the
+    shared offload semaphore to do it, so a bad id behind a crawl burst waited
+    minutes and the site's 10s abort turned it into a 500 instead of a 404.
+
+    The id set is built once per content change. Ids above the highest one it
+    saw are treated as present: findings are appended with rising ids, and a
+    stale index must never 404 a finding that was just written.
+    """
+    if finding_id <= 0:
+        return True
+    index = await _offloaded_index(
+        _FINDING_ID_INDEX_CACHE, _FINDING_ID_INDEX_LOCK, user, _finding_id_index_impl
+    )
+    if not index:
+        return False
+    if finding_id > int(index["max_id"]):
+        return False
+    return finding_id not in index["ids"]
+
+
 def _finding_impl(finding_id: int, user: str) -> dict | None:
     opened = _open_graph_model(user)
     if opened is None:
@@ -826,6 +923,8 @@ async def get_finding(
     user: str = Query("ramsay"),
 ):
     """Public: one finding by ID with whitelisted fields only."""
+    if await _finding_is_missing(user, finding_id):
+        return _finding_not_found()
     value = await _cached_offload(
         ("finding", user, finding_id), user, lambda: _finding_impl(finding_id, user)
     )
@@ -853,6 +952,8 @@ async def get_related_findings(
     """Public: source finding's related findings over stored embeddings."""
     if mode not in {"semantic", "blended"}:
         return JSONResponse(status_code=400, content={"error": "Unsupported related mode"})
+    if await _finding_is_missing(user, finding_id):
+        return _finding_not_found()
     value = await _cached_offload(
         ("related", user, finding_id, mode, limit),
         user,
@@ -933,6 +1034,86 @@ def _related_findings_impl(finding_id: int, mode: str, limit: int, user: str) ->
         conn.close()
 
 
+def _entities_missing_payload(limit: int, offset: int) -> dict:
+    return {
+        "kind": "entities",
+        "status": "missing",
+        "items": [],
+        "total": 0,
+        "limit": limit,
+        "offset": offset,
+        "has_more": False,
+        "graph_sources": [],
+        "degraded_reasons": ["missing memory database"],
+    }
+
+
+_ENTITY_LIST_INDEX_CACHE: dict[str, tuple[float, dict]] = {}
+_ENTITY_LIST_INDEX_LOCK = threading.Lock()
+
+
+def _entity_list_index_impl(user: str) -> dict | None:
+    """Every corpus entity, ranked, in one pass.
+
+    CorpusGraphReadModel.list_entities ranks the whole corpus before it
+    paginates: a LIKE over 13k kg_entities plus a UNION ALL + GROUP BY over
+    5.8k entity_graph rows, then a Python sort of ~19k dicts. Paging cost that
+    per page and it ran on the event loop, so /api/entities measured 22.4s live
+    and stalled /healthz with it. Rank once, slice in memory.
+    """
+    opened = _open_graph_model(user)
+    if opened is None:
+        return None
+    conn, model = opened
+    try:
+        # A limit large enough that the model's own items[offset:offset+limit]
+        # is the whole ranked list. Paging happens here instead.
+        index = model.list_entities(q="", limit=1_000_000, offset=0)
+    finally:
+        conn.close()
+    return index
+
+
+def _entities_page_impl(user: str, q: str, limit: int, offset: int) -> dict:
+    """One page of the ranked entity list. Blocking; call in a thread.
+
+    The filter runs here rather than after the await: matching `q` against all
+    19,092 ranked items is a Python loop, and running it on the event loop was
+    the thing this endpoint was moved off the loop to avoid.
+    """
+    index = _fingerprint_index(
+        _ENTITY_LIST_INDEX_CACHE, _ENTITY_LIST_INDEX_LOCK, user, _entity_list_index_impl
+    )
+    if index is None:
+        return _entities_missing_payload(limit, offset)
+
+    items = index.get("items") or []
+    if q:
+        # Same predicate as CorpusGraphReadModel.list_entities: the name has to
+        # contain the raw query AND the slug has to contain the slugified one.
+        needle = q.lower()
+        query_slug = _safe_entity_slug(q)
+        items = [
+            item
+            for item in items
+            if needle in str(item.get("name") or "").lower()
+            and query_slug in str(item.get("slug") or "")
+        ]
+
+    total = len(items)
+    return {
+        "kind": "entities",
+        "status": index.get("status", "ready"),
+        "items": items[offset: offset + limit],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < total,
+        "graph_sources": index.get("graph_sources", []),
+        "degraded_reasons": index.get("degraded_reasons", []),
+    }
+
+
 @router.get("/api/entities")
 async def list_entities(
     q: str = Query(""),
@@ -941,24 +1122,13 @@ async def list_entities(
     user: str = Query("ramsay"),
 ):
     """Public: paginated corpus entity index for dynamic entity pages."""
-    opened = _open_graph_model(user)
-    if opened is None:
-        return {
-            "kind": "entities",
-            "status": "missing",
-            "items": [],
-            "total": 0,
-            "limit": limit,
-            "offset": offset,
-            "has_more": False,
-            "graph_sources": [],
-            "degraded_reasons": ["missing memory database"],
-        }
-    conn, model = opened
-    try:
-        return model.list_entities(q=q, limit=limit, offset=offset)
-    finally:
-        conn.close()
+    # The page response is small and cheap to rebuild, so it can live in the
+    # evictable response cache. The ranked index behind it cannot, and does not.
+    return await _cached_offload(
+        ("entities", user, q, limit, offset),
+        user,
+        lambda: _entities_page_impl(user, q, limit, offset),
+    )
 
 
 @router.get("/api/feed")
@@ -2128,11 +2298,24 @@ _SECTION_MAP_CACHE: dict[tuple[str, str], dict[str, str]] = {}
 
 
 def _story_sources_fingerprint(user: str) -> float:
-    """Newest mtime across the report + site-story trees feeding the story list."""
-    newest = 0.0
+    """Newest mtime across the report + site-story trees feeding the story list.
+
+    Memoized for _FINGERPRINT_TTL seconds. Six handlers call this before their
+    own cache lookup, and the uncached form is an iterdir() plus a stat on each
+    of 53 date directories, on the event loop, against a network-backed Fly
+    volume. That is why a warm story detail still took 7.7s after the
+    _data_fingerprint memo landed: this is a second door onto the same sweep.
+    """
     safe_user = _safe_user(user)
     if safe_user is None:
-        return newest
+        return 0.0
+
+    now = time.monotonic()
+    cached = _SOURCES_FINGERPRINT_CACHE.get(safe_user)
+    if cached is not None and now - cached[0] < _FINGERPRINT_TTL:
+        return cached[1]
+
+    newest = 0.0
     user_root = REPORTS_DIR / safe_user
     stories_root = user_root / "site-stories"
     roots = [user_root, stories_root]
@@ -2145,6 +2328,8 @@ def _story_sources_fingerprint(user: str) -> float:
             newest = max(newest, root.stat().st_mtime)
         except OSError:
             continue
+
+    _SOURCES_FINGERPRINT_CACHE[safe_user] = (now, newest)
     return newest
 
 
@@ -2159,11 +2344,13 @@ def _story_sources_fingerprint(user: str) -> float:
 # moves it is a once-a-day sync. A few seconds of staleness is free.
 _FINGERPRINT_TTL = 5.0
 _FINGERPRINT_CACHE: dict[str, tuple[float, float]] = {}
+_SOURCES_FINGERPRINT_CACHE: dict[str, tuple[float, float]] = {}
 
 
 def _reset_fingerprint_cache() -> None:
-    """Drop the memo. For tests, and for a sync that wants an immediate read."""
+    """Drop both memos. For tests, and for a sync that wants an immediate read."""
     _FINGERPRINT_CACHE.clear()
+    _SOURCES_FINGERPRINT_CACHE.clear()
 
 
 def _data_fingerprint(user: str) -> float:
@@ -2903,7 +3090,86 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
     return value
 
 
+# slug -> the issues that name it, newest first. Built once per content change.
+#
+# _entity_impl used to walk every issue date itself and ask each parsed issue
+# whether it mentioned this one entity. The parse is memoized, but the walk is
+# not: answering one /e/ page touched all 185 issue dates, and the 84 pages the
+# sitemap advertises meant 15,540 file reads. On the Fly volume the first entity
+# request of a boot held a compute thread long enough that /healthz stopped
+# answering and the warm-up sat on its first slug for twenty minutes. One
+# request now builds the whole map and the other 83 read a dict. Measured on
+# the real corpus: 2.9s to build cold, 0.03s once the structured-issue parses
+# are already memoized, then 23-62ms per entity page.
+_ENTITY_ISSUE_INDEX_CACHE: dict[str, tuple[float, dict[str, dict]]] = {}
+_ENTITY_ISSUE_INDEX_LOCK = threading.Lock()
+
+
+def _build_entity_issue_index(user: str) -> dict[str, dict]:
+    index: dict[str, dict] = {}
+    for date in _structured_issue_dates(user=user):
+        issue = _structured_issue_from_report_file(date=date, user=user)
+        if issue is None:
+            continue
+        stories_by_slug: dict[str, list[dict]] = {}
+        for story in issue.get("story_units") or []:
+            for slug in story.get("entity_ids") or []:
+                stories_by_slug.setdefault(str(slug), []).append(story)
+        for entity in issue.get("entities") or []:
+            slug = entity.get("slug")
+            if not slug:
+                continue
+            entry = index.setdefault(str(slug), {"name": "", "issues": []})
+            entry["name"] = entry["name"] or entity.get("name", "")
+            entry["issues"].append({
+                "date": date,
+                "title": issue.get("title", ""),
+                "story_units": stories_by_slug.get(str(slug), []),
+            })
+    return index
+
+
+def _entity_issue_index(user: str) -> dict[str, dict]:
+    """slug -> {"name", "issues": [{date, title, story_units}]}, newest issue first.
+
+    Single-flight under a lock, the same shape as
+    _cached_story_embedding_index: a crawl burst waits on one build instead of
+    each request starting its own. The story_unit dicts are the ones already
+    held by _STRUCTURED_ISSUE_CACHE, referenced not copied.
+
+    Blocking. Every caller is already inside a worker thread; dashboard/warmup.py
+    builds it once at boot, right after the structured-issue step has memoized
+    the parses it reads.
+    """
+    fingerprint = _data_fingerprint(user)
+    cached = _ENTITY_ISSUE_INDEX_CACHE.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    with _ENTITY_ISSUE_INDEX_LOCK:
+        cached = _ENTITY_ISSUE_INDEX_CACHE.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        index = _build_entity_issue_index(user)
+        _ENTITY_ISSUE_INDEX_CACHE[user] = (fingerprint, index)
+        return index
+
+
 def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
+    # The live graph answers this page, not the published dossier.
+    #
+    # An earlier pass read the dossier instead, on the theory that the three
+    # expression scans below were what put /api/entities/{slug} past the site's
+    # 10s abort. Measured on the real corpus, they are not: the whole live path
+    # is 23-62ms per slug once _entity_issue_index is warm, and the walk of 185
+    # issue files that the index replaced is what cost seconds. The dossier
+    # shortcut saved ~25ms on a value that is cached per content change anyway,
+    # and it cost the numbers on the page: run_dossier_generation rewrites only
+    # the top 25 entities per run, so 61 of the 86 files on disk are frozen (31
+    # of them dated July, oldest 2026-07-02). Reading them shrank the header
+    # counts on 83 of 86 entity pages (atlassian Edges 41 -> 1, arxiv Sources
+    # 83 -> 64), emptied the relationships section on 20 of them, and rendered
+    # opus-4-7 as "Opus 4 7" because that file predates the punctuated
+    # canonical name in kg_entities.
     graph_detail: dict | None = None
     opened = _open_graph_model(user)
     if opened is not None:
@@ -2914,31 +3180,22 @@ def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
             conn.close()
 
     corpus = _public_corpus_entity(user, entity_slug, limit=limit)
+
     story_units: list[dict] = []
     source_by_url: dict[str, dict] = {}
     issue_dates: list[str] = []
     entity_name = ""
     seen_story_ids: set[str] = set()
 
-    for date in _structured_issue_dates(user=user):
+    entry = _entity_issue_index(user).get(entity_slug) or {}
+    for appearance in entry.get("issues") or []:
+        date = appearance["date"]
         if date in issue_dates:
             continue
-        issue = _structured_issue_from_report_file(date=date, user=user)
-        if issue is None:
-            continue
-
-        entity = next(
-            (item for item in issue["entities"] if item.get("slug") == entity_slug),
-            None,
-        )
-        if entity is None:
-            continue
-        entity_name = entity_name or entity.get("name", "")
+        entity_name = entity_name or entry.get("name", "")
         issue_dates.append(date)
 
-        for story in issue["story_units"]:
-            if entity_slug not in story.get("entity_ids", []):
-                continue
+        for story in appearance["story_units"]:
             if story["id"] in seen_story_ids:
                 continue
             seen_story_ids.add(story["id"])
@@ -2946,7 +3203,7 @@ def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
                 "id": story["id"],
                 "slug": story["slug"],
                 "issue_date": story["issue_date"],
-                "issue_title": issue["title"],
+                "issue_title": appearance["title"],
                 "section_id": story["section_id"],
                 "title": story["title"],
                 "summary": story["summary"],
@@ -3005,6 +3262,10 @@ def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
     graph_sources = sorted({"newsletter_issues"} if story_units else set())
     graph_sources = sorted(set(graph_sources) | set(corpus["graph_sources"]) | set(graph_sources_from_model))
     source_trail = list(source_by_url.values())
+    # Counts come from the live graph only. A published dossier's counts are a
+    # snapshot of whatever the graph held the last time that entity made the
+    # nightly top 25, which for most slugs is weeks ago, so folding them in
+    # here would put a July number under a today headline.
     counts = {
         "story_units": len(story_units),
         "findings": max(len(merged_findings), int(graph_counts.get("findings") or 0)),

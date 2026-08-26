@@ -56,3 +56,23 @@ def no_outbound_network(monkeypatch):
 
     monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+
+
+@pytest.fixture(autouse=True)
+def _clear_api_fingerprint_memos():
+    """Reset the public-API fingerprint memos between tests.
+
+    dashboard/routes/api.py memoizes the story-tree fingerprint for 5 seconds
+    so a request does not sweep 53 date directories on the event loop. Tests
+    that write a file and query it in the same second would otherwise read a
+    fingerprint left behind by an earlier test and see a stale cache. Harmless
+    in production, where the thing that moves the fingerprint is a daily sync.
+    """
+    try:
+        from dashboard.routes import api as _api
+    except Exception:  # dashboard deps missing in a narrow test env
+        yield
+        return
+    _api._reset_fingerprint_cache()
+    yield
+    _api._reset_fingerprint_cache()
