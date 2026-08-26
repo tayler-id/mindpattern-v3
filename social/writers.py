@@ -227,6 +227,27 @@ def _write_single_platform(
 # ── Prompt builders ─────────────────────────────────────────────────────
 
 
+def _source_links(brief: dict) -> list[tuple[str, str]]:
+    """(name, url) pairs the post must link, primary first.
+
+    The brief has carried these since the creative director wrote it, but until
+    2026-08-23 the writer prompt only asked for the brand link, so posts about a
+    specific release shipped with mindpattern.ai as their only citation.
+    """
+    attribution = brief.get("source_attribution") or {}
+    links: list[tuple[str, str]] = []
+
+    primary = attribution.get("primary") or {}
+    if primary.get("url"):
+        links.append((primary.get("name") or "source", primary["url"]))
+
+    for item in attribution.get("supporting") or []:
+        if isinstance(item, dict) and item.get("url"):
+            links.append((item.get("name") or "source", item["url"]))
+
+    return links
+
+
 def _build_writer_agent_prompt(
     platform: str,
     brief: dict,
@@ -244,6 +265,29 @@ def _build_writer_agent_prompt(
     """
     brief_json = json.dumps(brief, indent=2)
     voice_guide = _load_voice_guide()
+
+    from orchestrator import word_bank
+
+    links = _source_links(brief)
+    brand_link = brief.get("mindpattern_link") or "https://mindpattern.ai"
+    if links:
+        link_lines = "\n".join(
+            f"   - {name}: {url}" for name, url in links[:3]
+        )
+        link_instruction = (
+            "4. Links. Put the source link in the post so a reader can check "
+            "the claim, then the brand link last:\n"
+            f"{link_lines}\n"
+            f"   - mindpattern: {brand_link}\n"
+            "   A post with only the brand link fails the policy gate."
+        )
+    else:
+        link_instruction = (
+            f"4. Include \"{brand_link}\" at the end of the post. The brief "
+            "carries no source URL, so say the source by name in the text."
+        )
+
+    word_bank_block = word_bank.prompt_block("social")
 
     output_file = str(
         PROJECT_ROOT / "data" / "social-drafts" / f"{platform}-draft.md"
@@ -306,9 +350,17 @@ Follow these instructions exactly:
 1. React to the brief's `anchor` + `reaction`. ONE thing, not a synthesis.
 2. Follow the voice guide strictly. No banned words, no banned phrases, no em dashes.
 3. Match the brief's `confidence` level in your language.
-4. Include "https://mindpattern.ai" at the end of the post.
+{link_instruction}
 5. Do NOT reference anything in the `do_not_include` list.
-6. **Approved builder-detail boundary:**
+6. Carry the specifics. Every claim in the post has to be traceable to the
+   brief. Use the concrete artifacts the brief gives you: version numbers,
+   dates, spec or issue numbers, named people, measured numbers. A post that
+   describes the shape of a story without naming anything in it reads as a
+   summary of a summary, which is what the 2026-08-23 MCP post was. If the
+   brief has three numbers, at least two of them belong in the post.
+
+{word_bank_block}
+7. **Approved builder-detail boundary:**
    - Good practitioner transparency teaches a source-backed builder/operator lesson.
    - Allowed examples: "in my own research workflow", "I reviewed the source mix",
      "I checked my codebase/configs", "tools I rely on", "this changed how I triage sources".

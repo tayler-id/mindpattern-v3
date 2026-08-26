@@ -176,13 +176,19 @@ class TipsHandler(BaseHandler):
     def _create_drafts(self, tip_text: str) -> dict:
         """Take a raw tip, create platform-specific drafts."""
         from orchestrator.agents import run_claude_prompt
+        from orchestrator import word_bank
 
         voice = self._load_identity()
+        # From code, not from voice.md. voice.md lives on the Fly volume and
+        # syncs from the Mac once a day, so a bank edit would not reach this
+        # handler until the next sync.
+        bank = word_bank.prompt_block("social")
         drafts = {}
 
         # Bluesky (300 chars max)
         bs_prompt = (
             f"## Voice Guide\n{voice}\n\n"
+            f"## Word bank\n{bank}\n\n"
             f"## Task\nConvert this tip into a Bluesky post.\n\n"
             f"Tip:\n{tip_text}\n\n"
             f"HARD LIMIT: 300 characters total.\n"
@@ -203,6 +209,7 @@ class TipsHandler(BaseHandler):
         # LinkedIn (800-1350 chars)
         li_prompt = (
             f"## Voice Guide\n{voice}\n\n"
+            f"## Word bank\n{bank}\n\n"
             f"## Task\nConvert this tip into a LinkedIn post.\n\n"
             f"Tip:\n{tip_text}\n\n"
             f"Target: 800-1350 characters.\n"
@@ -229,6 +236,7 @@ class TipsHandler(BaseHandler):
         for platform, draft in list(drafts.items()):
             human_prompt = (
                 f"## Voice Guide\n{voice}\n\n"
+            f"## Word bank\n{bank}\n\n"
                 f"## Task\nRemove AI writing patterns from this {platform} post.\n\n"
                 f"Post:\n{draft}\n\n"
                 f"Check for: em dashes, mirror sentences, anaphora, snappy triads, "

@@ -73,9 +73,15 @@ class EngagementHandler(BaseHandler):
 
         try:
             from orchestrator.agents import run_claude_prompt
+            from orchestrator import word_bank
             from memory.vault import read_source_file
+            from social.engagement import repair_reply
 
             vault_dir = PROJECT_ROOT / "data" / "ramsay" / "mindpattern"
+            # The whole guide. Until 2026-08-23 this read only the first 1,000
+            # characters, which is the YAML frontmatter, the title and one
+            # biography paragraph. No banned word appears that early in the
+            # file, so the reply sniper had never seen a single rule.
             voice = read_source_file(vault_dir / "voice.md")
             soul = read_source_file(vault_dir / "soul.md")
 
@@ -84,13 +90,17 @@ class EngagementHandler(BaseHandler):
                 f"Post URL: {url}\n"
                 f"Post content:\n{post_text}\n\n"
                 f"Your identity:\n{soul[:500]}\n\n"
-                f"Voice guide:\n{voice[:1000]}\n\n"
+                f"Voice guide:\n{voice}\n\n"
+                f"## Word bank\n{word_bank.prompt_block('engagement')}\n\n"
                 f"Write a thoughtful, genuine reply. Be specific to what they said. "
-                f"Add value — share a relevant insight, ask a smart question, or build on their point. "
-                f"Keep it concise (1-3 sentences). No AI patterns (em dashes, 'fascinating', 'great point'). "
+                f"Add value, share a relevant insight, ask a smart question, or "
+                f"build on their point. "
+                f"Keep it concise (1-3 sentences). No AI patterns (em dashes, "
+                f"'fascinating', 'great point'). "
                 f"Output ONLY the reply text."
             )
             reply_draft, _ = run_claude_prompt(prompt, task_type="engagement")
+            reply_draft = repair_reply(reply_draft or "")
 
         except Exception as e:
             logger.error(f"Failed to draft reply: {e}")
@@ -221,7 +231,9 @@ class EngagementHandler(BaseHandler):
     def _draft_and_approve_reply(self, post_text: str, author: str, post_uri: str, ts: str):
         """Draft a reply, show for approval, post if approved."""
         from orchestrator.agents import run_claude_prompt
+        from orchestrator import word_bank
         from memory.vault import read_source_file
+        from social.engagement import repair_reply
 
         vault_dir = PROJECT_ROOT / "data" / "ramsay" / "mindpattern"
         voice = read_source_file(vault_dir / "voice.md")
@@ -229,11 +241,13 @@ class EngagementHandler(BaseHandler):
         prompt = (
             f"Draft a reply to this post by @{author}:\n\n"
             f"{post_text}\n\n"
-            f"Voice guide:\n{voice[:1000]}\n\n"
+            f"Voice guide:\n{voice}\n\n"
+            f"## Word bank\n{word_bank.prompt_block('engagement')}\n\n"
             f"Write a thoughtful, genuine reply (1-3 sentences). "
             f"Output ONLY the reply text."
         )
         draft, _ = run_claude_prompt(prompt, task_type="engagement")
+        draft = repair_reply(draft or "")
 
         if not draft:
             self.reply("Couldn't generate a reply.", thread_ts=ts)

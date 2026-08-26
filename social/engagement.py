@@ -39,8 +39,56 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
+from orchestrator import word_bank
+
 _VOICE_GUIDE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
 _UNSLOP_HEADING = "# Humanize pass (unslop)"
+
+
+def check_reply(reply: str) -> list[str]:
+    """Word-bank violations in one engagement reply.
+
+    Replies had no deterministic gate at all: the model's JSON went straight
+    into `our_reply` and out to the platform. The newsletter tells reached
+    replies the same way they reached everything else.
+    """
+    return word_bank.violations(reply or "", "engagement")
+
+
+def repair_reply(reply: str, *, runner=None) -> str | None:
+    """Rewrite one reply that trips the word bank. None when it cannot be saved.
+
+    Social posts get three critic iterations. Replies get one rewrite, because
+    a reply is short and the fix is usually a single word swap. Fails closed: a
+    reply that is still dirty after the rewrite, or whose rewrite call failed,
+    is dropped rather than posted under the owner's name.
+    """
+    violations = check_reply(reply)
+    if not violations:
+        return reply
+
+    if runner is None:
+        def runner(prompt: str):
+            return run_claude_prompt(prompt, task_type="engagement")
+
+    prompt = (
+        "Rewrite this reply so it breaks none of the rules below. Keep the "
+        "meaning, the length and the first-person voice. Change only what the "
+        "rules require.\n\n"
+        f"## Reply\n{reply}\n\n"
+        "## Rules it breaks\n- " + "\n- ".join(violations) + "\n\n"
+        "Output ONLY the rewritten reply text."
+    )
+
+    revised, exit_code = runner(prompt)
+    revised = (revised or "").strip()
+    if exit_code != 0 or not revised:
+        logger.warning("Reply repair call failed; dropping the reply")
+        return None
+    if check_reply(revised):
+        logger.warning("Reply still breaks the word bank after one rewrite; dropping")
+        return None
+    return revised
 
 
 def _unslop_section() -> str:
@@ -998,6 +1046,8 @@ Return up to {candidates_per_platform} posts, sorted by total_score descending."
 - Link to mindpattern.ai only if genuinely relevant, never forced
 
 {_unslop_section()}
+
+{word_bank.prompt_block("engagement")}
 {corrections_section}
 {exemplars_section}
 
@@ -1051,12 +1101,19 @@ engagement (quality content in our space)."""
                 logger.warning("No JSON found in engagement writer output")
                 return candidates
 
-        # Merge replies back into candidates
+        # Merge replies back into candidates. A reply carrying a word-bank term
+        # is dropped rather than posted: there is no revision loop here, and a
+        # candidate with no reply is skipped downstream.
         reply_map = {r["index"]: r for r in replies}
         for i, c in enumerate(candidates):
-            if i in reply_map:
-                c["our_reply"] = reply_map[i].get("reply", "")
-                c["should_follow"] = reply_map[i].get("should_follow", False)
+            if i not in reply_map:
+                continue
+            reply = repair_reply(reply_map[i].get("reply", ""))
+            if not reply:
+                logger.warning("Dropped engagement reply %d after repair", i)
+                continue
+            c["our_reply"] = reply
+            c["should_follow"] = reply_map[i].get("should_follow", False)
 
         return candidates
 

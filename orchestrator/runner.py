@@ -24,6 +24,7 @@ from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
+from . import word_bank
 from .prose_gate import sanitize as prose_sanitize
 from . import published_history
 from .traces_db import (
@@ -101,7 +102,12 @@ def _source_health_for_trace(preflight_data: dict) -> dict:
 
 
 def _site_content_trace_payload(result: dict) -> dict:
-    """Compact site-content status for traces without artifact paths or raw text."""
+    """Compact site-content status for traces without artifact paths or raw text.
+
+    outbound_link_count and stories_without_links are here because 63 of 63
+    stories published on 2026-08-23 carried no link out and no part of the run
+    said so. The next run answers "did the links land?" from its own trace.
+    """
     return {
         "status": result.get("status", "unknown"),
         "mode": result.get("mode", ""),
@@ -109,6 +115,8 @@ def _site_content_trace_payload(result: dict) -> dict:
         "candidates_considered": result.get("candidates_considered", 0),
         "generated_story_count": result.get("generated_story_count", 0),
         "degraded_story_count": result.get("degraded_story_count", 0),
+        "outbound_link_count": result.get("outbound_link_count", 0),
+        "stories_without_links": result.get("stories_without_links", 0),
         "artifacts_written": len(result.get("artifacts_written") or []),
     }
 
@@ -1837,6 +1845,10 @@ class ResearchPipeline:
                 json.dumps({"error": f"{type(e).__name__}: {e}"}),
             )
 
+        # Rendered from the same rows the prose gate measures after the write,
+        # so the writer is never marked down for a term nobody showed it.
+        bank_block = word_bank.prompt_block("newsletter")
+
         pass2_prompt = (
             "OUTPUT CONTRACT: Your stdout is published verbatim to subscribers "
             "as today's newsletter. Output ONLY finished newsletter markdown, "
@@ -1869,6 +1881,7 @@ class ResearchPipeline:
                 f"{published_block}\n\n"
                 if published_block else ""
             )
+            + f"## Word bank\n\n{bank_block}\n"
             + f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"{failure_text}"

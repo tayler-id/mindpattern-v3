@@ -21,6 +21,7 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
+from orchestrator import word_bank
 from orchestrator.site_copy_lint import (
     BANNED_WORDS,
     COPY_FIELDS,
@@ -31,9 +32,11 @@ from orchestrator.site_copy_lint import (
     format_lint_issues_for_prompt,
     hard_fail_issues,
     lint_site_copy,
+    required_inline_links,
 )
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
 VOICE_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "voice.md"
 SOUL_PATH = PROJECT_ROOT / "data" / "ramsay" / "mindpattern" / "soul.md"
 WRITER_SYSTEM_PROMPT = PROJECT_ROOT / "agents" / "site-story-writer.md"
@@ -125,7 +128,12 @@ def writer_command(prompt: str, *, model: str | None = None) -> tuple[list[str],
     )
 
 
-def _voice_excerpt(voice_text: str, *, limit: int = 12000) -> str:
+# voice.md was 13,318 chars on 2026-08-23 against a 12,000 limit, so the tail of
+# the humanize pass (plain speech, active voice, adverbs) stopped reaching the
+# writer with no warning. The limit exists to bound a runaway file, not to trim
+# the current one, so it sits well above the real length and the writer prompt
+# appends the word bank separately.
+def _voice_excerpt(voice_text: str, *, limit: int = 40000) -> str:
     return voice_text.strip()[:limit]
 
 
@@ -136,13 +144,31 @@ def load_writer_rules() -> str:
         return ""
 
 
+def linkable_source_urls(graph_pack: dict[str, Any]) -> list[str]:
+    """The source URLs the writer is allowed to link, in pack order, deduped."""
+    urls: list[str] = []
+    for ref in graph_pack.get("source_refs") or []:
+        if not isinstance(ref, dict):
+            continue
+        url = str(ref.get("url") or "").strip()
+        if url and url not in urls:
+            urls.append(url)
+    return urls
+
+
 def evidence_block_for_pack(graph_pack: dict[str, Any]) -> str:
     """The single evidence JSON both the writer and the critic are shown."""
     primary = (graph_pack.get("primary_evidence") or [{}])[0]
     sources = [
-        {"url": ref.get("url", ""), "domain": ref.get("domain", ""), "title": ref.get("title", "")}
+        {
+            "url": ref.get("url", ""),
+            "domain": ref.get("domain", ""),
+            "title": ref.get("title", ""),
+            "linkable": bool(str(ref.get("url") or "").strip()),
+        }
         for ref in graph_pack.get("source_refs") or []
     ]
+    urls = linkable_source_urls(graph_pack)
     entities = [ref.get("name", "") for ref in graph_pack.get("entity_refs") or [] if ref.get("name")]
     neighbors = [
         {"title": item.get("title", ""), "reason": item.get("reason", "")}
@@ -156,12 +182,50 @@ def evidence_block_for_pack(graph_pack: dict[str, Any]) -> str:
                 "summary": primary.get("summary", ""),
             },
             "sources": sources,
+            "linkable_source_urls": urls,
+            "source_link_policy": {
+                "required_inline_links": required_inline_links(len(urls)),
+                "where": "body_markdown only. Never in title, dek, take, or why_now.",
+                "syntax": "[descriptive anchor](url), using a URL from linkable_source_urls verbatim.",
+                "anchor_text": (
+                    "Name the thing on the other end: the project, repo, paper, company, "
+                    'or post. Never "Source", never "here", never a bare URL.'
+                ),
+                "no_other_urls": "Any URL outside linkable_source_urls fails the copy gate.",
+            },
             "entities": entities,
             "graph_neighbors": neighbors,
             "why_now": graph_pack.get("why_now", ""),
         },
         indent=2,
     )
+
+
+def _outbound_link_block(urls: list[str]) -> str:
+    """The link instruction shown to the writer, sized to the evidence it has."""
+    if not urls:
+        return (
+            "This pack carries no source URLs, so write the story without links. "
+            "Do not invent one."
+        )
+    target = required_inline_links(len(urls))
+    listed = "\n".join(f"- {url}" for url in urls[:8])
+    ask = f"Put {target} inline markdown {'link' if target == 1 else 'links'}"
+    counted = f"{len(urls)} source URL" + ("" if len(urls) == 1 else "s")
+    return f"""The story is built on {counted}. {ask} in body_markdown,
+pointing at these URLs and no others:
+
+{listed}
+
+- Syntax: [descriptive anchor](url), copied character for character from the list.
+- Anchor text names the thing being linked: the project, the repo, the paper, the
+  company, the post. Never the bare word "Source", never "here" or "click here",
+  never a naked URL, never the whole sentence.
+- Link the first mention of a thing, inside the sentence that makes the claim.
+- One link per source. Never two links in the same sentence.
+- Links belong in body_markdown only. A link in title, dek, take, or why_now
+  fails the copy gate.
+- A URL that is not on this list fails the copy gate."""
 
 
 def build_site_writer_prompt(
@@ -179,6 +243,7 @@ def build_site_writer_prompt(
     ]
 
     evidence_block = evidence_block_for_pack(graph_pack)
+    link_block = _outbound_link_block(linkable_source_urls(graph_pack))
 
     rules = rules_text if rules_text is not None else load_writer_rules()
     return f"""Write one Rabbit Hole site story from the evidence pack below.
@@ -186,11 +251,17 @@ def build_site_writer_prompt(
 ## Writer's Rules (structure and craft; follow exactly)
 {rules}
 
+## Word bank (the copy lint measures every one of these)
+{word_bank.prompt_block("site")}
+
 ## Voice Guide
 {_voice_excerpt(voice_text)}
 
 ## Evidence Pack
 {evidence_block}
+
+## Outbound links (required)
+{link_block}
 
 ## Expert Notes
 {chr(10).join(expert_notes) if expert_notes else "- none"}

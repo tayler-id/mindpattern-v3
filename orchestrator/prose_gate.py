@@ -23,6 +23,8 @@ Scope: this module only does the first kind. It never calls an LLM.
 import logging
 import re
 
+from . import word_bank
+
 logger = logging.getLogger(__name__)
 
 EM_DASH = "—"
@@ -177,12 +179,15 @@ def scan(markdown: str) -> dict:
     prose = "".join(c for c, protected in _split_protected(body) if not protected)
     words = len(markdown.split())
     em = prose.count(EM_DASH)
+    bank = word_bank.violations(body, "newsletter")
     return {
         "words": words,
         "em_dashes": em,
         "em_dashes_per_500w": round(em * 500 / words, 2) if words else 0.0,
         "over_budget": em > EM_DASH_BUDGET,
         "budget": EM_DASH_BUDGET,
+        "word_bank": bank,
+        "word_bank_hits": len(bank),
     }
 
 
@@ -229,12 +234,24 @@ def sanitize(markdown: str) -> tuple[str, dict]:
         "remaining_over_budget": after["em_dashes"] > EM_DASH_BUDGET,
         "budget": EM_DASH_BUDGET,
         "per_500w_before": before["em_dashes_per_500w"],
+        # Reported, never rewritten. An em-dash has one correct replacement and
+        # "landed" has five, so choosing one is a writer's job, not a regex's.
+        "word_bank": after["word_bank"],
+        "word_bank_hits": after["word_bank_hits"],
     }
 
     if replaced:
         logger.info(
             "Prose gate: replaced %d em-dash(es) in %d words (%.2f per 500w before)",
             replaced, report["words"], report["per_500w_before"],
+        )
+    if report["word_bank_hits"]:
+        # Terms only. The full lines with excerpts and replacements go to the
+        # traces table, where they can be read without flooding the run log.
+        terms = [v.split('"')[1] for v in report["word_bank"] if '"' in v]
+        logger.warning(
+            "Prose gate: %d word-bank term(s) in the issue: %s",
+            report["word_bank_hits"], ", ".join(terms[:12]),
         )
     if report["remaining_over_budget"]:
         # 3+ in one sentence is deliberately left alone; if enough of those
