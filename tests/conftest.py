@@ -74,5 +74,7 @@ def _clear_api_fingerprint_memos():
         yield
         return
     _api._reset_fingerprint_cache()
+    _api._reset_story_file_index()
     yield
     _api._reset_fingerprint_cache()
+    _api._reset_story_file_index()

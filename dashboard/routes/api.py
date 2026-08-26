@@ -2017,16 +2017,68 @@ def _story_from_structured_issue_slug(*, story_slug: str, user: str) -> dict | N
     return _story_from_issue(issue, story_slug)
 
 
-def _public_story_files(user: str) -> list[Path]:
+_STORY_FILE_INDEX: dict[str, tuple[float, list[Path], dict[str, Path]]] = {}
+
+
+def _reset_story_file_index() -> None:
+    """Drop the story-file memo. For tests and for a sync wanting a fresh read."""
+    _STORY_FILE_INDEX.clear()
+
+
+def _build_story_file_index(user: str) -> tuple[list[Path], dict[str, Path]]:
     base = (REPORTS_DIR / user / "site-stories").resolve()
     try:
         base.relative_to(REPORTS_DIR.resolve())
     except ValueError:
-        return []
+        return [], {}
     if not base.exists():
-        return []
-    files = [path for path in base.rglob("*.json") if path.is_file()]
-    return sorted(files, key=lambda path: path.as_posix(), reverse=True)
+        return [], {}
+    files = sorted(
+        (path for path in base.rglob("*.json") if path.is_file()),
+        key=lambda path: path.as_posix(),
+        reverse=True,
+    )
+    # First wins, matching the newest-first order the listing already promised.
+    by_slug: dict[str, Path] = {}
+    for path in files:
+        by_slug.setdefault(path.stem, path)
+    return files, by_slug
+
+
+def _story_file_entry(user: str) -> tuple[list[Path], dict[str, Path]]:
+    """The story-file listing and its slug index, rebuilt once per publish.
+
+    rglob over reports/<user>/site-stories walks 3,468 files locally and more
+    on the Fly volume, on network-backed storage. _resolve_story_response called
+    this per request and then scanned the result linearly for one stem, which
+    is why /api/stories/{slug} hung past 60s for stories whose JSON was sitting
+    right there, and why the warm-up reported gaps in story_details every run.
+    """
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return [], {}
+
+    fingerprint = _story_sources_fingerprint(safe_user)
+    cached = _STORY_FILE_INDEX.get(safe_user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1], cached[2]
+
+    files, by_slug = _build_story_file_index(safe_user)
+    _STORY_FILE_INDEX[safe_user] = (fingerprint, files, by_slug)
+    return files, by_slug
+
+
+def _public_story_files(user: str) -> list[Path]:
+    return _story_file_entry(user)[0]
+
+
+def _story_file_for_slug(user: str, story_slug: str) -> Path | None:
+    """The file backing one slug, or None. O(1) against the memoized index."""
+    try:
+        normalized = normalize_slug(story_slug)
+    except ValueError:
+        return None
+    return _story_file_entry(user)[1].get(normalized)
 
 
 def _public_story_source_refs(items: list[dict]) -> list[dict]:
@@ -2927,12 +2979,9 @@ def _resolve_story_response(
 ) -> dict | None:
     """Locate + enrich one story, entirely off the event loop; caches the result."""
     story = None
-    for path in _public_story_files(user):
-        if path.stem != story_slug:
-            continue
+    path = _story_file_for_slug(user, story_slug)
+    if path is not None:
         story = _load_public_story_file(path)
-        if story is not None:
-            break
     if story is None:
         story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
     if story is None:
