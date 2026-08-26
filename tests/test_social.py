@@ -592,10 +592,13 @@ class TestDeterministicValidate:
         assert any("\u2014" in e for e in errors)
 
     def test_passes_valid_post(self):
-        """A clean, short post with URL passes validation."""
+        """A clean, short post carrying a source link and the brand link."""
         from social.critics import deterministic_validate
 
-        post = "Interesting take on LLM evals. https://mindpattern.ai"
+        post = (
+            "Interesting take on LLM evals. "
+            "https://arxiv.org/abs/2608.01234 https://mindpattern.ai"
+        )
         errors = deterministic_validate("bluesky", post)
         assert errors == []
 
@@ -792,6 +795,64 @@ class TestBuildWriterAgentPrompt:
             )
 
         assert "linkedin-draft.md" in prompt
+
+    def test_names_the_source_url_the_post_must_carry(self):
+        """The brief holds the source URL; the prompt has to ask for it.
+
+        2026-08-23: a LinkedIn post naming five SEP numbers shipped with
+        mindpattern.ai as its only link, because step 4 asked for the brand
+        link and never mentioned the source.
+        """
+        from social.writers import _build_writer_agent_prompt
+
+        brief = {
+            "anchor": "MCP removed protocol sessions",
+            "source_attribution": {
+                "primary": {
+                    "name": "MCP Blog",
+                    "url": "https://modelcontextprotocol.io/blog/roadmap",
+                },
+                "supporting": [
+                    {"name": "Google", "url": "https://developers.googleblog.com/a2a"}
+                ],
+            },
+        }
+        with patch("social.writers._load_voice_guide", return_value="Voice."):
+            prompt = _build_writer_agent_prompt(
+                platform="linkedin", brief=brief, iteration=1,
+            )
+
+        # The brief JSON is dumped verbatim, so the URLs appear either way.
+        # What matters is that an instruction names them as required output.
+        step4 = prompt.split("## Step 4")[1]
+        assert "https://modelcontextprotocol.io/blog/roadmap" in step4
+        assert "https://developers.googleblog.com/a2a" in step4
+        assert "https://mindpattern.ai" in step4
+
+    def test_demands_concrete_detail_from_the_brief(self):
+        from social.writers import _build_writer_agent_prompt
+
+        with patch("social.writers._load_voice_guide", return_value="Voice."):
+            prompt = _build_writer_agent_prompt(
+                platform="linkedin", brief={"anchor": "x"}, iteration=1,
+            )
+
+        low = prompt.lower()
+        assert "specific" in low
+        assert "version number" in low or "version numbers" in low
+
+    def test_carries_the_word_bank_for_the_platform(self):
+        from orchestrator import word_bank
+        from social.writers import _build_writer_agent_prompt
+
+        with patch("social.writers._load_voice_guide", return_value="Voice."):
+            prompt = _build_writer_agent_prompt(
+                platform="bluesky", brief={"anchor": "x"}, iteration=1,
+            )
+
+        for entry in word_bank.entries_for("social"):
+            if entry.tier == "ban":
+                assert entry.term in prompt, entry.term
 
 
 # ────────────────────────────────────────────────────────────────────────

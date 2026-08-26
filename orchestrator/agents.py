@@ -1142,12 +1142,24 @@ def run_agent_with_files(
     output_file: str,
     allowed_tools: list[str] | None = None,
     task_type: str = "eic",
+    stdout_on_missing: bool = False,
 ) -> dict | None:
     """Run a claude -p call that writes its output to a file.
 
     Unlike run_claude_prompt() which returns stdout text, this function
     expects the agent to write structured output (JSON or markdown) to
     output_file. Returns parsed dict or None on failure.
+
+    ``stdout_on_missing`` returns ``{"_stdout": ...}`` when the file is absent
+    or empty but the process still printed something. Agents sometimes answer
+    in prose instead of writing the file they were asked for: on 2026-08-23 the
+    LinkedIn critic did it twice with exit code 0, and a perfectly good APPROVED
+    was discarded, costing three writer iterations.
+
+    Opt in only where stdout is cheap to be wrong about. A critic verdict picks
+    APPROVED or REVISE and the caller can fall back to REVISE. A *writer* must
+    never opt in: on 2026-07-14 a writer narrating a denied tool call into
+    stdout was published verbatim.
     """
     if allowed_tools is None:
         allowed_tools = FILE_AGENT_DEFAULT_ALLOWED_TOOLS
@@ -1205,11 +1217,14 @@ def run_agent_with_files(
     )
 
     # Read and parse output file
-    if not output_path.exists():
-        return None
-
-    content = output_path.read_text().strip()
+    content = output_path.read_text().strip() if output_path.exists() else ""
     if not content:
+        if stdout_on_missing and stdout and stdout.strip():
+            logger.warning(
+                "Agent %s wrote no output file; returning stdout for salvage",
+                task_type,
+            )
+            return {"_stdout": stdout}
         return None
 
     if output_path.suffix == ".md":

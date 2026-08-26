@@ -91,6 +91,45 @@ def parse_draft_revision(
     return DraftRevision(platform=platform, instructions=instructions), None
 
 
+def _writer_skill_runner(platform: str):
+    """Build the default runner for one platform's writer skill.
+
+    `agents/{platform}-writer.md` opens by ordering the model to emit the post
+    with the Write tool and to put nothing on stdout. `run_claude_prompt`
+    passes `--disallowedTools ...,Write,...`, so appending that skill to a
+    stdout call denies the only output channel the skill knows and returns an
+    empty string. Every `revise <platform>:` reply in Slack failed that way
+    with `output_len=0` until 2026-08-23; the tips handler never hit it
+    because it inlines voice.md instead of appending the skill.
+
+    So take the path `social/writers.py` already uses: same skill, same draft
+    file, same tool grant. If the skill file is missing there is no file
+    contract to honour, and stdout is correct.
+    """
+
+    def runner(prompt: str, system_prompt_file: str | None = None):
+        from orchestrator import agents as agents_mod
+
+        if not system_prompt_file:
+            return agents_mod.run_claude_prompt(prompt, "social_revision")
+
+        output_file = (
+            agents_mod.PROJECT_ROOT
+            / "data" / "social-drafts" / f"{platform.lower()}-draft.md"
+        )
+        result = agents_mod.run_agent_with_files(
+            system_prompt_file=system_prompt_file,
+            prompt=prompt,
+            output_file=str(output_file),
+            allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
+            task_type="writer",
+        )
+        text = (result or {}).get("text", "")
+        return (text, 0) if text.strip() else ("", 1)
+
+    return runner
+
+
 def revise_draft(
     platform: str,
     current_draft: str,
@@ -101,32 +140,35 @@ def revise_draft(
     """Rewrite one draft with the owner's notes via the platform writer.
 
     `runner(prompt, system_prompt_file=...)` must return `(output, exit_code)`;
-    it defaults to run_claude_prompt with the platform's writer skill as the
-    system prompt. Raises RuntimeError when the writer fails or returns
-    nothing, so callers can report instead of silently keeping the old draft.
+    it defaults to `_writer_skill_runner(platform)`, which runs the platform's
+    writer skill over the draft file rather than over stdout. Raises
+    RuntimeError when the writer fails or returns nothing, so callers can
+    report instead of silently keeping the old draft.
     """
     if runner is None:
-        from orchestrator.agents import run_claude_prompt
-
-        def runner(prompt: str, system_prompt_file: str | None = None):
-            return run_claude_prompt(
-                prompt, "social_revision",
-                system_prompt_file=system_prompt_file,
-            )
+        runner = _writer_skill_runner(platform)
 
     limit = PLATFORM_CHAR_LIMITS.get(platform.lower())
     limit_line = (
         f"Stay under the hard limit of {limit} characters.\n" if limit else ""
     )
+    from orchestrator import word_bank
+
     prompt = (
         f"Revise this {platform} post draft for the owner.\n\n"
         f"## Current draft\n{current_draft}\n\n"
         f"## Owner's revision notes\n{instructions}\n\n"
-        "Apply every note exactly — the owner's notes override any style "
-        "preference. Keep everything the owner did not ask to change.\n"
+        "Apply every note exactly. The owner's notes override any style "
+        "preference, including the word bank below. Keep everything the owner "
+        "did not ask to change.\n\n"
+        # The bank is here so the owner never has to type a rule it already
+        # holds. On 2026-08-23 the note was "do not use the word landed",
+        # which is entry one.
+        f"## Word bank\n\n{word_bank.prompt_block('social')}\n"
         f"{limit_line}"
-        "Output ONLY the revised post text. No preamble, no quotes, no "
-        "markdown fences."
+        "Emit ONLY the revised post text, through whatever output channel "
+        "your writer skill specifies. No preamble, no quotes, no markdown "
+        "fences, no notes about what you changed."
     )
 
     skill = Path(f"agents/{platform.lower()}-writer.md")

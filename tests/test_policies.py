@@ -307,9 +307,16 @@ class TestSocialValidation:
 
     # ── Valid post ──────────────────────────────────────────────────
 
-    def test_passes_valid_short_post_with_url(self, social_engine):
-        """A clean, short post with URL passes all checks."""
-        content = "New approach to LLM evals looks promising. https://mindpattern.ai"
+    def test_passes_valid_short_post_with_source_and_brand_urls(self, social_engine):
+        """A clean, short post carrying both links passes all checks.
+
+        Both links are required: the source so a reader can check the claim,
+        the brand link so the post routes back to the site.
+        """
+        content = (
+            "New approach to LLM evals looks promising. "
+            "https://arxiv.org/abs/2608.01234 https://mindpattern.ai"
+        )
         errors = social_engine.validate_social_post("bluesky", content)
         assert errors == []
 
@@ -470,3 +477,32 @@ class TestCIWorkflow:
             # Must have a package name (letters before any version specifier)
             pkg = line.split(">=")[0].split("<=")[0].split("==")[0].split("<")[0].split(">")[0].strip()
             assert len(pkg) > 0, f"Invalid requirement line: {line}"
+
+
+class TestSourceUrlRequirement:
+    """A post must link the source it is about, not only the brand site.
+
+    2026-08-23: a LinkedIn post about the MCP roadmap carried five SEP numbers
+    and named two maintainers, and the only link on it was mindpattern.ai. The
+    old `require_url` rule was satisfied by the brand link, so nothing ever
+    asked for the source.
+    """
+
+    def test_brand_link_alone_fails(self, social_engine):
+        content = "The July 28 spec removed protocol sessions.\nhttps://mindpattern.ai"
+        errors = social_engine.validate_social_post("linkedin", content)
+        assert any("source" in e.lower() for e in errors), errors
+
+    def test_a_source_link_alongside_the_brand_link_passes(self, social_engine):
+        content = (
+            "The July 28 spec removed protocol sessions.\n"
+            "https://modelcontextprotocol.io/blog/roadmap\n"
+            "https://mindpattern.ai"
+        )
+        errors = social_engine.validate_social_post("linkedin", content)
+        assert not [e for e in errors if "source" in e.lower()], errors
+
+    def test_a_subdomain_of_the_brand_still_counts_as_brand(self, social_engine):
+        content = "Something happened.\nhttps://www.mindpattern.ai/stories/mcp"
+        errors = social_engine.validate_social_post("linkedin", content)
+        assert any("source" in e.lower() for e in errors), errors

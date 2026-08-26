@@ -1685,6 +1685,40 @@ class TestReviseDraft:
         assert "make it shorter" in calls["prompt"]
         assert "300 characters" in calls["prompt"]
 
+    def test_the_revision_prompt_carries_the_word_bank(self):
+        """Otherwise the owner has to name each tell by hand.
+
+        On 2026-08-23 Tayler typed `revise linkedin: do not use the word
+        landed`. The bank already holds that rule, so the revision writer
+        should arrive knowing it.
+        """
+        from orchestrator import word_bank
+        from slack_bot.drafts import revise_draft
+
+        seen = {}
+
+        def runner(prompt, system_prompt_file=None):
+            seen["prompt"] = prompt
+            return "revised", 0
+
+        revise_draft("linkedin", "old", "shorter", runner=runner)
+        for entry in word_bank.entries_for("social"):
+            if entry.tier == "ban":
+                assert entry.term in seen["prompt"], entry.term
+
+    def test_owner_notes_still_outrank_the_bank(self):
+        from slack_bot.drafts import revise_draft
+
+        seen = {}
+
+        def runner(prompt, system_prompt_file=None):
+            seen["prompt"] = prompt
+            return "revised", 0
+
+        revise_draft("linkedin", "old", "keep the word shipped", runner=runner)
+        assert "keep the word shipped" in seen["prompt"]
+        assert "override" in seen["prompt"].lower()
+
     def test_fenced_output_is_unwrapped(self):
         from slack_bot.drafts import revise_draft
 
@@ -1703,6 +1737,62 @@ class TestReviseDraft:
         with pytest.raises(RuntimeError):
             revise_draft("bluesky", "d", "n",
                          runner=lambda p, system_prompt_file=None: ("", 0))
+
+    def test_writer_skills_still_mandate_the_write_tool(self):
+        """Guards the premise of the next two tests.
+
+        If a writer skill ever stops ordering file output, the stdout path
+        becomes safe again and these tests should be revisited rather than
+        silently passing for the wrong reason.
+        """
+        for platform in ("bluesky", "linkedin"):
+            skill = Path(f"agents/{platform}-writer.md").read_text()
+            assert "Write tool" in skill, (
+                f"agents/{platform}-writer.md no longer mandates the Write "
+                "tool; revise_draft's file-based runner may be unnecessary"
+            )
+
+    def test_default_runner_writes_to_a_file_instead_of_stdout(self):
+        """The skill orders a Write; run_claude_prompt disallows Write.
+
+        Appending agents/linkedin-writer.md to a stdout call returned an empty
+        string on every `revise linkedin:` reply in Slack (2026-08-23). The
+        default runner must use the file path the pipeline already uses.
+        """
+        import orchestrator.agents as agents_mod
+        from slack_bot.drafts import revise_draft
+
+        seen = {}
+
+        def fake_run_agent_with_files(*, system_prompt_file, prompt,
+                                      output_file, allowed_tools, task_type):
+            seen.update(
+                skill=system_prompt_file, output_file=output_file,
+                allowed_tools=allowed_tools, prompt=prompt,
+            )
+            return {"text": "revised post"}
+
+        with patch.object(agents_mod, "run_agent_with_files",
+                          fake_run_agent_with_files), \
+             patch.object(agents_mod, "run_claude_prompt",
+                          side_effect=AssertionError(
+                              "stdout path cannot satisfy a Write-only skill")):
+            out = revise_draft("linkedin", "old draft", "drop the word landed")
+
+        assert out == "revised post"
+        assert seen["skill"] == "agents/linkedin-writer.md"
+        assert "Write" in seen["allowed_tools"]
+        assert seen["output_file"].endswith("data/social-drafts/linkedin-draft.md")
+        assert "drop the word landed" in seen["prompt"]
+
+    def test_default_runner_raises_when_the_file_is_never_written(self):
+        import orchestrator.agents as agents_mod
+        from slack_bot.drafts import revise_draft
+
+        with patch.object(agents_mod, "run_agent_with_files",
+                          lambda **kw: None):
+            with pytest.raises(RuntimeError):
+                revise_draft("bluesky", "d", "n")
 
 
 class TestHandleDraftRevision:

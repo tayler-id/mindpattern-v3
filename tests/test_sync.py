@@ -479,6 +479,21 @@ class TestRestartApp:
 class TestSyncToFly:
     """Integration tests for sync_to_fly() with all subprocess mocked."""
 
+    @pytest.fixture(autouse=True)
+    def _no_https_upload(self):
+        """sync_to_fly tries HTTPS first and falls back to flyctl.
+
+        Every test in this class is about the flyctl path, and none of them
+        stubbed the HTTPS attempt, so each one opened a real connection to
+        mindpattern.fly.dev. With that box degraded on 2026-08-23 the calls sat
+        in a 600s timeout and hung the suite.
+        """
+        with patch(
+            "orchestrator.sync.upload_bundle_http",
+            return_value={"success": False, "bytes_uploaded": 0, "error": "not configured"},
+        ) as stub:
+            yield stub
+
     @patch("orchestrator.sync._fly_sftp_put")
     @patch("orchestrator.sync._fly_ssh")
     @patch("orchestrator.sync.upload_bundle")

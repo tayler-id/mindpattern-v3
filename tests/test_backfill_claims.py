@@ -170,7 +170,7 @@ def test_run_claim_output_artifact_passes_the_full_quality_gate(tmp_path, monkey
             "title": "OpenAI puts agent controls on the buyer's scorecard",
             "dek": "Controls become the procurement question for agent platforms.",
             "take": "Controls are the new moat, and OpenAI knows it.",
-            "why_now": "The controls shipped with the July 2 briefing cycle.",
+            "why_now": "OpenAI published the controls on July 2.",
             "body_markdown": "OpenAI released new controls.\n\nThat changes procurement reviews.",
         },
     )
@@ -225,7 +225,7 @@ def test_run_claim_lint_failure_is_retryable_without_writing_artifact(tmp_path, 
             "title": "OpenAI puts agent controls on the buyer's scorecard",
             "dek": "Controls become the procurement question for agent platforms.",
             "take": "Controls are the new moat, and OpenAI knows it.",
-            "why_now": "The July 2 briefing cycle made controls visible.",
+            "why_now": "OpenAI made the controls visible on July 2.",
             "body_markdown": "This robust copy must not be written.",
         },
     )
