@@ -2148,17 +2148,47 @@ def _story_sources_fingerprint(user: str) -> float:
     return newest
 
 
+# Recomputing the fingerprint per request meant iterdir() plus a stat on every
+# site-stories date directory, on the event loop, against a network-backed Fly
+# volume. On 2026-08-26 that made /api/reports take 8.3s and /healthz 37s, and
+# because the site calls getStats() and getReports() through contentVersion()
+# before every detail fetch, it blew the site's 10s abort and returned 500 with
+# no share card on 70% of cold story pages.
+#
+# The value only decides when to drop a response cache, and the thing that
+# moves it is a once-a-day sync. A few seconds of staleness is free.
+_FINGERPRINT_TTL = 5.0
+_FINGERPRINT_CACHE: dict[str, tuple[float, float]] = {}
+
+
+def _reset_fingerprint_cache() -> None:
+    """Drop the memo. For tests, and for a sync that wants an immediate read."""
+    _FINGERPRINT_CACHE.clear()
+
+
 def _data_fingerprint(user: str) -> float:
     """Newest mtime across everything public endpoints read: the report and
     site-story trees plus memory.db. The nightly sync moves it; every public
-    response cache below invalidates in one step."""
-    newest = _story_sources_fingerprint(user)
+    response cache below invalidates in one step.
+
+    Memoized for _FINGERPRINT_TTL seconds. See the note above.
+    """
     safe_user = _safe_user(user)
-    if safe_user is not None:
-        try:
-            newest = max(newest, (DATA_DIR / safe_user / "memory.db").stat().st_mtime)
-        except OSError:
-            pass
+    if safe_user is None:
+        return 0.0
+
+    now = time.monotonic()
+    cached = _FINGERPRINT_CACHE.get(safe_user)
+    if cached is not None and now - cached[0] < _FINGERPRINT_TTL:
+        return cached[1]
+
+    newest = _story_sources_fingerprint(safe_user)
+    try:
+        newest = max(newest, (DATA_DIR / safe_user / "memory.db").stat().st_mtime)
+    except OSError:
+        pass
+
+    _FINGERPRINT_CACHE[safe_user] = (now, newest)
     return newest
 
 
