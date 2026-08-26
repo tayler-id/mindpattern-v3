@@ -302,22 +302,17 @@ def sync_to_fly(
         }
         _fly_ssh(app_name, f"rm -f {remote_bundle}")
     else:
-        # Step 6: Extract bundle on remote. Remove stale -wal/-shm in the
-        # SAME command — leftover WAL from the replaced database would be
-        # replayed into the fresh file and corrupt it.
-        stale_sidecars = (
-            f"{user_id}/memory.db-wal {user_id}/memory.db-shm "
-            f"{user_id}/traces.db-wal {user_id}/traces.db-shm"
-        )
+        # Step 6: Extract bundle on remote. See _extract_command for why the
+        # stale WAL has to go first.
+        #
         # tar needs far longer than a status probe: the bundle passed 50 MB in
         # July 2026 and unpacking ~2,300 files on shared-cpu-2x runs past the
-        # 60s default. A killed tar does not fail cleanly — it leaves the files
+        # 60s default. A killed tar does not fail cleanly, it leaves the files
         # it had not reached yet at zero bytes, which is how 2026-07-27 shipped
         # 86 empty story files that the public API then served as nothing.
         extract_result = _fly_ssh(
             app_name,
-            f"cd /data && tar xzf {remote_bundle} "
-            f"&& rm -f {remote_bundle} {stale_sidecars}",
+            _extract_command(remote_bundle, user_id),
             timeout=600,
         )
 
@@ -331,8 +326,7 @@ def sync_to_fly(
             log.warning("Zero-byte JSON artifacts after extract — re-extracting")
             extract_result = _fly_ssh(
                 app_name,
-                f"cd /data && tar xzf {remote_bundle} "
-                f"&& rm -f {remote_bundle} {stale_sidecars}",
+                _extract_command(remote_bundle, user_id),
                 timeout=600,
             )
             empty_count = _count_empty_artifacts(app_name, user_id)
@@ -542,6 +536,36 @@ def _snapshot_db(db_path: Path, dest: Path) -> None:
 
 
 CHUNK_BYTES = 1024 * 1024  # small puts survive flyctl 0.4.58; >~2MB truncate
+
+
+def _extract_command(remote_bundle: str, user_id: str) -> str:
+    """Shell to unpack a synced bundle on the remote volume.
+
+    The stale -wal/-shm sidecars are removed BEFORE tar runs, not after.
+    Order is the whole point of this function. tar overwrites memory.db in
+    place, so a WAL left from the previous database sits beside a fresh main
+    file, and SQLite replays those frames into it. That is what produced
+    `database disk image is malformed` on 2026-08-23, which took /healthz to
+    500, stopped Fly's proxy routing to the machine, and locked the safe HTTP
+    sync out of the very volume it needed to repair.
+
+    `sync_upload.receive_sync_bundle` unlinks the sidecars before extractall
+    for the same reason, which is why the HTTP path never corrupted anything.
+
+    The bundle itself is still removed after tar and gated on tar succeeding: a
+    timed-out extract must leave its source in place so it can be retried where
+    it sits.
+    """
+    sidecars = " ".join(
+        f"{user_id}/{db}{suffix}"
+        for db in ("memory.db", "traces.db")
+        for suffix in ("-wal", "-shm")
+    )
+    return (
+        f"cd /data && rm -f {sidecars} "
+        f"&& tar xzf {remote_bundle} "
+        f"&& rm -f {remote_bundle}"
+    )
 
 
 def upload_bundle_chunked(bundle_path: Path, remote_path: str, app_name: str) -> dict:

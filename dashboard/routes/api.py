@@ -5,6 +5,7 @@ Private routes: require bearer token auth
 """
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -40,6 +41,8 @@ from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from slack_bot.heartbeat import is_stale as bot_heartbeat_stale
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -446,16 +449,31 @@ def _public_audio_metadata(
 
 
 def get_memory_db(user_id: str = "ramsay") -> Optional[sqlite3.Connection]:
-    """Open memory.db for a user. Fresh connection per request."""
+    """Open memory.db for a user. Fresh connection per request.
+
+    Returns None when the database is missing OR unreadable. A truncated or
+    malformed file raises out of `sqlite3.connect`'s first statement, and every
+    caller here is written against the Optional contract, so letting that
+    escape turns one bad file into a 500 on every route.
+
+    /healthz is the route that matters: on 2026-08-23 an SFTP fallback wrote a
+    truncated memory.db to the Fly volume, /healthz 500'd, the proxy stopped
+    routing to the machine, and the HTTP sync that would have replaced the file
+    could no longer reach it. Degrading keeps the repair path open.
+    """
     if _safe_user(user_id) is None:
         return None
     db_path = DATA_DIR / user_id / "memory.db"
     if not db_path.exists():
         return None
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    except sqlite3.DatabaseError as exc:
+        logger.error("memory.db unreadable for %s: %s", user_id, exc)
+        return None
 
 
 def _open_graph_model(user: str) -> tuple[sqlite3.Connection, CorpusGraphReadModel] | None:
