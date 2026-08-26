@@ -862,6 +862,58 @@ def revalidate_site_paths(
     return result
 
 
+def _backend_sitemap_graph(*, timeout: float = 45.0,
+                           backend_url: str = BACKEND_URL,
+                           user_id: str = "ramsay") -> dict | None:
+    """The corpus the site renders its sitemap from, straight from the backend.
+
+    Reading the site's own /sitemap.xml looked equivalent and was not. That
+    route carries revalidate=3600 and sits behind Vercel's CDN, so on
+    2026-08-26 the crawler got `x-vercel-cache: HIT, age: 69` holding the
+    previous 187-URL sitemap. The warm run queued 36 blog dates, reported
+    "crawled 36, failed 0", and left 6,806 stories and 84 entity pages cold.
+    A warm crawl that picks its targets from a cache can warm the wrong thing
+    and call it success.
+    """
+    import urllib.request
+
+    url = f"{backend_url.rstrip('/')}/api/site/sitemap?user={user_id}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001 - best effort, caller decides
+        log.warning("Backend sitemap unavailable (%s): %s", url, exc)
+        return None
+
+
+def _graph_entries(graph: dict) -> list[tuple[str, str]]:
+    """(path, lastmod) for every reader-facing route in the corpus graph."""
+    entries: list[tuple[str, str]] = [
+        ("/", ""), ("/briefings", ""), ("/blog", ""), ("/explore", ""),
+    ]
+    for story in graph.get("stories") or []:
+        if isinstance(story, dict) and story.get("slug"):
+            entries.append((f"/s/{story['slug']}", story.get("issue_date") or ""))
+    for slug in graph.get("entities") or []:
+        if isinstance(slug, str) and slug:
+            entries.append((f"/e/{slug}", ""))
+    for domain in graph.get("sources") or []:
+        if isinstance(domain, str) and domain:
+            entries.append((f"/source/{domain}", ""))
+    for date in graph.get("briefings") or []:
+        if isinstance(date, str) and date:
+            entries.append((f"/briefings/{date}", date))
+            entries.append((f"/blog/{date}", date))
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for path, lastmod in entries:
+        if path in seen:
+            continue
+        seen.add(path)
+        out.append((path, lastmod))
+    return out
+
+
 def sitemap_site_paths(
     site_url: str = SITE_URL,
     *,
@@ -890,27 +942,16 @@ def sitemap_site_paths(
     Raises on a sitemap that cannot be read or that lists nothing: warming the
     wrong thing quietly is the bug this replaces.
     """
-    import urllib.request
-    from urllib.parse import urlparse
+    graph = _backend_sitemap_graph(timeout=timeout)
+    if not graph or not graph.get("stories"):
+        raise RuntimeError(
+            "backend sitemap unavailable or empty; refusing to warm a path set "
+            "that would silently miss the archive"
+        )
 
-    with urllib.request.urlopen(f"{site_url.rstrip('/')}/sitemap.xml", timeout=timeout) as response:
-        body = response.read().decode("utf-8", errors="replace")
-
-    entries: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for block in re.findall(r"<url>(.*?)</url>", body, flags=re.DOTALL):
-        loc = re.search(r"<loc>\s*([^<\s]+)\s*</loc>", block)
-        if loc is None:
-            continue
-        path = urlparse(loc.group(1)).path or "/"
-        if not path.startswith("/") or path in seen:
-            continue
-        seen.add(path)
-        lastmod = re.search(r"<lastmod>\s*([^<\s]+)\s*</lastmod>", block)
-        entries.append((path, lastmod.group(1) if lastmod else ""))
+    entries = _graph_entries(graph)
     if not entries:
-        raise ValueError(f"{site_url}/sitemap.xml listed no URLs")
-
+        raise RuntimeError("backend sitemap listed no reader paths")
     def newest(prefix: str, limit: int) -> list[str]:
         matching = [entry for entry in entries if entry[0].startswith(prefix)]
         matching.sort(key=lambda entry: entry[1], reverse=True)

@@ -265,28 +265,23 @@ class TestRevalidateSitePaths:
 class TestSitemapSitePaths:
     """scope="site" after a Vercel deploy, which drops the whole ISR cache."""
 
-    SITEMAP = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-        "<url><loc>https://site.test/</loc></url>"
-        "<url><loc>https://site.test/explore</loc></url>"
-        "<url><loc>https://site.test/e/anthropic</loc></url>"
-        "<url><loc>https://site.test/e/nvidia</loc></url>"
-        "<url><loc>https://site.test/source/openai.com</loc></url>"
-        "<url><loc>https://site.test/s/old</loc><lastmod>2026-01-01</lastmod></url>"
-        "<url><loc>https://site.test/s/new</loc><lastmod>2026-08-25</lastmod></url>"
-        "<url><loc>https://site.test/s/mid</loc><lastmod>2026-05-01</lastmod></url>"
-        "<url><loc>https://site.test/briefings/2026-01-01</loc><lastmod>2026-01-01</lastmod></url>"
-        "<url><loc>https://site.test/briefings/2026-08-25</loc><lastmod>2026-08-25</lastmod></url>"
-        "</urlset>"
-    )
+    # The path set comes from the backend graph, not the site's sitemap.xml.
+    # That route carries revalidate=3600 behind Vercel's CDN, and on 2026-08-26
+    # the crawler got a HIT on the previous 187-URL version and warmed 36 blog
+    # dates over a site that was entirely cold.
+    GRAPH = {
+        "stories": [
+            {"slug": "old", "issue_date": "2026-01-01"},
+            {"slug": "new", "issue_date": "2026-08-25"},
+            {"slug": "mid", "issue_date": "2026-05-01"},
+        ],
+        "entities": ["anthropic", "nvidia"],
+        "sources": ["openai.com"],
+        "briefings": ["2026-01-01", "2026-08-25"],
+    }
 
     def _paths(self, **kwargs):
-        response = MagicMock()
-        response.read.return_value = self.SITEMAP.encode()
-        response.__enter__ = lambda self: self
-        response.__exit__ = lambda self, *args: False
-        with patch("urllib.request.urlopen", return_value=response):
+        with patch.object(sync, "_backend_sitemap_graph", return_value=self.GRAPH):
             return sync.sitemap_site_paths("https://site.test", **kwargs)
 
     def test_entry_points_and_every_entity_come_first(self):
@@ -304,14 +299,17 @@ class TestSitemapSitePaths:
         assert [p for p in paths if p.startswith("/s/")] == ["/s/new", "/s/mid"]
         assert [p for p in paths if p.startswith("/briefings/")] == ["/briefings/2026-08-25"]
 
-    def test_an_empty_sitemap_raises_rather_than_warming_nothing(self):
-        response = MagicMock()
-        response.read.return_value = b"<urlset></urlset>"
-        response.__enter__ = lambda self: self
-        response.__exit__ = lambda self, *args: False
-        with patch("urllib.request.urlopen", return_value=response):
-            with pytest.raises(ValueError):
+    def test_an_empty_graph_raises_rather_than_warming_nothing(self):
+        with patch.object(sync, "_backend_sitemap_graph", return_value={"stories": []}):
+            with pytest.raises(RuntimeError):
                 sync.sitemap_site_paths("https://site.test")
+
+    def test_the_cdn_copy_of_the_sitemap_is_never_read(self):
+        """The bug this replaces: warming targets read through a CDN cache."""
+        with patch.object(sync, "_backend_sitemap_graph", return_value=self.GRAPH), \
+             patch("urllib.request.urlopen") as urlopen:
+            sync.sitemap_site_paths("https://site.test")
+        assert not urlopen.called
 
 
 class TestWarmPublicSiteScopes:
