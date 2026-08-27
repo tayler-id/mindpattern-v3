@@ -59,6 +59,41 @@ def no_outbound_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _site_cache_off_repo(tmp_path_factory, monkeypatch):
+    """Keep the disk response cache out of the repo's real data directory.
+
+    The story and entity handlers persist finished responses under
+    DATA_DIR/<user>/site-cache (dashboard/site_cache.py). A test that patches
+    api.DATA_DIR gets the real behavior inside its own tmp tree. A test that
+    leaves DATA_DIR pointing at the repo's data/ (some hit the handlers
+    against the real reports tree) must not write fixture responses there, so
+    for exactly that case the root is swapped for a throwaway directory.
+    """
+    try:
+        from dashboard.routes import api as _api
+    except Exception:  # dashboard deps missing in a narrow test env
+        yield
+        return
+
+    repo_data_dir = _api.DATA_DIR
+    original_root = _api._site_cache_root
+    throwaway: dict[str, object] = {}
+
+    def guarded_root(user):
+        if _api.DATA_DIR is not repo_data_dir:
+            return original_root(user)
+        safe_user = _api._safe_user(user)
+        if safe_user is None:
+            return None
+        if "root" not in throwaway:
+            throwaway["root"] = tmp_path_factory.mktemp("site-cache")
+        return throwaway["root"] / safe_user
+
+    monkeypatch.setattr(_api, "_site_cache_root", guarded_root)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _clear_api_fingerprint_memos():
     """Reset the public-API fingerprint memos between tests.
 

@@ -21,6 +21,7 @@ import numpy as np
 from fastapi import APIRouter, Query, Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
+from dashboard import site_cache
 from dashboard.auth import require_auth
 from orchestrator.audio_briefing import audio_artifact_paths
 from orchestrator.site_content import (
@@ -2431,6 +2432,27 @@ def _data_fingerprint(user: str) -> float:
     return newest
 
 
+def _site_cache_root(user: str) -> Path | None:
+    """Root of the on-disk response cache for one user.
+
+    DATA_DIR/<user>/site-cache, which sits on the Fly volume in production, so
+    a restarted process finds the finished responses the last one wrote.
+    DATA_DIR is read per call on purpose: tests repoint it at a tmp tree and
+    the cache follows.
+    """
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return None
+    return DATA_DIR / safe_user / "site-cache"
+
+
+def _site_cache_path(user: str, kind: str, slug: str) -> Path | None:
+    root = _site_cache_root(user)
+    if root is None:
+        return None
+    return site_cache.cache_path(root, kind, slug)
+
+
 _PUBLIC_RESPONSE_CACHE: dict[tuple, tuple[float, object]] = {}
 _PUBLIC_RESPONSE_CACHE_MAX = 4096
 _PUBLIC_OFFLOAD_SEMAPHORE = asyncio.Semaphore(4)
@@ -2449,16 +2471,36 @@ def _public_cache_put(key: tuple, fingerprint: float, value) -> None:
     _PUBLIC_RESPONSE_CACHE[key] = (fingerprint, value)
 
 
-async def _cached_offload(key: tuple, user: str, compute):
+async def _cached_offload(
+    key: tuple,
+    user: str,
+    compute,
+    *,
+    disk_kind: str | None = None,
+    disk_slug: str | None = None,
+    disk_extra: str = "",
+):
     """Run a blocking `compute` off the event loop, once per content change.
 
     The finished value (plain data, never a Response object) is cached against
     the data fingerprint. Misses queue on a small semaphore so a crawl burst
-    can never starve the loop — /healthz keeps answering no matter what."""
+    can never starve the loop — /healthz keeps answering no matter what.
+
+    With disk_kind and disk_slug set, the value also persists to the site
+    cache on the volume, keyed by the same data fingerprint (plus disk_extra
+    for request parameters like limit), so a restarted process reads the file
+    back instead of recomputing. Read order: memory, then disk (promoted to
+    memory on hit), then compute, which writes both. Disk traffic stays inside
+    the worker thread, off the event loop."""
     fingerprint = _data_fingerprint(user)
     cached = _public_cache_get(key, fingerprint)
     if cached is not None:
         return cached[1]
+    disk_path: Path | None = None
+    disk_key = ""
+    if disk_kind is not None and disk_slug is not None:
+        disk_path = _site_cache_path(user, disk_kind, disk_slug)
+        disk_key = f"{fingerprint!r}:{disk_extra}" if disk_extra else repr(fingerprint)
     async with _PUBLIC_OFFLOAD_SEMAPHORE:
         cached = _public_cache_get(key, fingerprint)
         if cached is not None:
@@ -2468,8 +2510,15 @@ async def _cached_offload(key: tuple, user: str, compute):
             # Cache-put happens inside the worker thread: threads outlive a
             # client disconnect, so an impatient reader still warms the cache
             # and their retry is instant. (Awaiting coroutines get cancelled.)
+            if disk_path is not None:
+                body = site_cache.read_body(disk_path, disk_key)
+                if body is not None:
+                    _public_cache_put(key, fingerprint, body)
+                    return body
             value = compute()
             _public_cache_put(key, fingerprint, value)
+            if disk_path is not None and isinstance(value, dict):
+                site_cache.write_body(disk_path, disk_key, value)
             return value
 
         return await asyncio.to_thread(_compute_and_store)
@@ -2977,18 +3026,59 @@ _STORY_ENRICH_SEMAPHORE = asyncio.Semaphore(4)
 def _resolve_story_response(
     story_slug: str, stories: list[dict], *, user: str, fingerprint: float
 ) -> dict | None:
-    """Locate + enrich one story, entirely off the event loop; caches the result."""
+    """Locate + enrich one story, entirely off the event loop; caches the result.
+
+    The finished response goes to memory and, when the story has a backing
+    JSON file, to the site cache on the volume keyed by that file's stat.
+    Structured-issue fallback stories have no single source file, so they stay
+    memory-only and pay recompute after a restart."""
     story = None
-    path = _story_file_for_slug(user, story_slug)
-    if path is not None:
-        story = _load_public_story_file(path)
+    disk_key = None
+    source_path = _story_file_for_slug(user, story_slug)
+    if source_path is not None:
+        # Key the envelope by the stat taken BEFORE the read. Story JSONs are
+        # rewritten in place on the live box (sync.py uploads a tar the server
+        # extracts onto the volume), so a replace can land between this stat
+        # and the write below. Keyed pre-read, that interleaving leaves a key
+        # the file's next stat mismatches, one recompute, and a healed entry.
+        # Keyed post-read it left the OLD body under the NEW file's key, an
+        # entry that read as fresh on every disk hit and survived restarts.
+        disk_key = site_cache.file_key(source_path)
+        story = _load_public_story_file(source_path)
     if story is None:
         story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
     if story is None:
         return None
     enriched = _story_with_graph_related(story, stories, user=user)
     _STORY_RESPONSE_CACHE[(user, story_slug)] = (fingerprint, enriched)
+    if source_path is not None and disk_key is not None:
+        disk_path = _site_cache_path(user, "stories", story_slug)
+        if disk_path is not None:
+            site_cache.write_body(disk_path, disk_key, enriched)
     return enriched
+
+
+def _story_response_from_disk(user: str, story_slug: str, fingerprint: float) -> dict | None:
+    """Disk copy of one finished story response, promoted to memory on a hit.
+
+    Blocking (story-file index plus one small read); callers run it in a
+    thread. The invalidation key is the source file's own stat, so a restart
+    pays a directory walk and one file read instead of the full corpus rebuild
+    that _all_public_stories does (measured 5,471ms cold)."""
+    source_path = _story_file_for_slug(user, story_slug)
+    if source_path is None:
+        return None
+    disk_key = site_cache.file_key(source_path)
+    if disk_key is None:
+        return None
+    disk_path = _site_cache_path(user, "stories", story_slug)
+    if disk_path is None:
+        return None
+    body = site_cache.read_body(disk_path, disk_key)
+    if body is None:
+        return None
+    _STORY_RESPONSE_CACHE[(user, story_slug)] = (fingerprint, body)
+    return body
 
 
 @router.get("/api/stories/{slug}")
@@ -3013,6 +3103,11 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     cached = _STORY_RESPONSE_CACHE.get((user, story_slug))
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
+    # Disk before the corpus rebuild: right after a restart the memory caches
+    # are empty but the volume still holds the finished responses.
+    from_disk = await asyncio.to_thread(_story_response_from_disk, user, story_slug, fingerprint)
+    if from_disk is not None:
+        return from_disk
     stories = await _all_public_stories(user)
     async with _STORY_ENRICH_SEMAPHORE:
         cached = _STORY_RESPONSE_CACHE.get((user, story_slug))
@@ -3133,6 +3228,12 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         ("entity", user, entity_slug, limit),
         user,
         lambda: _entity_impl(entity_slug, limit, user),
+        # Restart-durable: the disk entry is keyed by the same data
+        # fingerprint the entity issue index uses, so a reboot reads the file
+        # back instead of rebuilding the index and rerunning the graph scans.
+        disk_kind="entities",
+        disk_slug=entity_slug,
+        disk_extra=f"limit={limit}",
     )
     if value is None:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
