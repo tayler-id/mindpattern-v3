@@ -36,5 +36,11 @@ primary_region = "sjc"
   destination = "/data"
 
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2gb"
+  # Scaled up 2026-08-27. One machine runs the dashboard, the Slack bot, and
+  # every claude subprocess a draft spawns. On shared-cpu-2x the health check
+  # went critical on six API calls, the backend warm-up took 1,458s, and a
+  # warm crawl saturated the box hard enough that the sitemap could not
+  # regenerate. A CLI scale does not rewrite this file, so leaving it at 2x
+  # meant the next deploy would quietly undo the scale.
+  size = "shared-cpu-4x"
+  memory = "4gb"
