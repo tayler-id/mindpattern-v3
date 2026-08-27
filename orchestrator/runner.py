@@ -2791,11 +2791,22 @@ class ResearchPipeline:
                 # Phase 3 (precompute at publish): the restart wiped the
                 # dashboard caches, so wait for its warm-up and seed the
                 # public site's CDN before the morning's first readers.
+                # Ordering is load-bearing: restart first, then
+                # warm_public_site (which waits on the backend warm-up before
+                # it purges and crawls). Do not reorder.
                 try:
                     warm = warm_public_site(date=self.date_str)
                     logger.info(f"Public site warm-up: {warm}")
                 except Exception as exc:
                     logger.warning(f"Public site warm-up failed (non-fatal): {exc}")
+                # The backend keeps backfilling story files to its volume
+                # after its warm-up reports done, so ask where coverage
+                # stands and put the answer in the phase result the
+                # pipeline log prints.
+                backfill = self._warmup_backfill_snapshot()
+                if backfill is not None:
+                    result["warmup_backfill"] = backfill
+                    logger.info(f"Story disk backfill: {backfill}")
             else:
                 logger.warning(f"Fly restart failed: {restart.get('error')}")
         else:
@@ -2812,6 +2823,28 @@ class ResearchPipeline:
             )
 
         return result
+
+    def _warmup_backfill_snapshot(self) -> dict | None:
+        """One bounded GET of the backend's warm-up status, backfill part only.
+
+        Observability for the SYNC phase log, nothing more: any failure
+        returns None rather than touching the phase outcome, and an old
+        build without the backfill key answers None the same way.
+        """
+        from .sync import BACKEND_URL
+
+        try:
+            with urllib.request.urlopen(
+                f"{BACKEND_URL}/api/warmup/status", timeout=20
+            ) as response:
+                status = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            logger.warning(
+                f"Could not read warm-up status for the backfill summary: {exc}"
+            )
+            return None
+        record = status.get("backfill") if isinstance(status, dict) else None
+        return dict(record) if isinstance(record, dict) else None
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

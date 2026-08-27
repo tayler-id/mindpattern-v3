@@ -26,6 +26,17 @@ from dashboard.routes import api
 USER = "ramsay"
 
 
+@pytest.fixture(autouse=True)
+def _no_disk_layer(monkeypatch):
+    """Pin these tests to the in-memory warm path.
+
+    The real loader finds dashboard/site_cache.py and would run the disk
+    backfill against whatever these stubs return. The disk path has its own
+    tests in test_warmup_backfill.py; these tests are about the warm loop.
+    """
+    monkeypatch.setattr(warmup, "_load_disk_layer", lambda: None)
+
+
 def _write_dossiers(tmp_path, *, entity_slugs=(), source_domains=()):
     """Build reports/<user>/site-dossiers/{entities,sources} under tmp_path."""
     root = tmp_path / USER / "site-dossiers"

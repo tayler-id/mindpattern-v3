@@ -45,11 +45,23 @@ then cost 23-62ms each. They come before story details because they are the
 pages the sitemap advertises, every story links to them, and story details
 already answer in 0.2-3.4s cold while an entity page is the one that times
 out.
+
+Since 2026-08, this is also the precompute pass for the disk layer in
+dashboard/site_cache.py: the entity and story handlers write every finished
+response through it on their own, so after a run each page the warm-up
+touched is a file on the /data volume and survives the next restart. A
+budgeted backfill then walks the rest of the story archive, after `phase` has
+already flipped to done, so the pipeline's site crawl never waits on it. The
+disk module lands alongside this one; when it is absent the warm-up behaves
+exactly as it did before the disk layer existed and the backfill reports
+itself skipped.
 """
 
 import asyncio
+import importlib
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -84,6 +96,28 @@ STEP_BUDGET_SECONDS = 900.0
 # Wall clock for the whole run.
 TOTAL_BUDGET_SECONDS = 2700.0
 
+# ── Disk precompute (phase 3, precompute at publish) ─────────────────────────
+# The disk layer is dashboard/site_cache.py, built and owned next to
+# dashboard/routes/api.py. The handlers write every finished story and entity
+# response through it themselves, so the steps below persist pages just by
+# calling them; this module imports the layer only so the backfill can ask
+# "is this story already on disk" without recomputing it. Missing module means
+# no backfill and the pre-disk warm-up behavior, never a crash.
+_DISK_MODULE = "dashboard.site_cache"
+
+# The story archive backfill: budgeted wall clock, checked between items.
+BACKFILL_MINUTES_ENV = "MP_WARMUP_BACKFILL_MINUTES"
+BACKFILL_MINUTES_DEFAULT = 20.0
+# The backfill tolerates more timeouts than MAX_STEP_TIMEOUTS allows the warm
+# steps. The rationale for 1 does not apply here: a story compute holds no
+# shared blocking lock (the entity issue index is built before the backfill
+# starts), and the orphaned worker finishes its own write-through. Ending the
+# walk on the first timeout let one pathological story block disk coverage
+# for everything older than it, boot after boot, because the walk is
+# newest-first and skip-valid fast-forwards to the same story. The cap still
+# bounds orphaned worker threads on the 2-core box.
+BACKFILL_MAX_TIMEOUTS = 5
+
 # Every step this run intends to attempt, in execution order. Pre-seeding the
 # status with all of them is what makes "not reached yet" legible: the deploy
 # script and orchestrator/sync.py poll mid-flight, and a step that has not
@@ -110,6 +144,10 @@ _status: dict = {
     "steps": {},
     "incomplete": [],
     "errors": 0,
+    # The archive backfill reports here, never through `phase`: it runs after
+    # phase flips to done so the pipeline's site crawl never waits on it.
+    "backfill": {"state": "idle"},
+    "disk": {"module": None},
 }
 
 
@@ -123,6 +161,8 @@ def warmup_status() -> dict:
     snapshot["warmed"] = dict(_status["warmed"])
     snapshot["steps"] = {name: dict(rec) for name, rec in _status["steps"].items()}
     snapshot["incomplete"] = list(_status["incomplete"])
+    snapshot["backfill"] = dict(_status["backfill"])
+    snapshot["disk"] = dict(_status["disk"])
     return snapshot
 
 
@@ -132,12 +172,16 @@ async def startup_warmup() -> None:
         await asyncio.sleep(STARTUP_DELAY_SECONDS)
         await warm_public_caches()
     except asyncio.CancelledError:
-        _status["phase"] = "cancelled"
+        # The backfill runs after `phase` flips to done; a shutdown during it
+        # must not rewrite a finished run as cancelled.
+        if _status["phase"] == "running":
+            _status["phase"] = "cancelled"
         _close_out_running_step()
         raise
     except Exception:
         logger.exception("Cache warm-up crashed (non-fatal)")
-        _status["phase"] = "failed"
+        if _status["phase"] == "running":
+            _status["phase"] = "failed"
         _status["finished_at"] = time.time()
         _close_out_running_step()
 
@@ -183,6 +227,220 @@ def _describe_dir(directory: Path) -> str:
         return f"{directory} (unreadable: {exc})"
 
 
+class _DiskState:
+    """Names for what the disk knows about one story. Rule 2, again: the
+    backfill summary has to say which kind of "did nothing" each skip was."""
+
+    VALID = "valid"        # a fresh entry is on the volume
+    STALE = "stale"        # entry missing or invalidated; worth recomputing
+    NO_FILE = "no_file"    # no source JSON, so the layer cannot persist it
+
+
+def _load_disk_layer():
+    """The site-cache disk layer (dashboard/site_cache.py), or None.
+
+    The api handlers write every finished story and entity response through
+    the layer on their own, so the warm steps persist pages just by calling
+    them. This import exists for the backfill: it asks the layer whether a
+    story is already on disk so a valid entry is skipped, not recomputed. The
+    two halves can land in either order, so an absent module degrades to the
+    pre-disk behavior: no backfill, everything else exactly as today.
+    """
+    try:
+        return importlib.import_module(_DISK_MODULE)
+    except ImportError:
+        return None
+
+
+def _backfill_budget_minutes() -> float:
+    raw = os.environ.get(BACKFILL_MINUTES_ENV)
+    if raw is None:
+        return BACKFILL_MINUTES_DEFAULT
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(
+            "%s=%r is not a number; using the default of %s minutes",
+            BACKFILL_MINUTES_ENV,
+            raw,
+            BACKFILL_MINUTES_DEFAULT,
+        )
+        return BACKFILL_MINUTES_DEFAULT
+
+
+def _new_backfill_record() -> dict:
+    return {
+        "state": "pending",
+        "candidates": None,
+        "written": 0,
+        "skipped": 0,
+        "no_file": 0,
+        "failed": 0,
+        "timed_out": 0,
+        "remaining": None,
+        "seconds": 0.0,
+        "budget_minutes": _backfill_budget_minutes(),
+        "reason": None,
+    }
+
+
+def _story_disk_state(api, disk, user: str, slug: str) -> str:
+    """One of _DiskState, from one stat plus one small read.
+
+    Blocking, so the backfill runs it in a thread. Mirrors the read side of
+    api._story_response_from_disk without promoting the body into the memory
+    cache: keeping the archive out of RAM is the point of the disk copy.
+    """
+    source_path = api._story_file_for_slug(user, slug)
+    if source_path is None:
+        # Structured-issue fallback stories have no single source file; the
+        # disk layer cannot key an entry for them, so recomputing one buys
+        # nothing durable and the backfill leaves them to organic traffic.
+        return _DiskState.NO_FILE
+    key = disk.file_key(source_path)
+    path = api._site_cache_path(user, "stories", slug)
+    if key is None or path is None:
+        return _DiskState.NO_FILE
+    if disk.read_body(path, key) is not None:
+        return _DiskState.VALID
+    return _DiskState.STALE
+
+
+async def _backfill_story_disk(
+    api, *, user: str, disk, stories: list[dict] | None, record: dict
+) -> None:
+    """Walk the story archive once and leave every response on the volume.
+
+    Runs only after `phase` has flipped to done: readers and the pipeline's
+    site crawl need the steps above, not this, so the archive walk must never
+    hold the status at running. Lowest priority by construction: one story at
+    a time, each call through the same bounded semaphores as organic traffic,
+    deadline checked between items. Incremental by design: a story whose disk
+    entry is still valid is skipped without recomputing, so the first run does
+    the real work and every later run skips almost everything.
+
+    The walk is newest-first (the order api._all_public_stories keeps), so
+    when the budget ends the run it is the oldest stories that wait for the
+    next boot.
+    """
+    if disk is None:
+        record.update(state="skipped", reason="disk layer unavailable")
+        logger.info("story disk backfill skipped: %s not importable", _DISK_MODULE)
+        return
+    if record["budget_minutes"] <= 0:
+        record.update(state="skipped", reason=f"{BACKFILL_MINUTES_ENV} disabled it")
+        logger.info("story disk backfill skipped: %s", record["reason"])
+        return
+
+    started = time.monotonic()
+    deadline = started + record["budget_minutes"] * 60.0
+    record["state"] = "running"
+
+    if stories is None:
+        try:
+            stories = await _bounded(lambda: api._all_public_stories(user))
+        except Exception:
+            logger.warning("story disk backfill could not list public stories", exc_info=True)
+            _status["errors"] += 1
+            record.update(state="skipped", reason="story listing failed")
+            return
+
+    slugs = [s.get("slug") for s in stories if s.get("slug")]
+    record["candidates"] = len(slugs)
+    abandoned = ""
+    attempted = 0
+    try:
+        for slug in slugs:
+            if time.monotonic() >= deadline:
+                abandoned = "budget"
+                break
+            if record["timed_out"] >= BACKFILL_MAX_TIMEOUTS:
+                # Each timeout orphans one worker thread, so a systemically
+                # hung backend ends the walk; see BACKFILL_MAX_TIMEOUTS for
+                # why a single slow story does not.
+                abandoned = "timeouts"
+                break
+            attempted += 1
+            state = await asyncio.to_thread(_story_disk_state, api, disk, user, slug)
+            if state == _DiskState.VALID:
+                record["skipped"] += 1
+                continue
+            if state == _DiskState.NO_FILE:
+                record["no_file"] += 1
+                continue
+            try:
+                value = await asyncio.wait_for(
+                    api.get_public_story(slug, user=user), timeout=CALL_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                record["timed_out"] += 1
+                _status["errors"] += 1
+                logger.warning(
+                    "story disk backfill call for %s exceeded %.0fs and was abandoned "
+                    "(its compute thread keeps running)",
+                    slug,
+                    CALL_TIMEOUT_SECONDS,
+                )
+                continue
+            except Exception:
+                record["failed"] += 1
+                _status["errors"] += 1
+                logger.warning("story disk backfill call failed for %s", slug, exc_info=True)
+                continue
+            if isinstance(value, dict):
+                # The handler persists the response through the site cache on
+                # its own (api._resolve_story_response), but a write can be
+                # refused: the 2MB guard, a full disk. Re-check the disk
+                # before dropping the memory copy. A VALID entry means the
+                # volume holds the durable copy, so the memory one can go:
+                # thousands of enriched archive responses in
+                # _STORY_RESPONSE_CACHE would be a slow OOM on the shared-cpu
+                # box. Anything else means the compute produced no durable
+                # copy, so it counts as failed and keeps its memory entry,
+                # the only warm copy it has. The recent window from the
+                # story_details step is never recomputed here (its disk entry
+                # is already valid), so it keeps its memory entry too.
+                landed = await asyncio.to_thread(_story_disk_state, api, disk, user, slug)
+                if landed == _DiskState.VALID:
+                    record["written"] += 1
+                    cache = getattr(api, "_STORY_RESPONSE_CACHE", None)
+                    if isinstance(cache, dict):
+                        cache.pop((user, slug), None)
+                else:
+                    record["failed"] += 1
+            else:
+                record["failed"] += 1
+    except asyncio.CancelledError:
+        record.update(
+            state="cancelled",
+            remaining=len(slugs) - attempted,
+            seconds=round(time.monotonic() - started, 1),
+        )
+        raise
+
+    record["remaining"] = len(slugs) - attempted
+    record["seconds"] = round(time.monotonic() - started, 1)
+    record["state"] = "abandoned" if abandoned else "done"
+    if abandoned:
+        record["reason"] = abandoned
+    log = logger.info if abandoned in ("", "budget") else logger.warning
+    log(
+        "story disk backfill %s in %s: %d written, %d skipped (already on disk), "
+        "%d memory-only (no source file), %d failed, %d timed out, "
+        "%d of %d remaining%s",
+        record["state"],
+        _fmt_seconds(record["seconds"]),
+        record["written"],
+        record["skipped"],
+        record["no_file"],
+        record["failed"],
+        record["timed_out"],
+        record["remaining"],
+        len(slugs),
+        f" (stopped: {abandoned})" if abandoned else "",
+    )
+
+
 async def warm_public_caches(user: str = WARM_USER) -> dict:
     from dashboard.routes import api
 
@@ -203,6 +461,8 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
         for name in _STEP_NAMES
     }
     incomplete: list[str] = []
+    disk = _load_disk_layer()
+    backfill = _new_backfill_record()
     _status.update(
         phase="running",
         started_at=time.time(),
@@ -213,6 +473,10 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
         steps=steps,
         incomplete=incomplete,
         errors=0,
+        backfill=backfill,
+        # Rule 2 for the disk: a poller must be able to tell "no disk layer on
+        # this build" from "layer present, backfill just not started yet".
+        disk={"module": _DISK_MODULE if disk is not None else None},
     )
 
     async def step(name: str, calls, source: str | None = None) -> None:
@@ -355,6 +619,9 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
     await step(
         "entities",
         [
+            # The handler itself writes the finished page through the site
+            # cache (api._cached_offload with disk_kind="entities"), so this
+            # call is the disk precompute as well as the memory warm.
             (lambda s=s: api.get_entity(s, user=user, limit=SITE_ENTITY_LIMIT))
             for s in entity_slugs
         ],
@@ -393,6 +660,7 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
 
     # Story pages last: already 0.2-3.4s cold once the corpus caches above are
     # hot, so they are the cheapest thing to leave lazy if the budget runs out.
+    backfill_stories: list[dict] | None = None
     if time.monotonic() >= run_deadline:
         _skip_remaining("total warm-up budget spent before story details")
     else:
@@ -402,6 +670,7 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
             # 300 and the four steps above take longer than that, so this is
             # routinely the real rebuild rather than a cache read.
             stories = await _bounded(lambda: api._all_public_stories(user))
+            backfill_stories = stories
         except Exception:
             logger.warning("warm-up could not list public stories", exc_info=True)
             _status["errors"] += 1
@@ -410,6 +679,8 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
         slugs = [s.get("slug") for s in stories[:RECENT_STORY_DETAILS] if s.get("slug")]
         await step(
             "story_details",
+            # The handler persists each response through the site cache on
+            # its own (api._resolve_story_response), so warming is writing.
             [(lambda s=s: api.get_public_story(s, user=user)) for s in slugs],
             story_source,
         )
@@ -439,4 +710,20 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
             warmed,
             _status["errors"],
         )
+
+    # The archive precompute pass, strictly after the run reports done: the
+    # deploy script and orchestrator/sync.py poll `phase` and start their site
+    # crawl the moment it leaves running, so a 20-minute walk here must never
+    # be on that path. Its own budget is independent of TOTAL_BUDGET_SECONDS.
+    try:
+        await _backfill_story_disk(
+            api, user=user, disk=disk, stories=backfill_stories, record=backfill
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _status["errors"] += 1
+        backfill.update(state="failed", reason="crashed, see the traceback above")
+        logger.exception("story disk backfill crashed (non-fatal)")
+
     return warmup_status()
