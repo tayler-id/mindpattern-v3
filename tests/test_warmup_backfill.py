@@ -98,6 +98,10 @@ def _stub_api(monkeypatch, tmp_path, env: _SiteEnv, *, order=None, story_call=No
         order.append("entity_index")
         return {}
 
+    def _related_index(user, **kwargs):
+        order.append("related_index")
+        return {}
+
     async def _entity(slug, **kwargs):
         order.append("entities")
         return {"slug": slug}
@@ -123,6 +127,7 @@ def _stub_api(monkeypatch, tmp_path, env: _SiteEnv, *, order=None, story_call=No
     monkeypatch.setattr(api, "_structured_issue_dates", lambda **kwargs: ["2026-08-25"])
     monkeypatch.setattr(api, "get_structured_issue", _issue)
     monkeypatch.setattr(api, "_entity_issue_index", _entity_index)
+    monkeypatch.setattr(api, "_related_graph_index", _related_index)
     monkeypatch.setattr(api, "get_entity", _entity)
     monkeypatch.setattr(api, "get_source_detail", _noop)
     monkeypatch.setattr(api, "get_public_story", story_call or _story)

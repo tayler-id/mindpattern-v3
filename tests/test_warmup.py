@@ -80,6 +80,10 @@ def _stub_api(monkeypatch, tmp_path, *, order=None, entity_call=None, issue_date
         order.append("entity_index")
         return {}
 
+    def _related_index(user, **kwargs):
+        order.append("related_index")
+        return {}
+
     async def _entity(slug, **kwargs):
         order.append("entities")
         seen.append(slug)
@@ -106,6 +110,7 @@ def _stub_api(monkeypatch, tmp_path, *, order=None, entity_call=None, issue_date
     # a module-level dict keyed on the live corpus fingerprint, so letting it
     # run here would leave an empty index behind for whatever test runs next.
     monkeypatch.setattr(api, "_entity_issue_index", _entity_index)
+    monkeypatch.setattr(api, "_related_graph_index", _related_index)
     monkeypatch.setattr(api, "get_entity", entity_call or _entity)
     monkeypatch.setattr(api, "get_source_detail", _source)
     monkeypatch.setattr(api, "get_public_story", _story)
@@ -236,6 +241,7 @@ def test_entities_warm_before_story_details(monkeypatch, tmp_path):
     assert first_seen == [
         "structured_issues",
         "entity_index",
+        "related_index",
         "entities",
         "sources",
         "story_details",

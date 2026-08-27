@@ -1,4 +1,4 @@
-"""Disk layer for the public story and entity response caches.
+"""Disk layer for the public story, entity, finding and related caches.
 
 Every response cache in dashboard/routes/api.py is an in-memory dict, so a
 restart or deploy used to empty them all, and the first request then paid the
@@ -6,8 +6,8 @@ full corpus rebuild. _all_public_stories reads every story JSON on the volume,
 measured 5,471ms cold against 1ms warm, and dashboard/warmup.py takes minutes
 to refill everything after boot. This module keeps finished response bodies on
 the persistent volume, one JSON file per slug under
-DATA_DIR/<user>/site-cache/{stories,entities}/, so a restart costs one small
-file read instead.
+DATA_DIR/<user>/site-cache/{stories,entities,findings,related}/, so a restart
+costs one small file read instead.
 
 Every file carries an envelope, {"v": schema version, "key": invalidation
 key, "body": the exact response dict}. Serving code checks v and key. Any
@@ -38,7 +38,7 @@ SCHEMA_VERSION = 1
 # one entry dominate the volume.
 MAX_BODY_BYTES = 2 * 1024 * 1024
 
-KINDS = ("stories", "entities")
+KINDS = ("stories", "entities", "findings", "related")
 
 
 def file_key(source: Path) -> str | None:

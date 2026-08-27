@@ -129,6 +129,7 @@ _STEP_NAMES = (
     "sitemap",
     "structured_issues",
     "entity_index",
+    "related_index",
     "entities",
     "sources",
     "story_details",
@@ -596,6 +597,15 @@ async def warm_public_caches(user: str = WARM_USER) -> dict:
         "entity_index",
         [lambda: asyncio.to_thread(api._entity_issue_index, user)],
         "entity issue index over the parsed issues above",
+    )
+
+    # Everything the related-paths walk re-derives per candidate (entity refs,
+    # kg edges, embedding vectors), one fingerprint-keyed build. Without this
+    # the first finding page after boot pays the build inside its request.
+    await step(
+        "related_index",
+        [lambda: asyncio.to_thread(api._related_graph_index, user)],
+        "related-graph index over memory.db",
     )
 
     # Entity + source pages, dossier-backed only (what the sitemap exposes).

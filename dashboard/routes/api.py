@@ -36,6 +36,7 @@ from orchestrator.site_content import _TOPIC_STOPWORDS as _PUBLIC_TOPIC_STOPWORD
 from orchestrator.site_content import soften_em_dashes
 from orchestrator.site_content import _ENTITY_STOPWORDS as _EXTRACTOR_ENTITY_STOPWORDS
 from orchestrator.site_graph import CorpusGraphReadModel
+from orchestrator.site_graph import _entity_ref as _graph_entity_ref
 from orchestrator.story_related import KG_EDGE_CONFIDENCE_FLOOR, related_paths_for_story
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
@@ -890,11 +891,276 @@ async def _finding_is_missing(user: str, finding_id: int) -> bool:
     return finding_id not in index["ids"]
 
 
+# ── Related-graph index ──────────────────────────────────────────────────
+#
+# A cold /api/findings/{id} measured 2,118 sqlite statements on the 22k-finding
+# mirror (2026-08-26): get_related_paths_for_finding in orchestrator/site_graph.py
+# re-reads entity_graph, kg_edges and findings_embeddings for each of ~300
+# candidate findings, per request, plus four sqlite_master probes each. Every
+# statement is a round trip against the network-backed Fly volume, which is how
+# a page that computes in 83ms locally hangs past 30s in production. Semantic
+# mode ran only 2 queries but 1.07s of python, deserializing all 22,167
+# embeddings and building 22,166 public dicts per request. Both re-derive
+# corpus-constant data, so it moves into one index, built once per content
+# change on the _entity_issue_index recipe: module-level dict keyed on the data
+# fingerprint, single-flight under its own lock, immune to the
+# _PUBLIC_RESPONSE_CACHE wholesale clear.
+
+_RELATED_GRAPH_INDEX_CACHE: dict[str, tuple[float, dict]] = {}
+_RELATED_GRAPH_INDEX_LOCK = threading.Lock()
+
+# The walk considers the 300 most recent findings as candidates (LIMIT 300 in
+# site_graph). Precomputing python-float embedding lists for one extra row
+# covers every candidate set the walk can select, whichever source is excluded.
+_RELATED_CANDIDATE_WINDOW = 301
+
+
+def _related_graph_index_impl(user: str) -> dict | None:
+    """Everything the related-paths walk re-derives per candidate, built once.
+
+    Three bulk scans replace the per-request storm:
+
+    - entities: finding id -> the exact list _entities_for_finding returns.
+      The bulk scans run in primary-key order, which is the same within-finding
+      row order the per-id queries produce (the finding_id indexes list rowids
+      ascending per key), and the slug dedupe uses the same dict-insertion
+      logic, entity_graph rows before kg rows, so each list is value-identical
+      to the per-id result. Ref dicts are pooled by (name, kind) to keep
+      resident size down; the model copies them per call.
+    - emb_ids, emb_matrix: every stored embedding as one float32 matrix, rows
+      in ascending finding id order. np.frombuffer yields bit-identical float32
+      values to np.array(_deserialize_f32(blob), dtype=np.float32), so per-pair
+      np.dot scores match the full scan exactly.
+    - emb_lists: python-float lists for the candidate window. site_graph's
+      _dot_similarity runs python-double math over lists, and float32 tolist()
+      widening is exact, so dots over these come out bit-identical too.
+
+    Resident size on the 22k mirror, deep-measured: 34.0MB matrix + 10.5MB
+    entity refs + 3.7MB candidate lists + 0.2MB ids, 48MB total. Returns None
+    on any doubt (no database, sqlite error) so callers fall back to the
+    unindexed walk and a transient error is not pinned until the next publish.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    try:
+        by_finding: dict[int, dict[str, dict]] = {}
+        ref_pool: dict[tuple, dict] = {}
+
+        def _pooled_ref(name, kind) -> dict:
+            key = (name, kind)
+            ref = ref_pool.get(key)
+            if ref is None:
+                ref = _graph_entity_ref(name, kind)
+                ref_pool[key] = ref
+            return ref
+
+        if _table_exists(conn, "entity_graph"):
+            rows = conn.execute(
+                """
+                SELECT finding_id, entity_a, entity_a_type, entity_b, entity_b_type
+                FROM entity_graph
+                WHERE finding_id IS NOT NULL
+                ORDER BY id
+                """
+            )
+            for row in rows:
+                per = by_finding.setdefault(int(row["finding_id"]), {})
+                for name_key, type_key in (
+                    ("entity_a", "entity_a_type"),
+                    ("entity_b", "entity_b_type"),
+                ):
+                    ref = _pooled_ref(row[name_key], row[type_key] or "unknown")
+                    per[ref["slug"]] = ref
+        if _table_exists(conn, "kg_edges") and _table_exists(conn, "kg_entities"):
+            rows = conn.execute(
+                """
+                SELECT edge.finding_id AS finding_id,
+                       subject.canonical_name AS subject_name,
+                       subject.entity_type AS subject_type,
+                       object.canonical_name AS object_name,
+                       object.entity_type AS object_type
+                FROM kg_edges edge
+                JOIN kg_entities subject ON subject.id = edge.subject_id
+                JOIN kg_entities object ON object.id = edge.object_id
+                WHERE edge.finding_id IS NOT NULL
+                ORDER BY edge.id
+                """
+            )
+            for row in rows:
+                per = by_finding.setdefault(int(row["finding_id"]), {})
+                for name_key, type_key in (
+                    ("subject_name", "subject_type"),
+                    ("object_name", "object_type"),
+                ):
+                    ref = _pooled_ref(row[name_key], row[type_key] or "unknown")
+                    per[ref["slug"]] = ref
+        entities = {
+            finding_id: list(per.values()) for finding_id, per in by_finding.items()
+        }
+
+        emb_ids = np.empty(0, dtype=np.int64)
+        emb_matrix = np.empty((0, 0), dtype=np.float32)
+        emb_lists: dict[int, list[float]] = {}
+        if _table_exists(conn, "findings") and _table_exists(conn, "findings_embeddings"):
+            # One dimension per corpus. A blob of another size cannot join the
+            # matrix; the full scan would have crashed on it (semantic) or
+            # scored it 0.0 (blended), so absent is the safe reading. A length
+            # pass runs first so the matrix can be preallocated and filled row
+            # by row, each blob dropped as it lands; holding every blob plus a
+            # b"".join copy doubled the build's peak RSS on the 22k mirror.
+            size_counts: dict[int, int] = {}
+            for row in conn.execute(
+                """
+                SELECT length(e.embedding) AS nbytes
+                FROM findings f
+                JOIN findings_embeddings e ON e.finding_id = f.id
+                WHERE e.embedding IS NOT NULL AND length(e.embedding) > 0
+                """
+            ):
+                nbytes = int(row["nbytes"])
+                size_counts[nbytes] = size_counts.get(nbytes, 0) + 1
+            if len(size_counts) > 1:
+                logger.warning(
+                    "mixed embedding dimensions for %s (bytes -> rows: %s); "
+                    "only the majority dimension joins the semantic matrix, "
+                    "the rest score as absent",
+                    user,
+                    dict(sorted(size_counts.items())),
+                )
+            dim_bytes = 0
+            if size_counts:
+                dim_bytes = max(size_counts.items(), key=lambda item: item[1])[0]
+            if dim_bytes and dim_bytes % 4 == 0:
+                capacity = size_counts[dim_bytes]
+                matrix = np.empty((capacity, dim_bytes // 4), dtype=np.float32)
+                ids: list[int] = []
+                for row in conn.execute(
+                    """
+                    SELECT f.id AS finding_id, e.embedding AS embedding
+                    FROM findings f
+                    JOIN findings_embeddings e ON e.finding_id = f.id
+                    ORDER BY f.id
+                    """
+                ):
+                    blob = row["embedding"]
+                    if not blob or len(blob) != dim_bytes:
+                        continue
+                    if len(ids) == capacity:
+                        # The table grew between the two scans. The fingerprint
+                        # has moved with it, so the next request rebuilds and
+                        # picks up the tail; this build matches one taken a
+                        # moment earlier.
+                        break
+                    matrix[len(ids)] = np.frombuffer(blob, dtype=np.float32)
+                    ids.append(int(row["finding_id"]))
+                if len(ids) < capacity:
+                    matrix = matrix[: len(ids)].copy()
+                emb_ids = np.array(ids, dtype=np.int64)
+                emb_matrix = matrix
+
+        if len(emb_ids) and _table_exists(conn, "findings"):
+            recent = conn.execute(
+                """
+                SELECT id FROM findings
+                ORDER BY run_date DESC, created_at DESC
+                LIMIT ?
+                """,
+                (_RELATED_CANDIDATE_WINDOW,),
+            ).fetchall()
+            for row in recent:
+                finding_id = int(row["id"])
+                position = int(np.searchsorted(emb_ids, finding_id))
+                if position < len(emb_ids) and int(emb_ids[position]) == finding_id:
+                    emb_lists[finding_id] = emb_matrix[position].tolist()
+    except sqlite3.Error as exc:
+        logger.warning("related graph index unavailable for %s: %s", user, exc)
+        return None
+    finally:
+        conn.close()
+    return {
+        "entities": entities,
+        "emb_ids": emb_ids,
+        "emb_matrix": emb_matrix,
+        "emb_lists": emb_lists,
+    }
+
+
+def _related_graph_index(user: str) -> dict | None:
+    """The shared index, single-flight per content change. Blocking; every
+    caller is already inside a worker thread, and dashboard/warmup.py builds
+    it once at boot right after the entity index."""
+    return _fingerprint_index(
+        _RELATED_GRAPH_INDEX_CACHE,
+        _RELATED_GRAPH_INDEX_LOCK,
+        user,
+        _related_graph_index_impl,
+    )
+
+
+def _related_index_embedding_row(index: dict, finding_id: int) -> int | None:
+    ids = index["emb_ids"]
+    if not len(ids):
+        return None
+    position = int(np.searchsorted(ids, finding_id))
+    if position >= len(ids) or int(ids[position]) != finding_id:
+        return None
+    return position
+
+
+class _IndexedCorpusGraphModel(CorpusGraphReadModel):
+    """The corpus read model with its per-finding lookups served from the index.
+
+    get_finding and get_related_paths_for_finding run unchanged in the parent,
+    so the connector logic cannot drift from the unindexed walk; only the two
+    data accessors they call per candidate are overridden. Each call returns
+    fresh containers, matching the per-call dicts the parent builds from rows,
+    so nothing downstream can poison the shared index.
+    """
+
+    def __init__(self, conn: sqlite3.Connection, related_index: dict):
+        super().__init__(conn)
+        self._related_index = related_index
+
+    def _entities_for_finding(self, finding_id: int) -> list[dict]:
+        refs = self._related_index["entities"].get(int(finding_id))
+        if not refs:
+            return []
+        return [ref.copy() for ref in refs]
+
+    def _embedding_for_finding(self, finding_id: int) -> list[float]:
+        index = self._related_index
+        cached = index["emb_lists"].get(int(finding_id))
+        if cached is not None:
+            return list(cached)
+        row = _related_index_embedding_row(index, int(finding_id))
+        if row is None:
+            return []
+        return index["emb_matrix"][row].tolist()
+
+
+def _open_related_graph_model(
+    user: str,
+) -> tuple[sqlite3.Connection, CorpusGraphReadModel, dict | None] | None:
+    """A connection, a read model, and the index when it is available.
+
+    Only the finding and related handlers use this. When the index build
+    fails the plain per-request model answers instead, slower but whole.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    index = _related_graph_index(user)
+    if index is None:
+        return conn, CorpusGraphReadModel(conn), None
+    return conn, _IndexedCorpusGraphModel(conn, index), index
+
+
 def _finding_impl(finding_id: int, user: str) -> dict | None:
-    opened = _open_graph_model(user)
+    opened = _open_related_graph_model(user)
     if opened is None:
         return None
-    conn, model = opened
+    conn, model, _index = opened
     try:
         graph_finding = model.get_finding(finding_id)
         if graph_finding is not None:
@@ -924,10 +1190,22 @@ async def get_finding(
     user: str = Query("ramsay"),
 ):
     """Public: one finding by ID with whitelisted fields only."""
+    if finding_id <= 0:
+        # Positive ints only before an id can shape a cache path.
+        # normalize_slug("-5") strips to "5" and would alias another
+        # finding's disk entry.
+        return _finding_not_found()
     if await _finding_is_missing(user, finding_id):
         return _finding_not_found()
     value = await _cached_offload(
-        ("finding", user, finding_id), user, lambda: _finding_impl(finding_id, user)
+        ("finding", user, finding_id),
+        user,
+        lambda: _finding_impl(finding_id, user),
+        # Restart-durable: keyed by the data fingerprint plus the id, so a
+        # rebooted process reads the file back instead of replaying the walk.
+        disk_kind="findings",
+        disk_slug=str(finding_id),
+        disk_extra=f"id={finding_id}",
     )
     if value is None:
         return _finding_not_found()
@@ -953,12 +1231,20 @@ async def get_related_findings(
     """Public: source finding's related findings over stored embeddings."""
     if mode not in {"semantic", "blended"}:
         return JSONResponse(status_code=400, content={"error": "Unsupported related mode"})
+    if finding_id <= 0:
+        # Same positive-int gate as get_finding, ahead of any cache path.
+        return _finding_not_found()
     if await _finding_is_missing(user, finding_id):
         return _finding_not_found()
     value = await _cached_offload(
         ("related", user, finding_id, mode, limit),
         user,
         lambda: _related_findings_impl(finding_id, mode, limit, user),
+        # Restart-durable: fingerprint plus id plus mode plus limit. Mode and
+        # limit are in the filename too, so combinations never share a file.
+        disk_kind="related",
+        disk_slug=f"{finding_id}-{mode}-{limit}",
+        disk_extra=f"id={finding_id}:mode={mode}:limit={limit}",
     )
     if value is None:
         return _finding_not_found()
@@ -966,73 +1252,168 @@ async def get_related_findings(
 
 
 def _related_findings_impl(finding_id: int, mode: str, limit: int, user: str) -> dict | None:
-    opened = _open_graph_model(user)
+    opened = _open_related_graph_model(user)
     if opened is None:
         return None
 
-    conn, model = opened
+    conn, model, index = opened
     try:
         if mode == "blended":
             return model.get_related_paths_for_finding(finding_id, limit=limit)
+        if index is None:
+            return _related_semantic_scan(conn, finding_id, limit)
+        return _related_semantic_from_index(conn, index, finding_id, limit)
+    finally:
+        conn.close()
 
-        source = conn.execute(
-            """
-            SELECT f.id, f.title, e.embedding
-            FROM findings f
-            LEFT JOIN findings_embeddings e ON e.finding_id = f.id
-            WHERE f.id = ?
-            """,
-            (finding_id,),
-        ).fetchone()
-        if source is None:
-            return None
-        if source["embedding"] is None or limit == 0:
-            return {
-                "kind": "related",
-                "finding_id": finding_id,
-                "mode": "semantic",
-                "items": [],
-                "total": 0,
-            }
 
-        source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+def _related_semantic_from_index(
+    conn: sqlite3.Connection, index: dict, finding_id: int, limit: int
+) -> dict | None:
+    """mode=semantic over the shared embedding matrix.
+
+    Same per-pair float32 np.dot as the full scan, over bit-identical vectors,
+    so every score matches. Only the winning ids are then fetched and shaped;
+    the full scan built a public dict for all 22,166 non-source findings per
+    request, which was 0.87s of its 1.07s (regex redaction over every title
+    and summary in the corpus). A source whose stored dimension does not match
+    the corpus matrix scores nothing and returns the empty payload; the full
+    scan raised on that same broken row.
+    """
+    source = conn.execute(
+        """
+        SELECT f.id, f.title, e.embedding
+        FROM findings f
+        LEFT JOIN findings_embeddings e ON e.finding_id = f.id
+        WHERE f.id = ?
+        """,
+        (finding_id,),
+    ).fetchone()
+    if source is None:
+        return None
+    if source["embedding"] is None or limit == 0:
+        return {
+            "kind": "related",
+            "finding_id": finding_id,
+            "mode": "semantic",
+            "items": [],
+            "total": 0,
+        }
+
+    source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+    emb_ids = index["emb_ids"]
+    emb_matrix = index["emb_matrix"]
+    scored: list[tuple[float, int]] = []
+    if emb_matrix.shape[0] and emb_matrix.shape[1] == source_vec.shape[0]:
+        for row in range(emb_matrix.shape[0]):
+            candidate_id = int(emb_ids[row])
+            if candidate_id == finding_id:
+                continue
+            score = float(np.dot(source_vec, emb_matrix[row]))
+            scored.append((round(max(0.0, score), 4), candidate_id))
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    top = scored[:limit]
+
+    items: list[dict] = []
+    if top:
+        placeholders = ",".join("?" for _ in top)
         rows = conn.execute(
-            """
-            SELECT f.id, f.run_date, f.agent, f.title, f.summary, f.importance,
-                   f.category, f.source_url, f.source_name, f.created_at, e.embedding
-            FROM findings f
-            JOIN findings_embeddings e ON e.finding_id = f.id
-            WHERE f.id != ?
+            f"""
+            SELECT id, run_date, agent, title, summary, importance, category,
+                   source_url, source_name, created_at
+            FROM findings
+            WHERE id IN ({placeholders})
             """,
-            (finding_id,),
+            [candidate_id for _, candidate_id in top],
         ).fetchall()
-
-        scored = []
-        for row in rows:
-            emb = np.array(_deserialize_f32(row["embedding"]), dtype=np.float32)
-            score = float(np.dot(source_vec, emb))
+        by_id = {int(row["id"]): row for row in rows}
+        for rounded, candidate_id in top:
+            row = by_id.get(candidate_id)
+            if row is None:
+                continue
             public = _public_finding(row)
             public.update({
-                "score": round(max(0.0, score), 4),
-                "similarity": round(max(0.0, score), 4),
+                "score": rounded,
+                "similarity": rounded,
                 "mode": "semantic",
                 "relationship": "semantic_similarity",
                 "reason": "Embedding similarity over stored MindPattern findings.",
                 "target_url": f"/f/{public['id']}",
             })
-            scored.append(public)
+            items.append(public)
+    return {
+        "kind": "related",
+        "finding_id": finding_id,
+        "mode": "semantic",
+        "items": items,
+        "total": len(items),
+    }
 
-        scored.sort(key=lambda item: (-item["score"], item["id"]))
-        items = scored[:limit]
+
+def _related_semantic_scan(
+    conn: sqlite3.Connection, finding_id: int, limit: int
+) -> dict | None:
+    """The pre-index semantic path, kept verbatim.
+
+    Serves two jobs: the fallback when the index build fails, and the
+    byte-identity reference tests compare the indexed path against.
+    """
+    source = conn.execute(
+        """
+        SELECT f.id, f.title, e.embedding
+        FROM findings f
+        LEFT JOIN findings_embeddings e ON e.finding_id = f.id
+        WHERE f.id = ?
+        """,
+        (finding_id,),
+    ).fetchone()
+    if source is None:
+        return None
+    if source["embedding"] is None or limit == 0:
         return {
             "kind": "related",
             "finding_id": finding_id,
             "mode": "semantic",
-            "items": items,
-            "total": len(items),
+            "items": [],
+            "total": 0,
         }
-    finally:
-        conn.close()
+
+    source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+    rows = conn.execute(
+        """
+        SELECT f.id, f.run_date, f.agent, f.title, f.summary, f.importance,
+               f.category, f.source_url, f.source_name, f.created_at, e.embedding
+        FROM findings f
+        JOIN findings_embeddings e ON e.finding_id = f.id
+        WHERE f.id != ?
+        """,
+        (finding_id,),
+    ).fetchall()
+
+    scored = []
+    for row in rows:
+        emb = np.array(_deserialize_f32(row["embedding"]), dtype=np.float32)
+        score = float(np.dot(source_vec, emb))
+        public = _public_finding(row)
+        public.update({
+            "score": round(max(0.0, score), 4),
+            "similarity": round(max(0.0, score), 4),
+            "mode": "semantic",
+            "relationship": "semantic_similarity",
+            "reason": "Embedding similarity over stored MindPattern findings.",
+            "target_url": f"/f/{public['id']}",
+        })
+        scored.append(public)
+
+    scored.sort(key=lambda item: (-item["score"], item["id"]))
+    items = scored[:limit]
+    return {
+        "kind": "related",
+        "finding_id": finding_id,
+        "mode": "semantic",
+        "items": items,
+        "total": len(items),
+    }
 
 
 def _entities_missing_payload(limit: int, offset: int) -> dict:
