@@ -8,6 +8,12 @@ primary_region = "sjc"
 # See start.sh.
 
 [env]
+  # Backfill disabled 2026-08-27: the boot-time archive sweep wedged the event
+  # loop for its whole 20-minute budget (healthz timed out at 25s, readers got
+  # 500s) on three separate windows in one night. The archive fills organically
+  # through the serving write-through instead. Re-enable only after the sweep
+  # is proven not to block the loop, with a test.
+  MP_WARMUP_BACKFILL_MINUTES = "0"
   DATA_DIR = "/data"
   USERS_JSON = "/data/users.json"
   HOST = "0.0.0.0"
