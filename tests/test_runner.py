@@ -1709,6 +1709,7 @@ class TestPhaseSync:
             patch("orchestrator.sync.write_synced_marker") as mock_marker,
             patch("orchestrator.sync.warm_public_site",
                   return_value={"backend_warm": True, "crawled": 4, "failed": 0}) as mock_warm,
+            patch.object(pipeline, "_warmup_backfill_snapshot", return_value=None),
             patch.object(pipeline, "_send_alert") as mock_alert,
         ):
             result = pipeline._phase_sync()
@@ -1719,6 +1720,8 @@ class TestPhaseSync:
         mock_marker.assert_called_once_with(pipeline.date_str)
         mock_warm.assert_called_once_with(date=pipeline.date_str)
         mock_alert.assert_not_called()
+        # No snapshot, no key: the log must not carry an empty summary.
+        assert "warmup_backfill" not in result
 
     def test_warm_up_is_never_reached_over_the_network(self, pipeline, tmp_path):
         """The suite must not talk to Fly, and this test proved why.
@@ -1735,6 +1738,9 @@ class TestPhaseSync:
             patch("orchestrator.sync.restart_app", return_value={"success": True}),
             patch("orchestrator.sync.write_synced_marker"),
             patch("orchestrator.sync.warm_public_site") as mock_warm,
+            # The backfill snapshot is the one sanctioned, bounded GET the
+            # phase makes itself; everything else must stay off the network.
+            patch.object(pipeline, "_warmup_backfill_snapshot", return_value=None),
             patch("urllib.request.urlopen") as mock_urlopen,
             patch.object(pipeline, "_send_alert"),
         ):
@@ -1753,6 +1759,7 @@ class TestPhaseSync:
             patch("orchestrator.sync.write_synced_marker") as mock_marker,
             patch("orchestrator.sync.warm_public_site",
                   side_effect=RuntimeError("backend never came back")),
+            patch.object(pipeline, "_warmup_backfill_snapshot", return_value=None),
             patch.object(pipeline, "_send_alert") as mock_alert,
         ):
             result = pipeline._phase_sync()
@@ -1760,6 +1767,51 @@ class TestPhaseSync:
         assert result["success"] is True
         mock_marker.assert_called_once_with(pipeline.date_str)
         mock_alert.assert_not_called()
+
+    def test_backfill_summary_lands_in_the_phase_result(self, pipeline, tmp_path):
+        """The disk backfill keeps writing after the warm-up reports done, so
+        the phase result carries a coverage snapshot for the pipeline log."""
+        summary = {"state": "running", "written": 412, "skipped": 3050,
+                   "remaining": 3435, "candidates": 6897}
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("orchestrator.sync.sync_to_fly",
+                  return_value={"success": True, "bytes_uploaded": 1024}),
+            patch("orchestrator.sync.restart_app", return_value={"success": True}),
+            patch("orchestrator.sync.write_synced_marker"),
+            patch("orchestrator.sync.warm_public_site",
+                  return_value={"backend_warm": True, "crawled": 4, "failed": 0}),
+            patch.object(pipeline, "_warmup_backfill_snapshot",
+                         return_value=summary) as mock_snapshot,
+            patch.object(pipeline, "_send_alert"),
+        ):
+            result = pipeline._phase_sync()
+
+        assert result["warmup_backfill"] == summary
+        mock_snapshot.assert_called_once()
+
+    def test_backfill_snapshot_parses_the_status_and_swallows_failures(self, pipeline):
+        """One bounded GET; any failure means None, never an exception."""
+        payload = json.dumps(
+            {"phase": "done", "backfill": {"state": "done", "written": 6817}}
+        ).encode("utf-8")
+        response = MagicMock()
+        response.read.return_value = payload
+        response.__enter__ = lambda self_: response
+        response.__exit__ = lambda self_, *exc: False
+        with patch("urllib.request.urlopen", return_value=response):
+            assert pipeline._warmup_backfill_snapshot() == {
+                "state": "done", "written": 6817,
+            }
+
+        with patch("urllib.request.urlopen",
+                   side_effect=OSError("machine still restarting")):
+            assert pipeline._warmup_backfill_snapshot() is None
+
+        # An old build without the backfill key answers too.
+        response.read.return_value = json.dumps({"phase": "done"}).encode("utf-8")
+        with patch("urllib.request.urlopen", return_value=response):
+            assert pipeline._warmup_backfill_snapshot() is None
 
     def test_restart_failure_does_not_write_synced_marker(self, pipeline, tmp_path):
         with (

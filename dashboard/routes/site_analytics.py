@@ -184,8 +184,44 @@ def _summary(window: str) -> dict:
                 FROM (SELECT DISTINCT anon_id FROM events
                       WHERE ts>=? AND owner=0 AND type!='agent_hit'
                         AND anon_id!='') w""", (cutoff, cutoff)).fetchone() if new_split else None
+        # Durable readers vs churned loads. Every row written before the site
+        # shipped the flag carries the column default 0, which means
+        # "unlabeled", not "churned", so the split starts at the first flagged
+        # event and never reaches further back. MIN(ts) scans the table the
+        # same way every ts>=? filter above does; no index leads with durable.
+        durable_since = conn.execute(
+            "SELECT MIN(ts) m FROM events WHERE durable=1").fetchone()["m"]
+        if durable_since is not None:
+            durable_cutoff = max(cutoff, durable_since)
+            durable_row = conn.execute(
+                """SELECT COUNT(DISTINCT CASE WHEN durable=1 THEN anon_id END)
+                            durable_readers,
+                          SUM(type='page_view' AND durable=0) churned_loads
+                   FROM events
+                   WHERE ts>=? AND owner=0 AND type!='agent_hit'
+                     AND anon_id!=''""", (durable_cutoff,)).fetchone()
+        else:
+            durable_row = None
     finally:
         conn.close()
+    if durable_row is None:
+        # None, not zero: before the first flagged event arrives, a zero here
+        # would present unlabeled history as churn.
+        durable = {
+            "active": False, "since": None, "since_label": None,
+            "partial": False, "durable_readers": None, "churned_loads": None,
+        }
+    else:
+        durable = {
+            "active": True,
+            "since": durable_since,
+            "since_label": time.strftime("%d %b %Y", time.gmtime(durable_since)),
+            # True when the window opens before the flag existed, so the page
+            # can say the durable counts cover less than the whole window.
+            "partial": durable_since > cutoff,
+            "durable_readers": durable_row["durable_readers"] or 0,
+            "churned_loads": durable_row["churned_loads"] or 0,
+        }
     if split is None:
         # None, not a number. "Every all-time reader is new" is true only
         # because the question is unanswerable in that window, and a consumer
@@ -223,6 +259,7 @@ def _summary(window: str) -> dict:
         # False on the all-time window: see the note where new_split is set.
         # totals.new_readers / returning_readers are null when this is false.
         "new_split": new_split,
+        "durable": durable,
         "totals": totals,
         "daily": daily,
         "mix": mix,
@@ -347,6 +384,14 @@ _PAGE = """<!doctype html><html lang="en"><head>
   .tile.human .v { color: var(--human); }
   .tile.crawler .v { color: var(--crawler); }
   .tile.owner .v { color: var(--owner); }
+  .signs {
+    display: flex; flex-wrap: wrap; gap: 6px 28px; align-items: baseline;
+    border-bottom: 1px solid var(--line); padding: 10px 0;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .signs b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
   section { margin-top: 52px; }
   .kicker {
     display: flex; align-items: baseline; gap: 12px;
@@ -453,6 +498,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   <div class="tiles" id="tiles"></div>
 
+  <div class="signs" id="signsRow"></div>
+
   <div class="note" id="countingNote">
     <span class="k">How a reader is counted, and why Vercel disagrees</span>
     <div id="countingBody"></div>
@@ -554,6 +601,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   // Headline + dek
   const t = DATA.totals;
+  const d = DATA.durable;
   const share = t.crawler_share;
   document.getElementById("headline").innerHTML =
     t.events === 0 ? 'Nothing yet — <span class="flood">quiet wire.</span>' :
@@ -582,10 +630,27 @@ _PAGE = """<!doctype html><html lang="en"><head>
       ? [["human", "New readers", fmt(t.new_readers)],
          ["human", "Returning", fmt(t.returning_readers)]]
       : []),
+    // Only once the site reports the flag: zeros before that would present
+    // unlabeled history as churn.
+    ...(d.active
+      ? [["human", "Durable readers", fmt(d.durable_readers)],
+         ["human", "Churned loads", fmt(d.churned_loads)]]
+      : []),
     ["owner", "Your events", fmt(t.owner_events)],
   ].map(([cls, k, v]) =>
     `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`
   ).join("");
+
+  // Signs of reading: a crawler can mint page views all day, but it does not
+  // scroll a story or click through to a related one. Both series already
+  // exclude owner-flagged events.
+  const scrollPings = DATA.scroll.reduce((a, r) => a + r.n, 0);
+  const relatedReads = (DATA.clicks.find((c) => c.type === "related_click") || {}).count || 0;
+  document.getElementById("signsRow").innerHTML =
+    `<span>Signs of reading</span>` +
+    `<span><b>${fmt(scrollPings)}</b> scroll-depth pings</span>` +
+    `<span><b>${fmt(relatedReads)}</b> related-story clicks</span>` +
+    `<span>signals software does not fake</span>`;
 
   // Counting note. Every claim here is one somebody can check in the code:
   // the reader predicate is the owner=0 filter on every query above, the
@@ -609,6 +674,17 @@ _PAGE = """<!doctype html><html lang="en"><head>
       : `The all-time window reaches back further than the event store does, so nothing ` +
         `precedes it and the question has no answer. The new and returning split ` +
         `is shown on the today and 7d windows.`,
+    d.active
+      ? `Readers whose id could not be persisted are counted separately, because each of ` +
+        `their page loads can mint a new id. <b>Durable readers</b> kept their id between ` +
+        `page loads; <b>churned loads</b> are page loads that could not keep one.` +
+        (d.partial
+          ? ` Durable counts start <b>${esc(d.since_label)}</b>, the first day the site ` +
+            `reported the flag. Rows from before carry no flag, so they are not shown as churn.`
+          : ``)
+      : `The site does not yet report whether a reader id persisted, so durable readers ` +
+        `and churned loads are not shown. Zeros here would present unlabeled history ` +
+        `as churn; the split appears once the first flagged event arrives.`,
     `Vercel will report more visitors than this page does, and neither count is wrong. ` +
     `Browsing from this browser with <code>?mp_owner=1</code> set still sends events here, ` +
     `but they arrive tagged as yours and every reader number on this page excludes them. ` +

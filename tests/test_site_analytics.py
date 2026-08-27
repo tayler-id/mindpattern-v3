@@ -187,7 +187,8 @@ def test_dash_query_token(client, monkeypatch):
 
 
 def _seed(db_path, rows):
-    """Insert (anon_id, ts_offset_seconds, [type], [ref_domain], [owner]) tuples."""
+    """Insert (anon_id, ts_offset_seconds, [type], [ref_domain], [owner],
+    [durable]) tuples."""
     from memory.events_db import open_events_db
 
     now = int(time.time())
@@ -198,10 +199,11 @@ def _seed(db_path, rows):
             event_type = row[2] if len(row) > 2 else "page_view"
             ref = row[3] if len(row) > 3 else ""
             owner = row[4] if len(row) > 4 else 0
+            durable = row[5] if len(row) > 5 else 0
             conn.execute(
                 "INSERT INTO events (ts, type, target, path, ref_domain,"
-                " anon_id, value, owner) VALUES (?,?,?,?,?,?,0,?)",
-                (now + offset, event_type, "", "/", ref, anon, owner),
+                " anon_id, value, owner, durable) VALUES (?,?,?,?,?,?,0,?,?)",
+                (now + offset, event_type, "", "/", ref, anon, owner, durable),
             )
         conn.commit()
     finally:
@@ -397,3 +399,104 @@ def test_page_shows_the_split_and_explains_the_vercel_gap(authed):
 
     all_time = http.get("/site-analytics?window=all", headers=headers).text
     assert '"new_split": false' in all_time or '"new_split":false' in all_time
+
+
+# --- Durable readers vs churned loads -----------------------------------------
+#
+# 2026-08-26: 757 "unique readers" at 1.02 page views each, zero non-owner
+# scroll events. An id minted per page load inflates the reader count; the
+# durable flag says whether the client could persist its id. Every row from
+# before the site shipped the flag carries the column default 0, which means
+# "unlabeled", not "churned", so the split only starts at the first flagged
+# event and pre-flag history is never presented as churn.
+
+
+def test_durable_split_counts_readers_it_can_stand_behind(authed):
+    _, db_path, summary = authed
+    _seed(db_path, [
+        ("keeper01x", -2 * 86400, "page_view", "", 0, 1),
+        ("keeper01x", -86400, "page_view", "", 0, 1),
+        ("keeper02x", -86400, "story_view", "", 0, 1),
+        # a storage-blocked client: every load mints a new id
+        ("mintedid1", -3600, "page_view", "", 0, 0),
+        ("mintedid2", -3500, "page_view", "", 0, 0),
+    ])
+
+    d = summary("7d")["durable"]
+    assert d["active"] is True
+    assert d["durable_readers"] == 2
+    assert d["churned_loads"] == 2
+
+
+def test_pre_flag_history_is_not_presented_as_churn(authed):
+    _, db_path, summary = authed
+    _seed(db_path, [
+        # history from before the site shipped the flag, unlabeled rather
+        # than churned
+        ("oldreader1", -6 * 86400, "page_view", "", 0, 0),
+        ("oldreader2", -5 * 86400, "page_view", "", 0, 0),
+        # the first flagged event, which is the moment the flag shipped
+        ("keeper01x", -86400, "page_view", "", 0, 1),
+        # one genuinely churning load after that
+        ("mintedid1", -3600, "page_view", "", 0, 0),
+    ])
+
+    d = summary("7d")["durable"]
+    assert d["durable_readers"] == 1
+    assert d["churned_loads"] == 1, "the two pre-flag loads must not count"
+    assert d["partial"] is True
+    assert d["since_label"]
+
+
+def test_no_flagged_events_means_no_durable_numbers_at_all(authed):
+    """Before the site ships the flag, zeros would be a lie, so say nothing."""
+    _, db_path, summary = authed
+    _seed(db_path, [("oldreader1", -86400)])
+
+    d = summary("7d")["durable"]
+    assert d["active"] is False
+    assert d["durable_readers"] is None
+    assert d["churned_loads"] is None
+
+
+def test_owner_and_crawler_events_stay_out_of_the_durable_split(authed):
+    _, db_path, summary = authed
+    _seed(db_path, [
+        ("reader001", -86400, "page_view", "", 0, 1),
+        ("tayler01x", -3600, "page_view", "", 1, 1),  # owner browsing, durable
+        ("", -3600, "agent_hit"),                     # crawler, no anon_id
+        ("tayler01x", -3000, "page_view", "", 1, 0),  # owner, id not persisted
+    ])
+
+    d = summary("7d")["durable"]
+    assert d["durable_readers"] == 1
+    assert d["churned_loads"] == 0
+
+
+def test_the_flag_posted_by_the_site_reaches_the_split(authed):
+    """End to end over HTTP: the body the site posts decides the split."""
+    http, _, summary = authed
+    http.post("/api/event", json={
+        "type": "page_view", "path": "/", "anon_id": "keeper0001", "durable": 1,
+    })
+    http.post("/api/event", json={
+        "type": "page_view", "path": "/", "anon_id": "mintedid01", "durable": 0,
+    })
+
+    d = summary("7d")["durable"]
+    assert d["active"] is True
+    assert d["durable_readers"] == 1
+    assert d["churned_loads"] == 1
+
+
+def test_page_carries_the_durable_copy_and_signs_of_reading(authed):
+    http, db_path, _ = authed
+    _seed(db_path, [("keeper01x", -3600, "page_view", "", 0, 1)])
+
+    page = http.get("/site-analytics?window=7d",
+                    headers={"Authorization": "Bearer test-token"})
+    assert page.status_code == 200
+    assert "Durable readers" in page.text
+    assert "Churned loads" in page.text
+    assert "can mint a new id" in page.text
+    assert "Signs of reading" in page.text

@@ -78,8 +78,9 @@ def test_stored_rows_contain_no_pii_columns(client):
               headers={"User-Agent": "SecretBrowser/1.0", "X-Forwarded-For": "1.2.3.4"})
     conn = open_events_db(db_path)
     columns = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
-    # owner is a self-declared 0/1 "this is Tayler" flag — not PII
-    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value", "owner"}
+    # owner is a self-declared 0/1 "this is Tayler" flag and durable is a 0/1
+    # "the client could persist its reader id" flag. Neither is PII.
+    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value", "owner", "durable"}
     row = dict(conn.execute("SELECT * FROM events").fetchone())
     serialized = json.dumps(row)
     assert "1.2.3.4" not in serialized
