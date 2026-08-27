@@ -669,10 +669,17 @@ BACKEND_URL = "https://mindpattern.fly.dev"
 # Paths per POST. Must stay at or under the route's own cap
 # (MAX_PATHS in src/app/api/revalidate/route.ts, vercel-mindpattern).
 REVALIDATE_BATCH = 50
-# Entity dossiers are rewritten in place, so "affected" means "named by one of
-# today's stories and already published". Bounded because /e/ is the most
-# expensive page on the site to render, and every purge costs a re-render.
-REVALIDATE_MAX_ENTITIES = 12
+# Total paths one publish may purge. Entity dossiers are rewritten in place,
+# so "affected" means "named by one of today's stories and already published".
+# The list is ordered entry points, then stories, then the source and arc
+# pages today's stories reference, then entities ranked by mention count,
+# then finding pages. The trim runs from the tail, so finding pages (new
+# ids, rarely cached yet) are dropped first, then entities, and every drop
+# is logged. Sized against real output: 2026-08-26 emits 165 paths (5 entry,
+# 80 stories, 34 sources, 0 arcs, 26 entities, 20 findings). REVALIDATE_BATCH
+# keeps each POST under the route's own per-call cap (60), so this bounds
+# the publish, not a request.
+REVALIDATE_MAX_PATHS = 200
 # Purge and crawl in waves rather than purging everything and then crawling it.
 # revalidatePath expires the entry outright, so the next request is a blocking
 # cold render, not stale-while-revalidate. Purging all ~96 paths up front left
@@ -690,6 +697,47 @@ _STORY_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,159}")
 # Mirrors dashboard.routes.api._is_public_entity_slug's length floor without
 # importing the dashboard into the pipeline.
 _ENTITY_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{3,79}")
+# Mirrors the site's arc route (ARC_ID_RE in src/app/(app)/arc/[id]/page.tsx)
+# intersected with the /api/revalidate allowlist's 80-character cap.
+_ARC_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,79}")
+# Mirrors the site's source route (cleanDomain in
+# src/app/(app)/source/[domain]/page.tsx) and the /api/revalidate allowlist,
+# so nothing emitted here comes back rejected: lowercase, 80 characters or
+# fewer, ending in a dot plus an alphabetic TLD, no empty labels.
+_SOURCE_DOMAIN_RE = re.compile(r"[a-z0-9][a-z0-9.-]{0,78}")
+_SOURCE_TLD_RE = re.compile(r"\.[a-z]{2,}$")
+# The site's finding route (parseFindingId in src/app/(app)/f/[id]/page.tsx)
+# takes a positive row id of at most 12 digits.
+_FINDING_ID_MAX = 10**12 - 1
+
+
+def _clean_source_domain(raw: object) -> str | None:
+    """A canonical /source/ path segment, or None for anything the site's own
+    route would reject. Lowercased with any www. prefix stripped, the same
+    normalization the page applies, so the purged path is the served one."""
+    if not isinstance(raw, str):
+        return None
+    domain = raw.strip().lower().removeprefix("www.")
+    if not _SOURCE_DOMAIN_RE.fullmatch(domain):
+        return None
+    if ".." in domain or not _SOURCE_TLD_RE.search(domain):
+        return None
+    return domain
+
+
+def _clean_finding_id(raw: object) -> int | None:
+    """A /f/ page id, or None for anything the site's route rejects unfetched."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        finding_id = raw
+    elif isinstance(raw, str) and raw.isdigit():
+        finding_id = int(raw)
+    else:
+        return None
+    if finding_id <= 0 or finding_id > _FINDING_ID_MAX:
+        return None
+    return finding_id
 
 
 def _revalidate_secret() -> str:
@@ -715,24 +763,34 @@ def changed_site_paths(
     *,
     user_id: str = "ramsay",
     reports_root: Path | str | None = None,
-    max_entities: int = REVALIDATE_MAX_ENTITIES,
+    max_paths: int = REVALIDATE_MAX_PATHS,
 ) -> list[str]:
     """Site-relative paths the day's publish changed.
 
     Reads the artifacts the pipeline just wrote (site-stories/<date>/*.json and
     the entity dossiers) instead of asking the backend, because at this point
     the backend has the new data but the CDN still serves the old pages.
-    Entity pages are ranked by how many of today's stories name them and
-    capped at ``max_entities``.
+
+    Every detail route the stories touch is covered, because all seven carry
+    a day-long ISR TTL and a kind this list misses serves stale for the full
+    day after a publish. That means the stories themselves, the source and
+    arc pages they reference, the entity pages they name (ranked by how many
+    of today's stories name each), and the finding pages behind their
+    evidence. The whole list is capped at ``max_paths``; the trim runs from
+    the tail, so finding pages go first, then entities, and every dropped
+    path is logged.
     """
     root = (
         Path(reports_root)
         if reports_root is not None
         else Path(__file__).resolve().parents[1] / "reports" / user_id
     )
-    paths = ["/", "/briefings", f"/briefings/{date}", f"/blog/{date}"]
+    paths = ["/", "/briefings", "/blog", f"/briefings/{date}", f"/blog/{date}"]
 
     entity_counts: dict[str, int] = {}
+    source_domains: list[str] = []
+    arc_ids: list[str] = []
+    finding_ids: set[int] = set()
     story_dir = root / "site-stories" / date
     story_files = sorted(story_dir.glob("*.json")) if story_dir.is_dir() else []
     for story_file in story_files:
@@ -753,6 +811,28 @@ def changed_site_paths(
             entity_slug = str(ref.get("slug") or "").strip()
             if _ENTITY_SLUG_RE.fullmatch(entity_slug):
                 entity_counts[entity_slug] = entity_counts.get(entity_slug, 0) + 1
+        for ref in story.get("source_refs") or []:
+            if not isinstance(ref, dict):
+                continue
+            domain = _clean_source_domain(ref.get("domain"))
+            if domain:
+                source_domains.append(domain)
+        for raw_arc in story.get("arc_ids") or []:
+            if not isinstance(raw_arc, str):
+                continue
+            arc_id = raw_arc.strip().lower()
+            if _ARC_ID_RE.fullmatch(arc_id):
+                arc_ids.append(arc_id)
+        for key in ("primary_finding_ids", "supporting_finding_ids"):
+            for raw_id in story.get(key) or []:
+                finding_id = _clean_finding_id(raw_id)
+                if finding_id is not None:
+                    finding_ids.add(finding_id)
+
+    # Sources and arcs aggregate many stories each and go stale on every
+    # publish, so they sit ahead of the longer entity and finding tails.
+    paths.extend(f"/source/{domain}" for domain in source_domains)
+    paths.extend(f"/arc/{arc_id}" for arc_id in arc_ids)
 
     entities_dir = root / "site-dossiers" / "entities"
     published = (
@@ -762,7 +842,12 @@ def changed_site_paths(
         (slug for slug in entity_counts if slug in published),
         key=lambda slug: (-entity_counts[slug], slug),
     )
-    paths.extend(f"/e/{slug}" for slug in ranked[: max(0, max_entities)])
+    paths.extend(f"/e/{slug}" for slug in ranked)
+    # Finding pages last: the ids are new today, so there is rarely a cached
+    # copy to purge. What the purge buys is clearing any 404 a reader pinned
+    # into the ISR cache by visiting the id before it existed, and the warm
+    # crawl that follows each purged wave.
+    paths.extend(f"/f/{finding_id}" for finding_id in sorted(finding_ids))
 
     seen: set[str] = set()
     unique: list[str] = []
@@ -770,6 +855,18 @@ def changed_site_paths(
         if path not in seen:
             seen.add(path)
             unique.append(path)
+
+    cap = max(0, max_paths)
+    if len(unique) > cap:
+        dropped = unique[cap:]
+        unique = unique[:cap]
+        log.warning(
+            "Purge-on-publish: %s paths exceed the %s cap, dropping %s: %s",
+            len(unique) + len(dropped),
+            cap,
+            len(dropped),
+            ", ".join(dropped),
+        )
     return unique
 
 
@@ -926,7 +1023,7 @@ def sitemap_site_paths(
     This is what a Vercel deploy needs. A deploy drops the WHOLE ISR cache, so
     warming only the day's date-scoped paths leaves ~6,800 /s/ pages and 84
     /e/ pages cold. Worse, on a day with no publish yet `changed_site_paths`
-    returns four entry points and nothing else, so the crawl reported
+    returns its entry points and nothing else, so the crawl once reported
     "4 warmed, 0 failed" over a site that was entirely cold.
 
     The whole sitemap is 7,279 URLs, which no serial crawl finishes, so the

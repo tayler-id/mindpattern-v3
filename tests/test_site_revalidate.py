@@ -14,16 +14,14 @@ import pytest
 from orchestrator import sync
 
 
-def _write_story(story_dir: Path, slug: str, entities: list[str]) -> None:
+def _write_story(story_dir: Path, slug: str, entities: list[str], **fields) -> None:
     story_dir.mkdir(parents=True, exist_ok=True)
-    (story_dir / f"{slug}.json").write_text(
-        json.dumps(
-            {
-                "slug": slug,
-                "entity_refs": [{"slug": name, "name": name} for name in entities],
-            }
-        )
-    )
+    payload = {
+        "slug": slug,
+        "entity_refs": [{"slug": name, "name": name} for name in entities],
+    }
+    payload.update(fields)
+    (story_dir / f"{slug}.json").write_text(json.dumps(payload))
 
 
 @pytest.fixture
@@ -43,7 +41,13 @@ class TestChangedSitePaths:
     def test_entry_points_come_first(self, reports_root):
         paths = sync.changed_site_paths("2026-08-25", reports_root=reports_root)
 
-        assert paths[:4] == ["/", "/briefings", "/briefings/2026-08-25", "/blog/2026-08-25"]
+        assert paths[:5] == [
+            "/",
+            "/briefings",
+            "/blog",
+            "/briefings/2026-08-25",
+            "/blog/2026-08-25",
+        ]
 
     def test_includes_every_story_published_today(self, reports_root):
         paths = sync.changed_site_paths("2026-08-25", reports_root=reports_root)
@@ -59,17 +63,175 @@ class TestChangedSitePaths:
         # four-character floor and "unpublished-entity" has no dossier.
         assert entity_paths == ["/e/anthropic", "/e/nvidia"]
 
-    def test_entity_cap_is_honoured(self, reports_root):
-        paths = sync.changed_site_paths(
-            "2026-08-25", reports_root=reports_root, max_entities=1
+    def test_every_published_entity_named_today_is_included(self, tmp_path):
+        # The old 12-entity cap left the rest of the day's entity pages stale
+        # for the full TTL. Now every published entity a story names is purged,
+        # bounded only by the 200-path total.
+        root = tmp_path / "reports" / "ramsay"
+        story_dir = root / "site-stories" / "2026-08-25"
+        entities = [f"entity-{i:02d}" for i in range(20)]
+        _write_story(story_dir, "2026-08-25-wide-story", entities)
+        dossiers = root / "site-dossiers" / "entities"
+        dossiers.mkdir(parents=True)
+        for slug in entities:
+            (dossiers / f"{slug}.json").write_text("{}")
+
+        paths = sync.changed_site_paths("2026-08-25", reports_root=root)
+
+        assert [p for p in paths if p.startswith("/e/")] == [
+            f"/e/{slug}" for slug in entities
+        ]
+
+    def test_source_arc_and_finding_pages_of_todays_stories_are_purged(self, tmp_path):
+        # /f, /arc and /source carry the same day-long ISR TTL as every other
+        # detail route, so the publish must purge the day's finding, arc and
+        # source pages too or they serve stale for a full day. The domain is
+        # normalized the way the site's own cleanDomain does, lowercased with
+        # any www. prefix stripped, so the purged path is the canonical one.
+        root = tmp_path / "reports" / "ramsay"
+        story_dir = root / "site-stories" / "2026-08-25"
+        _write_story(
+            story_dir,
+            "2026-08-25-sourced-story",
+            ["anthropic"],
+            source_refs=[
+                {"url": "https://www.OpenAI.com/news", "domain": "www.OpenAI.com", "title": "x"},
+                {"url": "https://arxiv.org/abs/1", "domain": "arxiv.org", "title": "y"},
+            ],
+            arc_ids=["agent-runtime-reliability"],
+            primary_finding_ids=[22007],
+            supporting_finding_ids=[22057, 22007],
+        )
+        dossiers = root / "site-dossiers" / "entities"
+        dossiers.mkdir(parents=True)
+        (dossiers / "anthropic.json").write_text("{}")
+
+        paths = sync.changed_site_paths("2026-08-25", reports_root=root)
+
+        assert "/source/openai.com" in paths
+        assert "/source/arxiv.org" in paths
+        assert "/arc/agent-runtime-reliability" in paths
+        assert "/f/22007" in paths
+        assert "/f/22057" in paths
+        assert paths.count("/f/22007") == 1, "a finding cited twice is purged once"
+
+    def test_garbage_source_arc_and_finding_refs_are_ignored(self, tmp_path):
+        # Story JSON is pipeline output, not trusted input. A ref the site's
+        # own routes would reject must never reach the purge list, where it
+        # would burn a slot and come back rejected by the allowlist.
+        root = tmp_path / "reports" / "ramsay"
+        story_dir = root / "site-stories" / "2026-08-25"
+        _write_story(
+            story_dir,
+            "2026-08-25-messy-story",
+            [],
+            source_refs=[
+                {"domain": "not a domain"},
+                {"domain": "no-tld"},
+                {"domain": "bad..dots.com"},
+                {"domain": ""},
+                {"domain": None},
+                "not-a-dict",
+                {"domain": ("x" * 90) + ".com"},
+            ],
+            arc_ids=["Has Spaces", "sl/ash", "", "-leading-hyphen", 7, "a" * 90],
+            primary_finding_ids=["abc", -3, 0, None, 10**13, True],
+            supporting_finding_ids=[[1]],
         )
 
-        assert [p for p in paths if p.startswith("/e/")] == ["/e/anthropic"]
+        paths = sync.changed_site_paths("2026-08-25", reports_root=root)
+
+        assert not [p for p in paths if p.startswith(("/source/", "/arc/", "/f/"))]
+
+    def test_trim_drops_findings_first_then_entities(self, tmp_path, caplog):
+        # Priority under the cap, front to back: entry points, stories,
+        # sources, arcs, entities, findings. The trim runs from the tail, so
+        # finding pages (new ids, rarely cached yet) are sacrificed before
+        # entity pages (real reader traffic, stale after every publish).
+        root = tmp_path / "reports" / "ramsay"
+        story_dir = root / "site-stories" / "2026-08-25"
+        entities = [f"tail-entity-{i:02d}" for i in range(4)]
+        _write_story(
+            story_dir,
+            "2026-08-25-ordered-story",
+            entities,
+            source_refs=[{"domain": "openai.com"}],
+            arc_ids=["runtime-arc"],
+            primary_finding_ids=[101, 102, 103],
+        )
+        dossiers = root / "site-dossiers" / "entities"
+        dossiers.mkdir(parents=True)
+        for slug in entities:
+            (dossiers / f"{slug}.json").write_text("{}")
+
+        # 5 entry + 1 story + 1 source + 1 arc + 4 entities + 3 findings = 15.
+        with caplog.at_level("WARNING", logger="orchestrator.sync"):
+            paths = sync.changed_site_paths("2026-08-25", reports_root=root, max_paths=13)
+
+        assert len(paths) == 13
+        assert "/source/openai.com" in paths
+        assert "/arc/runtime-arc" in paths
+        assert [p for p in paths if p.startswith("/e/")] == [f"/e/{s}" for s in entities]
+        assert [p for p in paths if p.startswith("/f/")] == ["/f/101"]
+        assert "/f/102" in caplog.text and "/f/103" in caplog.text
+
+    def test_total_cap_drops_entities_before_stories_and_logs(self, tmp_path, caplog):
+        root = tmp_path / "reports" / "ramsay"
+        story_dir = root / "site-stories" / "2026-08-25"
+        entities = [f"capped-entity-{i:02d}" for i in range(10)]
+        for i in range(190):
+            _write_story(
+                story_dir,
+                f"2026-08-25-story-{i:03d}",
+                entities if i == 0 else [],
+            )
+        dossiers = root / "site-dossiers" / "entities"
+        dossiers.mkdir(parents=True)
+        for slug in entities:
+            (dossiers / f"{slug}.json").write_text("{}")
+
+        with caplog.at_level("WARNING", logger="orchestrator.sync"):
+            paths = sync.changed_site_paths("2026-08-25", reports_root=root)
+
+        assert sync.REVALIDATE_MAX_PATHS == 200
+        assert len(paths) == 200
+        # 5 entry points + 190 stories all survive; entities sit behind them,
+        # so only 5 of the 10 fit and the lowest-ranked 5 are the ones dropped.
+        assert sum(1 for p in paths if p.startswith("/s/")) == 190
+        kept = [p for p in paths if p.startswith("/e/")]
+        assert kept == [f"/e/{slug}" for slug in entities[:5]]
+        for slug in entities[5:]:
+            assert f"/e/{slug}" not in paths
+        assert "dropping" in caplog.text
+        assert f"/e/{entities[5]}" in caplog.text
+
+    def test_max_paths_parameter_trims_the_tail(self, reports_root, caplog):
+        with caplog.at_level("WARNING", logger="orchestrator.sync"):
+            paths = sync.changed_site_paths(
+                "2026-08-25", reports_root=reports_root, max_paths=6
+            )
+
+        assert len(paths) == 6
+        assert paths[:5] == [
+            "/",
+            "/briefings",
+            "/blog",
+            "/briefings/2026-08-25",
+            "/blog/2026-08-25",
+        ]
+        assert paths[5] == "/s/2026-08-25-first-story"
+        assert "dropping" in caplog.text
 
     def test_missing_story_directory_still_returns_entry_points(self, tmp_path):
         paths = sync.changed_site_paths("2026-08-25", reports_root=tmp_path)
 
-        assert paths == ["/", "/briefings", "/briefings/2026-08-25", "/blog/2026-08-25"]
+        assert paths == [
+            "/",
+            "/briefings",
+            "/blog",
+            "/briefings/2026-08-25",
+            "/blog/2026-08-25",
+        ]
 
     def test_unreadable_story_is_skipped_not_fatal(self, reports_root):
         broken = reports_root / "site-stories" / "2026-08-25" / "broken.json"
@@ -352,15 +514,16 @@ class TestWarmPublicSiteScopes:
     def test_a_day_with_no_publish_warms_the_whole_site_not_four_paths(self, tmp_path):
         """The exact failure: no site-stories directory for today.
 
-        changed_site_paths then yields ["/", "/briefings", "/briefings/<date>",
-        "/blog/<date>"], all four answer 200, and the old check reported
-        "purged and warm" while ~780 story pages and 86 entity pages were cold.
+        changed_site_paths then yields only the five entry points ("/",
+        "/briefings", "/blog", "/briefings/<date>", "/blog/<date>"), all of
+        them answer 200, and the old check reported "purged and warm" while
+        ~780 story pages and 86 entity pages were cold.
         """
         empty = tmp_path / "reports" / "ramsay"
         empty.mkdir(parents=True)
 
         changed, _, _ = self._run(scope="changed", reports_root=empty)
-        assert changed["requested"] == 4
+        assert changed["requested"] == 5
 
         site_paths = ["/", "/e/anthropic", "/e/nvidia", "/s/new"]
         wide, crawled, _ = self._run(
