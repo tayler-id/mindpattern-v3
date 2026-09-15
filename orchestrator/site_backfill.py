@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -237,27 +238,36 @@ def claim_batch(
     claim_id = f"c-{_now().strftime('%Y%m%d-%H%M%S')}-{agent}"
     expires_at = (_now() + timedelta(hours=ttl_hours)).isoformat()
 
+    payload = json.dumps({
+        "claim_id": claim_id,
+        "agent": agent,
+        "claimed_at": _now().isoformat(),
+        "expires_at": expires_at,
+    })
+    # The payload is written once to a file the ledger never lists (no .json
+    # suffix), then hard-linked under each claimed slug. A link is atomic and
+    # the target carries the full payload from the instant it exists, so a
+    # concurrent agent's reap_expired_claims never sees an empty claim file
+    # and deletes it as junk, which is how two agents came to own one story.
+    fd, payload_file = tempfile.mkstemp(dir=claims, prefix=".", suffix=".payload")
+    with os.fdopen(fd, "w") as handle:
+        handle.write(payload)
     claimed: list[str] = []
-    for story in backfill_targets(user=user, since=None, limit=size * 3, reports_root=reports_root):
-        if len(claimed) >= size:
-            break
-        slug = str(story.get("slug") or "")
-        if not slug:
-            continue
-        payload = json.dumps({
-            "claim_id": claim_id,
-            "agent": agent,
-            "claimed_at": _now().isoformat(),
-            "expires_at": expires_at,
-        })
-        try:
-            # O_EXCL create is the atomicity: whoever creates the file owns it.
-            fd = os.open(claims / f"{slug}.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-        except FileExistsError:
-            continue
-        with os.fdopen(fd, "w") as handle:
-            handle.write(payload)
-        claimed.append(slug)
+    try:
+        for story in backfill_targets(user=user, since=None, limit=size * 3, reports_root=reports_root):
+            if len(claimed) >= size:
+                break
+            slug = str(story.get("slug") or "")
+            if not slug:
+                continue
+            try:
+                # Whoever links the slug first owns it.
+                os.link(payload_file, claims / f"{slug}.json")
+            except FileExistsError:
+                continue
+            claimed.append(slug)
+    finally:
+        os.unlink(payload_file)
     if claimed:
         notebook_append(
             user, reports_root,
