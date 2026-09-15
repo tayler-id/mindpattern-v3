@@ -1,39 +1,18 @@
 # Domain docs
 
-This repo uses **single-context** layout — one shared vocabulary across the whole project.
+Start with the [repository navigation](../../README.md). This checkout has no `CONTEXT.md` or `docs/adr/`; neither is a prerequisite for working here.
 
-## Layout
+## Maintained sources
 
-- `CONTEXT.md` (repo root) — the project's working glossary. Domain nouns and what they mean.
-- `docs/adr/` (repo root) — architecture decision records. One file per decision.
-
-`CONTEXT.md` does not yet exist at the time this skill ran. `docs/adr/` was created as an empty directory. Skills that read these files MUST handle absence gracefully (treat as empty rather than erroring).
+- [Architecture](../ARCHITECTURE.md) and [system overview](../SYSTEM-OVERVIEW.md) describe the pipeline vocabulary and module relationships. Check current behavior against the source files they name.
+- [Specs](../specs/) record scoped product and architecture proposals. [Runbooks](../runbooks/) record implementation plans, checks, and handoffs. Read their dates and status before treating a proposal as implemented.
+- [v4 spec](../spec-v4.md) describes the v4 plan. The root `SPEC.md` and `V4-SPEC.md` are older documents, not substitutes for that plan or evidence of current runtime behavior.
+- [Harness guide](../../harness/CLAUDE.md) points to the harness's module documentation and workflows.
+- `graphify-out/GRAPH_REPORT.md` is generated code-navigation output, not a decision record. Follow the navigation guidance in [CLAUDE.md](../../CLAUDE.md).
 
 ## Consumer rules
 
-When a skill needs domain vocabulary or prior decisions:
-
-1. **Read `CONTEXT.md` first.** Use the project's nouns (Pipeline, Phase, Finding, Newsletter, Verdict, Vault, Donor Voice, Mirror, Skill, etc.) instead of generic terms ("component", "service", "module-X-handler"). If a term is missing from `CONTEXT.md` but the skill needs it, the skill should ADD it inline as the decision crystallizes — same discipline `grill-with-docs` follows.
-
-2. **Read `docs/adr/` second.** Each ADR records one decision the project has made. If a candidate proposal contradicts an existing ADR, only surface it when the friction is real enough to warrant reopening the ADR. Mark it clearly: _"contradicts ADR-NNNN — but worth reopening because…"_
-
-3. **Don't backfill.** When this skill ran, the project had ~year of history with no `CONTEXT.md` and no ADRs. The right move is to capture decisions made *from now on*, not invent retrospective ADRs for past changes.
-
-## ADR format
-
-Use [adr-tools](https://github.com/npryce/adr-tools)-style numbering: `docs/adr/0001-short-title.md`. Each ADR has:
-
-- **Status** — Proposed | Accepted | Superseded by NNNN | Deprecated
-- **Context** — what's true about the world that forced this decision
-- **Decision** — what was chosen
-- **Consequences** — what becomes easier and what becomes harder
-
-## Other architectural inputs already in this repo
-
-These are not ADRs but are domain-relevant and should be read for context:
-
-- `SPEC.md` — major feature spec (Voice A/B + Prose-Craft)
-- `SAAS-AGENT-TECH.md` — research notes on agent platform landscape
-- `harness/knowledge/` — 31 hand-written architectural docs ("knowledge graph") covering each module
-- `data/ramsay/mindpattern/decisions.md` — **editorial** decisions per pipeline run (not architectural; do not confuse with ADRs)
-- `graphify-out/GRAPH_REPORT.md` — auto-generated knowledge graph showing god nodes, communities, and surprising connections
+1. Use the vocabulary in the relevant subsystem docs and implementation, such as Pipeline, Phase, Finding, and Newsletter.
+2. Read the relevant spec or runbook before proposing a change. If it disagrees with the implementation, distinguish intended behavior from observed behavior and name both sources.
+3. Keep new decisions with the relevant maintained spec or runbook. Do not invent retrospective ADRs or create a duplicate glossary just to satisfy a missing path.
+4. Keep private runtime identity and editorial decisions separate from architecture documentation. Do not copy personal state into contributor docs.

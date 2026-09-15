@@ -1,6 +1,6 @@
 # MindPattern v3
 
-> Autonomous AI research pipeline. Runs daily at 7 AM. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
+> Autonomous AI research pipeline. Runs daily through a guarded launcher. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - **Agent dispatch**: `orchestrator/agents.py` — `run_single_agent()`, `run_claude_prompt()`, `dispatch_research_agents()`
 - **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern. Runs 24/7 on Fly.io (app `mindpattern`, alongside the dashboard via `start.sh`); harness commands stay Mac-only. Secrets come from Fly secrets (env vars) in the container, macOS Keychain locally.
 - **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
-- **Scheduling**: macOS launchd via `run-launchd.sh` (`deploy/com.mindpattern.pipeline.plist` fires hourly 07:00–11:00; the script's lock and window guard ensure one run per day)
+- **Scheduling**: macOS launchd via `run-launchd.sh`. See [Scheduling](docs/ARCHITECTURE.md#scheduling) for the checked-in calendar, retry guards, and the distinction between repository configuration and loaded job state.
 - **Deploy**: `deploy/deploy.sh` runs tests, the 3.11 compile gate, `flyctl deploy`, then the site warm crawl. Never deploy with a bare `flyctl deploy`: a deploy empties the dashboard's in-memory caches (and a Vercel deploy drops the whole ISR cache), and nothing else refills them. Run `deploy/deploy.sh --warm-only` after a Vercel deploy. See `deploy/README.md`.
 
 ## Code Conventions
@@ -119,4 +119,4 @@ Five canonical labels — defaults (`needs-triage`, `needs-info`, `ready-for-age
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Start at [README.md](README.md). Use [docs/agents/domain.md](docs/agents/domain.md) to find existing architecture, specs, and runbooks for vocabulary and decisions.
