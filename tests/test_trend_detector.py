@@ -11,6 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
+# detect_trends() embeds every item; the double keeps that offline.
+pytestmark = pytest.mark.usefixtures("offline_embeddings")
+
 
 @pytest.fixture
 def preflight_items():

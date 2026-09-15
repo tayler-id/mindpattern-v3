@@ -44,6 +44,7 @@ python3.14 -m venv .venv
 ```
 
 Tests must run without API keys or network access. Mock Claude CLI subprocesses and external services.
+A test whose code path reaches `memory.embeddings` requests the `offline_embeddings` fixture from `tests/conftest.py`; CI has no model cache, so a real model load trips the network guard.
 
 ## Backend commands
 

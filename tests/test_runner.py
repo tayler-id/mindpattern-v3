@@ -233,7 +233,7 @@ def traces_conn():
 
 
 @pytest.fixture()
-def pipeline(memory_db, traces_conn):
+def pipeline(memory_db, traces_conn, offline_embeddings):
     """Build a fully mocked ResearchPipeline instance."""
     with (
         patch("orchestrator.runner.agent_dispatch.load_user_config",
