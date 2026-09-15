@@ -1782,8 +1782,36 @@ class TestReviseDraft:
         assert out == "revised post"
         assert seen["skill"] == "agents/linkedin-writer.md"
         assert "Write" in seen["allowed_tools"]
-        assert seen["output_file"].endswith("data/social-drafts/linkedin-draft.md")
+        output = Path(seen["output_file"])
+        assert output.parent == agents_mod.SOCIAL_DRAFTS_DIR
+        assert output.name.startswith("linkedin-") and output.suffix == ".md"
+        assert str(output) in seen["prompt"]
         assert "drop the word landed" in seen["prompt"]
+
+    def test_each_revision_writes_its_own_file(self):
+        """Two approval threads revising at once must not read each other's post.
+
+        The bot dispatches handlers on a thread pool and the pipeline writes
+        `{platform}-draft.md` itself, so the shared path is never used here.
+        """
+        import orchestrator.agents as agents_mod
+        from slack_bot.drafts import revise_draft
+
+        paths = []
+
+        def fake_run_agent_with_files(*, output_file, **kwargs):
+            paths.append(Path(output_file))
+            return {"text": "revised"}
+
+        with patch.object(agents_mod, "run_agent_with_files",
+                          fake_run_agent_with_files):
+            revise_draft("bluesky", "old", "shorter")
+            revise_draft("bluesky", "old", "shorter")
+
+        assert len(set(paths)) == 2
+        assert all(p.parent == agents_mod.SOCIAL_DRAFTS_DIR for p in paths)
+        assert all(p.name != "bluesky-draft.md" for p in paths)
+        assert not any(p.exists() for p in paths)
 
     def test_default_runner_raises_when_the_file_is_never_written(self):
         import orchestrator.agents as agents_mod
@@ -1839,14 +1867,34 @@ class TestHandleDraftRevision:
         assert consumed is True
         assert "edit linkedin:" in handler.reply.call_args[0][0]
 
-    def test_clears_policy_errors_on_success(self):
+    def test_policy_errors_are_recomputed_from_the_revised_draft(self):
+        """The writer produced this text, not the owner, so it is checked again."""
         from slack_bot import drafts as drafts_mod
 
         handler = MagicMock()
-        policy_errors = {"bluesky": ["too long"]}
-        with patch.object(drafts_mod, "revise_draft", return_value="new"):
+        policy_errors = {"bluesky": ["[bluesky] Post exceeds grapheme limit: 310/300"]}
+        with patch.object(drafts_mod, "revise_draft",
+                          return_value="Tighter opener, and the link is gone."):
             drafts_mod.handle_draft_revision(
-                handler, "revise bluesky: shorten", {"bluesky": "old"},
+                handler, "revise bluesky: tighten the opener", {"bluesky": "old"},
+                ["bluesky"], "1.0",
+                format_drafts=lambda d: "", policy_errors=policy_errors,
+            )
+        assert any("must link its source" in e for e in policy_errors["bluesky"])
+        assert not any("grapheme" in e for e in policy_errors["bluesky"])
+
+    def test_a_clean_revision_clears_policy_errors(self):
+        from slack_bot import drafts as drafts_mod
+
+        handler = MagicMock()
+        policy_errors = {"bluesky": ["[bluesky] Post must link its source"]}
+        clean = (
+            "Simon Willison wrote up how he runs evals on a laptop. "
+            "https://simonwillison.net/2026/evals https://mindpattern.ai"
+        )
+        with patch.object(drafts_mod, "revise_draft", return_value=clean):
+            drafts_mod.handle_draft_revision(
+                handler, "revise bluesky: add the link", {"bluesky": "old"},
                 ["bluesky"], "1.0",
                 format_drafts=lambda d: "", policy_errors=policy_errors,
             )

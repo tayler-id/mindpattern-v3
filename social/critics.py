@@ -26,7 +26,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
 _APPROVED_RE = re.compile(r"(?<!not )\bAPPROVED\b", re.IGNORECASE)
-_NEGATED_APPROVAL_RE = re.compile(r"\bnot\s+approved\b", re.IGNORECASE)
+_NEGATED_APPROVAL_RE = re.compile(
+    r"\b(?:not|never|cannot|\w+n't)(?:\s+\w+){0,4}\s+approved\b|\bunapproved\b",
+    re.IGNORECASE,
+)
 _REVISE_RE = re.compile(r"\bREVISE\b", re.IGNORECASE)
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 

@@ -14,7 +14,7 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - **Social posting**: `run-launchd.sh` defaults `MP_LAUNCHD_SKIP_SOCIAL` to `1` and passes `--skip-social`. In `run.py`, that flag sets `MP_SKIP_SOCIAL=1`; `orchestrator/runner.py` then skips both SOCIAL and ENGAGEMENT, not newsletter delivery or site publishing. This is a scheduled-run default, not a global posting ban. Manual runs and Slack's `#mp-posts` workflow in `slack_bot/handlers/posts.py` remain optional posting paths, subject to approval and outbound/platform controls. Keep the scheduled default unchanged unless the owner explicitly approves enabling posting.
 - **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
 - **Scheduling**: macOS launchd via `run-launchd.sh`. See [Scheduling](docs/ARCHITECTURE.md#scheduling) for the checked-in calendar, retry guards, and the distinction between repository configuration and loaded job state.
-- **Deploy**: `deploy/deploy.sh` runs tests, the 3.11 compile gate, `flyctl deploy`, then the site warm crawl. Never deploy with a bare `flyctl deploy`: a deploy empties the dashboard's in-memory caches (and a Vercel deploy drops the whole ISR cache), and nothing else refills them. Run `deploy/deploy.sh --warm-only` after a Vercel deploy. See `deploy/README.md`.
+- **Deploy**: `deploy/deploy.sh` runs the 3.11 compile gate, tests, `flyctl deploy`, then the site warm crawl. Never deploy with a bare `flyctl deploy`: a deploy empties the dashboard's in-memory caches (and a Vercel deploy drops the whole ISR cache), and nothing else refills them. Run `deploy/deploy.sh --warm-only` after a Vercel deploy. See `deploy/README.md`.
 
 ## Code Conventions
 

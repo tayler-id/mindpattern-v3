@@ -131,10 +131,13 @@ BANK: tuple[Entry, ...] = (
     Entry(
         term="dropped a release",
         tier="ban",
-        pattern=r"\b(?:dropped|drops)\s+(?:a|an|the|its|their)?\s*"
-                r"(?:new\s+|updated\s+)?(?:model|models|release|version|update|"
-                r"paper|repo|sdk|cli|api|feature|build|patch|preview|beta|"
-                r"v?\d+\.\d)",
+        pattern=r"\b(?:dropped|drops)\s+(?:"
+                r"(?:a|an|the|its|their)?\s*(?:new\s+|updated\s+)?"
+                r"(?:model|models|release|version|update|paper|repo|sdk|cli|"
+                r"api|build|patch|preview|beta|v\d+\.\d)"
+                r"|(?:a|an)\s+(?:new\s+|updated\s+)?feature"
+                r"|(?:the\s+|its\s+|their\s+)?(?:new|updated)\s+feature"
+                r")",
         instead="\"released\", \"published\", \"posted\"",
         example="OpenAI dropped a new model on Tuesday.",
         family="release verbs",

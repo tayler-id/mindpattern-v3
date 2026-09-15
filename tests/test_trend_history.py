@@ -11,6 +11,9 @@ import pytest
 
 from memory.db import get_db
 
+# store_finding() and backfill_trend_results() embed; the double keeps that offline.
+pytestmark = pytest.mark.usefixtures("offline_embeddings")
+
 
 @pytest.fixture
 def db(tmp_path):

@@ -170,3 +170,27 @@ class TestNoDriftFromTheOtherLists:
 
         voice = Path("data/ramsay/mindpattern/voice.md").read_text()
         assert word_bank.VOICE_SECTION_MARKER in voice
+
+
+class TestDroppedARelease:
+    """Release-announcement sense only; a falling number is not a release."""
+
+    def test_a_release_announcement_is_banned(self):
+        for text in (
+            "OpenAI dropped a new model on Tuesday.",
+            "Anthropic drops an updated SDK every month.",
+            "The team dropped v2.1 without release notes.",
+            "They dropped a feature nobody asked for.",
+            "Cursor dropped its new feature behind a flag.",
+        ):
+            found = word_bank.violations(text, "site")
+            assert any("dropped a release" in v for v in found), text
+
+    def test_a_decrement_or_removal_is_not_a_violation(self):
+        for text in (
+            "Accuracy dropped 3.5 points after the change.",
+            "Latency drops 0.4 seconds per request.",
+            "The maintainers dropped the feature flag in this release.",
+        ):
+            found = word_bank.violations(text, "site")
+            assert not [v for v in found if "dropped a release" in v], text

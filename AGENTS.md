@@ -44,6 +44,7 @@ python3.14 -m venv .venv
 ```
 
 Tests must run without API keys or network access. Mock Claude CLI subprocesses and external services.
+A test whose code path reaches `memory.embeddings` requests the `offline_embeddings` fixture from `tests/conftest.py`; CI has no model cache, so a real model load trips the network guard.
 
 ## Backend commands
 
@@ -67,7 +68,7 @@ Run the FastAPI service locally:
 .venv/bin/python3 -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8010
 ```
 
-There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development. When a deploy is authorized, it runs through `deploy/deploy.sh` (tests, 3.11 compile gate, `flyctl deploy`, then the site purge and warm crawl) rather than a bare `flyctl deploy`, which leaves the public site cold.
+There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development. When a deploy is authorized, it runs through `deploy/deploy.sh` (3.11 compile gate, tests, `flyctl deploy`, then the site purge and warm crawl) rather than a bare `flyctl deploy`, which leaves the public site cold.
 
 A pipeline smoke can write local databases, reports, and checkpoints even when outbound calls are disabled. Run one only when the task requires it:
 
