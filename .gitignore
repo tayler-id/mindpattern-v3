@@ -73,6 +73,10 @@ Thumbs.db
 !.agents/skills/mindpattern-repo-release/**
 !.agents/skills/rabbit-hole-site-quality/
 !.agents/skills/rabbit-hole-site-quality/**
+!.agents/skills/verify-mindpattern/
+!.agents/skills/verify-mindpattern/**
+!.agents/skills/mindpattern-checkpoints/
+!.agents/skills/mindpattern-checkpoints/**
 .pi/
 .kiro/
 
