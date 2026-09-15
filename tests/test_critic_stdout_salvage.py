@@ -77,6 +77,21 @@ class TestVerdictFromText:
         text = "This is not approved. Fix the opener."
         assert critics._verdict_from_text(text)["verdict"] == "REVISE"
 
+    @pytest.mark.parametrize("text", [
+        "This cannot be approved as written.",
+        "I would not have approved this; the opener is throat-clearing.",
+        "Can't be approved. Uses 'landed' twice.",
+        "This isn't approved.",
+        "I'm not sure this should be approved.",
+        "Unapproved: the second line is a pitch.",
+    ])
+    def test_a_negated_approval_is_a_revise(self, text):
+        assert critics._verdict_from_text(text)["verdict"] == "REVISE"
+
+    def test_a_negation_elsewhere_in_the_sentence_does_not_veto_the_verdict(self):
+        text = "Not one banned word, and the link is offsite. APPROVED."
+        assert critics._verdict_from_text(text)["verdict"] == "APPROVED"
+
 
 class TestReviewDraftUsesTheSalvage:
     """`run_agent_with_files` hands stdout back under `_stdout` when the

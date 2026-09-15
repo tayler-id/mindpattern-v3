@@ -8,7 +8,7 @@ import pytest
 
 from orchestrator.newsletter import (
     render_html, send_newsletter, validate_report,
-    broadcast_to_subscribers, SUBSCRIBER_FOOTER,
+    broadcast_to_subscribers, canonical_email, SUBSCRIBER_FOOTER,
 )
 
 
@@ -501,3 +501,25 @@ class TestBroadcastToSubscribers:
         # Should cap at MAX_BROADCAST_CONTACTS (50)
         assert result["sent_count"] == 50
         assert mock_requests.post.call_count == 50
+
+
+class TestCanonicalEmail:
+    """Which addresses the broadcast treats as one mailbox."""
+
+    def test_gmail_dots_case_and_plus_tag_collapse(self):
+        assert canonical_email("Ramsay.Tayler+sub@Gmail.com") == "ramsaytayler@gmail.com"
+
+    def test_googlemail_is_the_same_mailbox_as_gmail(self):
+        assert canonical_email("a.b@googlemail.com") == canonical_email("ab@gmail.com")
+
+    def test_plus_tags_are_stripped_on_every_domain(self):
+        assert canonical_email("alice+news@corp.com") == canonical_email("alice@corp.com")
+
+    def test_dots_are_kept_outside_gmail(self):
+        assert canonical_email("first.last@corp.com") != canonical_email("firstlast@corp.com")
+
+    def test_different_domains_stay_different(self):
+        assert canonical_email("tayler@example.com") != canonical_email("tayler@gmail.com")
+
+    def test_a_string_without_an_at_sign_is_only_normalised(self):
+        assert canonical_email("  NotAnEmail ") == "notanemail"

@@ -70,8 +70,11 @@ mode keeps working for single-agent use).
 
 ## Claim design (the "tagging")
 
-- `reports/{user}/site-backfill-claims/{slug}.json`, created with O_EXCL
-  (atomic on APFS/ext4): `{"claim_id", "agent", "claimed_at", "expires_at"}`.
+- `reports/{user}/site-backfill-claims/{slug}.json`, a hard link to a payload
+  file written in full before any slug link exists. `os.link` is atomic on
+  APFS/ext4 and the first agent to link a slug owns it, so a claim file
+  carries `{"claim_id", "agent", "claimed_at", "expires_at"}` from the
+  instant it appears.
 - A story is claimable iff: no artifact exists AND no unexpired claim file.
 - Claims expire after 3 hours (configurable); `status` lists stale claims
   and `claim` silently reaps them. Completing a story deletes its claim.

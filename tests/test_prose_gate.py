@@ -128,12 +128,29 @@ def test_word_count_quoted_about_something_else_is_untouched():
     assert report["length_claims_corrected"] == 0
 
 
-def test_hyphenated_and_singular_forms_are_corrected():
+def test_the_following_words_are_self_referential():
     body = " ".join(["word"] * 1000)
-    src = f"Read the following 300-word note.\n\n{body}"
+    src = f"The following 300 words cover it.\n\n{body}"
     clean, report = sanitize(src)
-    assert "the following 1,000-word note" in clean
+    assert "The following 1,000 words" in clean
     assert report["length_claims_corrected"] == 1
+
+
+def test_a_hyphenated_count_names_another_document_and_is_untouched():
+    """`this 2,000-word post` is Simon's length, not ours."""
+    body = " ".join(["word"] * 8000)
+    src = f"Read this 2,000-word post by Simon Willison.\n\n{body}"
+    clean, report = sanitize(src)
+    assert "Read this 2,000-word post by Simon Willison." in clean
+    assert report["length_claims_corrected"] == 0
+
+
+def test_another_documents_next_words_are_untouched():
+    body = " ".join(["word"] * 8000)
+    src = f"The paper's next 400 words explain the method.\n\n{body}"
+    clean, report = sanitize(src)
+    assert "The paper's next 400 words explain the method." in clean
+    assert report["length_claims_corrected"] == 0
 
 
 class TestUnslopReachesEveryWriter:

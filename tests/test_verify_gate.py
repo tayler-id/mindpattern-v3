@@ -1,6 +1,9 @@
 """Tests for the /verify extension of harness/gates.py."""
 
+import os
+import shlex
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -79,6 +82,15 @@ class TestGateReproFlips:
         assert any("rejected" in f for f in result["failures"])
         assert not (buggy_repo / "pwned").exists()
 
+    def test_a_repro_that_cannot_run_is_not_a_demonstrated_bug(self, buggy_repo):
+        """Exit 127 on the pre-fix tree means the command was missing, not that the bug showed."""
+        result = gate_repro_flips(
+            "mp-no-such-command-xyz", base_ref="main", cwd=str(buggy_repo)
+        )
+        assert not result["pass"]
+        assert result["pre_exit"] == 127
+        assert any("could not run" in f for f in result["failures"])
+
     def test_no_worktree_left_behind(self, buggy_repo):
         gate_repro_flips(REPRO, base_ref="main", cwd=str(buggy_repo))
         listed = subprocess.run(
@@ -126,3 +138,13 @@ class TestRunVerify:
         (buggy_repo / "flag.txt").write_text("still broken\n")
         result = run_verify(REPRO, base_ref="main", cwd=str(buggy_repo), graphify=False)
         assert not result["pass"]
+
+
+class TestAbstractionPoliceRepro:
+    def test_the_repro_interpreter_is_absolute_and_runnable(self):
+        """The gate runs the repro in a detached worktree, where `.venv` does not exist."""
+        from harness.routines import abstraction_police
+
+        interpreter = Path(shlex.split(abstraction_police.REPRO)[0])
+        assert interpreter.is_absolute()
+        assert os.access(interpreter, os.X_OK)

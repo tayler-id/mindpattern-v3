@@ -11,6 +11,9 @@ Signal: deterministic (harness.layers.check_layers). No model involved.
 
 from __future__ import annotations
 
+import shlex
+import sys
+
 from harness.layers import check_layers
 from harness.routines.base import Finding, RoutineResult
 from harness.sandbox import assert_sandbox
@@ -19,7 +22,7 @@ NAME = "abstraction-police"
 
 # The repro every layer finding shares: the checker itself. It fails while any
 # violation stands and passes once the import is removed or declared.
-REPRO = ".venv/bin/python -m harness.layers check"
+REPRO = f"{shlex.quote(sys.executable)} -m harness.layers check"
 
 
 class AbstractionPolice:
