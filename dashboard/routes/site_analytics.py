@@ -43,10 +43,27 @@ _MIX_LABELS = {
     "web_vital": "Web vitals (sampled)",
 }
 
+# Correlated existence probe: did this anon_id send anything before the window
+# opened? Rides idx_events_anon_ts, so it is one index seek per reader, not a
+# scan. Crawler hits are excluded because they carry no anon_id and would only
+# ever match the empty string, which the callers already filter out. Owner-
+# flagged events DO count as prior presence: the same browser was here before,
+# whoever was driving it.
+_SEEN_BEFORE = (
+    "EXISTS(SELECT 1 FROM events prior"
+    " WHERE prior.anon_id={alias}.anon_id AND prior.ts<?"
+    " AND prior.type!='agent_hit')"
+)
+
 
 def _summary(window: str) -> dict:
     days = _WINDOWS.get(window, 7)
     cutoff = int(time.time() - days * 86400)
+    # The all-time window reaches back before the store existed, so nothing can
+    # precede it and the probe would answer "new" for every reader. Skip the
+    # work rather than run one index seek per reader to produce a number the
+    # page hides and a payload consumer would misread as fact.
+    new_split = window != "all"
     conn = open_events_db()
     try:
         # Reader metrics exclude owner-flagged events; owner activity is
@@ -69,14 +86,38 @@ def _summary(window: str) -> dict:
                      'search_query')
                    GROUP BY type ORDER BY count DESC""", (cutoff,))
         ]
-        referrers = [
-            dict(r) for r in conn.execute(
-                """SELECT ref_domain, COUNT(DISTINCT anon_id) count FROM events
-                   WHERE ts>=? AND type='page_view' AND owner=0
-                     AND anon_id!='' AND ref_domain!=''
-                   GROUP BY ref_domain
-                   ORDER BY count DESC LIMIT 15""", (cutoff,))
-        ]
+        # Per-referrer readers, split new vs returning, so "google sent me N,
+        # M of them new" is one row rather than a subtraction. A reader who
+        # arrived from two domains counts once under each; the split is a
+        # property of the anon_id, not of the referrer.
+        if new_split:
+            referrers = [
+                dict(r) for r in conn.execute(
+                    f"""WITH pairs AS (
+                         SELECT DISTINCT ref_domain, anon_id FROM events
+                         WHERE ts>=? AND type='page_view' AND owner=0
+                           AND anon_id!='' AND ref_domain!=''
+                       )
+                       SELECT ref_domain,
+                              COUNT(*) count,
+                              SUM(CASE WHEN {_SEEN_BEFORE.format(alias='pairs')}
+                                       THEN 0 ELSE 1 END) new_count
+                       FROM pairs GROUP BY ref_domain
+                       ORDER BY count DESC, ref_domain LIMIT 15""",
+                    (cutoff, cutoff))
+            ]
+            for row in referrers:
+                row["new_count"] = row["new_count"] or 0
+                row["returning_count"] = row["count"] - row["new_count"]
+        else:
+            referrers = [
+                dict(r) for r in conn.execute(
+                    """SELECT ref_domain, COUNT(DISTINCT anon_id) count FROM events
+                       WHERE ts>=? AND type='page_view' AND owner=0
+                         AND anon_id!='' AND ref_domain!=''
+                       GROUP BY ref_domain
+                       ORDER BY count DESC, ref_domain LIMIT 15""", (cutoff,))
+            ]
         subs = {
             r["type"]: r["c"] for r in conn.execute(
                 """SELECT type, COUNT(*) c FROM events
@@ -133,8 +174,73 @@ def _summary(window: str) -> dict:
                       SUM(type='story_view' AND owner=0) story_views,
                       SUM(type!='agent_hit' AND owner=1) owner_events
                FROM events WHERE ts>=?""", (cutoff,)).fetchone())
+        # New vs returning. totals["readers"] is unique-in-window, which is not
+        # the same question. A reader is new when their anon_id sent no event
+        # before the window opened.
+        split = conn.execute(
+            f"""SELECT COUNT(*) window_readers,
+                       SUM(CASE WHEN {_SEEN_BEFORE.format(alias='w')}
+                                THEN 0 ELSE 1 END) new_readers
+                FROM (SELECT DISTINCT anon_id FROM events
+                      WHERE ts>=? AND owner=0 AND type!='agent_hit'
+                        AND anon_id!='') w""", (cutoff, cutoff)).fetchone() if new_split else None
+        # Durable readers vs churned loads. Every row written before the site
+        # shipped the flag carries the column default 0, which means
+        # "unlabeled", not "churned", so the split starts at the first flagged
+        # event and never reaches further back. MIN(ts) scans the table the
+        # same way every ts>=? filter above does; no index leads with durable.
+        durable_since = conn.execute(
+            "SELECT MIN(ts) m FROM events WHERE durable=1").fetchone()["m"]
+        if durable_since is not None:
+            durable_cutoff = max(cutoff, durable_since)
+            durable_row = conn.execute(
+                """SELECT COUNT(DISTINCT CASE WHEN durable=1 THEN anon_id END)
+                            durable_readers,
+                          SUM(type='page_view' AND durable=0) churned_loads
+                   FROM events
+                   WHERE ts>=? AND owner=0 AND type!='agent_hit'
+                     AND anon_id!=''""", (durable_cutoff,)).fetchone()
+        else:
+            durable_row = None
     finally:
         conn.close()
+    if durable_row is None:
+        # None, not zero: before the first flagged event arrives, a zero here
+        # would present unlabeled history as churn.
+        durable = {
+            "active": False, "since": None, "since_label": None,
+            "partial": False, "durable_readers": None, "churned_loads": None,
+        }
+    else:
+        durable = {
+            "active": True,
+            "since": durable_since,
+            "since_label": time.strftime("%d %b %Y", time.gmtime(durable_since)),
+            # True when the window opens before the flag existed, so the page
+            # can say the durable counts cover less than the whole window.
+            "partial": durable_since > cutoff,
+            "durable_readers": durable_row["durable_readers"] or 0,
+            "churned_loads": durable_row["churned_loads"] or 0,
+        }
+    if split is None:
+        # None, not a number. "Every all-time reader is new" is true only
+        # because the question is unanswerable in that window, and a consumer
+        # of /api/site-analytics/summary would read a number as fact.
+        totals["new_readers"] = None
+        totals["returning_readers"] = None
+    else:
+        # The page states that new + returning equals unique readers, so derive
+        # returning from totals["readers"] rather than from the split's own count.
+        # The two predicates are identical; if they ever drift, that is a bug and
+        # the copy would be lying, so say so in the log.
+        identified = split["window_readers"] or 0
+        new_readers = min(split["new_readers"] or 0, totals["readers"] or 0)
+        if identified != (totals["readers"] or 0):
+            logger.warning(
+                "site-analytics: reader counts disagree (split=%s totals=%s)",
+                identified, totals["readers"])
+        totals["new_readers"] = new_readers
+        totals["returning_readers"] = (totals["readers"] or 0) - new_readers
     events = totals["events"] or 0
     crawler_hits = totals["crawler_hits"] or 0
     owner_events = totals["owner_events"] or 0
@@ -149,6 +255,11 @@ def _summary(window: str) -> dict:
     return {
         "window": window,
         "window_label": _WINDOW_LABELS.get(window, window),
+        "window_start": time.strftime("%d %b %Y %H:%M UTC", time.gmtime(cutoff)),
+        # False on the all-time window: see the note where new_split is set.
+        # totals.new_readers / returning_readers are null when this is false.
+        "new_split": new_split,
+        "durable": durable,
         "totals": totals,
         "daily": daily,
         "mix": mix,
@@ -273,6 +384,14 @@ _PAGE = """<!doctype html><html lang="en"><head>
   .tile.human .v { color: var(--human); }
   .tile.crawler .v { color: var(--crawler); }
   .tile.owner .v { color: var(--owner); }
+  .signs {
+    display: flex; flex-wrap: wrap; gap: 6px 28px; align-items: baseline;
+    border-bottom: 1px solid var(--line); padding: 10px 0;
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .signs b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
   section { margin-top: 52px; }
   .kicker {
     display: flex; align-items: baseline; gap: 12px;
@@ -357,7 +476,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
     opacity: 0; transition: opacity 120ms linear; white-space: pre-line; max-width: 320px;
   }
   @media (prefers-reduced-motion: reduce) { #tip { transition: none; } }
-  [data-tip]:focus-visible { outline: 2px solid var(--human); outline-offset: 2px; }
+  /* Focus ring stays neutral ink. Accent colour never touches a stroke here. */
+  [data-tip]:focus-visible { outline: 2px solid var(--line-strong); outline-offset: 2px; }
   footer {
     margin-top: 60px; border-top: 2px solid var(--line-strong); padding-top: 12px;
     font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -377,6 +497,13 @@ _PAGE = """<!doctype html><html lang="en"><head>
   <p class="dek" id="dek"></p>
 
   <div class="tiles" id="tiles"></div>
+
+  <div class="signs" id="signsRow"></div>
+
+  <div class="note" id="countingNote">
+    <span class="k">How a reader is counted, and why Vercel disagrees</span>
+    <div id="countingBody"></div>
+  </div>
 
   <section id="dailySection">
     <div class="kicker"><span>Daily traffic</span><span class="sub">— two populations, two scales, two charts</span></div>
@@ -424,7 +551,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
   </section>
 
   <section>
-    <div class="kicker"><span class="dot h"></span><span>Where readers came from</span><span class="sub">— referrer domain · unique readers · searches on site</span></div>
+    <div class="kicker"><span class="dot h"></span><span>Where readers came from</span><span class="sub">— referrer domain · unique readers · how many were new · searches on site</span></div>
     <div class="duo">
       <div><div class="ranked" id="refRank"></div></div>
       <div><div class="ranked" id="searchRank"></div></div>
@@ -474,6 +601,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   // Headline + dek
   const t = DATA.totals;
+  const d = DATA.durable;
   const share = t.crawler_share;
   document.getElementById("headline").innerHTML =
     t.events === 0 ? 'Nothing yet — <span class="flood">quiet wire.</span>' :
@@ -484,7 +612,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
     `<b>${fmt(t.events)} events</b> hit mindpattern.ai in the ${esc(DATA.window_label)}. ` +
     `<b>${share}%</b> were AI crawlers` +
     (topBots ? ` — led by ${topBots}` : "") +
-    `. The human side: <b>${fmt(t.readers)} readers</b>, ` +
+    `. The human side: <b>${fmt(t.readers)} readers</b>` +
+    (DATA.new_split ? `, <b>${fmt(t.new_readers)} of them new</b>` : "") + `, ` +
     `<b>${fmt(t.story_views)} story views</b>, ${fmt(t.reader_events)} reader events — ` +
     `plus <b>${fmt(t.owner_events)} of your own</b>, tracked but marked in gold. ` +
     `Live numbers, honestly reported.`;
@@ -497,10 +626,73 @@ _PAGE = """<!doctype html><html lang="en"><head>
     ["human", "Reader events", fmt(t.reader_events)],
     ["human", "Story views", fmt(t.story_views)],
     ["human", "Unique readers", fmt(t.readers)],
+    ...(DATA.new_split
+      ? [["human", "New readers", fmt(t.new_readers)],
+         ["human", "Returning", fmt(t.returning_readers)]]
+      : []),
+    // Only once the site reports the flag: zeros before that would present
+    // unlabeled history as churn.
+    ...(d.active
+      ? [["human", "Durable readers", fmt(d.durable_readers)],
+         ["human", "Churned loads", fmt(d.churned_loads)]]
+      : []),
     ["owner", "Your events", fmt(t.owner_events)],
   ].map(([cls, k, v]) =>
     `<div class="tile ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`
   ).join("");
+
+  // Signs of reading: a crawler can mint page views all day, but it does not
+  // scroll a story or click through to a related one. Both series already
+  // exclude owner-flagged events.
+  const scrollPings = DATA.scroll.reduce((a, r) => a + r.n, 0);
+  const relatedReads = (DATA.clicks.find((c) => c.type === "related_click") || {}).count || 0;
+  document.getElementById("signsRow").innerHTML =
+    `<span>Signs of reading</span>` +
+    `<span><b>${fmt(scrollPings)}</b> scroll-depth pings</span>` +
+    `<span><b>${fmt(relatedReads)}</b> related-story clicks</span>` +
+    `<span>signals software does not fake</span>`;
+
+  // Counting note. Every claim here is one somebody can check in the code:
+  // the reader predicate is the owner=0 filter on every query above, the
+  // owner flag is isOwner() in src/lib/analytics.ts, and the id lifetime is
+  // anonId() in the same file. Crawler filing is a definition, not a reason
+  // the two totals differ: middleware.ts only POSTs an extra agent_hit row,
+  // it suppresses nothing, and a crawler that runs no JS was never in either
+  // number to begin with.
+  document.getElementById("countingBody").innerHTML = [
+    `A reader is one anonymous id that sent at least one non-crawler, non-owner event ` +
+    `to this backend. Unique readers counts each id once inside the window. Requests ` +
+    `from a known crawler user agent are filed separately and never counted as readers.`,
+    DATA.new_split
+      ? `<b>New</b> means that id sent nothing at all before <b>${esc(DATA.window_start)}</b>, ` +
+        `the moment this window opens. <b>Returning</b> means it did. The two add up to ` +
+        `unique readers. The id lives in the browser's local storage, so one person ` +
+        `reading in a private window, on a second device, or after clearing site data ` +
+        `arrives with a fresh id and counts as new again. ` +
+        `A browser that blocks site storage outright ` +
+        `gets a fresh id on <em>every</em> page load, so it reads as a new reader each time.`
+      : `The all-time window reaches back further than the event store does, so nothing ` +
+        `precedes it and the question has no answer. The new and returning split ` +
+        `is shown on the today and 7d windows.`,
+    d.active
+      ? `Readers whose id could not be persisted are counted separately, because each of ` +
+        `their page loads can mint a new id. <b>Durable readers</b> kept their id between ` +
+        `page loads; <b>churned loads</b> are page loads that could not keep one.` +
+        (d.partial
+          ? ` Durable counts start <b>${esc(d.since_label)}</b>, the first day the site ` +
+            `reported the flag. Rows from before carry no flag, so they are not shown as churn.`
+          : ``)
+      : `The site does not yet report whether a reader id persisted, so durable readers ` +
+        `and churned loads are not shown. Zeros here would present unlabeled history ` +
+        `as churn; the split appears once the first flagged event arrives.`,
+    `Vercel will report more visitors than this page does, and neither count is wrong. ` +
+    `Browsing from this browser with <code>?mp_owner=1</code> set still sends events here, ` +
+    `but they arrive tagged as yours and every reader number on this page excludes them. ` +
+    `Vercel has no such flag and counts them as visitors. Beyond that, only events that ` +
+    `reach this backend are counted, so a blocked beacon, a failed request, or a reader ` +
+    `who leaves before it fires lands nowhere. Vercel counts anything that executes its ` +
+    `script.`,
+  ].filter(Boolean).map((l) => `<p>${l}</p>`).join("");
 
   // Daily columns. keys: single series, or [base, stackedOnTop] for the
   // reader+owner split — owner rides on top of the reader bar in gold.
@@ -562,11 +754,13 @@ _PAGE = """<!doctype html><html lang="en"><head>
       row.className = "rrow " + cls;
       const w = Math.max((r.n / max) * 100, 0.6);
       const readers = (r.readers != null && r.readers > 0 ? `<small>${fmt(r.readers)} rdr</small>` : "") +
+        (r.note ? `<small>${esc(r.note)}</small>` : "") +
         (r.you ? `<small class="you">you ${fmt(r.you)}</small>` : "");
       let name = opts.mono ? `<span class="mono-name">${esc(r.name)}</span>` : esc(r.name);
       if (r.href) name = `<a href="${esc(r.href)}" target="_blank" rel="noopener">${name}</a>`;
       row.dataset.tip = `${r.name}\\n${fmt(r.n)} ${opts.unit || ""}`.trim() +
         (r.readers != null && r.readers > 0 ? ` · ${fmt(r.readers)} unique readers` : "") +
+        (r.tip ? `\\n${r.tip}` : "") +
         (r.you ? ` · ${fmt(r.you)} by you` : "");
       row.innerHTML =
         `<span class="idx">${String(i + 1).padStart(2, "0")}</span>` +
@@ -631,7 +825,13 @@ _PAGE = """<!doctype html><html lang="en"><head>
   }
 
   ranked("refRank",
-    DATA.referrers.map((r) => ({ name: r.ref_domain, n: r.count })),
+    DATA.referrers.map((r) => ({
+      name: r.ref_domain, n: r.count,
+      note: DATA.new_split ? `${fmt(r.new_count)} new` : "",
+      tip: DATA.new_split
+        ? `${fmt(r.new_count)} new · ${fmt(r.returning_count)} returning`
+        : "",
+    })),
     "h", {
       unit: "unique readers", mono: true,
       empty: "direct / no identified referrer readers in this window",

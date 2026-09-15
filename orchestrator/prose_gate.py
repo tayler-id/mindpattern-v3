@@ -23,6 +23,8 @@ Scope: this module only does the first kind. It never calls an LLM.
 import logging
 import re
 
+from . import word_bank
+
 logger = logging.getLogger(__name__)
 
 EM_DASH = "—"
@@ -126,6 +128,47 @@ def _split_protected(markdown: str) -> list[tuple[str, bool]]:
     return segments
 
 
+# Self-referential length claims: "the next 4,000 words", "these 900 words".
+# The model cannot know its own final length while writing, so the number is
+# invented — 2026-08-04 promised "the next 4,000 words" above an 8,100-word
+# issue, and the site surfaces that lede as the homepage preview. Same rule as
+# the em-dash budget: a fact a regex can check is corrected here, not asked for
+# in the prompt.
+_LENGTH_CLAIM = re.compile(
+    r"(?P<lead>\b(?:next|these|this|following|remaining)\s+)"
+    r"(?P<count>\d{1,3}(?:,\d{3})+|\d{3,6})"
+    r"(?P<tail>[\s-]+words?\b)",
+    re.IGNORECASE,
+)
+
+
+def _round_words(count: int) -> str:
+    """Round to the nearest 500 so the claim reads as prose, not telemetry."""
+    if count < 500:
+        return str(max(count, 0))
+    return f"{int(round(count / 500.0) * 500):,}"
+
+
+def correct_length_claims(markdown: str) -> tuple[str, int]:
+    """Rewrite self-referential word-count claims to the real length.
+
+    Returns (corrected_markdown, number_of_claims_rewritten). Only claims that
+    point at this document ("the next N words") are touched; a story quoting
+    someone else's "4,000 words" has no such lead-in and is left alone.
+    """
+    actual = _round_words(len(markdown.split()))
+    corrected = 0
+
+    def _fix(match: re.Match) -> str:
+        nonlocal corrected
+        if match.group("count").replace(",", "") == actual.replace(",", ""):
+            return match.group(0)
+        corrected += 1
+        return f"{match.group('lead')}{actual}{match.group('tail')}"
+
+    return _LENGTH_CLAIM.sub(_fix, markdown), corrected
+
+
 def scan(markdown: str) -> dict:
     """Measure prose markers without changing anything.
 
@@ -136,12 +179,15 @@ def scan(markdown: str) -> dict:
     prose = "".join(c for c, protected in _split_protected(body) if not protected)
     words = len(markdown.split())
     em = prose.count(EM_DASH)
+    bank = word_bank.violations(body, "newsletter")
     return {
         "words": words,
         "em_dashes": em,
         "em_dashes_per_500w": round(em * 500 / words, 2) if words else 0.0,
         "over_budget": em > EM_DASH_BUDGET,
         "budget": EM_DASH_BUDGET,
+        "word_bank": bank,
+        "word_bank_hits": len(bank),
     }
 
 
@@ -176,6 +222,7 @@ def sanitize(markdown: str) -> tuple[str, dict]:
         out_lines.append("".join(rebuilt))
 
     clean = "\n".join(out_lines)
+    clean, length_claims = correct_length_claims(clean)
     after = scan(clean)
 
     report = {
@@ -183,15 +230,28 @@ def sanitize(markdown: str) -> tuple[str, dict]:
         "em_dashes_before": before["em_dashes"],
         "em_dashes_after": after["em_dashes"],
         "replaced": replaced,
+        "length_claims_corrected": length_claims,
         "remaining_over_budget": after["em_dashes"] > EM_DASH_BUDGET,
         "budget": EM_DASH_BUDGET,
         "per_500w_before": before["em_dashes_per_500w"],
+        # Reported, never rewritten. An em-dash has one correct replacement and
+        # "landed" has five, so choosing one is a writer's job, not a regex's.
+        "word_bank": after["word_bank"],
+        "word_bank_hits": after["word_bank_hits"],
     }
 
     if replaced:
         logger.info(
             "Prose gate: replaced %d em-dash(es) in %d words (%.2f per 500w before)",
             replaced, report["words"], report["per_500w_before"],
+        )
+    if report["word_bank_hits"]:
+        # Terms only. The full lines with excerpts and replacements go to the
+        # traces table, where they can be read without flooding the run log.
+        terms = [v.split('"')[1] for v in report["word_bank"] if '"' in v]
+        logger.warning(
+            "Prose gate: %d word-bank term(s) in the issue: %s",
+            report["word_bank_hits"], ", ".join(terms[:12]),
         )
     if report["remaining_over_budget"]:
         # 3+ in one sentence is deliberately left alone; if enough of those

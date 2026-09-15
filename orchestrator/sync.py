@@ -7,9 +7,11 @@ and restarts the app. ONE upload per user instead of 30 separate connections.
 import json
 import logging
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -50,6 +52,15 @@ def _pipeline_secret() -> str:
         return ""
 
 
+def _refuse_in_sandbox(action: str) -> None:
+    """Hard guard for autonomous-routine sandboxes. Checked via env on
+    purpose — no harness import, this module stays dependency-free."""
+    if os.environ.get("MP_SANDBOX") == "1":
+        raise RuntimeError(
+            f"MP_SANDBOX=1: refusing {action} (autonomous sandbox active)"
+        )
+
+
 def upload_bundle_http(
     bundle_path: Path,
     *,
@@ -63,6 +74,7 @@ def upload_bundle_http(
     sha256 the server verifies before extracting. Preferred over sftp since
     the 2026-07-02 tunnel truncation incident.
     """
+    _refuse_in_sandbox("HTTP bundle upload to Fly")
     import hashlib
     import http.client
     import ssl
@@ -157,6 +169,7 @@ def sync_to_fly(
     Returns:
         Dict with keys: success, bytes_uploaded, files_included, error.
     """
+    _refuse_in_sandbox("Fly sync")
     start = time.monotonic()
     # Use LOCAL date — reports are named with local date by the pipeline
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -291,22 +304,17 @@ def sync_to_fly(
         }
         _fly_ssh(app_name, f"rm -f {remote_bundle}")
     else:
-        # Step 6: Extract bundle on remote. Remove stale -wal/-shm in the
-        # SAME command — leftover WAL from the replaced database would be
-        # replayed into the fresh file and corrupt it.
-        stale_sidecars = (
-            f"{user_id}/memory.db-wal {user_id}/memory.db-shm "
-            f"{user_id}/traces.db-wal {user_id}/traces.db-shm"
-        )
+        # Step 6: Extract bundle on remote. See _extract_command for why the
+        # stale WAL has to go first.
+        #
         # tar needs far longer than a status probe: the bundle passed 50 MB in
         # July 2026 and unpacking ~2,300 files on shared-cpu-2x runs past the
-        # 60s default. A killed tar does not fail cleanly — it leaves the files
+        # 60s default. A killed tar does not fail cleanly, it leaves the files
         # it had not reached yet at zero bytes, which is how 2026-07-27 shipped
         # 86 empty story files that the public API then served as nothing.
         extract_result = _fly_ssh(
             app_name,
-            f"cd /data && tar xzf {remote_bundle} "
-            f"&& rm -f {remote_bundle} {stale_sidecars}",
+            _extract_command(remote_bundle, user_id),
             timeout=600,
         )
 
@@ -320,8 +328,7 @@ def sync_to_fly(
             log.warning("Zero-byte JSON artifacts after extract — re-extracting")
             extract_result = _fly_ssh(
                 app_name,
-                f"cd /data && tar xzf {remote_bundle} "
-                f"&& rm -f {remote_bundle} {stale_sidecars}",
+                _extract_command(remote_bundle, user_id),
                 timeout=600,
             )
             empty_count = _count_empty_artifacts(app_name, user_id)
@@ -533,6 +540,36 @@ def _snapshot_db(db_path: Path, dest: Path) -> None:
 CHUNK_BYTES = 1024 * 1024  # small puts survive flyctl 0.4.58; >~2MB truncate
 
 
+def _extract_command(remote_bundle: str, user_id: str) -> str:
+    """Shell to unpack a synced bundle on the remote volume.
+
+    The stale -wal/-shm sidecars are removed BEFORE tar runs, not after.
+    Order is the whole point of this function. tar overwrites memory.db in
+    place, so a WAL left from the previous database sits beside a fresh main
+    file, and SQLite replays those frames into it. That is what produced
+    `database disk image is malformed` on 2026-08-23, which took /healthz to
+    500, stopped Fly's proxy routing to the machine, and locked the safe HTTP
+    sync out of the very volume it needed to repair.
+
+    `sync_upload.receive_sync_bundle` unlinks the sidecars before extractall
+    for the same reason, which is why the HTTP path never corrupted anything.
+
+    The bundle itself is still removed after tar and gated on tar succeeding: a
+    timed-out extract must leave its source in place so it can be retried where
+    it sits.
+    """
+    sidecars = " ".join(
+        f"{user_id}/{db}{suffix}"
+        for db in ("memory.db", "traces.db")
+        for suffix in ("-wal", "-shm")
+    )
+    return (
+        f"cd /data && rm -f {sidecars} "
+        f"&& tar xzf {remote_bundle} "
+        f"&& rm -f {remote_bundle}"
+    )
+
+
 def upload_bundle_chunked(bundle_path: Path, remote_path: str, app_name: str) -> dict:
     """Upload a large file as sub-6MB chunks and reassemble remotely.
 
@@ -625,21 +662,441 @@ def upload_bundle(bundle_path: Path, remote_path: str, app_name: str) -> dict:
         return {"success": False, "error": str(e)}
 
 
+# ── Purge-on-publish (Next.js ISR) ───────────────────────────────────────
+
+SITE_URL = "https://mindpattern.ai"
+BACKEND_URL = "https://mindpattern.fly.dev"
+# Paths per POST. Must stay at or under the route's own cap
+# (MAX_PATHS in src/app/api/revalidate/route.ts, vercel-mindpattern).
+REVALIDATE_BATCH = 50
+# Total paths one publish may purge. Entity dossiers are rewritten in place,
+# so "affected" means "named by one of today's stories and already published".
+# The list is ordered entry points, then stories, then the source and arc
+# pages today's stories reference, then entities ranked by mention count,
+# then finding pages. The trim runs from the tail, so finding pages (new
+# ids, rarely cached yet) are dropped first, then entities, and every drop
+# is logged. Sized against real output: 2026-08-26 emits 165 paths (5 entry,
+# 80 stories, 34 sources, 0 arcs, 26 entities, 20 findings). REVALIDATE_BATCH
+# keeps each POST under the route's own per-call cap (60), so this bounds
+# the publish, not a request.
+REVALIDATE_MAX_PATHS = 200
+# Purge and crawl in waves rather than purging everything and then crawling it.
+# revalidatePath expires the entry outright, so the next request is a blocking
+# cold render, not stale-while-revalidate. Purging all ~96 paths up front left
+# every one of them uncached for the ~10 minutes the serial crawl took, and
+# readers got hard 500s the whole time. One wave is uncached for one request.
+REVALIDATE_WAVE = 10
+# Ceiling on the crawl loop. _get allows 45s per request, so an unbounded loop
+# over a site-wide path set could block the SYNC phase for over an hour.
+CRAWL_BUDGET_MINUTES = 10.0
+# Caps for scope="site". The sitemap carries 7,279 URLs, which no serial crawl
+# finishes; these keep the set to roughly 370 pages. See sitemap_site_paths.
+SITE_WARM_STORY_LIMIT = 200
+SITE_WARM_ARCHIVE_LIMIT = 30
+_STORY_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,159}")
+# Mirrors dashboard.routes.api._is_public_entity_slug's length floor without
+# importing the dashboard into the pipeline.
+_ENTITY_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{3,79}")
+# Mirrors the site's arc route (ARC_ID_RE in src/app/(app)/arc/[id]/page.tsx)
+# intersected with the /api/revalidate allowlist's 80-character cap.
+_ARC_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,79}")
+# Mirrors the site's source route (cleanDomain in
+# src/app/(app)/source/[domain]/page.tsx) and the /api/revalidate allowlist,
+# so nothing emitted here comes back rejected: lowercase, 80 characters or
+# fewer, ending in a dot plus an alphabetic TLD, no empty labels.
+_SOURCE_DOMAIN_RE = re.compile(r"[a-z0-9][a-z0-9.-]{0,78}")
+_SOURCE_TLD_RE = re.compile(r"\.[a-z]{2,}$")
+# The site's finding route (parseFindingId in src/app/(app)/f/[id]/page.tsx)
+# takes a positive row id of at most 12 digits.
+_FINDING_ID_MAX = 10**12 - 1
+
+
+def _clean_source_domain(raw: object) -> str | None:
+    """A canonical /source/ path segment, or None for anything the site's own
+    route would reject. Lowercased with any www. prefix stripped, the same
+    normalization the page applies, so the purged path is the served one."""
+    if not isinstance(raw, str):
+        return None
+    domain = raw.strip().lower().removeprefix("www.")
+    if not _SOURCE_DOMAIN_RE.fullmatch(domain):
+        return None
+    if ".." in domain or not _SOURCE_TLD_RE.search(domain):
+        return None
+    return domain
+
+
+def _clean_finding_id(raw: object) -> int | None:
+    """A /f/ page id, or None for anything the site's route rejects unfetched."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        finding_id = raw
+    elif isinstance(raw, str) and raw.isdigit():
+        finding_id = int(raw)
+    else:
+        return None
+    if finding_id <= 0 or finding_id > _FINDING_ID_MAX:
+        return None
+    return finding_id
+
+
+def _revalidate_secret() -> str:
+    """Shared secret for the site's /api/revalidate (env, else local file)."""
+    secret = os.environ.get("MP_REVALIDATE_SECRET", "").strip()
+    if secret:
+        return secret
+    try:
+        return (Path.home() / ".mindpattern-revalidate-secret").read_text().strip()
+    except OSError:
+        return ""
+
+
+def _redact(text: str, secret: str) -> str:
+    """Never let the shared secret reach a log line or a return value."""
+    if secret and secret in text:
+        return text.replace(secret, "[redacted]")
+    return text
+
+
+def changed_site_paths(
+    date: str,
+    *,
+    user_id: str = "ramsay",
+    reports_root: Path | str | None = None,
+    max_paths: int = REVALIDATE_MAX_PATHS,
+) -> list[str]:
+    """Site-relative paths the day's publish changed.
+
+    Reads the artifacts the pipeline just wrote (site-stories/<date>/*.json and
+    the entity dossiers) instead of asking the backend, because at this point
+    the backend has the new data but the CDN still serves the old pages.
+
+    Every detail route the stories touch is covered, because all seven carry
+    a day-long ISR TTL and a kind this list misses serves stale for the full
+    day after a publish. That means the stories themselves, the source and
+    arc pages they reference, the entity pages they name (ranked by how many
+    of today's stories name each), and the finding pages behind their
+    evidence. The whole list is capped at ``max_paths``; the trim runs from
+    the tail, so finding pages go first, then entities, and every dropped
+    path is logged.
+    """
+    root = (
+        Path(reports_root)
+        if reports_root is not None
+        else Path(__file__).resolve().parents[1] / "reports" / user_id
+    )
+    paths = ["/", "/briefings", "/blog", f"/briefings/{date}", f"/blog/{date}"]
+
+    entity_counts: dict[str, int] = {}
+    source_domains: list[str] = []
+    arc_ids: list[str] = []
+    finding_ids: set[int] = set()
+    story_dir = root / "site-stories" / date
+    story_files = sorted(story_dir.glob("*.json")) if story_dir.is_dir() else []
+    for story_file in story_files:
+        try:
+            story = json.loads(story_file.read_text())
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            log.warning("Purge-on-publish: unreadable story %s: %s", story_file.name, exc)
+            continue
+        if not isinstance(story, dict):
+            log.warning("Purge-on-publish: story %s is not an object", story_file.name)
+            continue
+        slug = str(story.get("slug") or story_file.stem).strip()
+        if _STORY_SLUG_RE.fullmatch(slug):
+            paths.append(f"/s/{slug}")
+        for ref in story.get("entity_refs") or []:
+            if not isinstance(ref, dict):
+                continue
+            entity_slug = str(ref.get("slug") or "").strip()
+            if _ENTITY_SLUG_RE.fullmatch(entity_slug):
+                entity_counts[entity_slug] = entity_counts.get(entity_slug, 0) + 1
+        for ref in story.get("source_refs") or []:
+            if not isinstance(ref, dict):
+                continue
+            domain = _clean_source_domain(ref.get("domain"))
+            if domain:
+                source_domains.append(domain)
+        for raw_arc in story.get("arc_ids") or []:
+            if not isinstance(raw_arc, str):
+                continue
+            arc_id = raw_arc.strip().lower()
+            if _ARC_ID_RE.fullmatch(arc_id):
+                arc_ids.append(arc_id)
+        for key in ("primary_finding_ids", "supporting_finding_ids"):
+            for raw_id in story.get(key) or []:
+                finding_id = _clean_finding_id(raw_id)
+                if finding_id is not None:
+                    finding_ids.add(finding_id)
+
+    # Sources and arcs aggregate many stories each and go stale on every
+    # publish, so they sit ahead of the longer entity and finding tails.
+    paths.extend(f"/source/{domain}" for domain in source_domains)
+    paths.extend(f"/arc/{arc_id}" for arc_id in arc_ids)
+
+    entities_dir = root / "site-dossiers" / "entities"
+    published = (
+        {path.stem for path in entities_dir.glob("*.json")} if entities_dir.is_dir() else set()
+    )
+    ranked = sorted(
+        (slug for slug in entity_counts if slug in published),
+        key=lambda slug: (-entity_counts[slug], slug),
+    )
+    paths.extend(f"/e/{slug}" for slug in ranked)
+    # Finding pages last: the ids are new today, so there is rarely a cached
+    # copy to purge. What the purge buys is clearing any 404 a reader pinned
+    # into the ISR cache by visiting the id before it existed, and the warm
+    # crawl that follows each purged wave.
+    paths.extend(f"/f/{finding_id}" for finding_id in sorted(finding_ids))
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            unique.append(path)
+
+    cap = max(0, max_paths)
+    if len(unique) > cap:
+        dropped = unique[cap:]
+        unique = unique[:cap]
+        log.warning(
+            "Purge-on-publish: %s paths exceed the %s cap, dropping %s: %s",
+            len(unique) + len(dropped),
+            cap,
+            len(dropped),
+            ", ".join(dropped),
+        )
+    return unique
+
+
+def revalidate_site_paths(
+    paths: list[str],
+    *,
+    site_url: str = SITE_URL,
+    timeout: float = 30.0,
+    batch_size: int = REVALIDATE_BATCH,
+) -> dict:
+    """Tell Next.js to drop its cached copy of exactly these paths.
+
+    Pages carry an hour-long ISR TTL, so without this a publish stays
+    invisible to readers until the TTL runs out and the warm crawl only
+    re-caches the stale copy. POSTs to /api/revalidate with the shared secret
+    in a header; the secret never appears in a log line or in the result.
+    Best-effort: never raises.
+    """
+    import urllib.request
+
+    result: dict = {
+        "ok": False,
+        "sent": 0,
+        "revalidated": 0,
+        "rejected": 0,
+        "batches": 0,
+        "skipped": False,
+        "error": None,
+    }
+    # isinstance first: the docstring promises this never raises, and
+    # dict.fromkeys throws on an unhashable element while .startswith throws on
+    # a non-string one.
+    wanted = list(
+        dict.fromkeys(
+            path for path in paths if isinstance(path, str) and path.startswith("/")
+        )
+    )
+    if not wanted:
+        result["error"] = "no paths to revalidate"
+        return result
+
+    # Every other production-mutating call in this module refuses under
+    # MP_SANDBOX (upload_bundle_http, sync_to_fly, restart_app, ssh, sftp).
+    # This one purges the live mindpattern.ai CDN cache, so it refuses too.
+    # Soft skip rather than a raise: warming is best-effort and the callers
+    # treat a skip as a degraded publish, not a failed one.
+    if os.environ.get("MP_SANDBOX") == "1":
+        result["skipped"] = True
+        result["error"] = "MP_SANDBOX=1"
+        log.warning("Purge-on-publish: MP_SANDBOX=1, refusing to purge the live site")
+        return result
+
+    secret = _revalidate_secret()
+    if not secret:
+        result["skipped"] = True
+        result["error"] = "no revalidate secret (set MP_REVALIDATE_SECRET)"
+        log.warning("Purge-on-publish: %s; the site falls back to its TTL", result["error"])
+        return result
+
+    endpoint = f"{site_url.rstrip('/')}/api/revalidate"
+    for start in range(0, len(wanted), max(1, batch_size)):
+        batch = wanted[start : start + max(1, batch_size)]
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps({"paths": batch}).encode("utf-8"),
+            headers={
+                "content-type": "application/json",
+                "x-revalidate-secret": secret,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read() or b"{}")
+        except Exception as exc:
+            result["error"] = _redact(f"{type(exc).__name__}: {exc}", secret)
+            log.warning("Purge-on-publish: batch %s failed: %s", result["batches"] + 1, result["error"])
+            return result
+        result["batches"] += 1
+        result["sent"] += len(batch)
+        result["revalidated"] += len(payload.get("revalidated") or [])
+        result["rejected"] += len(payload.get("rejected") or [])
+
+    if result["rejected"]:
+        result["error"] = f"{result['rejected']} paths rejected by the site"
+        log.warning("Purge-on-publish: %s", result["error"])
+    else:
+        result["ok"] = True
+        log.info("Purge-on-publish: revalidated %s paths", result["revalidated"])
+    return result
+
+
+def _backend_sitemap_graph(*, timeout: float = 45.0,
+                           backend_url: str = BACKEND_URL,
+                           user_id: str = "ramsay") -> dict | None:
+    """The corpus the site renders its sitemap from, straight from the backend.
+
+    Reading the site's own /sitemap.xml looked equivalent and was not. That
+    route carries revalidate=3600 and sits behind Vercel's CDN, so on
+    2026-08-26 the crawler got `x-vercel-cache: HIT, age: 69` holding the
+    previous 187-URL sitemap. The warm run queued 36 blog dates, reported
+    "crawled 36, failed 0", and left 6,806 stories and 84 entity pages cold.
+    A warm crawl that picks its targets from a cache can warm the wrong thing
+    and call it success.
+    """
+    import urllib.request
+
+    url = f"{backend_url.rstrip('/')}/api/site/sitemap?user={user_id}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001 - best effort, caller decides
+        log.warning("Backend sitemap unavailable (%s): %s", url, exc)
+        return None
+
+
+def _graph_entries(graph: dict) -> list[tuple[str, str]]:
+    """(path, lastmod) for every reader-facing route in the corpus graph."""
+    entries: list[tuple[str, str]] = [
+        ("/", ""), ("/briefings", ""), ("/blog", ""), ("/explore", ""),
+    ]
+    for story in graph.get("stories") or []:
+        if isinstance(story, dict) and story.get("slug"):
+            entries.append((f"/s/{story['slug']}", story.get("issue_date") or ""))
+    for slug in graph.get("entities") or []:
+        if isinstance(slug, str) and slug:
+            entries.append((f"/e/{slug}", ""))
+    for domain in graph.get("sources") or []:
+        if isinstance(domain, str) and domain:
+            entries.append((f"/source/{domain}", ""))
+    for date in graph.get("briefings") or []:
+        if isinstance(date, str) and date:
+            entries.append((f"/briefings/{date}", date))
+            entries.append((f"/blog/{date}", date))
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for path, lastmod in entries:
+        if path in seen:
+            continue
+        seen.add(path)
+        out.append((path, lastmod))
+    return out
+
+
+def sitemap_site_paths(
+    site_url: str = SITE_URL,
+    *,
+    timeout: float = 45.0,
+    story_limit: int = SITE_WARM_STORY_LIMIT,
+    archive_limit: int = SITE_WARM_ARCHIVE_LIMIT,
+) -> list[str]:
+    """Reader paths from the site's own sitemap, in warm-first order.
+
+    This is what a Vercel deploy needs. A deploy drops the WHOLE ISR cache, so
+    warming only the day's date-scoped paths leaves ~6,800 /s/ pages and 84
+    /e/ pages cold. Worse, on a day with no publish yet `changed_site_paths`
+    returns its entry points and nothing else, so the crawl once reported
+    "4 warmed, 0 failed" over a site that was entirely cold.
+
+    The whole sitemap is 7,279 URLs, which no serial crawl finishes, so the
+    long tail is capped and the order is by who pays for a cold render:
+
+    1. entry points, then every /e/ and /source/ page. The entity pages are the
+       ones measured past the site's 10s abort, and the sitemap advertises all
+       of them.
+    2. the newest ``archive_limit`` briefings and blog dates.
+    3. the newest ``story_limit`` stories. The rest of the archive renders in
+       0.2-3.4s cold and crawlers re-warm it on their own sweep.
+
+    Raises on a sitemap that cannot be read or that lists nothing: warming the
+    wrong thing quietly is the bug this replaces.
+    """
+    graph = _backend_sitemap_graph(timeout=timeout)
+    if not graph or not graph.get("stories"):
+        raise RuntimeError(
+            "backend sitemap unavailable or empty; refusing to warm a path set "
+            "that would silently miss the archive"
+        )
+
+    entries = _graph_entries(graph)
+    if not entries:
+        raise RuntimeError("backend sitemap listed no reader paths")
+    def newest(prefix: str, limit: int) -> list[str]:
+        matching = [entry for entry in entries if entry[0].startswith(prefix)]
+        matching.sort(key=lambda entry: entry[1], reverse=True)
+        return [path for path, _ in matching[: max(0, limit)]]
+
+    capped = {"/s/": story_limit, "/blog/": archive_limit, "/briefings/": archive_limit}
+    ordered = [
+        path
+        for path, _ in entries
+        if not any(path.startswith(prefix) for prefix in capped)
+    ]
+    ordered += newest("/briefings/", archive_limit)
+    ordered += newest("/blog/", archive_limit)
+    ordered += newest("/s/", story_limit)
+    return list(dict.fromkeys(ordered))
+
+
 def warm_public_site(
     *,
     date: str,
-    backend_url: str = "https://mindpattern.fly.dev",
-    site_url: str = "https://mindpattern.ai",
+    backend_url: str = BACKEND_URL,
+    site_url: str = SITE_URL,
     backend_wait_minutes: float = 10.0,
+    user_id: str = "ramsay",
+    reports_root: Path | str | None = None,
+    revalidate: bool = True,
+    scope: str = "changed",
+    crawl_budget_minutes: float = CRAWL_BUDGET_MINUTES,
+    wave_size: int = REVALIDATE_WAVE,
 ) -> dict:
-    """Seed the public site's CDN cache right after the post-sync restart.
+    """Purge and re-seed the public site's cache after a publish or a deploy.
 
-    The restart wipes the dashboard's in-memory caches, and Vercel's page
-    cache only fills per-click — without this, the morning's first readers
-    rendered every page against a cold backend. Waits for the backend's own
-    warm-up (dashboard/warmup.py) to finish or a deadline, then serially
-    requests the day's new pages plus the entry points so the CDN copy exists
-    before anyone wakes up. Best-effort throughout: never raises.
+    Two things wipe or stale the reader-facing cache, and they need different
+    treatment:
+
+    * ``scope="changed"`` — after a publish. The backend has new data the CDN
+      has not seen, so the day's paths are purged and re-crawled. This is what
+      runner.py's SYNC phase calls.
+    * ``scope="site"`` — after a Vercel deploy. The ISR cache is already empty,
+      so there is nothing to purge; every path the sitemap advertises is
+      crawled instead. Purging here would only widen the cold window.
+
+    Purge and crawl are interleaved in waves of ``wave_size``. revalidatePath
+    expires an entry outright, so the next request pays a blocking cold render
+    rather than getting a stale copy: purging the whole set first left every
+    page uncached for the length of the crawl.
+
+    Best-effort throughout: never raises.
     """
     import urllib.request
 
@@ -647,7 +1104,16 @@ def warm_public_site(
         with urllib.request.urlopen(url, timeout=timeout) as response:
             return response.read()
 
-    result: dict = {"backend_warm": False, "crawled": 0, "failed": 0}
+    result: dict = {
+        "backend_warm": False,
+        "scope": scope,
+        "requested": 0,
+        "crawled": 0,
+        "failed": 0,
+        "skipped_pages": 0,
+        "purged": 0,
+        "error": None,
+    }
 
     # 1. Backend restarted + its cache warm-up finished (best-effort deadline;
     #    a partial warm still beats a fully cold crawl).
@@ -658,6 +1124,12 @@ def warm_public_site(
             phase = status.get("phase")
             if phase == "done":
                 result["backend_warm"] = True
+                if status.get("incomplete"):
+                    result["backend_incomplete"] = list(status["incomplete"])
+                    log.warning(
+                        "Site warm-up: backend finished with gaps in %s",
+                        ", ".join(str(name) for name in status["incomplete"]),
+                    )
                 break
             if phase in ("failed", "cancelled"):
                 log.warning("Site warm-up: backend warm-up phase=%s; crawling anyway", phase)
@@ -666,33 +1138,156 @@ def warm_public_site(
             pass  # machine still restarting / old build without the endpoint
         time.sleep(15)
 
-    # 2. The day's new pages + the entry points, one at a time — each render
-    #    fans out to the backend on its own, so serial keeps the box calm.
-    pages = [
-        f"{site_url}/briefings/{date}",
-        f"{site_url}/blog/{date}",
-        f"{site_url}/briefings",
-        f"{site_url}/",
-    ]
-    try:
-        stories = json.loads(_get(f"{backend_url}/api/stories?user=ramsay&limit=50", timeout=30))
-        pages.extend(
-            f"{site_url}/s/{item['slug']}"
-            for item in stories.get("items", [])
-            if item.get("issue_date") == date and item.get("slug")
-        )
-    except Exception as exc:
-        log.warning("Site warm-up: story list unavailable, crawling entry points only: %s", exc)
-
-    for url in pages:
+    # 2. The path set, and whether it is purge-worthy.
+    if scope == "site":
         try:
-            _get(url)
-            result["crawled"] += 1
+            paths = sitemap_site_paths(site_url)
         except Exception as exc:
-            result["failed"] += 1
-            log.warning("Site warm-up: %s failed: %s", url, exc)
+            result["error"] = f"sitemap unavailable: {type(exc).__name__}: {exc}"
+            log.error("Site warm-up: %s", result["error"])
+            return result
+        # Nothing to drop: the deploy already dropped it.
+        revalidate = False
+    else:
+        paths = list(changed_site_paths(date, user_id=user_id, reports_root=reports_root))
+        # The entry points and the day's stories, from the backend's own list.
+        try:
+            stories = json.loads(
+                _get(f"{backend_url}/api/stories?user={user_id}&limit=50", timeout=30)
+            )
+            paths.extend(
+                f"/s/{item['slug']}"
+                for item in stories.get("items", [])
+                if item.get("issue_date") == date and item.get("slug")
+            )
+        except Exception as exc:
+            log.warning(
+                "Site warm-up: story list unavailable, crawling local paths only: %s", exc
+            )
+        paths = [path for path in dict.fromkeys(paths) if path.startswith("/")]
 
+    result["requested"] = len(paths)
+
+    # 3. Purge one wave, crawl that wave, move on. Serial: each render fans out
+    #    to the backend on its own, so this keeps the box calm.
+    crawl_deadline = time.monotonic() + max(0.0, crawl_budget_minutes) * 60
+    purge_totals = {"ok": True, "sent": 0, "revalidated": 0, "rejected": 0, "skipped": False}
+    stride = max(1, wave_size)
+    for start in range(0, len(paths), stride):
+        if time.monotonic() >= crawl_deadline:
+            result["skipped_pages"] = len(paths) - start
+            log.warning(
+                "Site warm-up: crawl budget of %sm spent, %d pages never crawled",
+                crawl_budget_minutes,
+                result["skipped_pages"],
+            )
+            break
+        wave = paths[start : start + stride]
+        if revalidate:
+            purge = revalidate_site_paths(wave, site_url=site_url)
+            purge_totals["ok"] = purge_totals["ok"] and bool(purge.get("ok"))
+            purge_totals["skipped"] = purge_totals["skipped"] or bool(purge.get("skipped"))
+            for key in ("sent", "revalidated", "rejected"):
+                purge_totals[key] += int(purge.get(key) or 0)
+            if purge.get("error") and not purge.get("skipped"):
+                purge_totals["error"] = purge["error"]
+        for path in wave:
+            try:
+                _get(f"{site_url}{path}")
+                result["crawled"] += 1
+            except Exception as exc:
+                result["failed"] += 1
+                log.warning("Site warm-up: %s failed: %s", path, exc)
+
+    if revalidate:
+        result["revalidate"] = purge_totals
+        result["purged"] = purge_totals["revalidated"]
     return result
+
+
+def warm_cli(argv: list[str] | None = None) -> int:
+    """`python3 -m orchestrator.sync warm` — the post-deploy half of deploy/deploy.sh.
+
+    Returns a nonzero exit code when the crawl did not cover what it was asked
+    to cover, so a deploy cannot report success over a cold site.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python3 -m orchestrator.sync warm",
+        description="Purge and re-crawl the site's reader paths.",
+    )
+    parser.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
+    parser.add_argument("--user", default="ramsay")
+    parser.add_argument("--site-url", default=SITE_URL)
+    parser.add_argument("--backend-url", default=BACKEND_URL)
+    parser.add_argument("--backend-wait-minutes", type=float, default=10.0)
+    parser.add_argument("--reports-root", default=None)
+    parser.add_argument(
+        "--scope",
+        choices=("changed", "site"),
+        default="changed",
+        help=(
+            "changed: the day's published paths, purged then crawled (after a "
+            "publish). site: every path in sitemap.xml, crawled without a purge "
+            "(after a Vercel deploy, which already dropped the whole ISR cache)."
+        ),
+    )
+    parser.add_argument("--crawl-budget-minutes", type=float, default=CRAWL_BUDGET_MINUTES)
+    parser.add_argument(
+        "--no-revalidate",
+        action="store_true",
+        help="crawl only; skip the Next.js purge",
+    )
+    args = parser.parse_args(argv)
+
+    result = warm_public_site(
+        date=args.date,
+        backend_url=args.backend_url,
+        site_url=args.site_url,
+        backend_wait_minutes=args.backend_wait_minutes,
+        user_id=args.user,
+        reports_root=args.reports_root,
+        revalidate=not args.no_revalidate,
+        scope=args.scope,
+        crawl_budget_minutes=args.crawl_budget_minutes,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+
+    requested = int(result.get("requested") or 0)
+    crawled = int(result.get("crawled") or 0)
+    failed = int(result.get("failed") or 0)
+    skipped = int(result.get("skipped_pages") or 0)
+
+    # Coverage, not just "did anything answer". The old check passed on
+    # "4 crawled, 0 failed" while ~780 story pages and 86 entity pages sat
+    # cold, because the four it crawled were the only four it ever asked for.
+    if result.get("error"):
+        print(f"warm failed: {result['error']}", file=sys.stderr)
+        return 1
+    if not requested:
+        print("warm failed: no paths to warm", file=sys.stderr)
+        return 1
+    if not crawled:
+        print(f"warm failed: 0 of {requested} pages warmed", file=sys.stderr)
+        return 1
+    if skipped:
+        print(
+            f"warm failed: budget ran out with {skipped} of {requested} pages never crawled",
+            file=sys.stderr,
+        )
+        return 1
+    if failed:
+        print(
+            f"warm failed: {failed} of {requested} pages errored, {crawled} warmed",
+            file=sys.stderr,
+        )
+        return 1
+    purge = result.get("revalidate") or {}
+    if purge and not purge.get("ok") and not purge.get("skipped"):
+        print(f"purge failed: {purge.get('error')}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def restart_app(app_name: str) -> dict:
@@ -706,6 +1301,7 @@ def restart_app(app_name: str) -> dict:
     Returns:
         Dict with keys: success, error.
     """
+    _refuse_in_sandbox("Fly app restart")
     try:
         # Get machine ID
         list_result = subprocess.run(
@@ -808,6 +1404,7 @@ def _fly_ssh(app_name: str, command: str, timeout: int = 60) -> dict:
 
     Returns dict with keys: success, output, error.
     """
+    _refuse_in_sandbox("Fly ssh command")
     try:
         # Wrap in sh -c so shell builtins and compound commands work.
         # Single quotes inside the command are escaped for the sh -c wrapper.
@@ -839,6 +1436,7 @@ def _fly_ssh(app_name: str, command: str, timeout: int = 60) -> dict:
 
 def _fly_sftp_put(app_name: str, local_path: str, remote_path: str) -> bool:
     """Upload a single file via flyctl sftp."""
+    _refuse_in_sandbox("Fly sftp upload")
     try:
         result = subprocess.run(
             [FLYCTL, "ssh", "sftp", "shell", "-a", app_name],
@@ -889,6 +1487,11 @@ def _put_and_verify(app_name: str, local_path: Path, remote_path: str) -> bool:
 if __name__ == "__main__":
     import sqlite3
     import shutil
+
+    # `python3 -m orchestrator.sync warm …` is the deploy wrapper's second
+    # half; a bare run keeps the original self-check below.
+    if sys.argv[1:2] == ["warm"]:
+        sys.exit(warm_cli(sys.argv[2:]))
 
     # --- AC #1: create_bundle with memory.db and reports ---
     tmp = Path(tempfile.mkdtemp(prefix="sync-test-"))

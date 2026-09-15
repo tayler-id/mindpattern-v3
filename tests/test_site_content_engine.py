@@ -337,7 +337,7 @@ CLEAN_COPY = {
     "title": "OpenAI outage changes agent deployment risk",
     "dek": "Runtime controls arrived after an outage exposed reliability dependencies.",
     "take": "Agent builders now own a dependency they cannot see into.",
-    "why_now": "The outage and the controls landed in the same week.",
+    "why_now": "The outage and the controls shipped in the same week.",
     "body_markdown": "OpenAI published runtime controls after an outage. "
     "Agent builders depend on them for reliability.",
 }

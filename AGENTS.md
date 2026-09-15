@@ -31,7 +31,7 @@ Rabbit Hole archive backfill is an explicit operator workflow, not the default r
 - `agents/` and `verticals/ai-tech/agents/`: runtime agent prompt files.
 - `tests/`: offline pytest suite, with files named `test_*.py`.
 - `data/` and `reports/`: personal/runtime state and generated artifacts; treat them as user-owned unless the task explicitly targets them.
-- `docs/specs/`, `docs/runbooks/`, and `docs/adr/`: product decisions and implementation state.
+- `docs/specs/` and `docs/runbooks/`: product decisions and implementation state. See [README.md](README.md) for navigation and [docs/agents/domain.md](docs/agents/domain.md) for source-selection guidance.
 
 ## Environment setup
 
@@ -67,7 +67,7 @@ Run the FastAPI service locally:
 .venv/bin/python3 -m uvicorn dashboard.app:app --host 127.0.0.1 --port 8010
 ```
 
-There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development.
+There is no general backend build step. The Docker image and Fly process are deployment concerns, not ordinary local development. When a deploy is authorized, it runs through `deploy/deploy.sh` (tests, 3.11 compile gate, `flyctl deploy`, then the site purge and warm crawl) rather than a bare `flyctl deploy`, which leaves the public site cold.
 
 A pipeline smoke can write local databases, reports, and checkpoints even when outbound calls are disabled. Run one only when the task requires it:
 
@@ -127,3 +127,10 @@ Use `pnpm dev --hostname 127.0.0.1 --port 3010` during normal interactive UI dev
 - After Python code changes, run `graphify update .` and `graphify check-update .`.
 - Finish with `git diff --check` and `git status --short`.
 - Report exact commands, outcomes, and anything not run.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

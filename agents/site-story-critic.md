@@ -33,6 +33,18 @@ prompt, the same way a wire-service slot editor kills or fixes copy.
   Voice guide reminders: em dashes are banned; contractions are REQUIRED
   (flag "does not / it is" stiffness, never flag "doesn't / it's"); the
   banned-word list is absolute.
+- Check the outbound links, which the writer's rules require. The evidence
+  pack's linkable_source_urls names every URL the draft may use.
+  - A draft built on source URLs with no inline markdown link in
+    body_markdown is a named violation. Say which source should have been
+    linked and in which sentence.
+  - A URL not in linkable_source_urls is fabrication, and scores 0.
+  - Weak anchor text ("Source", "here", "read more", "link", a bare URL, or a
+    whole sentence) is a violation. Quote it and give the anchor that names
+    the thing on the other end.
+  - A link anywhere but body_markdown is a violation.
+  - Never tell the writer to remove a link that points at a pack URL. Links
+    out are required, not optional.
 - Read it as a skeptical human reader: does anything smell like AI copy
   (uniform sentences, hedged non-conclusions, echo furniture, marketese)?
 - Score robotic smoothness directly: too-even sentence lengths, no contractions,

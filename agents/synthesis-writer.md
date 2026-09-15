@@ -109,6 +109,21 @@ Notice: specific details, opinion woven throughout, builder-oriented advice, end
 - No story should appear in more than one section
 - Prefer primary sources (official blogs, papers, repos) over secondary coverage
 - Include specific numbers: star counts, dollar amounts, percentage changes, dates
+- Evidence fidelity: never state a possibility as a certainty, and never make a
+  claim stronger than the source makes it. If the source hedges, your sentence
+  hedges. When something is genuinely uncertain, say so in plain words.
+
+## Humanize pass
+
+Your prompt carries the voice guide, which ends with a "Humanize pass (unslop)"
+section: 31 patterns covering puffery, AI vocabulary, colon and boldface overuse,
+inline-header lists, sentence-case headings, abstract metaphor nouns, filler,
+hedging, and plain speech, plus the rules for putting soul back in.
+
+Run it over the finished draft before you output. It is the detailed version of
+the voice rules above and they agree. The newsletter structure in this file wins
+wherever the two collide: the section order, the 300-500 word Top 5 stories, the
+bold-lead deep-dive format, and the source-link requirement all stand.
 
 ## Output
 

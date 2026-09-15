@@ -8,6 +8,7 @@ models, network, Slack, email, social APIs, Fly, Vercel, or full daily pipeline.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from pathlib import Path
@@ -25,10 +26,18 @@ from orchestrator.site_content import (
     site_artifact_path,
     write_site_artifact,
 )
-from orchestrator.site_copy_lint import copy_allowed_urls_from_refs, hard_fail_issues, lint_site_copy
+from orchestrator.site_copy_lint import (
+    LINK_LINT_CODES,
+    copy_allowed_urls_from_refs,
+    hard_fail_issues,
+    lint_site_copy,
+    markdown_links,
+)
 from orchestrator.site_experts import run_site_expert_loop
 from orchestrator.site_writer import apply_story_copy
 from orchestrator.site_graph import CorpusGraphReadModel
+
+logger = logging.getLogger(__name__)
 
 _GENERIC_PUBLIC_TITLES = {
     "top 5 stories today",
@@ -182,24 +191,49 @@ def evaluate_site_story_confidence(
         reasons.append("stale_repeat_without_update")
     if skeptic_result.get("kill_switch"):
         reasons.append("skeptic_kill_switch")
-    lint_issues = hard_fail_issues(
-        lint_site_copy(
-            story,
-            allowed_urls=copy_allowed_urls_from_refs(story.get("source_refs")),
-            required_fields=("title", "dek", "why_now", "body_markdown"),
-            include_revise=False,
-        )
+    all_issues = lint_site_copy(
+        story,
+        allowed_urls=copy_allowed_urls_from_refs(story.get("source_refs")),
+        required_fields=("title", "dek", "why_now", "body_markdown"),
+        include_revise=True,
     )
-    for issue in lint_issues:
+    for issue in hard_fail_issues(all_issues):
         reason = _copy_lint_reason(issue.code)
         if reason not in reasons:
             reasons.append(reason)
+
+    # Reported, never blocking. A story with no outbound link is still worth
+    # publishing; what was missing was any record that it happened, which is
+    # how 63 of 63 linkless stories went unnoticed for a day.
+    link_notes = sorted(
+        {issue.code for issue in all_issues if issue.code in LINK_LINT_CODES}
+    )
 
     publishable = not reasons and is_publishable_site_story(story)
     return {
         "publishable": publishable,
         "confidence": "high" if publishable else "degraded",
         "reasons": reasons,
+        "link_notes": link_notes,
+        "body_link_count": len(markdown_links(str(story.get("body_markdown") or ""))),
+    }
+
+
+def _story_link_count(story: dict[str, Any]) -> int:
+    """Inline markdown links in one story's body."""
+    return len(markdown_links(str(story.get("body_markdown") or "")))
+
+
+def _link_counts(counts: list[int]) -> dict[str, int]:
+    """Outbound-link totals for the run ledger.
+
+    63 of 63 stories written on 2026-08-23 carried no link, and nothing in the
+    run recorded it, so the only way to find out was to query the database by
+    hand. These two numbers put it in the trace.
+    """
+    return {
+        "outbound_link_count": sum(counts),
+        "stories_without_links": sum(1 for count in counts if count == 0),
     }
 
 
@@ -505,7 +539,10 @@ def write_issue_stories_for_date(
     from orchestrator.site_content import build_structured_issue
 
     run_date = validate_run_date(date)
-    outcome = {"kind": "issue_story_run", "date": run_date, "written": 0, "fallback": 0, "skipped": 0}
+    outcome = {
+        "kind": "issue_story_run", "date": run_date,
+        "written": 0, "fallback": 0, "skipped": 0, "withheld": 0,
+    }
     report_path = reports_root / user / f"{run_date}.md"
     if not report_path.exists():
         outcome["skipped"] = -1
@@ -567,6 +604,18 @@ def write_issue_stories_for_date(
 
             artifact = apply_story_copy(artifact, copy)
             result = "written"
+        if story_copywriter is not None and not str(artifact.get("take") or "").strip():
+            # The writer was asked for editorial copy and did not deliver it
+            # (API drop, 300s timeout, or a copy gate that rejected both the
+            # draft and its revision). Writing the artifact anyway publishes a
+            # headline over an empty "the take" block, which is what shipped on
+            # 2026-08-04. Leaving it unwritten keeps the reader on the
+            # newsletter-backed excerpt and lets the next run retry the unit,
+            # since an existing artifact is what makes a run skip it.
+            logger.warning(
+                "issue_story_writer %s: withheld, no take after copywriting", slug
+            )
+            return "withheld"
         provenance = dict(artifact.get("provenance") or {})
         provenance["generated_by"] = "mindpattern.site_content_engine.issue_story_writer"
         artifact["provenance"] = provenance
@@ -596,7 +645,7 @@ def write_issue_stories_for_date(
             user, reports_root,
             f"- {stamp} daily-run date={run_date} "
             f"written={outcome['written']} fallback={outcome['fallback']} "
-            f"skipped={outcome['skipped']}",
+            f"skipped={outcome['skipped']} withheld={outcome['withheld']}",
         )
     except Exception:
         pass  # tracking must never fail the run
@@ -628,6 +677,7 @@ def run_site_content_for_date(
     published_count = 0
     degraded_count = 0
     graph_pack_count = 0
+    link_counts: list[int] = []
 
     for case in cases:
         candidate_id = normalize_slug(str(case.get("id") or "candidate"))
@@ -685,6 +735,7 @@ def run_site_content_for_date(
             artifact=story,
         )
         artifacts_written.append(_artifact_ref(story_path, reports_root))
+        link_counts.append(_story_link_count(story))
         if story.get("status") == "published":
             published_count += 1
         else:
@@ -702,6 +753,7 @@ def run_site_content_for_date(
             "graph_packs": graph_pack_count,
             "published_stories": published_count,
             "degraded_stories": degraded_count,
+            **_link_counts(link_counts),
         },
         "coverage": {
             "source": "corpus",
@@ -737,6 +789,7 @@ def run_site_content_for_date(
         "graph_packs_built": graph_pack_count,
         "generated_story_count": published_count,
         "degraded_story_count": degraded_count,
+        **_link_counts(link_counts),
         "rejections": selection["rejected"],
         "artifacts_written": artifacts_written,
         "redaction_status": "passed",

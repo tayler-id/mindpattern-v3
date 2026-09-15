@@ -328,7 +328,12 @@ class TestApplyEvolutionDiff:
         assert len(result["errors"]) >= 1
 
     def test_multiple_files_updated(self, vault_dir):
-        """Multiple files can be updated in a single diff."""
+        """Runtime-writable files update together; read-only ones are skipped.
+
+        Updated 2026-08-21: user.md and voice.md became hand-edited only, so a
+        diff naming user.md is now reported under skipped_readonly instead of
+        counting as a change. See RUNTIME_WRITABLE_KEYS.
+        """
         from memory.identity_evolve import apply_evolution_diff
 
         diff = {
@@ -351,7 +356,9 @@ class TestApplyEvolutionDiff:
 
         result = apply_evolution_diff(vault_dir, diff)
 
-        assert len(result["changes_made"]) == 3
+        assert result["skipped_readonly"] == ["user"]
+        assert "Updated interests." not in (vault_dir / "user.md").read_text()
+        assert len(result["changes_made"]) == 2
         assert len(result["errors"]) == 0
 
     def test_invalid_action_value(self, vault_dir):

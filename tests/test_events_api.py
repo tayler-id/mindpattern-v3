@@ -78,8 +78,9 @@ def test_stored_rows_contain_no_pii_columns(client):
               headers={"User-Agent": "SecretBrowser/1.0", "X-Forwarded-For": "1.2.3.4"})
     conn = open_events_db(db_path)
     columns = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
-    # owner is a self-declared 0/1 "this is Tayler" flag — not PII
-    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value", "owner"}
+    # owner is a self-declared 0/1 "this is Tayler" flag and durable is a 0/1
+    # "the client could persist its reader id" flag. Neither is PII.
+    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value", "owner", "durable"}
     row = dict(conn.execute("SELECT * FROM events").fetchone())
     serialized = json.dumps(row)
     assert "1.2.3.4" not in serialized
@@ -200,3 +201,39 @@ def test_events_survive_daily_sync_bundle(tmp_path, monkeypatch):
     row = conn.execute("SELECT target FROM events").fetchone()
     assert row["target"] == "pre-sync-story"
     conn.close()
+
+
+def test_anon_id_history_lookup_uses_an_index(tmp_path):
+    """The new/returning split asks 'was this anon_id here before T' once per
+    reader. Without idx_events_anon_ts that probe becomes a table scan.
+
+    The plan is taken over the production probe itself, imported from
+    site_analytics rather than retyped: a hand-written lookalike with literal
+    constants and no outer correlation plans differently, so it would stay
+    green through exactly the rewrite this is meant to catch (a function on
+    anon_id, an OR, a LIKE).
+    """
+    from dashboard.routes.site_analytics import _SEEN_BEFORE
+
+    db_path = tmp_path / "site_events.db"
+    conn = open_events_db(db_path)
+    try:
+        indexes = {
+            row["name"] for row in conn.execute("PRAGMA index_list(events)")
+        }
+        assert "idx_events_anon_ts" in indexes
+
+        plan = " ".join(
+            str(row[3]) for row in conn.execute(
+                f"""EXPLAIN QUERY PLAN
+                    SELECT COUNT(*) FROM (
+                      SELECT DISTINCT anon_id FROM events
+                      WHERE ts>=? AND owner=0 AND type!='agent_hit' AND anon_id!=''
+                    ) w
+                    WHERE {_SEEN_BEFORE.format(alias='w')}""",
+                (0, 0),
+            )
+        )
+        assert "idx_events_anon_ts (anon_id=? AND ts<?)" in plan, plan
+    finally:
+        conn.close()

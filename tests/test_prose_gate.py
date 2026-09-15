@@ -100,3 +100,109 @@ def test_clean_prose_passes_through_unchanged():
     assert clean == src
     assert report["replaced"] == 0
     assert report["remaining_over_budget"] is False
+
+
+def test_self_referential_word_count_is_corrected_to_the_real_length():
+    """2026-08-04 promised 'the next 4,000 words' above an 8,100-word issue."""
+    body = " ".join(["word"] * 2000)
+    src = f"I'll spend the next 4,000 words explaining why.\n\n{body}"
+    clean, report = sanitize(src)
+    assert "the next 2,000 words" in clean
+    assert "4,000 words" not in clean
+    assert report["length_claims_corrected"] == 1
+
+
+def test_length_claim_already_accurate_is_left_alone():
+    body = " ".join(["word"] * 1500)
+    src = f"These 1,500 words cover it.\n\n{body}"
+    clean, report = sanitize(src)
+    assert "These 1,500 words" in clean
+    assert report["length_claims_corrected"] == 0
+
+
+def test_word_count_quoted_about_something_else_is_untouched():
+    """No self-referential lead-in means it is someone else's number."""
+    src = "The leaked system prompt runs to 4,000 words of policy. " + " ".join(["w"] * 900)
+    clean, report = sanitize(src)
+    assert "4,000 words of policy" in clean
+    assert report["length_claims_corrected"] == 0
+
+
+def test_hyphenated_and_singular_forms_are_corrected():
+    body = " ".join(["word"] * 1000)
+    src = f"Read the following 300-word note.\n\n{body}"
+    clean, report = sanitize(src)
+    assert "the following 1,000-word note" in clean
+    assert report["length_claims_corrected"] == 1
+
+
+class TestUnslopReachesEveryWriter:
+    """The humanize pass must reach every prose surface, not just the newsletter.
+
+    voice.md is the single source: the social writers, site story writer,
+    humanizer, and tightener all inline it, and engagement pulls the section
+    out of it. A silent break here means slop ships (2026-08-19).
+    """
+
+    def _voice(self):
+        from pathlib import Path
+        return Path("data/ramsay/mindpattern/voice.md").read_text()
+
+    def test_voice_guide_carries_the_pass(self):
+        voice = self._voice()
+        assert "# Humanize pass (unslop)" in voice
+        assert "Prefer the plain word" in voice      # rule 31, the last one
+        assert "Platform rules win" in voice         # precedence note
+
+    def test_newsletter_writer_invokes_the_pass_without_copying_it(self):
+        """The skill points at the pass; voice.md carries the only copy.
+
+        The rules lived in both files briefly. Two copies of 31 rules in one
+        prompt can disagree after an edit, so the skill keeps the pointer and
+        the structural precedence note, and nothing else.
+        """
+        from pathlib import Path
+        skill = Path("agents/synthesis-writer.md").read_text()
+        assert "Humanize pass" in skill
+        assert "Prefer the plain word" not in skill   # rule 31 lives in voice.md
+
+    def test_newsletter_prompt_still_receives_the_pass(self):
+        """runner inlines voice.md into pass 2, so the rules do reach the writer."""
+        from pathlib import Path
+        runner_src = Path("orchestrator/runner.py").read_text()
+        assert 'voice_file = identity_dir / "voice.md"' in runner_src
+        assert "voice_text" in runner_src
+        assert "Prefer the plain word" in self._voice()
+
+    def test_site_writer_prompt_carries_the_pass(self):
+        from orchestrator.site_writer import build_site_writer_prompt
+        prompt = build_site_writer_prompt(
+            {"candidate_id": "x"}, {}, voice_text=self._voice())
+        assert "# Humanize pass (unslop)" in prompt
+        assert "Say what it does" in prompt          # rule 27
+
+    def test_platform_writer_skills_invoke_the_pass(self):
+        from pathlib import Path
+        for name in ("bluesky-writer", "linkedin-writer", "site-story-writer"):
+            skill = Path(f"agents/{name}.md").read_text()
+            assert "Humanize pass (unslop)" in skill, name
+
+    def test_engagement_extracts_the_pass_from_voice(self):
+        from social.engagement import _unslop_section
+        section = _unslop_section()
+        assert section.startswith("# Humanize pass (unslop)")
+        assert "Prefer the plain word" in section
+
+    def test_engagement_section_survives_a_missing_voice_file(self, tmp_path,
+                                                              monkeypatch):
+        import social.engagement as eng
+        monkeypatch.setattr(eng, "_VOICE_GUIDE_PATH", tmp_path / "gone.md")
+        assert eng._unslop_section() == ""
+
+    def test_engagement_section_survives_a_voice_file_without_the_pass(
+            self, tmp_path, monkeypatch):
+        import social.engagement as eng
+        stub = tmp_path / "voice.md"
+        stub.write_text("# Voice\n\nNo pass here.\n")
+        monkeypatch.setattr(eng, "_VOICE_GUIDE_PATH", stub)
+        assert eng._unslop_section() == ""

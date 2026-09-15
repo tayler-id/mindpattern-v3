@@ -35,6 +35,21 @@ except ImportError:
         return len(text)
 
 
+def _is_brand_url(url: str, brand_domains: list[str]) -> bool:
+    """True when a URL points at one of our own domains.
+
+    Matches the host and any subdomain of it, so www.mindpattern.ai and
+    mindpattern.ai/stories/x both read as ours.
+    """
+    host = re.sub(r"^https?://", "", url).split("/")[0].lower()
+    host = host.split(":")[0]
+    for domain in brand_domains:
+        domain = domain.lower().strip()
+        if host == domain or host.endswith("." + domain):
+            return True
+    return False
+
+
 class PolicyEngine:
     """Enforces deterministic policy rules loaded from JSON config files."""
 
@@ -249,6 +264,20 @@ class PolicyEngine:
             if not re.search(r"https?://\S+", content):
                 errors.append(
                     f"[{platform}] Post must contain a URL"
+                )
+
+        # Required source URL: a link to what the post is about, not just ours.
+        # require_url above is satisfied by the brand link the writer always
+        # appends, so on 2026-08-23 a post naming five SEP numbers shipped with
+        # mindpattern.ai as its only link and nothing objected.
+        if platform_rules.get("require_source_url", False):
+            brand_domains = self.rules.get("brand_domains", [])
+            found = re.findall(r"https?://\S+", content)
+            offsite = [u for u in found if not _is_brand_url(u, brand_domains)]
+            if not offsite:
+                errors.append(
+                    f"[{platform}] Post must link its source, not only "
+                    f"{', '.join(brand_domains) or 'the brand site'}"
                 )
 
         # Banned words (case-insensitive)

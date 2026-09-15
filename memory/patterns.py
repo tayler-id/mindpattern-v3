@@ -95,13 +95,21 @@ def consolidate(db: sqlite3.Connection, days: int = 30) -> dict:
                 used.add(j)
         clusters.append(cluster)
 
-    # Load existing validated pattern embeddings
+    # Load existing validated pattern embeddings.
+    #
+    # 'promoted' must be included. promote() flips a matured pattern from
+    # 'active' to 'promoted', and while this query only loaded 'active' a
+    # promoted pattern became invisible here — so the next matching note
+    # created a DUPLICATE rather than incrementing the original. Every
+    # long-lived pattern is promoted, so the bug hit exactly the patterns
+    # that mattered most. 'archived' stays excluded on purpose: prune()
+    # retires those deliberately and they should not resurrect.
     vp_rows = db.execute(
         """SELECT vp.id, vp.pattern_key, vp.source_agents, vp.observation_count,
                   e.embedding
            FROM validated_patterns vp
            JOIN validated_patterns_embeddings e ON e.pattern_id = vp.id
-           WHERE vp.status = 'active'"""
+           WHERE vp.status IN ('active', 'promoted')"""
     ).fetchall()
 
     vp_list = []
@@ -268,8 +276,24 @@ def prune(
         (patterns_cutoff,),
     ).rowcount
 
+    # Embeddings whose parent row is gone. 35 of these accumulated in the
+    # production DB before foreign_keys was enforced, and consolidate() joins
+    # through this table, so an orphan is silently invisible weight.
+    orphan_notes = db.execute(
+        "DELETE FROM agent_notes_embeddings WHERE note_id NOT IN "
+        "(SELECT id FROM agent_notes)"
+    ).rowcount
+    orphan_patterns = db.execute(
+        "DELETE FROM validated_patterns_embeddings WHERE pattern_id NOT IN "
+        "(SELECT id FROM validated_patterns)"
+    ).rowcount
+
     db.commit()
-    return {"notes_pruned": len(note_ids), "patterns_archived": archived}
+    return {
+        "notes_pruned": len(note_ids),
+        "patterns_archived": archived,
+        "orphan_embeddings_removed": max(orphan_notes, 0) + max(orphan_patterns, 0),
+    }
 
 
 # ── Agent notes ─────────────────────────────────────────────────────────
@@ -288,6 +312,13 @@ def store_note(
     """
     now = datetime.now().isoformat()
 
+    # Embed BEFORE inserting. The old order inserted the note, then embedded,
+    # so an embedding failure left an uncommitted note row in the transaction
+    # that the *next* successful store_note() committed along with its own —
+    # a note with no embedding, invisible to consolidate() forever. Doing the
+    # fallible work first makes the write all-or-nothing without a savepoint.
+    vec = embed_text(f"{note_type}: {content}")
+
     cur = db.execute(
         """INSERT INTO agent_notes (run_date, agent, note_type, content, created_at)
            VALUES (?, ?, ?, ?, ?)""",
@@ -295,8 +326,6 @@ def store_note(
     )
     note_id = cur.lastrowid
 
-    # Generate and store embedding for semantic clustering
-    vec = embed_text(f"{note_type}: {content}")
     db.execute(
         "INSERT INTO agent_notes_embeddings (note_id, embedding) VALUES (?, ?)",
         (note_id, serialize_f32(vec)),

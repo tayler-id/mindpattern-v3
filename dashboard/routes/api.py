@@ -5,6 +5,7 @@ Private routes: require bearer token auth
 """
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -20,6 +21,7 @@ import numpy as np
 from fastapi import APIRouter, Query, Depends
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
+from dashboard import site_cache
 from dashboard.auth import require_auth
 from orchestrator.audio_briefing import audio_artifact_paths
 from orchestrator.site_content import (
@@ -34,12 +36,15 @@ from orchestrator.site_content import _TOPIC_STOPWORDS as _PUBLIC_TOPIC_STOPWORD
 from orchestrator.site_content import soften_em_dashes
 from orchestrator.site_content import _ENTITY_STOPWORDS as _EXTRACTOR_ENTITY_STOPWORDS
 from orchestrator.site_graph import CorpusGraphReadModel
+from orchestrator.site_graph import _entity_ref as _graph_entity_ref
 from orchestrator.story_related import KG_EDGE_CONFIDENCE_FLOOR, related_paths_for_story
 from memory.embeddings import deserialize_f32 as _deserialize_f32
 from memory.embeddings import embed_text as _embed_text
 from orchestrator.arcs import load_narrative_arcs
 from orchestrator.media_contracts import redact_sensitive_text, validate_run_date
 from slack_bot.heartbeat import is_stale as bot_heartbeat_stale
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -446,16 +451,31 @@ def _public_audio_metadata(
 
 
 def get_memory_db(user_id: str = "ramsay") -> Optional[sqlite3.Connection]:
-    """Open memory.db for a user. Fresh connection per request."""
+    """Open memory.db for a user. Fresh connection per request.
+
+    Returns None when the database is missing OR unreadable. A truncated or
+    malformed file raises out of `sqlite3.connect`'s first statement, and every
+    caller here is written against the Optional contract, so letting that
+    escape turns one bad file into a 500 on every route.
+
+    /healthz is the route that matters: on 2026-08-23 an SFTP fallback wrote a
+    truncated memory.db to the Fly volume, /healthz 500'd, the proxy stopped
+    routing to the machine, and the HTTP sync that would have replaced the file
+    could no longer reach it. Degrading keeps the repair path open.
+    """
     if _safe_user(user_id) is None:
         return None
     db_path = DATA_DIR / user_id / "memory.db"
     if not db_path.exists():
         return None
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    except sqlite3.DatabaseError as exc:
+        logger.error("memory.db unreadable for %s: %s", user_id, exc)
+        return None
 
 
 def _open_graph_model(user: str) -> tuple[sqlite3.Connection, CorpusGraphReadModel] | None:
@@ -774,11 +794,373 @@ async def get_findings(
         conn.close()
 
 
+# ── Corpus indexes ───────────────────────────────────────────────────────
+#
+# Three whole-corpus indexes (finding ids, the ranked entity list, and the
+# slug -> issues map) each cost seconds and tens of MB to build. They do NOT
+# live in _PUBLIC_RESPONSE_CACHE. That dict is bounded at 4096 entries and
+# clears wholesale rather than evicting one entry (_public_cache_put), and
+# crawlers are 99.1% of traffic walking /f/ ids, each adding two keys — so
+# roughly 2,000 finding requests wipe it. Rebuilding a 98 MB index on the
+# request path because a bot walked past is not a cache. Each index gets its
+# own module-level dict, keyed on the data fingerprint, single-flight under
+# its own lock, and nothing else can evict it.
+
+
+def _fingerprint_index(cache: dict, lock: threading.Lock, user: str, build):
+    """Build `build(user)` once per content change. Blocking; call in a thread.
+
+    Single-flight: a crawl burst waits on one build instead of each request
+    starting its own. A None result is not stored, so a transient sqlite error
+    does not pin "no index" until the next publish.
+    """
+    fingerprint = _data_fingerprint(user)
+    cached = cache.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    with lock:
+        cached = cache.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        value = build(user)
+        if value is not None:
+            cache[user] = (fingerprint, value)
+        return value
+
+
+async def _offloaded_index(cache: dict, lock: threading.Lock, user: str, build):
+    """Same index, built off the event loop and behind the offload semaphore."""
+    fingerprint = _data_fingerprint(user)
+    cached = cache.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    async with _PUBLIC_OFFLOAD_SEMAPHORE:
+        cached = cache.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        return await asyncio.to_thread(_fingerprint_index, cache, lock, user, build)
+
+
+_FINDING_ID_INDEX_CACHE: dict[str, tuple[float, dict]] = {}
+_FINDING_ID_INDEX_LOCK = threading.Lock()
+
+
+def _finding_id_index_impl(user: str) -> dict | None:
+    """Every finding id the corpus holds, plus the highest one.
+
+    One indexed scan of the id column. Returns None on any doubt (no database,
+    no table, sqlite error) so the caller falls through to the real query
+    instead of inventing a 404.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    try:
+        if not _table_exists(conn, "findings"):
+            return None
+        ids = {int(row[0]) for row in conn.execute("SELECT id FROM findings")}
+    except sqlite3.Error as exc:
+        logger.warning("finding id index unavailable for %s: %s", user, exc)
+        return None
+    finally:
+        conn.close()
+    return {"ids": ids, "max_id": max(ids) if ids else 0}
+
+
+async def _finding_is_missing(user: str, finding_id: int) -> bool:
+    """Answer "no such finding" without paying for the finding page.
+
+    A dead /f/ link used to cost what a live one costs. _finding_impl walks the
+    related-paths graph before it can report the miss, and it queues on the
+    shared offload semaphore to do it, so a bad id behind a crawl burst waited
+    minutes and the site's 10s abort turned it into a 500 instead of a 404.
+
+    The id set is built once per content change. Ids above the highest one it
+    saw are treated as present: findings are appended with rising ids, and a
+    stale index must never 404 a finding that was just written.
+    """
+    if finding_id <= 0:
+        return True
+    index = await _offloaded_index(
+        _FINDING_ID_INDEX_CACHE, _FINDING_ID_INDEX_LOCK, user, _finding_id_index_impl
+    )
+    if not index:
+        return False
+    if finding_id > int(index["max_id"]):
+        return False
+    return finding_id not in index["ids"]
+
+
+# ── Related-graph index ──────────────────────────────────────────────────
+#
+# A cold /api/findings/{id} measured 2,118 sqlite statements on the 22k-finding
+# mirror (2026-08-26): get_related_paths_for_finding in orchestrator/site_graph.py
+# re-reads entity_graph, kg_edges and findings_embeddings for each of ~300
+# candidate findings, per request, plus four sqlite_master probes each. Every
+# statement is a round trip against the network-backed Fly volume, which is how
+# a page that computes in 83ms locally hangs past 30s in production. Semantic
+# mode ran only 2 queries but 1.07s of python, deserializing all 22,167
+# embeddings and building 22,166 public dicts per request. Both re-derive
+# corpus-constant data, so it moves into one index, built once per content
+# change on the _entity_issue_index recipe: module-level dict keyed on the data
+# fingerprint, single-flight under its own lock, immune to the
+# _PUBLIC_RESPONSE_CACHE wholesale clear.
+
+_RELATED_GRAPH_INDEX_CACHE: dict[str, tuple[float, dict]] = {}
+_RELATED_GRAPH_INDEX_LOCK = threading.Lock()
+
+# The walk considers the 300 most recent findings as candidates (LIMIT 300 in
+# site_graph). Precomputing python-float embedding lists for one extra row
+# covers every candidate set the walk can select, whichever source is excluded.
+_RELATED_CANDIDATE_WINDOW = 301
+
+
+def _related_graph_index_impl(user: str) -> dict | None:
+    """Everything the related-paths walk re-derives per candidate, built once.
+
+    Three bulk scans replace the per-request storm:
+
+    - entities: finding id -> the exact list _entities_for_finding returns.
+      The bulk scans run in primary-key order, which is the same within-finding
+      row order the per-id queries produce (the finding_id indexes list rowids
+      ascending per key), and the slug dedupe uses the same dict-insertion
+      logic, entity_graph rows before kg rows, so each list is value-identical
+      to the per-id result. Ref dicts are pooled by (name, kind) to keep
+      resident size down; the model copies them per call.
+    - emb_ids, emb_matrix: every stored embedding as one float32 matrix, rows
+      in ascending finding id order. np.frombuffer yields bit-identical float32
+      values to np.array(_deserialize_f32(blob), dtype=np.float32), so per-pair
+      np.dot scores match the full scan exactly.
+    - emb_lists: python-float lists for the candidate window. site_graph's
+      _dot_similarity runs python-double math over lists, and float32 tolist()
+      widening is exact, so dots over these come out bit-identical too.
+
+    Resident size on the 22k mirror, deep-measured: 34.0MB matrix + 10.5MB
+    entity refs + 3.7MB candidate lists + 0.2MB ids, 48MB total. Returns None
+    on any doubt (no database, sqlite error) so callers fall back to the
+    unindexed walk and a transient error is not pinned until the next publish.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    try:
+        by_finding: dict[int, dict[str, dict]] = {}
+        ref_pool: dict[tuple, dict] = {}
+
+        def _pooled_ref(name, kind) -> dict:
+            key = (name, kind)
+            ref = ref_pool.get(key)
+            if ref is None:
+                ref = _graph_entity_ref(name, kind)
+                ref_pool[key] = ref
+            return ref
+
+        if _table_exists(conn, "entity_graph"):
+            rows = conn.execute(
+                """
+                SELECT finding_id, entity_a, entity_a_type, entity_b, entity_b_type
+                FROM entity_graph
+                WHERE finding_id IS NOT NULL
+                ORDER BY id
+                """
+            )
+            for row in rows:
+                per = by_finding.setdefault(int(row["finding_id"]), {})
+                for name_key, type_key in (
+                    ("entity_a", "entity_a_type"),
+                    ("entity_b", "entity_b_type"),
+                ):
+                    ref = _pooled_ref(row[name_key], row[type_key] or "unknown")
+                    per[ref["slug"]] = ref
+        if _table_exists(conn, "kg_edges") and _table_exists(conn, "kg_entities"):
+            rows = conn.execute(
+                """
+                SELECT edge.finding_id AS finding_id,
+                       subject.canonical_name AS subject_name,
+                       subject.entity_type AS subject_type,
+                       object.canonical_name AS object_name,
+                       object.entity_type AS object_type
+                FROM kg_edges edge
+                JOIN kg_entities subject ON subject.id = edge.subject_id
+                JOIN kg_entities object ON object.id = edge.object_id
+                WHERE edge.finding_id IS NOT NULL
+                ORDER BY edge.id
+                """
+            )
+            for row in rows:
+                per = by_finding.setdefault(int(row["finding_id"]), {})
+                for name_key, type_key in (
+                    ("subject_name", "subject_type"),
+                    ("object_name", "object_type"),
+                ):
+                    ref = _pooled_ref(row[name_key], row[type_key] or "unknown")
+                    per[ref["slug"]] = ref
+        entities = {
+            finding_id: list(per.values()) for finding_id, per in by_finding.items()
+        }
+
+        emb_ids = np.empty(0, dtype=np.int64)
+        emb_matrix = np.empty((0, 0), dtype=np.float32)
+        emb_lists: dict[int, list[float]] = {}
+        if _table_exists(conn, "findings") and _table_exists(conn, "findings_embeddings"):
+            # One dimension per corpus. A blob of another size cannot join the
+            # matrix; the full scan would have crashed on it (semantic) or
+            # scored it 0.0 (blended), so absent is the safe reading. A length
+            # pass runs first so the matrix can be preallocated and filled row
+            # by row, each blob dropped as it lands; holding every blob plus a
+            # b"".join copy doubled the build's peak RSS on the 22k mirror.
+            size_counts: dict[int, int] = {}
+            for row in conn.execute(
+                """
+                SELECT length(e.embedding) AS nbytes
+                FROM findings f
+                JOIN findings_embeddings e ON e.finding_id = f.id
+                WHERE e.embedding IS NOT NULL AND length(e.embedding) > 0
+                """
+            ):
+                nbytes = int(row["nbytes"])
+                size_counts[nbytes] = size_counts.get(nbytes, 0) + 1
+            if len(size_counts) > 1:
+                logger.warning(
+                    "mixed embedding dimensions for %s (bytes -> rows: %s); "
+                    "only the majority dimension joins the semantic matrix, "
+                    "the rest score as absent",
+                    user,
+                    dict(sorted(size_counts.items())),
+                )
+            dim_bytes = 0
+            if size_counts:
+                dim_bytes = max(size_counts.items(), key=lambda item: item[1])[0]
+            if dim_bytes and dim_bytes % 4 == 0:
+                capacity = size_counts[dim_bytes]
+                matrix = np.empty((capacity, dim_bytes // 4), dtype=np.float32)
+                ids: list[int] = []
+                for row in conn.execute(
+                    """
+                    SELECT f.id AS finding_id, e.embedding AS embedding
+                    FROM findings f
+                    JOIN findings_embeddings e ON e.finding_id = f.id
+                    ORDER BY f.id
+                    """
+                ):
+                    blob = row["embedding"]
+                    if not blob or len(blob) != dim_bytes:
+                        continue
+                    if len(ids) == capacity:
+                        # The table grew between the two scans. The fingerprint
+                        # has moved with it, so the next request rebuilds and
+                        # picks up the tail; this build matches one taken a
+                        # moment earlier.
+                        break
+                    matrix[len(ids)] = np.frombuffer(blob, dtype=np.float32)
+                    ids.append(int(row["finding_id"]))
+                if len(ids) < capacity:
+                    matrix = matrix[: len(ids)].copy()
+                emb_ids = np.array(ids, dtype=np.int64)
+                emb_matrix = matrix
+
+        if len(emb_ids) and _table_exists(conn, "findings"):
+            recent = conn.execute(
+                """
+                SELECT id FROM findings
+                ORDER BY run_date DESC, created_at DESC
+                LIMIT ?
+                """,
+                (_RELATED_CANDIDATE_WINDOW,),
+            ).fetchall()
+            for row in recent:
+                finding_id = int(row["id"])
+                position = int(np.searchsorted(emb_ids, finding_id))
+                if position < len(emb_ids) and int(emb_ids[position]) == finding_id:
+                    emb_lists[finding_id] = emb_matrix[position].tolist()
+    except sqlite3.Error as exc:
+        logger.warning("related graph index unavailable for %s: %s", user, exc)
+        return None
+    finally:
+        conn.close()
+    return {
+        "entities": entities,
+        "emb_ids": emb_ids,
+        "emb_matrix": emb_matrix,
+        "emb_lists": emb_lists,
+    }
+
+
+def _related_graph_index(user: str) -> dict | None:
+    """The shared index, single-flight per content change. Blocking; every
+    caller is already inside a worker thread, and dashboard/warmup.py builds
+    it once at boot right after the entity index."""
+    return _fingerprint_index(
+        _RELATED_GRAPH_INDEX_CACHE,
+        _RELATED_GRAPH_INDEX_LOCK,
+        user,
+        _related_graph_index_impl,
+    )
+
+
+def _related_index_embedding_row(index: dict, finding_id: int) -> int | None:
+    ids = index["emb_ids"]
+    if not len(ids):
+        return None
+    position = int(np.searchsorted(ids, finding_id))
+    if position >= len(ids) or int(ids[position]) != finding_id:
+        return None
+    return position
+
+
+class _IndexedCorpusGraphModel(CorpusGraphReadModel):
+    """The corpus read model with its per-finding lookups served from the index.
+
+    get_finding and get_related_paths_for_finding run unchanged in the parent,
+    so the connector logic cannot drift from the unindexed walk; only the two
+    data accessors they call per candidate are overridden. Each call returns
+    fresh containers, matching the per-call dicts the parent builds from rows,
+    so nothing downstream can poison the shared index.
+    """
+
+    def __init__(self, conn: sqlite3.Connection, related_index: dict):
+        super().__init__(conn)
+        self._related_index = related_index
+
+    def _entities_for_finding(self, finding_id: int) -> list[dict]:
+        refs = self._related_index["entities"].get(int(finding_id))
+        if not refs:
+            return []
+        return [ref.copy() for ref in refs]
+
+    def _embedding_for_finding(self, finding_id: int) -> list[float]:
+        index = self._related_index
+        cached = index["emb_lists"].get(int(finding_id))
+        if cached is not None:
+            return list(cached)
+        row = _related_index_embedding_row(index, int(finding_id))
+        if row is None:
+            return []
+        return index["emb_matrix"][row].tolist()
+
+
+def _open_related_graph_model(
+    user: str,
+) -> tuple[sqlite3.Connection, CorpusGraphReadModel, dict | None] | None:
+    """A connection, a read model, and the index when it is available.
+
+    Only the finding and related handlers use this. When the index build
+    fails the plain per-request model answers instead, slower but whole.
+    """
+    conn = get_memory_db(user)
+    if conn is None:
+        return None
+    index = _related_graph_index(user)
+    if index is None:
+        return conn, CorpusGraphReadModel(conn), None
+    return conn, _IndexedCorpusGraphModel(conn, index), index
+
+
 def _finding_impl(finding_id: int, user: str) -> dict | None:
-    opened = _open_graph_model(user)
+    opened = _open_related_graph_model(user)
     if opened is None:
         return None
-    conn, model = opened
+    conn, model, _index = opened
     try:
         graph_finding = model.get_finding(finding_id)
         if graph_finding is not None:
@@ -808,8 +1190,22 @@ async def get_finding(
     user: str = Query("ramsay"),
 ):
     """Public: one finding by ID with whitelisted fields only."""
+    if finding_id <= 0:
+        # Positive ints only before an id can shape a cache path.
+        # normalize_slug("-5") strips to "5" and would alias another
+        # finding's disk entry.
+        return _finding_not_found()
+    if await _finding_is_missing(user, finding_id):
+        return _finding_not_found()
     value = await _cached_offload(
-        ("finding", user, finding_id), user, lambda: _finding_impl(finding_id, user)
+        ("finding", user, finding_id),
+        user,
+        lambda: _finding_impl(finding_id, user),
+        # Restart-durable: keyed by the data fingerprint plus the id, so a
+        # rebooted process reads the file back instead of replaying the walk.
+        disk_kind="findings",
+        disk_slug=str(finding_id),
+        disk_extra=f"id={finding_id}",
     )
     if value is None:
         return _finding_not_found()
@@ -835,10 +1231,20 @@ async def get_related_findings(
     """Public: source finding's related findings over stored embeddings."""
     if mode not in {"semantic", "blended"}:
         return JSONResponse(status_code=400, content={"error": "Unsupported related mode"})
+    if finding_id <= 0:
+        # Same positive-int gate as get_finding, ahead of any cache path.
+        return _finding_not_found()
+    if await _finding_is_missing(user, finding_id):
+        return _finding_not_found()
     value = await _cached_offload(
         ("related", user, finding_id, mode, limit),
         user,
         lambda: _related_findings_impl(finding_id, mode, limit, user),
+        # Restart-durable: fingerprint plus id plus mode plus limit. Mode and
+        # limit are in the filename too, so combinations never share a file.
+        disk_kind="related",
+        disk_slug=f"{finding_id}-{mode}-{limit}",
+        disk_extra=f"id={finding_id}:mode={mode}:limit={limit}",
     )
     if value is None:
         return _finding_not_found()
@@ -846,73 +1252,248 @@ async def get_related_findings(
 
 
 def _related_findings_impl(finding_id: int, mode: str, limit: int, user: str) -> dict | None:
-    opened = _open_graph_model(user)
+    opened = _open_related_graph_model(user)
     if opened is None:
         return None
 
-    conn, model = opened
+    conn, model, index = opened
     try:
         if mode == "blended":
             return model.get_related_paths_for_finding(finding_id, limit=limit)
+        if index is None:
+            return _related_semantic_scan(conn, finding_id, limit)
+        return _related_semantic_from_index(conn, index, finding_id, limit)
+    finally:
+        conn.close()
 
-        source = conn.execute(
-            """
-            SELECT f.id, f.title, e.embedding
-            FROM findings f
-            LEFT JOIN findings_embeddings e ON e.finding_id = f.id
-            WHERE f.id = ?
-            """,
-            (finding_id,),
-        ).fetchone()
-        if source is None:
-            return None
-        if source["embedding"] is None or limit == 0:
-            return {
-                "kind": "related",
-                "finding_id": finding_id,
-                "mode": "semantic",
-                "items": [],
-                "total": 0,
-            }
 
-        source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+def _related_semantic_from_index(
+    conn: sqlite3.Connection, index: dict, finding_id: int, limit: int
+) -> dict | None:
+    """mode=semantic over the shared embedding matrix.
+
+    Same per-pair float32 np.dot as the full scan, over bit-identical vectors,
+    so every score matches. Only the winning ids are then fetched and shaped;
+    the full scan built a public dict for all 22,166 non-source findings per
+    request, which was 0.87s of its 1.07s (regex redaction over every title
+    and summary in the corpus). A source whose stored dimension does not match
+    the corpus matrix scores nothing and returns the empty payload; the full
+    scan raised on that same broken row.
+    """
+    source = conn.execute(
+        """
+        SELECT f.id, f.title, e.embedding
+        FROM findings f
+        LEFT JOIN findings_embeddings e ON e.finding_id = f.id
+        WHERE f.id = ?
+        """,
+        (finding_id,),
+    ).fetchone()
+    if source is None:
+        return None
+    if source["embedding"] is None or limit == 0:
+        return {
+            "kind": "related",
+            "finding_id": finding_id,
+            "mode": "semantic",
+            "items": [],
+            "total": 0,
+        }
+
+    source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+    emb_ids = index["emb_ids"]
+    emb_matrix = index["emb_matrix"]
+    scored: list[tuple[float, int]] = []
+    if emb_matrix.shape[0] and emb_matrix.shape[1] == source_vec.shape[0]:
+        for row in range(emb_matrix.shape[0]):
+            candidate_id = int(emb_ids[row])
+            if candidate_id == finding_id:
+                continue
+            score = float(np.dot(source_vec, emb_matrix[row]))
+            scored.append((round(max(0.0, score), 4), candidate_id))
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    top = scored[:limit]
+
+    items: list[dict] = []
+    if top:
+        placeholders = ",".join("?" for _ in top)
         rows = conn.execute(
-            """
-            SELECT f.id, f.run_date, f.agent, f.title, f.summary, f.importance,
-                   f.category, f.source_url, f.source_name, f.created_at, e.embedding
-            FROM findings f
-            JOIN findings_embeddings e ON e.finding_id = f.id
-            WHERE f.id != ?
+            f"""
+            SELECT id, run_date, agent, title, summary, importance, category,
+                   source_url, source_name, created_at
+            FROM findings
+            WHERE id IN ({placeholders})
             """,
-            (finding_id,),
+            [candidate_id for _, candidate_id in top],
         ).fetchall()
-
-        scored = []
-        for row in rows:
-            emb = np.array(_deserialize_f32(row["embedding"]), dtype=np.float32)
-            score = float(np.dot(source_vec, emb))
+        by_id = {int(row["id"]): row for row in rows}
+        for rounded, candidate_id in top:
+            row = by_id.get(candidate_id)
+            if row is None:
+                continue
             public = _public_finding(row)
             public.update({
-                "score": round(max(0.0, score), 4),
-                "similarity": round(max(0.0, score), 4),
+                "score": rounded,
+                "similarity": rounded,
                 "mode": "semantic",
                 "relationship": "semantic_similarity",
                 "reason": "Embedding similarity over stored MindPattern findings.",
                 "target_url": f"/f/{public['id']}",
             })
-            scored.append(public)
+            items.append(public)
+    return {
+        "kind": "related",
+        "finding_id": finding_id,
+        "mode": "semantic",
+        "items": items,
+        "total": len(items),
+    }
 
-        scored.sort(key=lambda item: (-item["score"], item["id"]))
-        items = scored[:limit]
+
+def _related_semantic_scan(
+    conn: sqlite3.Connection, finding_id: int, limit: int
+) -> dict | None:
+    """The pre-index semantic path, kept verbatim.
+
+    Serves two jobs: the fallback when the index build fails, and the
+    byte-identity reference tests compare the indexed path against.
+    """
+    source = conn.execute(
+        """
+        SELECT f.id, f.title, e.embedding
+        FROM findings f
+        LEFT JOIN findings_embeddings e ON e.finding_id = f.id
+        WHERE f.id = ?
+        """,
+        (finding_id,),
+    ).fetchone()
+    if source is None:
+        return None
+    if source["embedding"] is None or limit == 0:
         return {
             "kind": "related",
             "finding_id": finding_id,
             "mode": "semantic",
-            "items": items,
-            "total": len(items),
+            "items": [],
+            "total": 0,
         }
+
+    source_vec = np.array(_deserialize_f32(source["embedding"]), dtype=np.float32)
+    rows = conn.execute(
+        """
+        SELECT f.id, f.run_date, f.agent, f.title, f.summary, f.importance,
+               f.category, f.source_url, f.source_name, f.created_at, e.embedding
+        FROM findings f
+        JOIN findings_embeddings e ON e.finding_id = f.id
+        WHERE f.id != ?
+        """,
+        (finding_id,),
+    ).fetchall()
+
+    scored = []
+    for row in rows:
+        emb = np.array(_deserialize_f32(row["embedding"]), dtype=np.float32)
+        score = float(np.dot(source_vec, emb))
+        public = _public_finding(row)
+        public.update({
+            "score": round(max(0.0, score), 4),
+            "similarity": round(max(0.0, score), 4),
+            "mode": "semantic",
+            "relationship": "semantic_similarity",
+            "reason": "Embedding similarity over stored MindPattern findings.",
+            "target_url": f"/f/{public['id']}",
+        })
+        scored.append(public)
+
+    scored.sort(key=lambda item: (-item["score"], item["id"]))
+    items = scored[:limit]
+    return {
+        "kind": "related",
+        "finding_id": finding_id,
+        "mode": "semantic",
+        "items": items,
+        "total": len(items),
+    }
+
+
+def _entities_missing_payload(limit: int, offset: int) -> dict:
+    return {
+        "kind": "entities",
+        "status": "missing",
+        "items": [],
+        "total": 0,
+        "limit": limit,
+        "offset": offset,
+        "has_more": False,
+        "graph_sources": [],
+        "degraded_reasons": ["missing memory database"],
+    }
+
+
+_ENTITY_LIST_INDEX_CACHE: dict[str, tuple[float, dict]] = {}
+_ENTITY_LIST_INDEX_LOCK = threading.Lock()
+
+
+def _entity_list_index_impl(user: str) -> dict | None:
+    """Every corpus entity, ranked, in one pass.
+
+    CorpusGraphReadModel.list_entities ranks the whole corpus before it
+    paginates: a LIKE over 13k kg_entities plus a UNION ALL + GROUP BY over
+    5.8k entity_graph rows, then a Python sort of ~19k dicts. Paging cost that
+    per page and it ran on the event loop, so /api/entities measured 22.4s live
+    and stalled /healthz with it. Rank once, slice in memory.
+    """
+    opened = _open_graph_model(user)
+    if opened is None:
+        return None
+    conn, model = opened
+    try:
+        # A limit large enough that the model's own items[offset:offset+limit]
+        # is the whole ranked list. Paging happens here instead.
+        index = model.list_entities(q="", limit=1_000_000, offset=0)
     finally:
         conn.close()
+    return index
+
+
+def _entities_page_impl(user: str, q: str, limit: int, offset: int) -> dict:
+    """One page of the ranked entity list. Blocking; call in a thread.
+
+    The filter runs here rather than after the await: matching `q` against all
+    19,092 ranked items is a Python loop, and running it on the event loop was
+    the thing this endpoint was moved off the loop to avoid.
+    """
+    index = _fingerprint_index(
+        _ENTITY_LIST_INDEX_CACHE, _ENTITY_LIST_INDEX_LOCK, user, _entity_list_index_impl
+    )
+    if index is None:
+        return _entities_missing_payload(limit, offset)
+
+    items = index.get("items") or []
+    if q:
+        # Same predicate as CorpusGraphReadModel.list_entities: the name has to
+        # contain the raw query AND the slug has to contain the slugified one.
+        needle = q.lower()
+        query_slug = _safe_entity_slug(q)
+        items = [
+            item
+            for item in items
+            if needle in str(item.get("name") or "").lower()
+            and query_slug in str(item.get("slug") or "")
+        ]
+
+    total = len(items)
+    return {
+        "kind": "entities",
+        "status": index.get("status", "ready"),
+        "items": items[offset: offset + limit],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + limit < total,
+        "graph_sources": index.get("graph_sources", []),
+        "degraded_reasons": index.get("degraded_reasons", []),
+    }
 
 
 @router.get("/api/entities")
@@ -923,24 +1504,13 @@ async def list_entities(
     user: str = Query("ramsay"),
 ):
     """Public: paginated corpus entity index for dynamic entity pages."""
-    opened = _open_graph_model(user)
-    if opened is None:
-        return {
-            "kind": "entities",
-            "status": "missing",
-            "items": [],
-            "total": 0,
-            "limit": limit,
-            "offset": offset,
-            "has_more": False,
-            "graph_sources": [],
-            "degraded_reasons": ["missing memory database"],
-        }
-    conn, model = opened
-    try:
-        return model.list_entities(q=q, limit=limit, offset=offset)
-    finally:
-        conn.close()
+    # The page response is small and cheap to rebuild, so it can live in the
+    # evictable response cache. The ranked index behind it cannot, and does not.
+    return await _cached_offload(
+        ("entities", user, q, limit, offset),
+        user,
+        lambda: _entities_page_impl(user, q, limit, offset),
+    )
 
 
 @router.get("/api/feed")
@@ -1829,16 +2399,68 @@ def _story_from_structured_issue_slug(*, story_slug: str, user: str) -> dict | N
     return _story_from_issue(issue, story_slug)
 
 
-def _public_story_files(user: str) -> list[Path]:
+_STORY_FILE_INDEX: dict[str, tuple[float, list[Path], dict[str, Path]]] = {}
+
+
+def _reset_story_file_index() -> None:
+    """Drop the story-file memo. For tests and for a sync wanting a fresh read."""
+    _STORY_FILE_INDEX.clear()
+
+
+def _build_story_file_index(user: str) -> tuple[list[Path], dict[str, Path]]:
     base = (REPORTS_DIR / user / "site-stories").resolve()
     try:
         base.relative_to(REPORTS_DIR.resolve())
     except ValueError:
-        return []
+        return [], {}
     if not base.exists():
-        return []
-    files = [path for path in base.rglob("*.json") if path.is_file()]
-    return sorted(files, key=lambda path: path.as_posix(), reverse=True)
+        return [], {}
+    files = sorted(
+        (path for path in base.rglob("*.json") if path.is_file()),
+        key=lambda path: path.as_posix(),
+        reverse=True,
+    )
+    # First wins, matching the newest-first order the listing already promised.
+    by_slug: dict[str, Path] = {}
+    for path in files:
+        by_slug.setdefault(path.stem, path)
+    return files, by_slug
+
+
+def _story_file_entry(user: str) -> tuple[list[Path], dict[str, Path]]:
+    """The story-file listing and its slug index, rebuilt once per publish.
+
+    rglob over reports/<user>/site-stories walks 3,468 files locally and more
+    on the Fly volume, on network-backed storage. _resolve_story_response called
+    this per request and then scanned the result linearly for one stem, which
+    is why /api/stories/{slug} hung past 60s for stories whose JSON was sitting
+    right there, and why the warm-up reported gaps in story_details every run.
+    """
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return [], {}
+
+    fingerprint = _story_sources_fingerprint(safe_user)
+    cached = _STORY_FILE_INDEX.get(safe_user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1], cached[2]
+
+    files, by_slug = _build_story_file_index(safe_user)
+    _STORY_FILE_INDEX[safe_user] = (fingerprint, files, by_slug)
+    return files, by_slug
+
+
+def _public_story_files(user: str) -> list[Path]:
+    return _story_file_entry(user)[0]
+
+
+def _story_file_for_slug(user: str, story_slug: str) -> Path | None:
+    """The file backing one slug, or None. O(1) against the memoized index."""
+    try:
+        normalized = normalize_slug(story_slug)
+    except ValueError:
+        return None
+    return _story_file_entry(user)[1].get(normalized)
 
 
 def _public_story_source_refs(items: list[dict]) -> list[dict]:
@@ -2110,11 +2732,24 @@ _SECTION_MAP_CACHE: dict[tuple[str, str], dict[str, str]] = {}
 
 
 def _story_sources_fingerprint(user: str) -> float:
-    """Newest mtime across the report + site-story trees feeding the story list."""
-    newest = 0.0
+    """Newest mtime across the report + site-story trees feeding the story list.
+
+    Memoized for _FINGERPRINT_TTL seconds. Six handlers call this before their
+    own cache lookup, and the uncached form is an iterdir() plus a stat on each
+    of 53 date directories, on the event loop, against a network-backed Fly
+    volume. That is why a warm story detail still took 7.7s after the
+    _data_fingerprint memo landed: this is a second door onto the same sweep.
+    """
     safe_user = _safe_user(user)
     if safe_user is None:
-        return newest
+        return 0.0
+
+    now = time.monotonic()
+    cached = _SOURCES_FINGERPRINT_CACHE.get(safe_user)
+    if cached is not None and now - cached[0] < _FINGERPRINT_TTL:
+        return cached[1]
+
+    newest = 0.0
     user_root = REPORTS_DIR / safe_user
     stories_root = user_root / "site-stories"
     roots = [user_root, stories_root]
@@ -2127,21 +2762,76 @@ def _story_sources_fingerprint(user: str) -> float:
             newest = max(newest, root.stat().st_mtime)
         except OSError:
             continue
+
+    _SOURCES_FINGERPRINT_CACHE[safe_user] = (now, newest)
     return newest
+
+
+# Recomputing the fingerprint per request meant iterdir() plus a stat on every
+# site-stories date directory, on the event loop, against a network-backed Fly
+# volume. On 2026-08-26 that made /api/reports take 8.3s and /healthz 37s, and
+# because the site calls getStats() and getReports() through contentVersion()
+# before every detail fetch, it blew the site's 10s abort and returned 500 with
+# no share card on 70% of cold story pages.
+#
+# The value only decides when to drop a response cache, and the thing that
+# moves it is a once-a-day sync. A few seconds of staleness is free.
+_FINGERPRINT_TTL = 5.0
+_FINGERPRINT_CACHE: dict[str, tuple[float, float]] = {}
+_SOURCES_FINGERPRINT_CACHE: dict[str, tuple[float, float]] = {}
+
+
+def _reset_fingerprint_cache() -> None:
+    """Drop both memos. For tests, and for a sync that wants an immediate read."""
+    _FINGERPRINT_CACHE.clear()
+    _SOURCES_FINGERPRINT_CACHE.clear()
 
 
 def _data_fingerprint(user: str) -> float:
     """Newest mtime across everything public endpoints read: the report and
     site-story trees plus memory.db. The nightly sync moves it; every public
-    response cache below invalidates in one step."""
-    newest = _story_sources_fingerprint(user)
+    response cache below invalidates in one step.
+
+    Memoized for _FINGERPRINT_TTL seconds. See the note above.
+    """
     safe_user = _safe_user(user)
-    if safe_user is not None:
-        try:
-            newest = max(newest, (DATA_DIR / safe_user / "memory.db").stat().st_mtime)
-        except OSError:
-            pass
+    if safe_user is None:
+        return 0.0
+
+    now = time.monotonic()
+    cached = _FINGERPRINT_CACHE.get(safe_user)
+    if cached is not None and now - cached[0] < _FINGERPRINT_TTL:
+        return cached[1]
+
+    newest = _story_sources_fingerprint(safe_user)
+    try:
+        newest = max(newest, (DATA_DIR / safe_user / "memory.db").stat().st_mtime)
+    except OSError:
+        pass
+
+    _FINGERPRINT_CACHE[safe_user] = (now, newest)
     return newest
+
+
+def _site_cache_root(user: str) -> Path | None:
+    """Root of the on-disk response cache for one user.
+
+    DATA_DIR/<user>/site-cache, which sits on the Fly volume in production, so
+    a restarted process finds the finished responses the last one wrote.
+    DATA_DIR is read per call on purpose: tests repoint it at a tmp tree and
+    the cache follows.
+    """
+    safe_user = _safe_user(user)
+    if safe_user is None:
+        return None
+    return DATA_DIR / safe_user / "site-cache"
+
+
+def _site_cache_path(user: str, kind: str, slug: str) -> Path | None:
+    root = _site_cache_root(user)
+    if root is None:
+        return None
+    return site_cache.cache_path(root, kind, slug)
 
 
 _PUBLIC_RESPONSE_CACHE: dict[tuple, tuple[float, object]] = {}
@@ -2162,16 +2852,36 @@ def _public_cache_put(key: tuple, fingerprint: float, value) -> None:
     _PUBLIC_RESPONSE_CACHE[key] = (fingerprint, value)
 
 
-async def _cached_offload(key: tuple, user: str, compute):
+async def _cached_offload(
+    key: tuple,
+    user: str,
+    compute,
+    *,
+    disk_kind: str | None = None,
+    disk_slug: str | None = None,
+    disk_extra: str = "",
+):
     """Run a blocking `compute` off the event loop, once per content change.
 
     The finished value (plain data, never a Response object) is cached against
     the data fingerprint. Misses queue on a small semaphore so a crawl burst
-    can never starve the loop — /healthz keeps answering no matter what."""
+    can never starve the loop — /healthz keeps answering no matter what.
+
+    With disk_kind and disk_slug set, the value also persists to the site
+    cache on the volume, keyed by the same data fingerprint (plus disk_extra
+    for request parameters like limit), so a restarted process reads the file
+    back instead of recomputing. Read order: memory, then disk (promoted to
+    memory on hit), then compute, which writes both. Disk traffic stays inside
+    the worker thread, off the event loop."""
     fingerprint = _data_fingerprint(user)
     cached = _public_cache_get(key, fingerprint)
     if cached is not None:
         return cached[1]
+    disk_path: Path | None = None
+    disk_key = ""
+    if disk_kind is not None and disk_slug is not None:
+        disk_path = _site_cache_path(user, disk_kind, disk_slug)
+        disk_key = f"{fingerprint!r}:{disk_extra}" if disk_extra else repr(fingerprint)
     async with _PUBLIC_OFFLOAD_SEMAPHORE:
         cached = _public_cache_get(key, fingerprint)
         if cached is not None:
@@ -2181,8 +2891,15 @@ async def _cached_offload(key: tuple, user: str, compute):
             # Cache-put happens inside the worker thread: threads outlive a
             # client disconnect, so an impatient reader still warms the cache
             # and their retry is instant. (Awaiting coroutines get cancelled.)
+            if disk_path is not None:
+                body = site_cache.read_body(disk_path, disk_key)
+                if body is not None:
+                    _public_cache_put(key, fingerprint, body)
+                    return body
             value = compute()
             _public_cache_put(key, fingerprint, value)
+            if disk_path is not None and isinstance(value, dict):
+                site_cache.write_body(disk_path, disk_key, value)
             return value
 
         return await asyncio.to_thread(_compute_and_store)
@@ -2690,21 +3407,59 @@ _STORY_ENRICH_SEMAPHORE = asyncio.Semaphore(4)
 def _resolve_story_response(
     story_slug: str, stories: list[dict], *, user: str, fingerprint: float
 ) -> dict | None:
-    """Locate + enrich one story, entirely off the event loop; caches the result."""
+    """Locate + enrich one story, entirely off the event loop; caches the result.
+
+    The finished response goes to memory and, when the story has a backing
+    JSON file, to the site cache on the volume keyed by that file's stat.
+    Structured-issue fallback stories have no single source file, so they stay
+    memory-only and pay recompute after a restart."""
     story = None
-    for path in _public_story_files(user):
-        if path.stem != story_slug:
-            continue
-        story = _load_public_story_file(path)
-        if story is not None:
-            break
+    disk_key = None
+    source_path = _story_file_for_slug(user, story_slug)
+    if source_path is not None:
+        # Key the envelope by the stat taken BEFORE the read. Story JSONs are
+        # rewritten in place on the live box (sync.py uploads a tar the server
+        # extracts onto the volume), so a replace can land between this stat
+        # and the write below. Keyed pre-read, that interleaving leaves a key
+        # the file's next stat mismatches, one recompute, and a healed entry.
+        # Keyed post-read it left the OLD body under the NEW file's key, an
+        # entry that read as fresh on every disk hit and survived restarts.
+        disk_key = site_cache.file_key(source_path)
+        story = _load_public_story_file(source_path)
     if story is None:
         story = _story_from_structured_issue_slug(story_slug=story_slug, user=user)
     if story is None:
         return None
     enriched = _story_with_graph_related(story, stories, user=user)
     _STORY_RESPONSE_CACHE[(user, story_slug)] = (fingerprint, enriched)
+    if source_path is not None and disk_key is not None:
+        disk_path = _site_cache_path(user, "stories", story_slug)
+        if disk_path is not None:
+            site_cache.write_body(disk_path, disk_key, enriched)
     return enriched
+
+
+def _story_response_from_disk(user: str, story_slug: str, fingerprint: float) -> dict | None:
+    """Disk copy of one finished story response, promoted to memory on a hit.
+
+    Blocking (story-file index plus one small read); callers run it in a
+    thread. The invalidation key is the source file's own stat, so a restart
+    pays a directory walk and one file read instead of the full corpus rebuild
+    that _all_public_stories does (measured 5,471ms cold)."""
+    source_path = _story_file_for_slug(user, story_slug)
+    if source_path is None:
+        return None
+    disk_key = site_cache.file_key(source_path)
+    if disk_key is None:
+        return None
+    disk_path = _site_cache_path(user, "stories", story_slug)
+    if disk_path is None:
+        return None
+    body = site_cache.read_body(disk_path, disk_key)
+    if body is None:
+        return None
+    _STORY_RESPONSE_CACHE[(user, story_slug)] = (fingerprint, body)
+    return body
 
 
 @router.get("/api/stories/{slug}")
@@ -2729,6 +3484,11 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     cached = _STORY_RESPONSE_CACHE.get((user, story_slug))
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
+    # Disk before the corpus rebuild: right after a restart the memory caches
+    # are empty but the volume still holds the finished responses.
+    from_disk = await asyncio.to_thread(_story_response_from_disk, user, story_slug, fingerprint)
+    if from_disk is not None:
+        return from_disk
     stories = await _all_public_stories(user)
     async with _STORY_ENRICH_SEMAPHORE:
         cached = _STORY_RESPONSE_CACHE.get((user, story_slug))
@@ -2849,13 +3609,98 @@ async def get_entity(slug: str, user: str = Query("ramsay"), limit: int = Query(
         ("entity", user, entity_slug, limit),
         user,
         lambda: _entity_impl(entity_slug, limit, user),
+        # Restart-durable: the disk entry is keyed by the same data
+        # fingerprint the entity issue index uses, so a reboot reads the file
+        # back instead of rebuilding the index and rerunning the graph scans.
+        disk_kind="entities",
+        disk_slug=entity_slug,
+        disk_extra=f"limit={limit}",
     )
     if value is None:
         return JSONResponse(status_code=404, content={"error": "Entity not found"})
     return value
 
 
+# slug -> the issues that name it, newest first. Built once per content change.
+#
+# _entity_impl used to walk every issue date itself and ask each parsed issue
+# whether it mentioned this one entity. The parse is memoized, but the walk is
+# not: answering one /e/ page touched all 185 issue dates, and the 84 pages the
+# sitemap advertises meant 15,540 file reads. On the Fly volume the first entity
+# request of a boot held a compute thread long enough that /healthz stopped
+# answering and the warm-up sat on its first slug for twenty minutes. One
+# request now builds the whole map and the other 83 read a dict. Measured on
+# the real corpus: 2.9s to build cold, 0.03s once the structured-issue parses
+# are already memoized, then 23-62ms per entity page.
+_ENTITY_ISSUE_INDEX_CACHE: dict[str, tuple[float, dict[str, dict]]] = {}
+_ENTITY_ISSUE_INDEX_LOCK = threading.Lock()
+
+
+def _build_entity_issue_index(user: str) -> dict[str, dict]:
+    index: dict[str, dict] = {}
+    for date in _structured_issue_dates(user=user):
+        issue = _structured_issue_from_report_file(date=date, user=user)
+        if issue is None:
+            continue
+        stories_by_slug: dict[str, list[dict]] = {}
+        for story in issue.get("story_units") or []:
+            for slug in story.get("entity_ids") or []:
+                stories_by_slug.setdefault(str(slug), []).append(story)
+        for entity in issue.get("entities") or []:
+            slug = entity.get("slug")
+            if not slug:
+                continue
+            entry = index.setdefault(str(slug), {"name": "", "issues": []})
+            entry["name"] = entry["name"] or entity.get("name", "")
+            entry["issues"].append({
+                "date": date,
+                "title": issue.get("title", ""),
+                "story_units": stories_by_slug.get(str(slug), []),
+            })
+    return index
+
+
+def _entity_issue_index(user: str) -> dict[str, dict]:
+    """slug -> {"name", "issues": [{date, title, story_units}]}, newest issue first.
+
+    Single-flight under a lock, the same shape as
+    _cached_story_embedding_index: a crawl burst waits on one build instead of
+    each request starting its own. The story_unit dicts are the ones already
+    held by _STRUCTURED_ISSUE_CACHE, referenced not copied.
+
+    Blocking. Every caller is already inside a worker thread; dashboard/warmup.py
+    builds it once at boot, right after the structured-issue step has memoized
+    the parses it reads.
+    """
+    fingerprint = _data_fingerprint(user)
+    cached = _ENTITY_ISSUE_INDEX_CACHE.get(user)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+    with _ENTITY_ISSUE_INDEX_LOCK:
+        cached = _ENTITY_ISSUE_INDEX_CACHE.get(user)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        index = _build_entity_issue_index(user)
+        _ENTITY_ISSUE_INDEX_CACHE[user] = (fingerprint, index)
+        return index
+
+
 def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
+    # The live graph answers this page, not the published dossier.
+    #
+    # An earlier pass read the dossier instead, on the theory that the three
+    # expression scans below were what put /api/entities/{slug} past the site's
+    # 10s abort. Measured on the real corpus, they are not: the whole live path
+    # is 23-62ms per slug once _entity_issue_index is warm, and the walk of 185
+    # issue files that the index replaced is what cost seconds. The dossier
+    # shortcut saved ~25ms on a value that is cached per content change anyway,
+    # and it cost the numbers on the page: run_dossier_generation rewrites only
+    # the top 25 entities per run, so 61 of the 86 files on disk are frozen (31
+    # of them dated July, oldest 2026-07-02). Reading them shrank the header
+    # counts on 83 of 86 entity pages (atlassian Edges 41 -> 1, arxiv Sources
+    # 83 -> 64), emptied the relationships section on 20 of them, and rendered
+    # opus-4-7 as "Opus 4 7" because that file predates the punctuated
+    # canonical name in kg_entities.
     graph_detail: dict | None = None
     opened = _open_graph_model(user)
     if opened is not None:
@@ -2866,31 +3711,22 @@ def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
             conn.close()
 
     corpus = _public_corpus_entity(user, entity_slug, limit=limit)
+
     story_units: list[dict] = []
     source_by_url: dict[str, dict] = {}
     issue_dates: list[str] = []
     entity_name = ""
     seen_story_ids: set[str] = set()
 
-    for date in _structured_issue_dates(user=user):
+    entry = _entity_issue_index(user).get(entity_slug) or {}
+    for appearance in entry.get("issues") or []:
+        date = appearance["date"]
         if date in issue_dates:
             continue
-        issue = _structured_issue_from_report_file(date=date, user=user)
-        if issue is None:
-            continue
-
-        entity = next(
-            (item for item in issue["entities"] if item.get("slug") == entity_slug),
-            None,
-        )
-        if entity is None:
-            continue
-        entity_name = entity_name or entity.get("name", "")
+        entity_name = entity_name or entry.get("name", "")
         issue_dates.append(date)
 
-        for story in issue["story_units"]:
-            if entity_slug not in story.get("entity_ids", []):
-                continue
+        for story in appearance["story_units"]:
             if story["id"] in seen_story_ids:
                 continue
             seen_story_ids.add(story["id"])
@@ -2898,7 +3734,7 @@ def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
                 "id": story["id"],
                 "slug": story["slug"],
                 "issue_date": story["issue_date"],
-                "issue_title": issue["title"],
+                "issue_title": appearance["title"],
                 "section_id": story["section_id"],
                 "title": story["title"],
                 "summary": story["summary"],
@@ -2957,6 +3793,10 @@ def _entity_impl(entity_slug: str, limit: int, user: str) -> dict | None:
     graph_sources = sorted({"newsletter_issues"} if story_units else set())
     graph_sources = sorted(set(graph_sources) | set(corpus["graph_sources"]) | set(graph_sources_from_model))
     source_trail = list(source_by_url.values())
+    # Counts come from the live graph only. A published dossier's counts are a
+    # snapshot of whatever the graph held the last time that entity made the
+    # nightly top 25, which for most slugs is weeks ago, so folding them in
+    # here would put a July number under a today headline.
     counts = {
         "story_units": len(story_units),
         "findings": max(len(merged_findings), int(graph_counts.get("findings") or 0)),

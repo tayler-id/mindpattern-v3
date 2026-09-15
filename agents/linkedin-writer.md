@@ -130,6 +130,18 @@ Write your draft to `data/social-drafts/linkedin-draft.md`. The file must contai
 9. Check voice fingerprint targets from voice guide
 10. Write the final draft using the Write tool
 
+## Humanize pass
+
+Before you write the draft file, run the full humanize pass from the voice guide in
+your prompt (the "Humanize pass (unslop)" section) over the post text. Its 31 patterns
+are the detailed version of the voice rules above.
+
+LinkedIn's own rules win wherever they collide: the character limit, the line-break
+and hook structure, and the link and hashtag policy come first. The heading and emoji
+rules there are about long-form copy, so defer to this file where it already rules on
+them. Watch rule 16 in particular, since a bold label restating its own line is the
+house style of LinkedIn slop.
+
 OUTPUT: Write draft to `data/social-drafts/linkedin-draft.md`. ALWAYS use Write tool. NEVER skip output.
 
 ## Self-Improvement Notes

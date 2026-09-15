@@ -44,10 +44,20 @@ CREATE TABLE IF NOT EXISTS events (
     ref_domain TEXT NOT NULL DEFAULT '',
     anon_id TEXT NOT NULL DEFAULT '',
     value INTEGER NOT NULL DEFAULT 0,
-    owner INTEGER NOT NULL DEFAULT 0
+    owner INTEGER NOT NULL DEFAULT 0,
+    -- 1 when the client could persist its reader id, 0 when it could not and
+    -- will mint a fresh one on the next page load. On 2026-08-26 the site
+    -- reported 757 unique readers at 1.02 page views each, with fewer story
+    -- views than readers, which is what per-page-load identity looks like.
+    -- Mixing the two into one "unique readers" figure hides which it was.
+    durable INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_events_type_ts ON events(type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_target ON events(target, type, ts);
+-- Answers "has this anon_id been seen before timestamp T" with one index seek,
+-- which is what separates a new reader from a returning one. Without it the
+-- new/returning split on /site-analytics degrades to a table scan per reader.
+CREATE INDEX IF NOT EXISTS idx_events_anon_ts ON events(anon_id, ts);
 """
 
 _ANON_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -71,11 +81,17 @@ def open_events_db(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
-    try:  # additive migration for databases created before the owner flag
-        conn.execute("ALTER TABLE events ADD COLUMN owner INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    # Additive migrations for databases written before a column existed. The
+    # Fly volume holds one, so these must never drop or rewrite rows.
+    for column, ddl in (
+        ("owner", "ALTER TABLE events ADD COLUMN owner INTEGER NOT NULL DEFAULT 0"),
+        ("durable", "ALTER TABLE events ADD COLUMN durable INTEGER NOT NULL DEFAULT 0"),
+    ):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
     return conn
 
 
@@ -105,9 +121,12 @@ def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
     # via ?mp_owner=1. Unauthenticated by design: worst case someone hides
     # their own events from the counts, which stays privacy-safe.
     owner = 1 if payload.get("owner") in (1, "1", True) else 0
+    # Absent means not durable. A client that does not report the flag is one
+    # we cannot vouch for, and counting it as durable would defeat the split.
+    durable = 1 if payload.get("durable") in (1, "1", True) else 0
     conn.execute(
-        "INSERT INTO events (ts, type, target, path, ref_domain, anon_id, value, owner)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events (ts, type, target, path, ref_domain, anon_id, value, owner, durable)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             int(time.time()),
             event_type,
@@ -117,6 +136,7 @@ def record_event(conn: sqlite3.Connection, payload: dict) -> bool:
             anon,
             value,
             owner,
+            durable,
         ),
     )
     conn.commit()

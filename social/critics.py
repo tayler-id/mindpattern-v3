@@ -9,12 +9,13 @@ The expeditor is the final quality gate across all platforms.
 """
 
 import json
+import re
 import logging
 import os
 import tempfile
 from pathlib import Path
 
-from orchestrator.agents import run_agent_with_files
+from orchestrator.agents import _is_bare_api_error, run_agent_with_files
 from policies.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,50 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
 # ── Blind critic review ─────────────────────────────────────────────────
+
+
+_APPROVED_RE = re.compile(r"(?<!not )\bAPPROVED\b", re.IGNORECASE)
+_NEGATED_APPROVAL_RE = re.compile(r"\bnot\s+approved\b", re.IGNORECASE)
+_REVISE_RE = re.compile(r"\bREVISE\b", re.IGNORECASE)
+_JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _verdict_from_text(text: str) -> dict | None:
+    """Recover a critic verdict from prose or JSON printed to stdout.
+
+    Returns None when nothing usable is there, which keeps the old failure
+    path. Ambiguity resolves to REVISE, never APPROVED: a wrong REVISE costs
+    one more iteration, a wrong APPROVED publishes an unreviewed post.
+    """
+    text = (text or "").strip()
+    if not text or _is_bare_api_error(text):
+        return None
+
+    # The model may have printed the exact JSON it was told to write.
+    match = _JSON_BLOCK_RE.search(text)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and parsed.get("verdict"):
+            return {
+                "verdict": ("APPROVED"
+                            if str(parsed["verdict"]).upper() == "APPROVED"
+                            else "REVISE"),
+                "feedback": parsed.get("feedback", ""),
+                "scores": parsed.get("scores", {}),
+            }
+
+    approved = _APPROVED_RE.search(text)
+    revise = _REVISE_RE.search(text) or _NEGATED_APPROVAL_RE.search(text)
+    if not approved and not revise:
+        return None
+
+    # Both words present means the model was quoting the rules at us rather
+    # than ruling, so take the safe side.
+    verdict = "APPROVED" if approved and not revise else "REVISE"
+    return {"verdict": verdict, "feedback": text, "scores": {}}
 
 
 def review_draft(platform: str, draft_text: str) -> dict:
@@ -117,7 +162,20 @@ Write ONLY the JSON file. No other files, no other output.
         output_file=output_file,
         allowed_tools=["Read", "Write", "Glob", "Grep"],
         task_type="critic",
+        stdout_on_missing=True,
     )
+
+    # The agent answered in prose instead of writing the file. Its verdict is
+    # still a verdict, and throwing it away sent the writer three rounds of
+    # "the critic failed" as its revision notes.
+    if isinstance(result, dict) and "_stdout" in result:
+        salvaged = _verdict_from_text(result["_stdout"])
+        if salvaged:
+            logger.warning(
+                "Critic for %s wrote no verdict file; salvaged %s from stdout",
+                platform, salvaged["verdict"],
+            )
+        result = salvaged
 
     # Agent may return None (no output), a raw string (malformed JSON file),
     # or a non-dict JSON value. Normalise to dict or treat as failure.
@@ -171,10 +229,22 @@ def deterministic_validate(platform: str, content: str) -> list[str]:
     - Character/grapheme limits per platform
     - Banned words from voice guide
     - Banned patterns (em dashes, rhetorical questions)
-    - Required elements (URL for X/Bluesky)
+    - Required elements (source URL and brand URL)
+    - Word bank terms and rate caps (orchestrator/word_bank.py)
     """
+    from orchestrator import word_bank
+
     policy = PolicyEngine.load_social(PROJECT_ROOT / "policies")
-    return policy.validate_social_post(platform, content)
+    errors = policy.validate_social_post(platform, content)
+
+    # The word bank is the shared list; social.json keeps only the rules that
+    # are specific to posting (length, brand phrases, banned entities). Both run
+    # here so a term written down once is checked on every surface.
+    errors.extend(
+        f"[{platform}] {violation}"
+        for violation in word_bank.violations(content, "social")
+    )
+    return errors
 
 
 # ── Expeditor (final quality gate) ──────────────────────────────────────

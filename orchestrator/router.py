@@ -16,7 +16,7 @@ MODELS = {
 MODEL_ROUTING: dict[str, str] = {
     # Research pipeline
     "trend_scan": "haiku",          # cheap, just URL scanning
-    "research_agent": "opus_1m",      # deep research with full 1M context for papers, repos, long reads
+    "research_agent": "opus",       # peaks at ~131K context — 1M window was never reached
     "synthesis_pass1": "opus_1m",    # editorial judgment + needs full findings in context
     "synthesis_pass2": "opus_1m",    # writing quality + full findings, 1M context
     "learnings_update": "sonnet",   # summarization

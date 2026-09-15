@@ -337,6 +337,61 @@ class TestBroadcastToSubscribers:
     @patch("orchestrator.newsletter.time.sleep")
     @patch("orchestrator.newsletter.requests")
     @patch("orchestrator.newsletter.keychain_lookup")
+    def test_skips_gmail_aliases_of_excluded_owner(
+        self, mock_kc, mock_requests, mock_sleep
+    ):
+        """A plus-tagged or dotted alias lands in the owner's own inbox —
+        excluding only the literal address delivered two copies a day."""
+        mock_kc.side_effect = lambda s: {
+            "resend-api-key": "key", "resend-audience-id": "aud-123"
+        }.get(s)
+
+        contacts = [
+            {"id": "c1", "email": "ramsay.tayler+subscriber@gmail.com",
+             "unsubscribed": False},
+            {"id": "c2", "email": "ramsaytayler@googlemail.com",
+             "unsubscribed": False},
+            {"id": "c3", "email": "reader+news@example.com", "unsubscribed": False},
+        ]
+        mock_requests.get.return_value = _mock_contacts_response(contacts)
+        mock_requests.post.return_value = _mock_send_response()
+
+        result = broadcast_to_subscribers(
+            "# Report", "2026-04-02",
+            exclude_emails=["ramsay.tayler@gmail.com"],
+        )
+
+        assert result["sent_count"] == 1
+        assert result["skipped_count"] == 2
+        send_call = mock_requests.post.call_args
+        payload = send_call.kwargs.get("json") or send_call[1].get("json")
+        assert payload["to"] == ["reader+news@example.com"]
+
+    @patch("orchestrator.newsletter.time.sleep")
+    @patch("orchestrator.newsletter.requests")
+    @patch("orchestrator.newsletter.keychain_lookup")
+    def test_empty_exclusion_entry_does_not_skip_contacts(
+        self, mock_kc, mock_requests, mock_sleep
+    ):
+        """user_config.get("email", "") can yield "" — it must exclude nobody."""
+        mock_kc.side_effect = lambda s: {
+            "resend-api-key": "key", "resend-audience-id": "aud-123"
+        }.get(s)
+
+        contacts = [{"id": "c1", "email": "reader@example.com", "unsubscribed": False}]
+        mock_requests.get.return_value = _mock_contacts_response(contacts)
+        mock_requests.post.return_value = _mock_send_response()
+
+        result = broadcast_to_subscribers(
+            "# Report", "2026-04-02", exclude_emails=["", "  "],
+        )
+
+        assert result["sent_count"] == 1
+        assert result["skipped_count"] == 0
+
+    @patch("orchestrator.newsletter.time.sleep")
+    @patch("orchestrator.newsletter.requests")
+    @patch("orchestrator.newsletter.keychain_lookup")
     def test_skips_unsubscribed(self, mock_kc, mock_requests, mock_sleep):
         mock_kc.side_effect = lambda s: {
             "resend-api-key": "key", "resend-audience-id": "aud-123"

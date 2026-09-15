@@ -1,6 +1,6 @@
 # MindPattern v3 — Complete System Overview
 
-> Autonomous AI research pipeline. Runs daily at 7 AM. Gathers data from 8 sources,
+> Autonomous AI research pipeline. Runs daily through a guarded launcher. Gathers data from 8 sources,
 > dispatches 13 research agents, writes a newsletter, posts to social media, and
 > improves itself after every run.
 
@@ -36,7 +36,7 @@
 MindPattern is a fully autonomous AI research and publishing pipeline — approximately
 47,000 lines of Python. It operates as a one-person media company on autopilot:
 
-1. **Wakes up at 7 AM** via macOS launchd
+1. **Starts through macOS launchd** when the host and launcher guards permit. See [Scheduling](ARCHITECTURE.md#scheduling).
 2. **Gathers ~400 items** from 8 sources (RSS, Hacker News, arXiv, GitHub, Reddit, Twitter, YouTube, LinkedIn)
 3. **Dispatches 13 research agents** in parallel, each specializing in a different beat
 4. **Synthesizes 150+ findings** into a 4,500-word newsletter
@@ -823,11 +823,7 @@ All validation is structural (regex, field presence, counts). No LLM in the loop
 - Slack summary: posts finding count + duration + exit code
 
 ### Scheduler (`run-launchd.sh`)
-- Idempotent daily run: checks marker file, skips if already ran today
-- Time window: only runs 6 AM - 12 PM
-- Git pull: if on main branch, pulls latest before running
-- Stale lock recovery: if PID is dead, reclaims lock
-- Atomic mkdir for lock (POSIX-safe)
+See [Scheduling](ARCHITECTURE.md#scheduling) for the checked-in calendar, start window, delivery/sync markers, locking, and branch-pull behavior. Repository configuration, an installed plist, loaded job state, and observed invocations are distinct evidence; none should be substituted for the others.
 
 ### Deployment (Fly.io)
 - `Dockerfile`: Python 3.11-slim, pre-downloads fastembed model at build
@@ -848,7 +844,7 @@ All validation is structural (regex, field presence, counts). No LLM in the loop
 - `mcp` — Model Context Protocol
 
 ### User Configuration (`users.json`)
-- **ramsay** (active): primary user, AI-tech vertical, 7 AM schedule
+- **ramsay** (active): primary user, AI-tech vertical. The launcher controls scheduled starts; see [Scheduling](ARCHITECTURE.md#scheduling).
 - **healthtest** (inactive): test user, health-wellness vertical
 
 ---
@@ -1031,14 +1027,17 @@ mindpattern-v3/
 
 ## Daily Lifecycle
 
-```
-6:55 AM   macOS launchd fires run-launchd.sh
-          ├── Checks: already ran today? -> skip
-          ├── Checks: 6 AM-12 PM window? -> proceed
-          ├── git pull (if on main)
-          └── Calls run.py
+Illustrative workflow, not a loaded schedule or a completion-time promise. For current launcher logic and evidence limits, see [Scheduling](ARCHITECTURE.md#scheduling).
 
-7:00 AM   run.py acquires lock, caffeinate, starts pipeline
+```
+Trigger   macOS launchd invokes run-launchd.sh
+          ├── Checks: delivered and synced today? -> skip
+          ├── Checks: delivered but not synced? -> select sync-only retry
+          ├── Checks: start window and concurrency lock permit work?
+          ├── git pull (if on main)
+          └── Calls run.py, with --sync-only when selected
+
+Full run  run.py acquires lock, caffeinate, starts pipeline
           ├── INIT -> load config, check for resume
           ├── TREND_SCAN -> Haiku identifies 5-8 trends
           ├── RESEARCH -> preflight (400 items from 8 sources)
@@ -1055,7 +1054,7 @@ mindpattern-v3/
           ├── MIRROR -> export memory.db to Obsidian markdown
           └── SYNC -> bundle + upload to Fly.io
 
-~9 AM     Pipeline complete. Dashboard updated. Slack summary posted.
+Complete  Pipeline finishes; confirm delivery and sync in runtime records.
 
 Evening   harness/run.sh -> scout bugs -> research features
           -> parallel fix (3 agents, TDD) -> gates -> review -> PR
