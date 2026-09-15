@@ -11,13 +11,14 @@ deploys in one evening left mindpattern.ai cold, with nothing to recover it
 until the operator noticed and warmed it by hand.
 
 ```sh
-deploy/deploy.sh                # tests, 3.11 compile gate, fly deploy, purge + warm
+deploy/deploy.sh                # 3.11 compile gate, tests, fly deploy, purge + warm
 deploy/deploy.sh --warm-only    # after a Vercel deploy: crawl the whole sitemap
 deploy/deploy.sh --skip-tests   # compile gate only (rare)
 ```
 
-Steps, in order: `python3.11 -m py_compile` over `dashboard/ orchestrator/
-slack_bot/` (Fly runs 3.11, the venv is 3.14), `pytest tests/ -q`, `flyctl
+Steps, in order: `python3.11 -m py_compile` over the eight packages the
+Dockerfile copies (`dashboard/ orchestrator/ slack_bot/ social/ core/ memory/
+policies/ agents/`; Fly runs 3.11, the venv is 3.14), `pytest tests/ -q`, `flyctl
 deploy --strategy immediate`, poll `/healthz` until the machine answers, poll
 `/api/warmup/status` until the phase leaves `running`, print any `incomplete`
 warm-up steps, then `python3 -m orchestrator.sync warm`. A warm-only run skips
