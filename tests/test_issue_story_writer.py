@@ -122,3 +122,55 @@ def test_rerun_skips_existing(tmp_path):
     )
     assert second["skipped"] == 3
     assert second["written"] == 0
+
+
+def _written_slugs(tmp_path):
+    return sorted(
+        f.stem for f in (tmp_path / "ramsay" / "site-stories" / "2026-07-02").glob("*.json")
+    )
+
+
+def test_cap_writes_the_first_units_in_issue_order(tmp_path):
+    (tmp_path / "ramsay").mkdir()
+    (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+
+    outcome = write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path,
+        story_copywriter=lambda p, e: _copy(), max_written=2,
+    )
+    assert outcome["written"] == 2
+    slugs = _written_slugs(tmp_path)
+    assert len(slugs) == 2
+    assert not any("cve" in s for s in slugs)
+
+
+def test_withheld_units_do_not_use_up_the_cap(tmp_path):
+    (tmp_path / "ramsay").mkdir()
+    (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+
+    def copywriter(pack, experts):
+        return None if "openai" in pack["candidate_id"] else _copy()
+
+    outcome = write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path,
+        story_copywriter=copywriter, max_written=2,
+    )
+    assert outcome == {**outcome, "written": 2, "withheld": 1}
+    assert len(_written_slugs(tmp_path)) == 2
+
+
+def test_stories_written_by_an_earlier_run_count_toward_the_cap(tmp_path):
+    (tmp_path / "ramsay").mkdir()
+    (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+
+    write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path,
+        story_copywriter=lambda p, e: _copy(), max_written=1,
+    )
+    second = write_issue_stories_for_date(
+        date="2026-07-02", user="ramsay", reports_root=tmp_path,
+        story_copywriter=lambda p, e: _copy(), max_written=2,
+    )
+    assert second["skipped"] == 1
+    assert second["written"] == 1
+    assert len(_written_slugs(tmp_path)) == 2

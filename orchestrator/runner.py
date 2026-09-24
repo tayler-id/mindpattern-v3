@@ -2306,11 +2306,19 @@ class ResearchPipeline:
             try:
                 from .site_content_engine import write_issue_stories_for_date
 
+                # The writer->critic loop was 54% of a run's input tokens and
+                # 80% of its output at ~80 stories a day. Unwritten units stay
+                # on the site as newsletter-backed pages.
+                try:
+                    max_issue_stories = int(os.environ.get("MP_SITE_ISSUE_STORIES_MAX", "20"))
+                except ValueError:
+                    max_issue_stories = 20
                 issue_outcome = write_issue_stories_for_date(
                     date=self.date_str,
                     user=self.user_id,
                     reports_root=PROJECT_ROOT / "reports",
                     story_copywriter=copywriter,
+                    max_written=max_issue_stories,
                 )
                 log_event(
                     self.traces_conn,

@@ -528,13 +528,18 @@ def write_issue_stories_for_date(
     user: str,
     reports_root: Path,
     story_copywriter: Callable[[dict[str, Any], list[dict[str, Any]]], dict[str, Any] | None] | None,
+    max_written: int | None = None,
 ) -> dict[str, Any]:
-    """Write EVERY source-backed story unit of the day's issue for the site.
+    """Write site story artifacts for the day's issue units, in issue order.
 
-    The newsletter is the canonical selection; this stage reformats all of it
-    into site-shaped story artifacts through the writer->critic harness. A
-    unit whose copy fails the gate keeps its evidence-only fallback artifact,
-    so the day is always fully covered. Fails open per story.
+    The newsletter is the canonical selection; this stage reformats it into
+    site-shaped story artifacts through the writer->critic harness. Every unit
+    stays on the site either way: one without an artifact is served from the
+    newsletter text by the API. Fails open per story.
+
+    max_written caps the day's artifacts, counting ones an earlier run already
+    wrote, so the writer spends tokens on the top of the issue only. Withheld
+    units do not use up the cap.
     """
     from orchestrator.site_content import build_structured_issue
 
@@ -629,14 +634,21 @@ def write_issue_stories_for_date(
         )
         return result
 
-    # A day is ~50 stories; sequential writing would stall the pipeline's
-    # later phases for hours. Three writer pipelines keep it under an hour
-    # without saturating the subscription.
+    # Sequential writing would stall the pipeline's later phases for hours.
+    # Three writer pipelines keep it under an hour without saturating the
+    # subscription.
     from concurrent.futures import ThreadPoolExecutor
+    from itertools import islice
 
+    budget = len(pending) if max_written is None else max(0, max_written - outcome["skipped"])
+    queue = iter(pending)
     with ThreadPoolExecutor(max_workers=3) as pool:
-        for result in pool.map(_write_one, pending):
-            outcome[result] += 1
+        while (remaining := budget - outcome["written"] - outcome["fallback"]) > 0:
+            batch = list(islice(queue, min(3, remaining)))
+            if not batch:
+                break
+            for result in pool.map(_write_one, batch):
+                outcome[result] += 1
     try:
         from datetime import datetime, timezone
         from orchestrator.site_backfill import notebook_append
