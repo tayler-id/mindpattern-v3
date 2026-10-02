@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Develop with agents</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="tutorial.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#lesson-content">Skip to the lesson</a>
+
+    <header class="course-header">
+      <div class="wordmark" aria-label="MindPattern field notes">
+        <span class="wordmark-mark" aria-hidden="true">MP</span>
+        <span>Field notes</span>
+      </div>
+      <div class="course-heading">
+        <p class="course-kicker">Independent study · Agent development</p>
+        <h1>Develop with agents</h1>
+        <p class="course-subtitle">A hands-on course through Lauren's workflow</p>
+      </div>
+      <div class="course-progress" aria-labelledby="progress-label">
+        <div class="progress-copy">
+          <span id="progress-label">Course progress</span>
+          <span id="progress-count">0 of 0 complete</span>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <span id="progress-bar"></span>
+        </div>
+      </div>
+    </header>
+
+    <div class="course-layout">
+      <aside class="lesson-rail" aria-label="Course navigation">
+        <div class="rail-heading">
+          <p class="rail-label">Course map</p>
+          <button id="mode-toggle" class="text-button" type="button" aria-pressed="false">
+            Read all lessons
+          </button>
+        </div>
+        <details class="lesson-picker" open>
+        <summary>Choose a lesson</summary>
+        <nav aria-label="Lessons">
+          <ol id="lesson-nav" class="lesson-nav"></ol>
+        </nav>
+        </details>
+        <details class="glossary">
+          <summary>Working glossary</summary>
+          <dl>
+            <dt>Agent</dt>
+            <dd>A model working toward an outcome with tools, context, and checks.</dd>
+            <dt>Evidence</dt>
+            <dd>An observable result that shows the intended behavior happened.</dd>
+            <dt>Verification</dt>
+            <dd>A check against the product path a person or system actually uses.</dd>
+            <dt>Context</dt>
+            <dd>The instructions, files, history, and tool output available for a task.</dd>
+            <dt>Skill</dt>
+            <dd>Reusable instructions that teach an agent a method for a particular kind of work.</dd>
+            <dt>CLI</dt>
+            <dd>A command-line interface: a program you operate with text commands.</dd>
+            <dt>Feature map</dt>
+            <dd>A guide to user behaviors, their entry points, and the observations that establish success.</dd>
+            <dt>Fixture</dt>
+            <dd>Known sample inputs used to make a check repeatable.</dd>
+            <dt>Assertion</dt>
+            <dd>A comparison between an expected result and an observed value.</dd>
+            <dt>API</dt>
+            <dd>An interface through which one program requests data or actions from another part of a system.</dd>
+            <dt>Prototype</dt>
+            <dd>A small working sketch used to answer a design question.</dd>
+            <dt>Architecture</dt>
+            <dd>The organization of responsibilities, data, and interfaces in a program.</dd>
+            <dt>Checkpoint</dt>
+            <dd>A small increment of work with a result and evidence a reviewer can inspect.</dd>
+            <dt>Diff</dt>
+            <dd>The specific changes between two versions of files.</dd>
+            <dt>Subagent</dt>
+            <dd>An agent assigned a bounded task with its own working context.</dd>
+          </dl>
+        </details>
+      </aside>
+
+      <main id="lesson-content" class="lesson-content" tabindex="-1">
+        <noscript><p class="notice">All 14 lessons are available below. Enable JavaScript to use guided navigation, practice labs, quizzes, and saved notes.</p></noscript>
+        <div id="storage-warning" class="notice warning" role="status" hidden></div>
+        <div class="lesson-toolbar" aria-label="Course tools">
+          <p id="lesson-position">Lesson 0 of 0</p>
+          <button id="export-notebook" class="button secondary" type="button">
+            Export prompt notebook
+          </button>
+        </div>
+
+        <div id="lessons">
+          <section class="lesson" id="lesson-orientation" data-title="Know what you are directing" data-minutes="8">
+<p class="eyebrow">Lesson 01 · Start here · Your role</p>
+<h2 tabindex="-1">Know what you are directing</h2>
+<p class="outcome">Build a small vocabulary you can use to ask an agent for work and judge its answer.</p>
+<div class="lesson-body"><p>You will build a development brief and an evidence checklist for a story-search improvement. By the final lesson, you will have a reusable prompt sequence in your notebook. You can take that sequence into an agent conversation and supervise a small task.</p>
+<p>This course uses an invented search problem: a reader remembers part of a published story's title and wants to find it. It is a teaching example, not a report of a current MindPattern bug. The browser exercises run sample JavaScript. They do not launch agents or change your application.</p>
+<h3>Identify the people and tools</h3><ol>
+<li><strong>You define the outcome.</strong> For example, a reader types part of a title and finds the right published story. You decide whether that solves a worthwhile problem.</li>
+<li><strong>The agent investigates and implements.</strong> It can inspect files, propose designs, edit code, and run tools when its environment allows those actions.</li>
+<li><strong>A skill supplies reusable instructions.</strong> A skill can tell the agent how to verify search. Reading those instructions does not itself run a check.</li>
+<li><strong>A tool performs an action.</strong> A command-line interface, or CLI, is a program you operate with text commands. A browser driver can type into a page and inspect the result.</li>
+<li><strong>Evidence records what happened.</strong> A returned story, a failing assertion, or a screenshot can support a particular claim.</li></ol>
+<p>Complete the question below. Then describe one responsibility you want to retain and one you want the agent to handle.</p>
+<details><summary>What is pstack doing?</summary><p>pstack is a collection of agent skills and workflows. Its poteto-mode skill reads the kind of task and routes to relevant instructions. A playbook is one of those task-specific workflows. A subagent is a separately assigned agent with its own task context. None of these names guarantees correctness. Their value comes from the actions they cause and the evidence those actions produce.</p></details>
+<details><summary>How the references fit</summary><p>Lauren&#39;s Part 1 puts verification at the foundation: an agent needs a repeatable way to operate an app and check the result. Part 2 adds research, design exploration, and execution planning. Shopify describes a migration process with small checkpoints and review. This course combines those ideas into original exercises. It does not claim to reproduce Shopify&#39;s internal system.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use poteto-mode. Before changing anything, restate the reader outcome I am asking for. Explain which work you will do, what evidence you will bring back, and what decision you need me to make. Keep this first response read-only.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>The response identifies a reader action, an observable result, and a verification method. It does not start implementing an assumed solution.</p><p><strong>Common mistake.</strong> Treating a skill name as proof. Ask what it made the agent do and what the agent observed.</p></div>
+<form class="quiz" data-answer="b"><fieldset><legend>An agent says, &#39;I loaded the verification skill, so search works.&#39; What is missing?</legend>
+<label><input type="radio" name="quiz-orientation" value="a" data-feedback="Confidence does not show that the program ran or returned the right result."> A more confident explanation.</label>
+<label><input type="radio" name="quiz-orientation" value="b" data-feedback="Yes. Instructions describe a method; evidence shows what happened when the method ran."> An executed check and its observed result.</label>
+<label><input type="radio" name="quiz-orientation" value="c" data-feedback="Agreement can still rest on the same untested assumption."> More agents saying they agree.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-orientation">Write what you want to decide yourself, and what you want the agent to investigate or execute.</label>
+<textarea id="note-orientation" data-note="orientation" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://threadnavigator.com/thread/2094457600259842065/" target="_blank" rel="noopener noreferrer">Lauren&#39;s Part 1, readable copy</a> · <a href="https://github.com/cursor/plugins/tree/main/pstack" target="_blank" rel="noopener noreferrer">pstack entry point</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-brief" data-title="Turn an idea into a clear request" data-minutes="10">
+<p class="eyebrow">Lesson 02 · Practice · Define the outcome</p>
+<h2 tabindex="-1">Turn an idea into a clear request</h2>
+<p class="outcome">Write a brief that leaves implementation open while making success observable.</p>
+<div class="lesson-body"><p>Start with this vague request: <em>Make search better.</em> An agent could reasonably change ranking, appearance, speed, spelling correction, or the search button. You need to narrow the outcome before choosing code.</p>
+<h3>Build the request</h3><ol>
+<li><strong>Name the reader's action.</strong> A reader types a remembered word from a story title.</li>
+<li><strong>Name the expected result.</strong> A matching published story appears. A draft story never appears.</li>
+<li><strong>Add relevant constraints.</strong> Preserve the public response shape. Work with synthetic data first. Leave live publishing alone.</li>
+<li><strong>State the evidence.</strong> Show the query, returned titles, an absent-query case, and a draft-exclusion case. If the visible search page changes, show that interaction too.</li></ol>
+<p>Use the brief builder below. Replace at least one example field with your own words. Read the generated prompt as if you were the agent receiving it.</p>
+<div data-lab="brief"></div>
+<p>You should now be able to say what a correct result looks like without selecting a search library or prescribing the implementation.</p>
+<details><summary>How much detail should you provide?</summary><p>Give the agent facts it cannot infer reliably: who the feature serves, the experience you want, boundaries, and the tradeoffs that matter to you. Let it discover file paths, existing functions, and current behavior. If you insist on a specific implementation too early, the agent may optimize your proposal instead of investigating the underlying problem.</p></details>
+<details><summary>Use a restatement as a comprehension check</summary><p>Ask the agent to explain the problem in its own words before a substantial change. Read for omissions. If it says &#39;improve ranking&#39; but your concern is draft exposure, correct that misunderstanding immediately. A clear restatement is still a hypothesis about your intent; it becomes useful when you compare it against what you actually meant.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use poteto-mode. A reader should find a published story using part of its title. Draft stories must remain unavailable. Preserve the public API response shape. First restate this outcome and inspect current behavior. Show what already works, what fails, and how you would prove a change. Do not implement during this investigation.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>A brief separates the desired behavior from the proposed implementation. Unknowns are named rather than silently filled in.</p><p><strong>Common mistake.</strong> Asking for a rewrite before observing the current behavior. There may be one missing condition rather than an architectural problem.</p></div>
+<form class="quiz" data-answer="a"><fieldset><legend>Which addition most improves &#39;Make search better&#39;?</legend>
+<label><input type="radio" name="quiz-brief" value="a" data-feedback="Yes. This gives both you and the agent a concrete outcome to inspect."> Define a reader query and the result that must appear.</label>
+<label><input type="radio" name="quiz-brief" value="b" data-feedback="That chooses a mechanism before establishing the problem."> Require the latest search framework immediately.</label>
+<label><input type="radio" name="quiz-brief" value="c" data-feedback="Effort does not resolve ambiguity about the result you want."> Ask the agent to use maximum effort.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-brief">Write your own four-part brief: action, result, constraints, and evidence.</label>
+<textarea id="note-brief" data-note="brief" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://threadnavigator.com/thread/2097732320606507506/" target="_blank" rel="noopener noreferrer">Lauren&#39;s Part 2, readable copy</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-grounding" data-title="Make the agent understand the current system" data-minutes="12">
+<p class="eyebrow">Lesson 03 · Part 2 · how, why, teach, recall</p>
+<h2 tabindex="-1">Make the agent understand the current system</h2>
+<p class="outcome">Separate observed behavior, historical explanations, and assumptions before approving a design.</p>
+<div class="lesson-body"><p>The agent now understands your request. It still needs to understand the application. Give it a small investigation with a concrete deliverable: trace one search query from the reader's action to the returned story.</p>
+<h3>Inspect the investigation</h3><ol>
+<li>Ask <code>how</code> to trace the current route. Look for the entry point, the function that selects results, and the result returned to the caller.</li>
+<li>Ask <code>why</code> when a design constraint needs historical explanation. Look for a commit, issue, or document that supports the explanation.</li>
+<li>Ask <code>teach</code> for a plain-language account you can challenge. Ask where that account is uncertain.</li>
+<li>Use <code>recall</code> when relevant work happened in an earlier conversation. Compare recalled context with current files before relying on it.</li></ol>
+<p>Practice with this invented report: <em>The API returns the expected story for the title query. The browser still shows an empty list. The response field was probably renamed last month.</em> The first two sentences describe observations if the agent actually ran those checks. The third sentence is a hypothesis until source or history supports it.</p>
+<p>Write a follow-up that asks the agent to trace how the browser reads the response. You should not need to choose a fix yet.</p>
+<details><summary>What counts as grounding?</summary><p>A list of filenames is a starting point. Useful grounding connects behavior across those files. For this example, it explains which browser action starts a request, how the backend selects published stories, and which response fields the browser renders. Ask for the specific condition that would explain the mismatch and a check that could disprove it.</p></details>
+<details><summary>What if history is unavailable?</summary><p>The agent can often explain current mechanics from source even when it cannot establish original intent. A truthful answer says that the current code does X and that the reason for choosing X is unknown. Do not reward a plausible story as if it were historical evidence. Connected issue trackers or chat services are optional evidence sources; a skill does not create access to them.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use how to trace a title search from user input to displayed results. Use why only for design decisions whose history matters. Use teach to explain the path in plain language. Separate observations, source-backed explanations, and hypotheses. Cite the relevant files. Keep this read-only.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>You can explain the request path back to the agent. Any claimed reason for an old decision has a source or an explicit uncertainty.</p><p><strong>Common mistake.</strong> Accepting a fluent explanation that never identifies the behavior or evidence it describes.</p></div>
+<form class="quiz" data-answer="c"><fieldset><legend>The agent says the old ranking rule exists &#39;for performance&#39; but provides no history or measurement. How should you treat that?</legend>
+<label><input type="radio" name="quiz-grounding" value="a" data-feedback="That would convert a plausible explanation into an unsupported fact."> As established design intent.</label>
+<label><input type="radio" name="quiz-grounding" value="b" data-feedback="Missing rationale does not prove the current rule is wrong."> As proof that the rule should be deleted.</label>
+<label><input type="radio" name="quiz-grounding" value="c" data-feedback="Yes. Ask for historical evidence or a measurement relevant to the proposed change."> As a hypothesis to investigate.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-grounding">Name one observation, one unanswered question, and one check that would answer it.</label>
+<textarea id="note-grounding" data-note="grounding" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/how/SKILL.md" target="_blank" rel="noopener noreferrer">pstack how skill</a> · <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/why/SKILL.md" target="_blank" rel="noopener noreferrer">pstack why skill</a> · <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/teach/SKILL.md" target="_blank" rel="noopener noreferrer">pstack teach skill</a> · <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/recall/SKILL.md" target="_blank" rel="noopener noreferrer">pstack recall skill</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-tools" data-title="Connect the skill, CLI, and feature map" data-minutes="10">
+<p class="eyebrow">Lesson 04 · Part 1 · The verification toolkit</p>
+<h2 tabindex="-1">Connect the skill, CLI, and feature map</h2>
+<p class="outcome">Follow one feature from its instructions to the command and the evidence it produces.</p>
+<div class="lesson-body"><p>These three pieces answer different questions. A verification skill tells the agent <em>how to check the application</em>. The CLI lets it <em>perform repeatable actions</em>. The feature map tells it <em>which behavior to inspect and how to reach it</em>.</p>
+<h3>Follow the MindPattern example</h3><ol>
+<li>Locate <code>.agents/skills/verify-mindpattern/SKILL.md</code>. Its launch, doctor, drive, evidence, and cleanup instructions describe the checking procedure.</li>
+<li>Locate <code>.agents/skills/verify-mindpattern/references/features/README.md</code>. Its index links to a story-search entry.</li>
+<li>Read the story-search entry before choosing a command. Find the expected matching, absent, and excluded results.</li>
+<li>Find the CLI under <code>verification/</code>. The command <code>.venv/bin/python3 -m verification verify story-search</code> runs the named scenario.</li></ol>
+<p>The browser course cannot read your checkout through these paths. Use the prompt below in your agent conversation to inspect the actual files. The files are already present in this workspace.</p>
+<p>For a different application, the same roles might be filled by a simulator driver, a browser controller, or a library example runner. Copying MindPattern's commands into that application would not create a working verification system.</p>
+<details><summary>What does create-verification-skill create?</summary><p>The installed generator instructs an agent to inspect the repository, identify how to start and drive the app, write a project-specific skill, seed a feature map, and execute its instructions. A useful output contains real commands and expected observations. A document with placeholders is a draft. The generator is reusable; verify-mindpattern is its app-specific counterpart.</p></details>
+<details><summary>Why have a CLI at all?</summary><p>A repeated command reduces setup variation. Compare asking each agent to invent a fresh script for search with giving each agent one maintained command. Repetition makes failures easier to compare. The command still needs to use a meaningful application path. A tool that prints a canned success message is reproducible without being useful.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Read verify-mindpattern and its story-search feature-map entry. Explain the connection between the instructions, the CLI command, and the assertions it runs. Identify what the current check cannot prove. Do not add another skill or change code.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>The agent names the existing skill, feature file, runnable command, and proof limits. Each part has a distinct job.</p><p><strong>Common mistake.</strong> Creating another markdown file whenever an agent struggles, without checking whether it lacks a working tool or a missing observation.</p></div>
+<form class="quiz" data-answer="b"><fieldset><legend>Which artifact tells an agent how a reader reaches story search and what result counts as correct?</legend>
+<label><input type="radio" name="quiz-tools" value="a" data-feedback="The executable performs actions. Its existence does not explain the complete reader journey."> The CLI executable alone.</label>
+<label><input type="radio" name="quiz-tools" value="b" data-feedback="Yes. The map connects the user behavior to the commands and expected result."> The story-search feature-map entry.</label>
+<label><input type="radio" name="quiz-tools" value="c" data-feedback="A model choice does not describe your product&#39;s behavior."> The agent model&#39;s name.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-tools">In your own words, explain the separate jobs of the skill, CLI, and feature map.</label>
+<textarea id="note-tools" data-note="tools" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/create-verification-skill/SKILL.md" target="_blank" rel="noopener noreferrer">pstack verification generator</a> · <a href="https://github.com/poteto/verification-skill-example" target="_blank" rel="noopener noreferrer">Lauren&#39;s fictional Atlas example</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-drive" data-title="Run a check and read the evidence" data-minutes="15">
+<p class="eyebrow">Lesson 05 · MindPattern · Optional real CLI exercise</p>
+<h2 tabindex="-1">Run a check and read the evidence</h2>
+<p class="outcome">Make a precise claim about one executed scenario instead of treating a pass as proof of the whole product.</p>
+<div class="lesson-body"><p>This is an optional exercise in your real repository. The commands below already exist. Run them from <code>/Users/taylerramsay/Projects/mindpattern-v3</code>, or ask your coding agent to run them there. The tutorial page itself does not execute them.</p>
+<h3>Follow the evidence</h3><ol>
+<li>Read <code>.venv/bin/python3 -m verification --help</code>. Identify the available commands before using them.</li>
+<li>Run <code>.venv/bin/python3 -m verification doctor</code>. Read which instance it describes. This is a synthetic instance, not production health.</li>
+<li>Run <code>.venv/bin/python3 -m verification features story-search</code>. Confirm that the feature and its limits match the task.</li>
+<li>Run <code>.venv/bin/python3 -m verification verify story-search</code>. This creates a new evidence directory automatically.</li>
+<li>Open <code>manifest.json</code> in the exact evidence directory returned by that command. Read the assertions and observed responses, then check that the file still exists after runtime cleanup.</li></ol>
+<p>If the command fails, record the exact failure and inspect its evidence. Do not paste an expected success result into the notebook as if you observed it. If you skip the real exercise, write <em>not run</em>.</p>
+<p>The current driver copies current source into a temporary workspace and supplies synthetic artifacts. Its default requests exercise the actual FastAPI app through ASGI, an interface that connects requests to Python application code. The run skips application startup lifespan work, including background warmup.</p>
+<details><summary>Choose the level that matches the claim</summary><p>An API response check can show which stories the backend returned. Starting the CLI&#39;s serve mode and using its explicit loopback HTTP request mode adds real HTTP observation. Neither proves what a browser displays. A rendered search change also needs browser interaction. A real research run has different provider and data concerns. Match the evidence to the claim instead of arranging these checks into a universal score.</p></details>
+<details><summary>What is verified today?</summary><p>The toolkit currently provides five scenarios: stories, story-search, site-artifacts, sitemap, and private-access. The recorded toolkit verification passed 36 assertions, and the associated focused test run passed 35 tests. Those are historical development results, not a fresh run from this course. Browser rendering, the full pipeline, live providers, and startup warmup are outside that evidence.</p></details>
+<details><summary>Keep the test fixture in mind</summary><p>A fixture is a known set of sample inputs. Synthetic data makes a check repeatable and avoids mixing the exercise with personal research state. It can prove how the code handles those inputs. It cannot establish that the real corpus is complete or editorially good. Changing the input coverage can change what a successful check means.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use verify-mindpattern to run doctor, inspect the story-search feature entry, and verify story-search. Read the resulting manifest. Report the command, actual observations, evidence path, and what remains unverified. Preserve the evidence after cleanup. Do not run the live pipeline.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>The command returns JSON with its status and evidence directory. A report cites actual assertions and states that browser rendering and startup warmup were not checked.</p><p><strong>Common mistake.</strong> Reporting &#39;search is fixed everywhere&#39; after one synthetic API scenario passes.</p></div>
+<form class="quiz" data-answer="a"><fieldset><legend>The synthetic API scenario passes. Which claim does that support?</legend>
+<label><input type="radio" name="quiz-drive" value="a" data-feedback="Yes. This is a bounded claim tied to the inputs and assertions that ran."> The checked API behaviors passed for the supplied fixture.</label>
+<label><input type="radio" name="quiz-drive" value="b" data-feedback="That requires a browser observation."> The browser search page renders correctly.</label>
+<label><input type="radio" name="quiz-drive" value="c" data-feedback="A synthetic fixture does not establish whole-corpus coverage."> Every published story in production is searchable.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-drive">Record your actual command, result, evidence path, and coverage limit. Write &#39;not run&#39; if you used only the course.</label>
+<textarea id="note-drive" data-note="drive" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/poteto/verification-skill-example" target="_blank" rel="noopener noreferrer">Verification method in the installed example</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-false-green" data-title="Catch a green check that misses the problem" data-minutes="12">
+<p class="eyebrow">Lesson 06 · Lauren&#39;s reply · Observe, diagnose, fix the skill</p>
+<h2 tabindex="-1">Catch a green check that misses the problem</h2>
+<p class="outcome">Expose a weak check, then repair the simulated behavior and rerun a check that can detect the defect.</p>
+<div class="lesson-body"><p>In the reply you shared, Lauren's answer to a green verification result with a wrong product was: <q>observe, diagnose, fix the skill</q>. Practice that response here.</p>
+<p>The lab starts with an invented response that exposes a draft alongside published stories. A status-only check can pass because the response succeeds technically. The reader outcome is still wrong.</p>
+<h3>Make the check earn its result</h3><ol>
+<li>Run only the status check. Predict whether it will pass before pressing the button.</li>
+<li>Inspect the returned stories. Find the draft that the status check ignores.</li>
+<li>Select the draft-exclusion check and rerun. Keep the simulated application unchanged. The new check should expose the defect.</li>
+<li>Repair the simulated filter. Run the stronger checks again and inspect which stories remain.</li>
+<li>Explain why the second green result supports a stronger claim than the first.</li></ol>
+<div data-lab="verification"></div>
+<p>This is deliberately broken teaching code. It is not a diagnosis of MindPattern's current implementation. Its purpose is to let you observe the difference between a weak success criterion and a useful one.</p>
+<details><summary>Separate the product defect from the verification defect</summary><p>The product defect is the draft appearing in public results. The verification defect is a check that never asks whether drafts appear. Fixing only the product leaves the same blind spot available for a later regression. Fixing only the check reveals the problem without making the product correct. A complete repair addresses both, at the right layer.</p></details>
+<details><summary>A useful regression check must be able to fail</summary><p>After observing a defect, add a check that disagrees with the known wrong behavior. In this lab, the disagreement is that a draft is present when none should be present. A crash from a typo in the checker would also produce a failure, but it would not prove the checker detects draft exposure. Read the failure, not only its color.</p></details>
+<details><summary>When the checker is wrong</summary><p>Sometimes the application behavior is correct and an outdated expectation is wrong. Compare the expected result with the agreed user outcome and current product contract. Do not change an expectation merely to make a report green. Record why the new expectation is the intended behavior.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>The check passes, but I can still observe the reported problem. Reproduce the mismatch. Identify which assertion or observation missed it. Make a focused check detect that behavior, repair the underlying defect, and rerun the check. Update the verification instructions or feature map where they caused the blind spot.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>You see weak green, meaningful red, and then meaningful green. You can name the observation that separates them.</p><p><strong>Common mistake.</strong> Adding &#39;be more careful&#39; to the prompt while leaving the same blind check in place.</p></div>
+<form class="quiz" data-answer="c"><fieldset><legend>Why run the stronger check before repairing the simulated filter?</legend>
+<label><input type="radio" name="quiz-false-green" value="a" data-feedback="Failure count is not the goal. The failure must identify the known defect."> To increase the number of failures in the report.</label>
+<label><input type="radio" name="quiz-false-green" value="b" data-feedback="This sequence has a specific purpose here: demonstrate that the new check detects the observed defect."> Because every kind of work must follow the same test sequence.</label>
+<label><input type="radio" name="quiz-false-green" value="c" data-feedback="Yes. Otherwise the new check might pass both the broken and repaired behavior."> To show that the check detects the defect we actually saw.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-false-green">Describe the missing observation. Write one assertion that would catch it.</label>
+<textarea id="note-false-green" data-note="false-green" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://threadnavigator.com/thread/2094457600259842065/" target="_blank" rel="noopener noreferrer">Context: Lauren&#39;s Part 1</a>. Author clarification supplied in this conversation. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-feature-map" data-title="Write a feature entry another agent can use" data-minutes="10">
+<p class="eyebrow">Lesson 07 · Part 1 · Shared product knowledge</p>
+<h2 tabindex="-1">Write a feature entry another agent can use</h2>
+<p class="outcome">Create a compact map entry that connects a reader&#39;s journey to observable checks.</p>
+<div class="lesson-body"><p>Write an entry for the story-search outcome. Imagine a new agent opens it with no access to your conversation. It needs enough detail to reach the feature, operate it, and recognize both success and a misleading result.</p>
+<h3>Draft the entry in your notebook</h3><ol>
+<li><strong>Describe the sub-features.</strong> Include a matching query, an absent query, and unpublished-story exclusion.</li>
+<li><strong>Describe how the reader reaches it.</strong> Identify the actual search entry point after inspecting the application. Do not invent a button label from memory.</li>
+<li><strong>Give the drive command.</strong> For the existing backend check, name <code>verify story-search</code> with the repository interpreter prefix.</li>
+<li><strong>Describe the expected observations.</strong> State what appears for a matching term, what happens for an absent term, and what must stay hidden.</li>
+<li><strong>Record gotchas and limits.</strong> The backend command does not verify browser rendering. If a browser route has not been checked, say so.</li></ol>
+<p>Read your draft aloud. Could another person distinguish a working result from an empty response with status 200? If not, make the expected observations more specific.</p>
+<details><summary>Why an endpoint inventory is insufficient</summary><p>A list of routes describes addresses the software exposes. A feature entry describes a useful behavior. One reader journey can cross several routes, require authentication, create state, and survive a reload. Conversely, several routes can support one feature. Start from the user action and follow the behavior through the software.</p></details>
+<details><summary>Keep useful knowledge close to the work</summary><p>A feature map saves the next agent from rediscovering the same entry points and constraints. That only helps while the map is accurate. When a command changes, update its usage. When an interaction changes, update its expected result. Keep unverified workflows visible instead of counting every documented item as automated coverage.</p></details>
+<details><summary>Current map versus the target</summary><p>Our current map has five runnable backend scenarios and a separate inventory of other workflows. That is a starting set. Adding a browser description alone does not add a browser driver. A complete entry must distinguish instructions that a tool can execute now from an unimplemented verification method.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Inspect the current story-search feature-map entry against source. Draft any needed correction using these sections: Sub-features; How to get to it from the user&#39;s point of view; Driving it with the verification CLI; Gotchas. Include exact expected observations and unverified paths. Show the proposed correction before changing files.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>The entry tells a new agent what to do, what to observe, and where its proof stops.</p><p><strong>Common mistake.</strong> Generating a long list of endpoints and calling it complete feature coverage.</p></div>
+<form class="quiz" data-answer="b"><fieldset><legend>A map says &#39;Search: /api/search/site&#39;. What is the most useful next addition?</legend>
+<label><input type="radio" name="quiz-feature-map" value="a" data-feedback="That can bury the user behavior in implementation detail."> Every helper function called by the route.</label>
+<label><input type="radio" name="quiz-feature-map" value="b" data-feedback="Yes. Those details let an agent exercise and judge the feature."> A reader action, drive recipe, and expected visible result.</label>
+<label><input type="radio" name="quiz-feature-map" value="c" data-feedback="Coverage requires executed observations, not a stronger label."> A claim that all search behavior is covered.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-feature-map">Draft one feature entry with a user path, command, expected result, and known limitation.</label>
+<textarea id="note-feature-map" data-note="feature-map" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/poteto/verification-skill-example" target="_blank" rel="noopener noreferrer">Verification skill example and feature map</a> · <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/create-verification-skill/SKILL.md" target="_blank" rel="noopener noreferrer">pstack verification generator</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-prototypes" data-title="Try alternatives before choosing a design" data-minutes="15">
+<p class="eyebrow">Lesson 08 · Part 2 · Planning through code</p>
+<h2 tabindex="-1">Try alternatives before choosing a design</h2>
+<p class="outcome">Use two working sketches to make one specific product decision.</p>
+<div class="lesson-body"><p>You have an outcome and a way to observe it. Now explore a design question: should a title query require the whole title, or match a remembered part? The lab implements both behaviors over the same invented stories.</p>
+<h3>Compare the behavior</h3><ol>
+<li>Enter part of a displayed story title. Compare the two result panels.</li>
+<li>Enter the complete title. Check whether both approaches find it.</li>
+<li>Change capitalization. Observe what each implementation actually does.</li>
+<li>Clear the query. Decide what you want an empty search to mean.</li>
+<li>Write which approach better serves the remembered-title task and which limitation remains.</li></ol>
+<div data-lab="prototypes"></div>
+<p>You have now used executable examples to answer a design question. The lab is an original teaching sketch. Its tiny data set does not measure production search quality or speed.</p>
+<p>In a real task, ask the agent to create alternatives that test a meaningful uncertainty. Give each alternative the same inputs. Require the agent to show the result and explain which tradeoff matters. Keep the prototypes separate from production code until you choose a direction.</p>
+<details><summary>What makes a useful prototype?</summary><p>Name the decision before building. &#39;Find out whether partial-title matching serves this remembered-title task&#39; is a decision. &#39;Build something impressive&#39; is not. A small script can answer a backend behavior question. A browser sketch can answer an interaction question. A benchmark needs a representative workload and actual measurements. Do not infer timing from a screenshot or infer visual usability from an API response.</p></details>
+<details><summary>Lauren&#39;s planning clarification</summary><p>In the replies you supplied, Lauren describes using architect and prototyping to produce options, then turning a choice into a plan. She also says she does not use native Plan mode. That is a preference about how she develops evidence, not a ban on planning. An execution plan becomes more useful after the important design uncertainties have been tested.</p></details>
+<details><summary>Avoid polishing an unanswered question</summary><p>A prototype can have rough styling and disposable code while still producing useful evidence. Spend effort on the uncertain behavior. If the experiment disproves an assumption, change or discard the approach. A polished implementation of the wrong assumption makes the later correction more expensive.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use poteto-mode and prototyping to compare two approaches for finding a story from a remembered title fragment. Give both the same sample queries, including case changes, no match, and an empty query. Show runnable behavior and tradeoffs. Keep the prototypes separate from production code. Present the options for me to choose before turning the choice into a plan.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>You can try both alternatives. The recommendation cites observed behavior and names unanswered questions.</p><p><strong>Common mistake.</strong> Accepting the first design or demanding an elaborate plan before an experiment can settle the main uncertainty.</p></div>
+<form class="quiz" data-answer="a"><fieldset><legend>Both sketches work on three sample stories. What can you conclude?</legend>
+<label><input type="radio" name="quiz-prototypes" value="a" data-feedback="Yes. The experiment supports the decision it was designed to test, with explicit limits."> You have evidence about their behavior on those inputs.</label>
+<label><input type="radio" name="quiz-prototypes" value="b" data-feedback="Scale needs representative data and measurements."> The preferred sketch will scale to the entire corpus.</label>
+<label><input type="radio" name="quiz-prototypes" value="c" data-feedback="A disposable sketch still needs production integration and appropriate verification."> The preferred sketch is ready to deploy.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-prototypes">Record your chosen search behavior, the observation behind the choice, and one question the prototype did not answer.</label>
+<textarea id="note-prototypes" data-note="prototypes" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/poteto-mode/playbooks/prototype.md" target="_blank" rel="noopener noreferrer">pstack prototyping playbook</a> · <a href="https://threadnavigator.com/thread/2097732320606507506/" target="_blank" rel="noopener noreferrer">Lauren&#39;s Part 2, readable copy</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-architecture" data-title="Understand what architect adds" data-minutes="12">
+<p class="eyebrow">Lesson 09 · Part 2 · Shape the code around its use</p>
+<h2 tabindex="-1">Understand what architect adds</h2>
+<p class="outcome">Review a small interface sketch without needing to dictate every line of implementation.</p>
+<div class="lesson-body"><p>A prototype helped choose behavior. Architecture decides how production code will own that behavior. For this exercise, ask where search should receive stories, select results, and enforce publication rules.</p>
+<h3>Read a caller's sketch</h3>
+<pre><code>request = SearchRequest(query="agents", limit=10)
+results = search_published_stories(request, story_repository)</code></pre>
+<p>This is illustrative pseudocode, not an existing MindPattern API. A caller's sketch shows how another part of the program would use the proposed code. A type describes the shape of a value. A function signature names the inputs and result without supplying its implementation.</p>
+<ol><li>Ask what the caller needs to know. It should not have to understand several hidden initialization steps to issue one search.</li>
+<li>Ask who owns publication eligibility. If every caller must remember to remove drafts, a new caller can forget.</li>
+<li>Ask what happens for no matches, invalid limits, and unavailable data. Distinguish a normal empty result from an operational failure.</li>
+<li>Compare a second design using the same caller scenario. Ask what complexity each interface hides and what it exposes.</li>
+<li>Choose the shape that fits the existing system and makes the required behavior easier to preserve.</li></ol>
+<p>You do not need to identify every future edge case. You need to understand the important ownership decisions and see how the proposal handles today's evidence.</p>
+<details><summary>How architect differs from prototyping</summary><p>Prototyping tests a question through an executable sketch. Architect develops the structure of an implementation: caller usage, data types, function boundaries, alternatives, and rationale. The installed skill asks for independent design candidates and synthesis. The two workflows can inform each other. A sketch that becomes awkward when exercised is evidence that the proposed structure needs revision.</p></details>
+<details><summary>What you should challenge</summary><p>Ask concrete questions: Where is the draft rule enforced? Can an empty result be confused with a timeout? What changes for the existing caller? A long list of hypothetical disasters rarely helps. Challenge a design using a plausible caller or observed failure. If the agent needs several exceptions to handle that case, ask whether ownership is misplaced.</p></details>
+<details><summary>Why explicitly name architect?</summary><p>Lauren&#39;s pasted clarification says her explicit skill invocation illustrated what poteto-mode can do behind the scenes. You can name architect when you want to make the design step unmistakable. You do not need to paste every available skill into every prompt. The installed workflow and your task should determine which ones apply.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use poteto-mode and architect for the chosen search behavior. Ground the design in the current code. Show the caller&#39;s usage first, then the data shapes and function boundaries. Compare two viable structures. Explain who owns publication eligibility and how callers distinguish no results from a failure. Teach me the tradeoffs before implementation.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>You see a usage sketch, clear ownership, alternatives, and a recommendation connected to the real code.</p><p><strong>Common mistake.</strong> Judging architecture by how many layers or design-pattern names appear in the response.</p></div>
+<form class="quiz" data-answer="c"><fieldset><legend>Every caller must remember to filter out drafts before showing results. What is the useful design question?</legend>
+<label><input type="radio" name="quiz-architecture" value="a" data-feedback="A reminder does not resolve scattered ownership of an important rule."> Can the agent add a longer reminder comment?</label>
+<label><input type="radio" name="quiz-architecture" value="b" data-feedback="A name can communicate intent, but it does not enforce the required behavior."> Can we rename the function to sound safer?</label>
+<label><input type="radio" name="quiz-architecture" value="c" data-feedback="Yes. Establish ownership so each caller does not have to reconstruct the same rule."> Which shared operation should own publication eligibility?</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-architecture">Explain the proposed search boundary in plain language. Name one responsibility it owns and one it leaves to its caller.</label>
+<textarea id="note-architecture" data-note="architecture" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/architect/SKILL.md" target="_blank" rel="noopener noreferrer">pstack architect skill</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-plan" data-title="Turn the chosen design into small proofs" data-minutes="12">
+<p class="eyebrow">Lesson 10 · Part 2 · Execution planning</p>
+<h2 tabindex="-1">Turn the chosen design into small proofs</h2>
+<p class="outcome">Write a plan in which each task ends with an observable result.</p>
+<div class="lesson-body"><p>The design is now concrete enough to execute. Make the plan describe useful increments. You should be able to inspect each increment before it becomes part of a larger change.</p>
+<h3>Draft three checkpoints for the example</h3><ol>
+<li><strong>Establish the intended search behavior.</strong> Use synthetic published and draft stories. Record the current result for a title fragment and the intended result.</li>
+<li><strong>Implement the selected backend behavior.</strong> Preserve response contracts. Verify matches, absent terms, case handling, and draft exclusion through the request path.</li>
+<li><strong>Integrate and inspect the reader interaction if it changes.</strong> Enter the query in the real browser interface, inspect returned stories, and verify its empty state. Preserve appropriate evidence.</li></ol>
+<p>For each checkpoint, write the outcome, affected scope, verification method, evidence artifact, and reason it would fail. Adjust the split to fit the actual source after investigation. These are example checkpoints, not a command to change the current application.</p>
+<p>A task called <em>implement frontend</em> leaves you guessing what you can review. A task called <em>enter a title fragment and show the matching story in the search page</em> gives you a result to inspect.</p>
+<details><summary>What a plan should leave open</summary><p>The chosen design constrains the main boundaries. Implementation may still reveal details that the sketch missed. Let the agent resolve routine details and report meaningful deviations. If the same workaround appears repeatedly, return to the design instead of extending the plan around it indefinitely.</p></details>
+<details><summary>Why green tests are one part of a checkpoint</summary><p>A focused test can establish a regression condition. A runtime check can show that the changed integration path behaves as intended. Browser inspection can show what the reader sees. Choose the evidence required by the change. A backend-only internal change does not automatically need a new screenshot; a rendered interaction cannot be judged solely by its backend test.</p></details>
+<details><summary>Where to keep plans and decisions</summary><p>Lauren&#39;s pasted reply discourages keeping permanent planning material unless it helps future decisions. Your repository agreements require a durable handoff for long work. Keep the active task&#39;s status and necessary operating context there. Review temporary planning material when work ends. Do not delete existing runbooks or decision records merely because another developer prefers a different storage habit.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use poteto-mode to turn the selected design into a short execution plan. For each checkpoint, specify the user outcome, changed scope, verification command or interaction, evidence artifact, and failure condition. Identify dependencies. Keep routine implementation choices with the agent. Follow this repository&#39;s authorization rules for commits and deployment.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>Every checkpoint has a result you can inspect. Dependencies are explicit, and the plan does not hide unverified integration in a final vague task.</p><p><strong>Common mistake.</strong> Counting checked boxes while no one can demonstrate the changed behavior.</p></div>
+<form class="quiz" data-answer="b"><fieldset><legend>Which task is easiest to assess?</legend>
+<label><input type="radio" name="quiz-plan" value="a" data-feedback="This does not identify an observable outcome or verification method."> Finish the search refactor.</label>
+<label><input type="radio" name="quiz-plan" value="b" data-feedback="Yes. It states the behavior and the artifact that supports it."> Return only published matches for the sample query and retain request evidence.</label>
+<label><input type="radio" name="quiz-plan" value="c" data-feedback="That may be useful work, but it is too broad to be this checkpoint."> Improve code quality across the repository.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-plan">Write one checkpoint with its outcome, scope, proof, and failure condition.</label>
+<textarea id="note-plan" data-note="plan" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/poteto-mode/playbooks/multi-phase-plan.md" target="_blank" rel="noopener noreferrer">pstack multi-phase planning playbook</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-review" data-title="Review the running result and the code" data-minutes="12">
+<p class="eyebrow">Lesson 11 · Shopify · The Helix contribution</p>
+<h2 tabindex="-1">Review the running result and the code</h2>
+<p class="outcome">Decide whether a checkpoint has enough evidence to advance.</p>
+<div class="lesson-body"><p>Shopify describes Helix proposing small ordered checkpoints from an existing screen. Each checkpoint passes tests, a running-app visual review, two adversarial code reviews, and human review before a commit. Feedback informs later work. Shopify also describes a CLI for headless business logic and a remote mode for driving simulator UI. This course teaches those published ideas; it does not provide Helix's internal implementation.</p>
+<h3>Review this invented search checkpoint</h3>
+<p>The agent reports: <em>Backend checks pass. A browser screenshot shows one matching title. One reviewer checked draft exclusion. The second reviewer could not run. The empty-result interaction has not been exercised.</em></p>
+<ol><li>Compare the report with the checkpoint's promised outcome. Which required checks have evidence?</li>
+<li>Ask to operate the missing empty-result interaction. A screenshot of a match does not answer that question.</li>
+<li>Ask reviewers to challenge concrete aspects of the completed diff. One might trace behavior and integration; another might inspect ownership and missed failure cases.</li>
+<li>Require defects to be resolved or dismissed with evidence. Ask which checks were rerun after a repair.</li>
+<li>Make the human decision with the review limitation visible. Do not describe one review as two.</li></ol>
+<p>For this exercise, assume you agreed to the full Helix-style checkpoint. The missing required review and interaction mean it is not ready under that agreement.</p>
+<details><summary>What independent review contributes</summary><p>A reviewer can notice a mistaken assumption the implementer repeatedly accepted. Independence is stronger when the reviewer inspects the artifact and requirement before reading the implementer&#39;s defense. Agreement alone is weak if everyone only repeats the same summary. The reviewed object should be the actual diff and behavior evidence.</p></details>
+<details><summary>What a screenshot can establish</summary><p>A screenshot can record a visible state, but may omit the action, timing, keyboard behavior, and persistence that led to it. Ask for a reproducible interaction or trace when those details matter. For search, distinguish a displayed result from proof that the entered query produced that result through the real request path.</p></details>
+<details><summary>Apply the cadence to your work</summary><p>The local mindpattern-checkpoints skill describes an adaptation of this process. Your session permissions still govern commits, publishing, and production operations. A review method does not authorize those actions. For smaller changes, agree on a proportionate checkpoint rather than treating a large migration procedure as the only valid workflow.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Review this completed checkpoint against its promised outcome. Inspect the actual diff and runtime evidence. Use two independent reviewers for the agreed Helix-style review. Separate concrete defects from speculative concerns. Resolve findings, rerun affected checks, and report any unavailable review or observation before presenting the checkpoint for my decision.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>A review report names the behavior inspected, concrete findings, their resolution, and missing checks.</p><p><strong>Common mistake.</strong> Treating two positive opinions as sufficient when both reviewers saw only the implementer&#39;s summary.</p></div>
+<form class="quiz" data-answer="a"><fieldset><legend>Under the agreed full checkpoint, what should happen to the example report?</legend>
+<label><input type="radio" name="quiz-review" value="a" data-feedback="Yes. A declared limit cannot silently count as a completed requirement."> Complete the missing interaction and review, or explicitly revise the agreement.</label>
+<label><input type="radio" name="quiz-review" value="b" data-feedback="Those tests do not supply the missing browser observation or review."> Advance because the backend tests pass.</label>
+<label><input type="radio" name="quiz-review" value="c" data-feedback="Repeating one review does not create a second independent assessment."> Ask the same reviewer to repeat the same approval and call it independent.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-review">Write the follow-up you would send before accepting the checkpoint.</label>
+<textarea id="note-review" data-note="review" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://shopify.engineering/back-to-native" target="_blank" rel="noopener noreferrer">Shopify: Back to native, Helix and agent tooling</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-orchestration" data-title="Give each agent a bounded responsibility" data-minutes="10">
+<p class="eyebrow">Lesson 12 · Lauren&#39;s replies · Coordinators and workers</p>
+<h2 tabindex="-1">Give each agent a bounded responsibility</h2>
+<p class="outcome">Write a delegation brief with an outcome, ownership boundary, and proof.</p>
+<div class="lesson-body"><p>In the replies you supplied, Lauren explains that her Grok bot coordinates Cursor cloud agents, where much of her coding happens. Cloud-agent setup on the repository is a prerequisite for that arrangement. Our local agent tools are a different execution environment. Installing pstack does not establish the cloud connection.</p>
+<h3>Split an example task</h3><ol>
+<li>Give a coordinator the reader outcome, constraints, and integration responsibility.</li>
+<li>Assign one worker the backend search change in its own writable checkout. Ask for the diff and executed evidence.</li>
+<li>Assign another worker an independent review of the feature map and browser contract. Keep that review read-only unless changes are explicitly assigned.</li>
+<li>Have the coordinator inspect the artifacts and test their integration. Individual worker success does not establish that the pieces work together.</li></ol>
+<p>Write a delegation brief in your notebook. It should tell a worker what it owns, what it must leave alone, what input it can trust, and what evidence to return.</p>
+<p>Start with one verified workflow before multiplying workers. More agents can increase output while also increasing conflicts and review work. The benefit depends on how independently the tasks can run and how cheaply you can assess the result.</p>
+<details><summary>What is a worktree?</summary><p>A Git worktree is another checkout of a repository with its own working files. Two workers can edit separate checkouts without typing over the same file. A cloud worker may instead have a separate machine. In both cases, shared services, ports, or databases can still conflict. Separate the state the workers mutate, then verify the combined result after integration.</p></details>
+<details><summary>What a coordinator should return</summary><p>The coordinator should make the work understandable: the result, relevant tradeoffs, integrated evidence, unresolved issues, and the next decision. Forwarding several long worker transcripts makes you the integration layer. Ask for one account that cites the artifacts and explains any disagreement.</p></details>
+<details><summary>When parallelism is a poor fit</summary><p>If task B cannot start until A defines a response contract, pretending they are independent often produces rework. Establish the shared contract first. Parallelize source investigation, separate experiments, or independent reviews where the inputs are stable. Keep tightly coupled edits with one owner unless there is a clear reason to split them.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Coordinate this task using bounded assignments. For each worker, specify the outcome, owned checkout or read-only scope, dependencies, and evidence to return. Use the agent tools actually available here. Inspect the returned artifacts and verify integration before reporting completion. Do not assume cloud agents are configured.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>Each worker has a clear assignment and writable boundary. The coordinator owns the final integrated result.</p><p><strong>Common mistake.</strong> Spawning agents without defining who owns the shared files or who verifies their combined changes.</p></div>
+<form class="quiz" data-answer="c"><fieldset><legend>Two workers each pass their tests, but their combined change breaks the browser. What was missing?</legend>
+<label><input type="radio" name="quiz-orchestration" value="a" data-feedback="More isolated successes would not prove integration."> A larger number of workers.</label>
+<label><input type="radio" name="quiz-orchestration" value="b" data-feedback="Confidence does not exercise the combined application."> A stronger claim of confidence from both workers.</label>
+<label><input type="radio" name="quiz-orchestration" value="c" data-feedback="Yes. The coordinator must check how the completed pieces behave together."> Verification of the integrated result.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-orchestration">Draft one worker assignment with an outcome, ownership boundary, dependency, and evidence requirement.</label>
+<textarea id="note-orchestration" data-note="orchestration" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/poteto-mode/playbooks/feature.md" target="_blank" rel="noopener noreferrer">pstack feature workflow</a>. Author clarification supplied in this conversation. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-maintenance" data-title="Keep the verification loop accurate" data-minutes="10">
+<p class="eyebrow">Lesson 13 · Part 1 · Maintenance and useful memory</p>
+<h2 tabindex="-1">Keep the verification loop accurate</h2>
+<p class="outcome">Turn one observed failure into a durable improvement to the checking process.</p>
+<div class="lesson-body"><p>A verification system can drift as the app changes. A route can move. A response field can change. A new entry point can bypass a rule that the existing scenario still checks correctly. Treat maintenance as checking the connection between instructions, tools, and current behavior.</p>
+<h3>Audit one mapped feature</h3><ol>
+<li>Read the current feature entry and trace its entry points in source.</li>
+<li>Run the documented drive method against the intended instance.</li>
+<li>Compare the actual observations with the stated expectations.</li>
+<li>Classify a mismatch: outdated instructions, missing driver capability, or a product defect.</li>
+<li>Repair the responsible artifact within the authorized scope, then rerun the relevant proof.</li>
+<li>Preserve the evidence and record any remaining unsupported path.</li></ol>
+<p>Practice with the draft-exclusion lab. Write the lesson you would encode after the first misleading green result. Prefer a concrete fixture and assertion over a generic instruction to be thorough.</p>
+<p>The installed maintenance skill can guide an audit. Its default editing scope is the verification skill's own directory. Our driver lives in <code>verification/</code>, outside that directory. A command repair therefore needs to be routed as an explicitly scoped code change rather than silently treated as a documentation edit.</p>
+<details><summary>What should become memory?</summary><p>Keep information that changes the next decision or prevents repeated rediscovery. A sample draft with otherwise valid publication data can catch a filtering regression. A feature entry can explain a second user path that people repeatedly miss. A short handoff can record which branch and evidence belong to an unfinished task. A growing list of vague cautions is harder to apply.</p></details>
+<details><summary>A maintenance schedule is an operating choice</summary><p>Lauren recommends frequent upkeep in Part 1. A useful cadence depends on how often the application changes and how the checks run. An available skill is not an active scheduled job. Before relying on automation, establish the environment, ownership, evidence location, and how failures reach an operator. This tutorial creates no schedule.</p></details>
+<details><summary>Keep product repair and check repair distinct</summary><p>A maintenance audit can discover an application bug without being authorized to edit application code. Report the defect with a reproduction and route the fix to the normal implementation workflow. Respect the project&#39;s boundaries. Narrow tool permissions are useful only when the handoff for necessary work is clear.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Audit the story-search verification entry against current source and an executed check. Classify any mismatch as documentation drift, driver gap, or product defect. Propose the narrow repair and the proof needed afterward. Respect the maintenance skill&#39;s editing scope; identify driver changes as a separate code task.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>The audit produces either evidence of agreement or a specific mismatch with an owner and next check.</p><p><strong>Common mistake.</strong> Updating the map to match a broken result without revisiting the intended reader outcome.</p></div>
+<form class="quiz" data-answer="b"><fieldset><legend>A documented command no longer exists, while the product behavior still works. What kind of mismatch is this?</legend>
+<label><input type="radio" name="quiz-maintenance" value="a" data-feedback="The observed problem is the verification recipe, not necessarily the feature."> Proof that the product feature must be rewritten.</label>
+<label><input type="radio" name="quiz-maintenance" value="b" data-feedback="Yes. Restore an accurate way to drive the existing behavior and verify it."> Instruction or driver drift that needs a working recipe.</label>
+<label><input type="radio" name="quiz-maintenance" value="c" data-feedback="A stale recipe weakens future verification."> A reason to mark the feature permanently verified.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-maintenance">Describe one concrete improvement to the fixture, check, map, or handoff that would prevent a repeated mistake.</label>
+<textarea id="note-maintenance" data-note="maintenance" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://github.com/cursor/plugins/blob/main/pstack/skills/maintain-verification-skill/SKILL.md" target="_blank" rel="noopener noreferrer">pstack verification maintenance skill</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+<section class="lesson" id="lesson-capstone" data-title="Lead one complete development cycle" data-minutes="20">
+<p class="eyebrow">Lesson 14 · Your practice · Bring the pieces together</p>
+<h2 tabindex="-1">Lead one complete development cycle</h2>
+<p class="outcome">Export a brief and prompt sequence you can use to supervise a real, small task.</p>
+<div class="lesson-body"><p>Choose one behavior small enough to assess in a session. You can keep the remembered-title example or replace it with a real issue. If you choose a real issue, first establish whether it exists. The course's example is not evidence of a current defect.</p>
+<h3>Assemble your next agent conversation</h3><ol>
+<li>Write the reader's action, expected outcome, constraints, and proof in your notebook.</li>
+<li>Ask for a restatement and investigation. Check whether the agent understood the problem and traced current behavior.</li>
+<li>Locate the verification skill, drive command, and feature entry. Identify missing proof before relying on the check.</li>
+<li>Where the design is uncertain, request a small number of runnable alternatives. Compare the same inputs and choose using the observed tradeoff.</li>
+<li>Ask architect to establish the code shape when the change needs that work. Then turn the selected design into verifiable checkpoints.</li>
+<li>Authorize the intended implementation scope in your own words. Let the agent handle routine details and require evidence for meaningful claims.</li>
+<li>Inspect the result, review findings, and proof limits. If a check misses a defect, improve the verification method as part of the repair.</li>
+<li>Update useful product knowledge and export your notebook for the next session.</li></ol>
+<p>Use the prompt below as an opening, then adapt it. Do not paste every prompt from this course into one giant request. Move to the next phase when the previous phase has supplied the information you need.</p>
+<details><summary>Assess your own progress</summary><p>Ask whether you can explain what the agent is trying to achieve, identify the evidence behind its claim, name what remains unverified, and give a useful correction. Those are observable supervision skills. The quiz score measures understanding of the course&#39;s scenarios, not production engineering competence. Lesson completion is your own record; notes are not graded by an AI.</p></details>
+<details><summary>Choose a smaller first real task</summary><p>A manageable first task has a reachable user path, a repeatable setup, and an outcome you can inspect. Extending one existing story-search scenario may teach more than attempting to automate the entire research pipeline. Increase scope as your ability to observe and assess the agent improves.</p></details>
+<details><summary>What the current toolkit still lacks</summary><p>The MindPattern verification foundation covers selected synthetic backend scenarios. It is not a complete browser controller, full pipeline driver, automatic cloud-agent coordinator, or internal Helix implementation. This course teaches you how to identify and ask for those capabilities. Completing the lessons does not install them.</p></details>
+<details><summary>Reading the original material</summary><p>The source articles and pasted replies establish the author&#39;s approach. The prompts, labs, invented data, and teaching sequence here were created for you. The public pstack files may evolve beyond the locally installed version. When running a real task, read the installed skill and current repository rules.</p></details>
+<h3>Try this with your agent</h3>
+<p>These are course-authored prompts. Use the skill names as instructions to your coding agent, not as terminal commands.</p>
+</div>
+<pre class="prompt"><code>Use poteto-mode. I want to improve my ability to develop with agents while completing one small task: [reader outcome]. First restate the problem, inspect the current behavior, and identify how we can verify it. Explain your findings in plain language and show the evidence. If design choices remain, show runnable alternatives before we choose a plan. Keep this first step read-only.</code></pre>
+<div class="lesson-body"><h3>What to look for</h3><p>You have a small brief, a phase-appropriate opening prompt, and a way to assess the agent&#39;s first response.</p><p><strong>Common mistake.</strong> Measuring progress by the number of skills invoked or files changed instead of the quality of the result and your understanding of it.</p></div>
+<form class="quiz" data-answer="a"><fieldset><legend>The agent proposes a full rewrite before investigating your small issue. What is the best next instruction?</legend>
+<label><input type="radio" name="quiz-capstone" value="a" data-feedback="Yes. Make the scope follow the problem and the evidence."> Return to the observed problem and show evidence that a rewrite is needed.</label>
+<label><input type="radio" name="quiz-capstone" value="b" data-feedback="Detail does not establish that the proposed scope is necessary."> Approve it because the plan is detailed.</label>
+<label><input type="radio" name="quiz-capstone" value="c" data-feedback="That can multiply the untested premise instead of checking it."> Ask three more agents to expand the same rewrite plan.</label>
+</fieldset><button type="submit">Check my reasoning</button><p class="quiz-feedback" role="status"></p></form>
+<label class="notebook-label" for="note-capstone">Write your final brief and opening prompt. Include the evidence you need before approving the next phase.</label>
+<textarea id="note-capstone" data-note="capstone" rows="5" placeholder="Write your own reasoning here. These notes are not graded."></textarea>
+<p class="source-note">Sources: <a href="https://threadnavigator.com/thread/2094457600259842065/" target="_blank" rel="noopener noreferrer">Lauren&#39;s Part 1, readable copy</a> · <a href="https://threadnavigator.com/thread/2097732320606507506/" target="_blank" rel="noopener noreferrer">Lauren&#39;s Part 2, readable copy</a> · <a href="https://shopify.engineering/back-to-native" target="_blank" rel="noopener noreferrer">Shopify&#39;s published approach</a>. Exercises and example prompts are original course material.</p>
+<button class="complete-lesson" type="button">Mark lesson complete</button>
+</section>
+
+        </div>
+
+        <nav class="lesson-controls" aria-label="Lesson controls">
+          <button id="previous-lesson" class="button secondary" type="button">Previous lesson</button>
+          <button id="next-lesson" class="button primary" type="button">Next lesson</button>
+        </nav>
+
+        <details id="notebook-fallback" class="notebook-fallback">
+          <summary>Notebook text</summary>
+          <p>If the download does not start, select and copy this Markdown.</p>
+          <pre id="notebook-text" tabindex="0"></pre>
+        </details>
+      </main>
+    </div>
+
+    <div id="course-status" class="sr-status" role="status" aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>

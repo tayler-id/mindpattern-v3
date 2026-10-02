@@ -58,13 +58,14 @@ to its hour-long TTL. The publish still succeeds; readers just wait.
 
 ## launchd agents (macOS)
 
-Two launchd agents keep MindPattern running on the host Mac. Copies live here
-so a machine move is reproducible (the `~/Library/LaunchAgents` originals are
-not in the repo).
+The checked-in plists describe host launchd configurations, not proof that either
+job is currently loaded. Installed files and loaded state can differ. See
+[Scheduling](../docs/ARCHITECTURE.md#scheduling) for the pipeline's calendar,
+wrapper guards, and evidence limits.
 
 | Agent | File | What it does |
 |-------|------|--------------|
-| `com.mindpattern.pipeline` | `com.mindpattern.pipeline.plist` | Runs `run-launchd.sh` hourly 07–11. The wrapper enforces a once-per-day marker + run window, so extra triggers are cheap no-ops and provide catch-up if the Mac was asleep at 07:00. |
+| `com.mindpattern.pipeline` | `com.mindpattern.pipeline.plist` | Invokes `run-launchd.sh` on the checked-in calendar. See [Scheduling](../docs/ARCHITECTURE.md#scheduling) for trigger times and delivery/sync retry behavior. |
 | `com.mindpattern.slackbot` | `com.mindpattern.slackbot.plist` | Long-running Socket Mode daemon (`python -m slack_bot`). `KeepAlive` restarts it on crash/wake. Handles #posts, #tips, #skills, #approvals, etc. |
 
 ## Install (new machine)

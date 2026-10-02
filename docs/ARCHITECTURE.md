@@ -1,6 +1,6 @@
 # MindPattern v3 — System Architecture
 
-> Autonomous AI research pipeline. Runs daily at 7 AM. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
+> Autonomous AI research pipeline. Runs daily through a guarded launcher. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart TD
-    LAUNCHD["macOS launchd<br/>7 AM daily"] --> WRAPPER["run-launchd.sh<br/>Idempotent wrapper"]
+    LAUNCHD["macOS launchd<br/>Guarded daily publishing"] --> WRAPPER["run-launchd.sh<br/>Idempotent wrapper"]
     WRAPPER --> RUN["run.py"]
     RUN --> INIT
 
@@ -315,8 +315,8 @@ flowchart LR
     subgraph MACOS["macOS Services"]
         MESSAGES["Messages.db<br/>iMessage gates<br/>FDA required"]
         KEYCHAIN["macOS Keychain<br/>API keys"]
-        LAUNCHD_SVC["launchd<br/>7 AM schedule"]
-        PMSET["pmset<br/>6:55 AM wake"]
+        LAUNCHD_SVC["launchd<br/>Host-loaded schedule"]
+        PMSET["pmset<br/>Host wake configuration"]
     end
 
     PREFLIGHT_M --> ARXIV_API & GH_API & HN_API & REDDIT_API
@@ -511,29 +511,29 @@ All sensitive credentials stored in macOS Keychain:
 Additional requirements:
 - **Full Disk Access**: `/bin/bash` and `python3.14` must have FDA for Messages.db access
 - **Claude Pro subscription**: CLI authenticates via account (no API key needed)
-- **pmset wakepoweron**: Mac wakes at 6:55 AM for 7 AM pipeline run
+- **Host wake configuration**: separate from the launch calendar; see [Scheduling](#scheduling) for evidence limits.
 
 ---
 
 ## Scheduling
 
-```mermaid
-flowchart LR
-    PMSET["pmset wakepoweron<br/>6:55 AM"] --> WAKE["Mac wakes"]
-    WAKE --> LAUNCHD_T["launchd<br/>com.taylerramsay.daily-research<br/>7:00 AM + RunAtLoad"]
-    LAUNCHD_T --> WRAPPER_T["run-launchd.sh"]
+### Checked-in behavior
 
-    WRAPPER_T --> CHECK1{"Already ran today?<br/>/tmp/mindpattern-ran-{date}"}
-    CHECK1 -->|"yes"| SKIP["Skip"]
-    CHECK1 -->|"no"| CHECK2{"Lock file exists?"}
-    CHECK2 -->|"stale"| CLEAN["Remove stale lock"]
-    CHECK2 -->|"active PID"| SKIP
-    CLEAN --> FDA{"FDA check<br/>Python reads Messages.db?"}
-    CHECK2 -->|"no"| FDA
-    FDA -->|"warn if failed"| CAFF["caffeinate -i -s"]
-    CAFF --> PIPELINE_T["python3 run.py"]
-    PIPELINE_T --> MARKER["touch /tmp/mindpattern-ran-{date}"]
-```
+The sources of truth are [`deploy/com.mindpattern.pipeline.plist`](../deploy/com.mindpattern.pipeline.plist) and [`run-launchd.sh`](../run-launchd.sh), not the example lifecycle times elsewhere in older docs.
+
+- The plist names `com.mindpattern.pipeline`, requests triggers every 15 minutes from 05:00 through 09:45 in the host's local time, and sets `RunAtLoad` to false.
+- The wrapper admits starts only from 05:00 through 09:59. This is a start window, not a completion deadline; a running pipeline can continue after 10:00.
+- Delivery and sync markers determine whether work is needed. Both present means skip. Delivery present without sync means `--sync-only`; missing delivery permits another pipeline attempt. The wrapper does not mark delivery merely because the process exited.
+- An atomic directory lock prevents concurrent wrapper runs; the wrapper reclaims stale locks when the recorded PID is no longer alive. These guards permit retries, not a guarantee of exactly one invocation per day.
+- The wrapper pulls `origin/main --ff-only` only when its checkout is on `main`. On other branches it uses local code without pulling. Do not switch or edit the publishing checkout as part of documentation or development work.
+
+### Installed, loaded, and observed schedules
+
+The repository plist describes checked-in intent. An installed plist can differ from it, and the file on disk does not prove which configuration launchd has loaded, either now or historically. This documentation does not establish a precise current live schedule.
+
+For an operational investigation, compare the repository configuration with the installed file and read-only loaded-job information on the publishing host. Use timestamped `reports/launchd-decisions.log` entries to establish actual invocations and skips, and pipeline records to establish delivery and sync. A present-day plist cannot explain historical trigger times by itself. Do not reload a job or run the launcher just to check documentation.
+
+Host wake and sleep behavior is separate from the launch calendar. The wrapper uses `caffeinate -i -s`, but those assertions do not guarantee execution through battery or lid sleep. A launch calendar is not a delivery-time guarantee; investigate delayed runs using power history as well as pipeline timestamps.
 
 ---
 

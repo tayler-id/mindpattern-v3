@@ -1,6 +1,6 @@
 # MindPattern v3
 
-> Autonomous AI research pipeline. Runs daily at 7 AM. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
+> Autonomous AI research pipeline. Runs daily through a guarded launcher. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, supports optional social posting, and improves itself after every run. Scheduled runs skip social posting and engagement by default.
 
 ## Architecture
 
@@ -11,8 +11,9 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - **Pipeline**: `orchestrator/pipeline.py` defines the `Phase` state machine (INIT → TREND_SCAN → RESEARCH → SYNTHESIS → DELIVER → SITE_CONTENT → LEARN → SOCIAL → ENGAGEMENT → IDENTITY → MIRROR → SYNC → COMPLETED); `orchestrator/runner.py` executes the phases
 - **Agent dispatch**: `orchestrator/agents.py` (`run_single_agent()`, `run_claude_prompt()`, `dispatch_research_agents()`). Every model call, Claude or Codex, goes through `core/model_cli.py`, which reads its provider, model, effort, turns, and timeout from `config/models.json` and records the call in `traces.db` (`model_calls`, `model_call_steps`) with the raw event stream in `data/<user>/traces/`.
 - **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern. Runs 24/7 on Fly.io (app `mindpattern`, alongside the dashboard via `start.sh`); harness commands stay Mac-only. Secrets come from Fly secrets (env vars) in the container, macOS Keychain locally.
+- **Social posting**: `run-launchd.sh` defaults `MP_LAUNCHD_SKIP_SOCIAL` to `1` and passes `--skip-social`. In `run.py`, that flag sets `MP_SKIP_SOCIAL=1`; `orchestrator/runner.py` then skips both SOCIAL and ENGAGEMENT, not newsletter delivery or site publishing. This is a scheduled-run default, not a global posting ban. Manual runs and Slack's `#mp-posts` workflow in `slack_bot/handlers/posts.py` remain optional posting paths, subject to approval and outbound/platform controls. Keep the scheduled default unchanged unless the owner explicitly approves enabling posting.
 - **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
-- **Scheduling**: macOS launchd via `run-launchd.sh` (`deploy/com.mindpattern.pipeline.plist` fires every 15 minutes from 05:00 to 09:45; the script's lock, run window, and dark-wake gate ensure one run per day on a Mac that stays awake)
+- **Scheduling**: macOS launchd via `run-launchd.sh`. See [Scheduling](docs/ARCHITECTURE.md#scheduling) for the checked-in calendar, retry guards, and the distinction between repository configuration and loaded job state.
 - **Deploy**: `deploy/deploy.sh` runs tests, the 3.11 compile gate, `flyctl deploy`, then the site warm crawl. Never deploy with a bare `flyctl deploy`: a deploy empties the dashboard's in-memory caches (and a Vercel deploy drops the whole ISR cache), and nothing else refills them. Run `deploy/deploy.sh --warm-only` after a Vercel deploy. See `deploy/README.md`.
 
 ## Config, policies, and contracts
@@ -139,4 +140,4 @@ Five canonical labels — defaults (`needs-triage`, `needs-info`, `ready-for-age
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Start at [README.md](README.md). Use [docs/agents/domain.md](docs/agents/domain.md) to find existing architecture, specs, and runbooks for vocabulary and decisions.
