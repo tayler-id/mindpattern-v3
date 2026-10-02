@@ -28,6 +28,8 @@ from typing import Generator
 # Default database path — resolves relative to the mindpattern-v3 project root
 # ---------------------------------------------------------------------------
 
+from core.trace_store import ensure_model_call_tables
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_USER_ID = "ramsay"
 
@@ -221,8 +223,11 @@ def init_db(
             delta_from_avg REAL
         );
     """)
+    ensure_model_call_tables(conn)
 
     return conn
+
+
 
 
 @contextmanager

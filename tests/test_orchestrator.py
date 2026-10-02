@@ -271,8 +271,8 @@ class TestCheckpoint:
 # 3. orchestrator/router.py
 # ═══════════════════════════════════════════════════════════════════════
 
+from core.config import load_routes
 from orchestrator.router import (
-    MODEL_ROUTING,
     get_max_turns,
     get_model,
     get_timeout,
@@ -283,17 +283,17 @@ class TestRouter:
     """Model routing: correct model, turns, timeout, and cost estimation."""
 
     def test_get_model_trend_scan(self):
-        assert get_model("trend_scan") == "haiku"
+        assert get_model("trend_scan") == "claude-haiku-4-5"
 
     def test_get_model_research_agent(self):
-        assert get_model("research_agent") == "claude-opus-5[1m]"
+        assert get_model("research_agent") == "claude-sonnet-5-5"
 
     def test_get_model_synthesis(self):
-        assert get_model("synthesis_pass1") == "claude-opus-5[1m]"
-        assert get_model("synthesis_pass2") == "claude-opus-5[1m]"
+        assert get_model("synthesis_pass1") == "claude-opus-5-5"
+        assert get_model("synthesis_pass2") == "claude-opus-5-5"
 
     def test_get_model_social_tasks(self):
-        assert get_model("eic") == "claude-opus-5[1m]"
+        assert get_model("eic") == "claude-opus-5-5"
         assert get_model("writer") == "sonnet"
         assert get_model("critic") == "sonnet"
 
@@ -321,8 +321,9 @@ class TestRouter:
             "illustrator", "writer", "critic", "expeditor", "humanizer",
             "engagement_finder", "engagement_writer",
         ]
+        routes = load_routes()
         for task in expected_tasks:
-            assert task in MODEL_ROUTING, f"Missing task type: {task}"
+            assert task in routes, f"Missing task type in config/models.json: {task}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -612,6 +613,7 @@ class TestTracesDbInit:
         expected = sorted([
             "agent_metrics", "agent_runs", "alerts",
             "daily_metrics", "events", "evolution_actions",
+            "model_call_steps", "model_calls",
             "pipeline_runs", "prompt_versions",
             "proof_packages", "quality_history", "quality_scores",
             "trace_spans",

@@ -9,6 +9,7 @@ subscription boundary as the newsletter; fails closed everywhere.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import logging
 import os
@@ -19,6 +20,9 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
+from core import contracts
+from core.config import route_for
+from core.model_cli import ToolPolicy, run_task_process
 from orchestrator.site_copy_lint import (
     CopyLintIssue,
     copy_allowed_urls_from_refs,
@@ -28,11 +32,12 @@ from orchestrator.site_copy_lint import (
     revise_issues,
 )
 from orchestrator.site_writer import (
-    DEFAULT_WRITER_TIMEOUT,
     PROJECT_ROOT,
+    WRITER_DISALLOWED_TOOLS,
     build_site_writer_prompt,
     evidence_block_for_pack,
     parse_writer_output,
+    run_writer,
     write_story_copy_with_agent,
 )
 
@@ -40,8 +45,6 @@ RULES_SPEC_PATH = PROJECT_ROOT / "docs" / "specs" / "site-writer-rules.md"
 CRITIC_SYSTEM_PROMPT = PROJECT_ROOT / "agents" / "site-story-critic.md"
 
 SITE_CRITIC_ENV = "MP_SITE_STORY_CRITIC"
-SITE_CRITIC_MODEL_ENV = "MP_SITE_STORY_CRITIC_MODEL"
-DEFAULT_CRITIC_MODEL = "claude-sonnet-5"
 
 PASS_SCORE = 8
 
@@ -122,7 +125,7 @@ def run_critic(
     *,
     rules_text: str | None = None,
     lint_issues: list[CopyLintIssue] | None = None,
-    timeout: int = DEFAULT_WRITER_TIMEOUT,
+    timeout: int | None = None,
     runner: Callable[..., Any] = run_claude_process,
 ) -> dict[str, Any] | None:
     """One critic pass. Returns verdict dict or None on any failure."""
@@ -132,23 +135,21 @@ def run_critic(
         rules_text=rules_text or load_rules_spec(),
         lint_issues=lint_issues,
     )
-    cmd = [
-        "claude",
-        "-p",
-        prompt,
-        "--model",
-        os.environ.get(SITE_CRITIC_MODEL_ENV, DEFAULT_CRITIC_MODEL),
-        "--max-turns",
-        "8",
-        "--output-format",
-        "text",
-        "--append-system-prompt-file",
-        str(CRITIC_SYSTEM_PROMPT),
-        "--disallowedTools",
-        "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
-    ]
+    route = route_for("site_story_critic")
+    if timeout:
+        route = replace(route, timeout_s=timeout)
     try:
-        process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+        process = run_task_process(
+            "site_story_critic",
+            prompt=prompt,
+            system_prompt_file=CRITIC_SYSTEM_PROMPT,
+            tools=ToolPolicy(disallowed=WRITER_DISALLOWED_TOOLS),
+            unit=graph_pack.get("candidate_id"),
+            cwd=PROJECT_ROOT,
+            route=route,
+            output_schema=contracts.path("critic_verdict"),
+            runner=runner,
+        )
     except Exception:
         return None
     if getattr(process, "returncode", 1) != 0 or getattr(process, "timed_out", False):
@@ -188,7 +189,7 @@ def write_story_with_review(
     *,
     voice_text: str | None = None,
     rules_text: str | None = None,
-    timeout: int = DEFAULT_WRITER_TIMEOUT,
+    timeout: int | None = None,
     runner: Callable[..., Any] = run_claude_process,
 ) -> dict[str, str] | None:
     """Writer -> critic -> one revision -> critic. Fail closed to None."""
@@ -239,8 +240,6 @@ def write_story_with_review(
     # Fabrication (score 0) goes back to the writer with the critic's notes,
     # like any desk: the editor names the unsupported claim, the writer cuts
     # it. The fabricating draft itself is never a publishable fallback.
-    from orchestrator.site_writer import writer_command
-
     draft_is_usable = verdict["score"] >= 5
     prompt = build_revision_prompt(
         graph_pack,
@@ -249,13 +248,9 @@ def write_story_with_review(
         voice_text=voice_text,
         lint_issues=draft_revise_lint,
     )
-    cmd, stdin_text = writer_command(prompt)
     candidate = graph_pack.get("candidate_id", "story")
     try:
-        try:
-            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT, input_text=stdin_text)
-        except TypeError:
-            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+        process = run_writer(prompt, runner=runner, unit=candidate, timeout=timeout)
     except Exception as exc:
         logger.warning("site_critic %s: revision exception %s", candidate, exc)
         return draft if draft_is_usable else None

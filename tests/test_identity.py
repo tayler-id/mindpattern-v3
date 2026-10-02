@@ -2,11 +2,23 @@
 from pathlib import Path
 
 from orchestrator.agents import (
-    _build_claude_command,
     AGENT_ALLOWED_TOOLS,
     build_agent_prompt,
     RESEARCH_DISALLOWED_TOOLS,
 )
+
+
+def _build_claude_command(prompt, *, model, max_turns, allowed_tools=None, disallowed_tools=None,
+                          system_prompt_file=None):
+    """The argv core.model_cli builds for these inputs (the old builder moved there)."""
+    from core.config import Route
+    from core.model_cli import CallRequest, ToolPolicy, build_argv, disallowed
+
+    route = Route("test", "claude", model, 300, max_turns=max_turns)
+    request = CallRequest(task="test", prompt=prompt, system_prompt_file=system_prompt_file,
+                          tools=ToolPolicy(allowed=tuple(allowed_tools or ()),
+                                           disallowed=disallowed(disallowed_tools)))
+    return build_argv(route, request)[0]
 
 
 def test_identity_dir_overrides_soul_path(tmp_path):

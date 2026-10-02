@@ -31,6 +31,11 @@ class BaseHandler:
         self.client = client
         self.channel_id = channel_id
         self.owner_user_id = owner_user_id
+        # Replies wait_for_reply() has already returned, across calls. Without
+        # this, every call re-reads the thread from the top and returns the
+        # OLDEST owner reply again — one unparseable reply then loops the
+        # approval flow forever (2026-08-18 #mp-posts incident).
+        self._consumed_reply_ts: set[str] = set()
 
     def handle(self, event: dict) -> None:
         """Process an incoming message event. Override in subclasses."""
@@ -87,16 +92,15 @@ class BaseHandler:
             poll_interval: Seconds between polls.
         """
         start = time.monotonic()
-        seen_ts = set()
         while True:
             time.sleep(poll_interval)
             replies = self.get_thread_replies(thread_ts)
             for r in replies:
-                if r["ts"] not in seen_ts:
-                    seen_ts.add(r["ts"])
-                    user = r.get("user", "")
-                    if user == self.owner_user_id:
-                        return r.get("text", "").strip()
+                if r["ts"] in self._consumed_reply_ts:
+                    continue
+                if r.get("user", "") == self.owner_user_id:
+                    self._consumed_reply_ts.add(r["ts"])
+                    return r.get("text", "").strip()
             if timeout is not None and (time.monotonic() - start) >= timeout:
                 return None
 

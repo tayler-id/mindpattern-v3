@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from slack_bot.approval import is_explicit_skip, parse_platform_approval
-from slack_bot.drafts import apply_draft_edit, parse_draft_edit
+from slack_bot.drafts import apply_draft_edit, handle_draft_revision, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
 from slack_bot.handlers.followup import (
     handle_followup_action_reply,
@@ -588,6 +588,13 @@ class PostsHandler(BaseHandler):
                 )
                 continue
 
+            if handle_draft_revision(
+                self, reply_text, drafts, edit_targets, ts,
+                format_drafts=lambda d: self._format_drafts(d, policy_errors),
+                policy_errors=policy_errors,
+            ):
+                continue
+
             if is_explicit_skip(reply_text):
                 self.reply("Skipped. Nothing posted.", thread_ts=ts)
                 return
@@ -599,7 +606,8 @@ class PostsHandler(BaseHandler):
             self.reply(
                 "I didn't catch that. Reply *ALL*, "
                 f"*{'* or *'.join(p.upper() for p in drafts)}*, or *SKIP* — "
-                "or `edit <platform>: your text` to replace a draft "
+                "or `edit <platform>: your text` to replace a draft, or "
+                "`revise <platform>: your notes` to have the writer rework it "
                 f"({', '.join(edit_targets)}).",
                 thread_ts=ts,
             )

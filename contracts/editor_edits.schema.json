@@ -1,0 +1,22 @@
+{
+  "$comment": "The newsletter editor's answer: line edits, never a rewrite. orchestrator/newsletter_editor.py applies an edit only if the find text occurs once and the replacement keeps every number, URL, link, quote, and name from it.",
+  "type": "object",
+  "properties": {
+    "edits": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "find": {"type": "string", "minLength": 8, "maxLength": 600},
+          "replace": {"type": "string", "maxLength": 800},
+          "reason": {"type": "string", "maxLength": 200}
+        },
+        "required": ["find", "replace", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["edits"],
+  "additionalProperties": false
+}

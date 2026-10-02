@@ -2,17 +2,31 @@
     "platforms": {
         "bluesky": {
             "max_graphemes": 300,
-            "require_url": true
+            "require_url": true,
+            "require_source_url": true
         },
         "linkedin": {
             "max_chars": 3000,
-            "require_url": false
+            "require_url": false,
+            "require_source_url": true
         }
     },
+    "brand_domains": [
+        "mindpattern.ai",
+        "mindpattern.fly.dev"
+    ],
     "banned_words": [
-        "game-changer", "revolutionize", "disrupt", "synergy",
-        "leverage", "paradigm", "ecosystem", "transformative",
-        "cutting-edge", "best-in-class", "world-class"
+        "game-changer",
+        "revolutionize",
+        "disrupt",
+        "synergy",
+        "leverage",
+        "paradigm",
+        "ecosystem",
+        "transformative",
+        "cutting-edge",
+        "best-in-class",
+        "world-class"
     ],
     "banned_patterns": [
         "\u2014",
@@ -30,12 +44,21 @@
         "(?i)synchrony\\s*financial"
     ],
     "rate_limits": {
-        "bluesky": {"max_posts_per_day": 3, "max_follows_per_day": 100},
-        "linkedin": {"max_posts_per_day": 1, "max_follows_per_day": 50}
+        "bluesky": {
+            "max_posts_per_day": 3,
+            "max_follows_per_day": 100
+        },
+        "linkedin": {
+            "max_posts_per_day": 1,
+            "max_follows_per_day": 50
+        }
     },
     "reply_cooldown_days": 7,
     "posting": {
         "min_delay_seconds": 30,
-        "jitter_range_seconds": [60, 300]
+        "jitter_range_seconds": [
+            60,
+            300
+        ]
     }
 }

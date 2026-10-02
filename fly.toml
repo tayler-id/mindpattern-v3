@@ -8,6 +8,12 @@ primary_region = "sjc"
 # See start.sh.
 
 [env]
+  # Backfill disabled 2026-08-27: the boot-time archive sweep wedged the event
+  # loop for its whole 20-minute budget (healthz timed out at 25s, readers got
+  # 500s) on three separate windows in one night. The archive fills organically
+  # through the serving write-through instead. Re-enable only after the sweep
+  # is proven not to block the loop, with a test.
+  MP_WARMUP_BACKFILL_MINUTES = "0"
   DATA_DIR = "/data"
   USERS_JSON = "/data/users.json"
   HOST = "0.0.0.0"
@@ -36,5 +42,11 @@ primary_region = "sjc"
   destination = "/data"
 
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2gb"
+  # Scaled up 2026-08-27. One machine runs the dashboard, the Slack bot, and
+  # every claude subprocess a draft spawns. On shared-cpu-2x the health check
+  # went critical on six API calls, the backend warm-up took 1,458s, and a
+  # warm crawl saturated the box hard enough that the sitemap could not
+  # regenerate. A CLI scale does not rewrite this file, so leaving it at 2x
+  # meant the next deploy would quietly undo the scale.
+  size = "shared-cpu-4x"
+  memory = "4gb"

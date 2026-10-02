@@ -45,6 +45,7 @@ def test_schema_creates_all_tables(db):
     expected = sorted([
         "agent_metrics", "agent_runs", "alerts", "daily_metrics",
         "events", "evolution_actions", "pipeline_runs",
+        "model_call_steps", "model_calls",
         "prompt_versions", "proof_packages", "quality_history", "quality_scores",
         "trace_spans",
     ])

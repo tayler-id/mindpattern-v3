@@ -1,0 +1,5 @@
+#!/bin/sh
+# Launcher for the `mp` CLI (mp/cli.py). Research agents reach it through the
+# Bash(mp *) grant; the runner puts this folder first on their PATH.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec "${MP_PYTHON:-$ROOT/.venv/bin/python3}" -m mp "$@"

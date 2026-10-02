@@ -1,6 +1,6 @@
 # MindPattern v3
 
-> Autonomous AI research pipeline. Runs daily at 7 AM. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
+> Autonomous AI research pipeline. Runs daily through a guarded launcher. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, supports optional social posting, and improves itself after every run. Scheduled runs skip social posting and engagement by default.
 
 ## Architecture
 
@@ -9,10 +9,32 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 - **Python 3.14** codebase, no type stubs needed
 - **SQLite databases**: `data/ramsay/memory.db` (user data, 17+ tables), `data/ramsay/traces.db` (observability, 14 tables)
 - **Pipeline**: `orchestrator/pipeline.py` defines the `Phase` state machine (INIT → TREND_SCAN → RESEARCH → SYNTHESIS → DELIVER → SITE_CONTENT → LEARN → SOCIAL → ENGAGEMENT → IDENTITY → MIRROR → SYNC → COMPLETED); `orchestrator/runner.py` executes the phases
-- **Agent dispatch**: `orchestrator/agents.py` — `run_single_agent()`, `run_claude_prompt()`, `dispatch_research_agents()`
+- **Agent dispatch**: `orchestrator/agents.py` (`run_single_agent()`, `run_claude_prompt()`, `dispatch_research_agents()`). Every model call, Claude or Codex, goes through `core/model_cli.py`, which reads its provider, model, effort, turns, and timeout from `config/models.json` and records the call in `traces.db` (`model_calls`, `model_call_steps`) with the raw event stream in `data/<user>/traces/`.
 - **Slack bot**: `slack_bot/` — Socket Mode daemon with channel-based handler pattern. Runs 24/7 on Fly.io (app `mindpattern`, alongside the dashboard via `start.sh`); harness commands stay Mac-only. Secrets come from Fly secrets (env vars) in the container, macOS Keychain locally.
+- **Social posting**: `run-launchd.sh` defaults `MP_LAUNCHD_SKIP_SOCIAL` to `1` and passes `--skip-social`. In `run.py`, that flag sets `MP_SKIP_SOCIAL=1`; `orchestrator/runner.py` then skips both SOCIAL and ENGAGEMENT, not newsletter delivery or site publishing. This is a scheduled-run default, not a global posting ban. Manual runs and Slack's `#mp-posts` workflow in `slack_bot/handlers/posts.py` remain optional posting paths, subject to approval and outbound/platform controls. Keep the scheduled default unchanged unless the owner explicitly approves enabling posting.
 - **Dashboard**: FastAPI newsletter viewer on the same Fly machine (`mindpattern.fly.dev` / `mindpattern.ai`)
-- **Scheduling**: macOS launchd via `run-launchd.sh` (`deploy/com.mindpattern.pipeline.plist` fires hourly 07:00–11:00; the script's lock and window guard ensure one run per day)
+- **Scheduling**: macOS launchd via `run-launchd.sh`. See [Scheduling](docs/ARCHITECTURE.md#scheduling) for the checked-in calendar, retry guards, and the distinction between repository configuration and loaded job state.
+- **Deploy**: `deploy/deploy.sh` runs the 3.11 compile gate, tests, `flyctl deploy`, then the site warm crawl. Never deploy with a bare `flyctl deploy`: a deploy empties the dashboard's in-memory caches (and a Vercel deploy drops the whole ISR cache), and nothing else refills them. Run `deploy/deploy.sh --warm-only` after a Vercel deploy. See `deploy/README.md`.
+
+## Config, policies, and contracts
+
+Behavior that changes without a code edit lives in files, checked when loaded:
+
+| File | Holds |
+|------|-------|
+| `config/models.json` | Provider, model, effort, turns, timeout, and fallback per task. `python -m core.config check` validates it. |
+| `policies/writing.json` | Banned and capped phrases, budgets. Feeds the gates and the writer prompts. |
+| `policies/editorial.json` | Story counts and caps. |
+| `policies/research.json` | Finding fields, age, injection patterns. |
+| `policies/observability.json` | Trace retention and the per-run soft budget. |
+| `contracts/*.schema.json` | The JSON shape a model must answer in. Codex enforces it; `core/contracts.py` checks it for every provider. |
+
+## Tools
+
+- `python -m orchestrator.trace runs | show <run> --steps | call <id> --full | grep | usage`: what every agent did.
+- `tools/replay_day.py --date D --stage synthesis|research --state-root ~/Projects/mindpattern-v3 --out DIR`: rerun a stage on real data in a scratch copy. Real model calls; `--dry-run` makes none.
+- `tools/usage_report.py --date D`: usage by task and model from Claude transcripts.
+- `bin/mp`: the research agents' tools (`finding add`, `findings list`, `seen`, `fetch`, `evidence add`, `lint`, `tells`).
 
 ## Code Conventions
 
@@ -44,7 +66,7 @@ See `docs/ARCHITECTURE.md` for full diagrams. Key facts:
 | Social/synthesis agent skills | `agents/*.md` |
 | Identity files | `data/ramsay/mindpattern/` (soul.md, user.md, voice.md, decisions.md) |
 | Harness tickets | `harness/tickets/*.json` |
-| Knowledge graph files | `harness/knowledge/*.md` (31 files) |
+| Knowledge graph files | `harness/knowledge/*.md` (41 files) |
 | Knowledge algorithms | `harness/knowledge_sections.py` |
 | Knowledge graph module | `harness/knowledge_graph.py` |
 | Tests | `tests/test_*.py` |
@@ -84,7 +106,7 @@ This repo has four different "graphs" — do not confuse them:
 | Graph | Built from | Who consumes it |
 |-------|-----------|-----------------|
 | `graphify-out/` | this repo's Python source | **coding agents (you)** |
-| `harness/knowledge/` | 33 hand-written `.md` files | harness self-improvement agents |
+| `harness/knowledge/` | 41 hand-written `.md` files | harness self-improvement agents |
 | `kg/` | research **findings** (newsletter content) | the pipeline (`MP_KG_BUILD_ENABLED=1`) |
 | `orchestrator/site_graph.py` | published stories | the public website |
 
@@ -118,4 +140,4 @@ Five canonical labels — defaults (`needs-triage`, `needs-info`, `ready-for-age
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Start at [README.md](README.md). Use [docs/agents/domain.md](docs/agents/domain.md) to find existing architecture, specs, and runbooks for vocabulary and decisions.

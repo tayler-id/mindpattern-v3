@@ -55,7 +55,8 @@ def _path_to_slug(path: Path) -> str:
     """Convert a file path back to a wiki-link slug."""
     name = path.stem
     for prefix in ("orchestrator", "social", "memory", "slack-bot", "slack_bot",
-                    "harness", "data", "agents", "issues", "patterns", "runs"):
+                    "harness", "data", "agents", "issues", "patterns", "runs",
+                    "core", "mp", "policies", "dashboard", "tools"):
         if name.startswith(prefix + "-"):
             rest = name[len(prefix) + 1:]
             return f"{prefix}/{rest}"

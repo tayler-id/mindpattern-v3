@@ -607,6 +607,20 @@ class TestDefaultMaxTimeout:
     """Verify that approval polling always has a finite upper bound,
     even when gate_timeout_seconds is not configured."""
 
+    @pytest.fixture(autouse=True)
+    def _no_slack_calls(self):
+        """These tests are about the timeout guard, not about Slack.
+
+        They used to let a real call to slack.com fail and count on the guard
+        firing first, which made them depend on the network and on how fast
+        that failure came back.
+        """
+        with patch(
+            "social.approval.urllib.request.urlopen",
+            side_effect=OSError("network disabled in tests"),
+        ) as stub:
+            yield stub
+
     def test_slack_poll_replies_default_max_timeout(self, gateway):
         """_slack_poll_replies returns None after DEFAULT_MAX_TIMEOUT
         when no explicit timeout is given (timeout_seconds=None).

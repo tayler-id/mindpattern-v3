@@ -488,3 +488,39 @@ class TestFlattenSections:
         assert "test/file#A#B" in ids
         assert "test/file#C" in ids
         assert len(flat) == 3
+
+
+def test_every_knowledge_page_is_indexed_and_every_link_resolves():
+    """A page for a new top-level package (core/, mp/, policies/) must still map to its slug."""
+    from pathlib import Path
+
+    from harness import knowledge_graph as kg
+
+    assert kg._path_to_slug(Path("core-model-cli.md")) == "core/model-cli"
+    assert kg._path_to_slug(Path("dashboard-campaignos.md")) == "dashboard/campaignos"
+    result = kg.check()
+    assert result["broken"] == []
+    for name in ("refs", "index", "code_refs"):
+        assert result["results"][name]["pass"], (name, result["results"][name])
+
+
+def test_know_text_inside_a_string_or_docstring_is_not_a_reference(tmp_path):
+    from harness.knowledge_sections import _scan_with_pathlib
+
+    (tmp_path / "mod.py").write_text(
+        '"""Scan files for # @know: [[target]] comments."""\n'
+        'EXAMPLE = "# @know: [[memory/vault]]\\n"\n'
+        "    # @know: [[orchestrator/runner]]\n"
+    )
+    assert [r.target for r in _scan_with_pathlib(str(tmp_path), [".claude"])] == ["orchestrator/runner"]
+
+
+def test_a_checkout_inside_a_dot_claude_folder_is_still_scanned(tmp_path):
+    """Worktrees live under .claude/worktrees/; excluding by absolute path scanned nothing there."""
+    from harness.knowledge_sections import _scan_with_pathlib
+
+    root = tmp_path / ".claude" / "worktrees" / "feature"
+    (root / ".claude").mkdir(parents=True)
+    (root / "mod.py").write_text("# @know: [[orchestrator/runner]]\n")
+    (root / ".claude" / "hook.py").write_text("# @know: [[memory/vault]]\n")
+    assert [r.target for r in _scan_with_pathlib(str(root), [".claude"])] == ["orchestrator/runner"]

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from slack_bot.approval import is_explicit_skip, parse_platform_approval
-from slack_bot.drafts import apply_draft_edit, parse_draft_edit
+from slack_bot.drafts import apply_draft_edit, handle_draft_revision, parse_draft_edit
 from slack_bot.handlers.base import BaseHandler
 from slack_bot.handlers.followup import (
     handle_followup_action_reply,
@@ -109,6 +109,12 @@ class TipsHandler(BaseHandler):
                 )
                 continue
 
+            if handle_draft_revision(
+                self, reply_text, drafts, edit_targets, ts,
+                format_drafts=self._format_drafts,
+            ):
+                continue
+
             if is_explicit_skip(reply_text):
                 self.reply("Skipped. Nothing posted.", thread_ts=ts)
                 return
@@ -122,7 +128,8 @@ class TipsHandler(BaseHandler):
             self.reply(
                 "I didn't catch that. Reply *ALL*, "
                 f"*{'* or *'.join(p.upper() for p in drafts)}*, or *SKIP* — "
-                "or `edit <platform>: your text` to replace a draft "
+                "or `edit <platform>: your text` to replace a draft, or "
+                "`revise <platform>: your notes` to have the writer rework it "
                 f"({', '.join(edit_targets)}).",
                 thread_ts=ts,
             )
@@ -169,13 +176,19 @@ class TipsHandler(BaseHandler):
     def _create_drafts(self, tip_text: str) -> dict:
         """Take a raw tip, create platform-specific drafts."""
         from orchestrator.agents import run_claude_prompt
+        from orchestrator import word_bank
 
         voice = self._load_identity()
+        # From code, not from voice.md. voice.md lives on the Fly volume and
+        # syncs from the Mac once a day, so a bank edit would not reach this
+        # handler until the next sync.
+        bank = word_bank.prompt_block("social")
         drafts = {}
 
         # Bluesky (300 chars max)
         bs_prompt = (
             f"## Voice Guide\n{voice}\n\n"
+            f"## Word bank\n{bank}\n\n"
             f"## Task\nConvert this tip into a Bluesky post.\n\n"
             f"Tip:\n{tip_text}\n\n"
             f"HARD LIMIT: 300 characters total.\n"
@@ -196,6 +209,7 @@ class TipsHandler(BaseHandler):
         # LinkedIn (800-1350 chars)
         li_prompt = (
             f"## Voice Guide\n{voice}\n\n"
+            f"## Word bank\n{bank}\n\n"
             f"## Task\nConvert this tip into a LinkedIn post.\n\n"
             f"Tip:\n{tip_text}\n\n"
             f"Target: 800-1350 characters.\n"
@@ -222,6 +236,7 @@ class TipsHandler(BaseHandler):
         for platform, draft in list(drafts.items()):
             human_prompt = (
                 f"## Voice Guide\n{voice}\n\n"
+            f"## Word bank\n{bank}\n\n"
                 f"## Task\nRemove AI writing patterns from this {platform} post.\n\n"
                 f"Post:\n{draft}\n\n"
                 f"Check for: em dashes, mirror sentences, anaphora, snappy triads, "

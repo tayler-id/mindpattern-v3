@@ -8,7 +8,7 @@ import pytest
 
 from orchestrator.newsletter import (
     render_html, send_newsletter, validate_report,
-    broadcast_to_subscribers, SUBSCRIBER_FOOTER,
+    broadcast_to_subscribers, canonical_email, SUBSCRIBER_FOOTER,
 )
 
 
@@ -337,6 +337,61 @@ class TestBroadcastToSubscribers:
     @patch("orchestrator.newsletter.time.sleep")
     @patch("orchestrator.newsletter.requests")
     @patch("orchestrator.newsletter.keychain_lookup")
+    def test_skips_gmail_aliases_of_excluded_owner(
+        self, mock_kc, mock_requests, mock_sleep
+    ):
+        """A plus-tagged or dotted alias lands in the owner's own inbox —
+        excluding only the literal address delivered two copies a day."""
+        mock_kc.side_effect = lambda s: {
+            "resend-api-key": "key", "resend-audience-id": "aud-123"
+        }.get(s)
+
+        contacts = [
+            {"id": "c1", "email": "ramsay.tayler+subscriber@gmail.com",
+             "unsubscribed": False},
+            {"id": "c2", "email": "ramsaytayler@googlemail.com",
+             "unsubscribed": False},
+            {"id": "c3", "email": "reader+news@example.com", "unsubscribed": False},
+        ]
+        mock_requests.get.return_value = _mock_contacts_response(contacts)
+        mock_requests.post.return_value = _mock_send_response()
+
+        result = broadcast_to_subscribers(
+            "# Report", "2026-04-02",
+            exclude_emails=["ramsay.tayler@gmail.com"],
+        )
+
+        assert result["sent_count"] == 1
+        assert result["skipped_count"] == 2
+        send_call = mock_requests.post.call_args
+        payload = send_call.kwargs.get("json") or send_call[1].get("json")
+        assert payload["to"] == ["reader+news@example.com"]
+
+    @patch("orchestrator.newsletter.time.sleep")
+    @patch("orchestrator.newsletter.requests")
+    @patch("orchestrator.newsletter.keychain_lookup")
+    def test_empty_exclusion_entry_does_not_skip_contacts(
+        self, mock_kc, mock_requests, mock_sleep
+    ):
+        """user_config.get("email", "") can yield "" — it must exclude nobody."""
+        mock_kc.side_effect = lambda s: {
+            "resend-api-key": "key", "resend-audience-id": "aud-123"
+        }.get(s)
+
+        contacts = [{"id": "c1", "email": "reader@example.com", "unsubscribed": False}]
+        mock_requests.get.return_value = _mock_contacts_response(contacts)
+        mock_requests.post.return_value = _mock_send_response()
+
+        result = broadcast_to_subscribers(
+            "# Report", "2026-04-02", exclude_emails=["", "  "],
+        )
+
+        assert result["sent_count"] == 1
+        assert result["skipped_count"] == 0
+
+    @patch("orchestrator.newsletter.time.sleep")
+    @patch("orchestrator.newsletter.requests")
+    @patch("orchestrator.newsletter.keychain_lookup")
     def test_skips_unsubscribed(self, mock_kc, mock_requests, mock_sleep):
         mock_kc.side_effect = lambda s: {
             "resend-api-key": "key", "resend-audience-id": "aud-123"
@@ -446,3 +501,25 @@ class TestBroadcastToSubscribers:
         # Should cap at MAX_BROADCAST_CONTACTS (50)
         assert result["sent_count"] == 50
         assert mock_requests.post.call_count == 50
+
+
+class TestCanonicalEmail:
+    """Which addresses the broadcast treats as one mailbox."""
+
+    def test_gmail_dots_case_and_plus_tag_collapse(self):
+        assert canonical_email("Ramsay.Tayler+sub@Gmail.com") == "ramsaytayler@gmail.com"
+
+    def test_googlemail_is_the_same_mailbox_as_gmail(self):
+        assert canonical_email("a.b@googlemail.com") == canonical_email("ab@gmail.com")
+
+    def test_plus_tags_are_stripped_on_every_domain(self):
+        assert canonical_email("alice+news@corp.com") == canonical_email("alice@corp.com")
+
+    def test_dots_are_kept_outside_gmail(self):
+        assert canonical_email("first.last@corp.com") != canonical_email("firstlast@corp.com")
+
+    def test_different_domains_stay_different(self):
+        assert canonical_email("tayler@example.com") != canonical_email("tayler@gmail.com")
+
+    def test_a_string_without_an_at_sign_is_only_normalised(self):
+        assert canonical_email("  NotAnEmail ") == "notanemail"

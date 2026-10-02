@@ -78,8 +78,12 @@ def test_stored_rows_contain_no_pii_columns(client):
               headers={"User-Agent": "SecretBrowser/1.0", "X-Forwarded-For": "1.2.3.4"})
     conn = open_events_db(db_path)
     columns = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
-    # owner is a self-declared 0/1 "this is Tayler" flag — not PII
-    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value", "owner"}
+    # owner is a self-declared 0/1 "this is Tayler" flag and durable is a 0/1
+    # "the client could persist its reader id" flag. Neither is PII.
+    # campaign_id/source_channel are normalized safe campaign ids from utm
+    # tags (pilot spec section 11): aggregate attribution, never identity.
+    assert columns == {"id", "ts", "type", "target", "path", "ref_domain", "anon_id", "value", "owner",
+                       "durable", "campaign_id", "source_channel"}
     row = dict(conn.execute("SELECT * FROM events").fetchone())
     serialized = json.dumps(row)
     assert "1.2.3.4" not in serialized
@@ -102,6 +106,110 @@ def test_query_strings_stripped_from_paths(client):
     })
     conn = open_events_db(db_path)
     assert conn.execute("SELECT path FROM events").fetchone()["path"] == "/s/x"
+
+
+def test_campaign_fields_stored_for_permitted_events(client):
+    http, db_path = client
+    campaign = "a" * 64  # CampaignOS sha256-style campaign id
+    http.post("/api/event", json={
+        "type": "story_view", "target": "tagged-story",
+        "campaign_id": campaign.upper(), "source_channel": "X",
+    })
+    conn = open_events_db(db_path)
+    row = conn.execute("SELECT campaign_id, source_channel FROM events").fetchone()
+    assert row["campaign_id"] == campaign  # normalized to lowercase
+    assert row["source_channel"] == "x"
+
+
+def test_share_event_is_allowlisted_and_carries_campaign(client):
+    http, db_path = client
+    response = http.post("/api/event", json={
+        "type": "share", "target": "copy:Some Story",
+        "campaign_id": "b" * 64, "source_channel": "bluesky",
+    })
+    assert response.json()["status"] == "ok"
+    conn = open_events_db(db_path)
+    row = conn.execute(
+        "SELECT type, campaign_id, source_channel FROM events").fetchone()
+    assert row["type"] == "share"
+    assert row["campaign_id"] == "b" * 64
+    assert row["source_channel"] == "bluesky"
+
+
+def test_unsafe_campaign_values_are_blanked_not_stored(client):
+    http, db_path = client
+    for campaign, channel in (
+        ("foo?email=me@x.com", "x"),   # query-string smuggling
+        ("a b", "x"),                  # whitespace
+        ("c" * 65, "x"),               # over-length campaign
+        ("ok-campaign", "d" * 33),     # over-length channel
+        ("", "x"),                     # missing campaign, channel alone
+    ):
+        http.post("/api/event", json={
+            "type": "story_view", "target": "s",
+            "campaign_id": campaign, "source_channel": channel,
+        })
+    conn = open_events_db(db_path)
+    rows = conn.execute(
+        "SELECT campaign_id, source_channel FROM events ORDER BY id").fetchall()
+    assert [r["campaign_id"] for r in rows] == ["", "", "", "ok-campaign", ""]
+    # channel is validated independently; unsafe channels blank to ''
+    assert [r["source_channel"] for r in rows] == ["x", "x", "x", "", "x"]
+
+
+def test_campaign_fields_dropped_on_non_permitted_types(client):
+    http, db_path = client
+    # scroll_depth and search_query are not campaign events (spec: story,
+    # source-click, subscribe, share) — fields are dropped server-side even
+    # if a client sends them.
+    http.post("/api/event", json={
+        "type": "scroll_depth", "target": "s", "value": 50,
+        "campaign_id": "a" * 64, "source_channel": "x",
+    })
+    http.post("/api/event", json={
+        "type": "search_query", "target": "agents",
+        "campaign_id": "a" * 64, "source_channel": "x",
+    })
+    conn = open_events_db(db_path)
+    rows = conn.execute("SELECT campaign_id, source_channel FROM events").fetchall()
+    assert all(r["campaign_id"] == "" and r["source_channel"] == "" for r in rows)
+
+
+def test_old_databases_gain_campaign_columns(tmp_path):
+    """Additive migration: a pre-T17 database opens and gains the columns."""
+    import sqlite3
+
+    db_path = tmp_path / "old_events.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """CREATE TABLE events (
+               id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, type TEXT NOT NULL,
+               target TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '',
+               ref_domain TEXT NOT NULL DEFAULT '', anon_id TEXT NOT NULL DEFAULT '',
+               value INTEGER NOT NULL DEFAULT 0)"""
+    )
+    conn.execute(
+        "INSERT INTO events (ts, type, target) VALUES (1, 'story_view', 'old-row')"
+    )
+    conn.commit()
+    conn.close()
+
+    from memory.events_db import record_event
+
+    conn = open_events_db(db_path)
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(events)")}
+    assert {"owner", "campaign_id", "source_channel"} <= columns
+    indexes = {r[1] for r in conn.execute("PRAGMA index_list(events)")}
+    assert "idx_events_campaign" in indexes
+    old = conn.execute(
+        "SELECT campaign_id, source_channel FROM events WHERE target='old-row'"
+    ).fetchone()
+    assert old["campaign_id"] == "" and old["source_channel"] == ""
+    assert record_event(conn, {
+        "type": "story_view", "target": "new-row",
+        "campaign_id": "e" * 64, "source_channel": "reddit",
+    })
+    conn.close()
 
 
 def test_popular_counts_views_and_unique_readers(client, monkeypatch, tmp_path):
@@ -200,3 +308,67 @@ def test_events_survive_daily_sync_bundle(tmp_path, monkeypatch):
     row = conn.execute("SELECT target FROM events").fetchone()
     assert row["target"] == "pre-sync-story"
     conn.close()
+
+
+def test_anon_id_history_lookup_uses_an_index(tmp_path):
+    """The new/returning split asks 'was this anon_id here before T' once per
+    reader. Without idx_events_anon_ts that probe becomes a table scan.
+
+    The plan is taken over the production probe itself, imported from
+    site_analytics rather than retyped: a hand-written lookalike with literal
+    constants and no outer correlation plans differently, so it would stay
+    green through exactly the rewrite this is meant to catch (a function on
+    anon_id, an OR, a LIKE).
+    """
+    from dashboard.routes.site_analytics import _SEEN_BEFORE
+
+    db_path = tmp_path / "site_events.db"
+    conn = open_events_db(db_path)
+    try:
+        indexes = {
+            row["name"] for row in conn.execute("PRAGMA index_list(events)")
+        }
+        assert "idx_events_anon_ts" in indexes
+
+        plan = " ".join(
+            str(row[3]) for row in conn.execute(
+                f"""EXPLAIN QUERY PLAN
+                    SELECT COUNT(*) FROM (
+                      SELECT DISTINCT anon_id FROM events
+                      WHERE ts>=? AND owner=0 AND type!='agent_hit' AND anon_id!=''
+                    ) w
+                    WHERE {_SEEN_BEFORE.format(alias='w')}""",
+                (0, 0),
+            )
+        )
+        assert "idx_events_anon_ts (anon_id=? AND ts<?)" in plan, plan
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("columns", [
+    "owner INTEGER NOT NULL DEFAULT 0, durable INTEGER NOT NULL DEFAULT 0",  # the Fly volume's table, Oct 2026
+    "",                                                                        # before owner and durable
+])
+def test_an_older_events_table_gains_every_column_and_keeps_its_rows(tmp_path, columns):
+    """The Fly volume holds a live events.db; opening it must only add columns."""
+    import sqlite3
+
+    from memory.events_db import open_events_db, record_event
+
+    path = tmp_path / "events.db"
+    legacy = sqlite3.connect(path)
+    legacy.execute(
+        "CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, type TEXT NOT NULL,"
+        " target TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', ref_domain TEXT NOT NULL DEFAULT '',"
+        " anon_id TEXT NOT NULL DEFAULT '', value INTEGER NOT NULL DEFAULT 0" + (", " + columns if columns else "") + ")")
+    legacy.execute("INSERT INTO events (ts, type, target) VALUES (1, 'story_view', 'kept')")
+    legacy.commit()
+    legacy.close()
+
+    conn = open_events_db(path)
+    assert record_event(conn, {"type": "story_view", "target": "new", "anon_id": "abcdefgh12", "durable": 1,
+                               "campaign_id": "c0ffee", "source_channel": "linkedin"})
+    rows = [dict(r) for r in conn.execute("SELECT target, durable, campaign_id, source_channel FROM events ORDER BY id")]
+    assert rows == [{"target": "kept", "durable": 0, "campaign_id": "", "source_channel": ""},
+                    {"target": "new", "durable": 1, "campaign_id": "c0ffee", "source_channel": "linkedin"}]

@@ -18,6 +18,14 @@ from memory import vault
 # Only these keys are allowed in the evolution diff.
 ALLOWED_KEYS = {"soul", "user", "voice", "decisions"}
 
+# Of those, only these may be written at runtime. voice.md and user.md are
+# hand-edited: on 2026-08-17 an externally-derived house style was adopted and
+# reverted because the tone went flat, and a model rewriting its own voice
+# guide nightly is the same failure with no human in the loop. They stay in
+# ALLOWED_KEYS so a diff naming them is reported rather than treated as a
+# schema error, and skipped rather than applied.
+RUNTIME_WRITABLE_KEYS = {"soul", "decisions"}
+
 # Maps diff keys to their vault filenames.
 FILE_MAP = {
     "soul": "soul.md",
@@ -109,6 +117,51 @@ def _fit_content_to_limit(
 # ── Prompt builder ──────────────────────────────────────────────────────────
 
 
+_ACTION_LINE = re.compile(
+    r"^\s*[-*]\s*\*\*Action required\*\*\s*:\s*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Splits "(1) do this. (2) do that." into individual items.
+_ACTION_ITEM = re.compile(r"\(\d+\)\s*")
+
+
+def _action_fingerprint(text: str) -> str:
+    """Normalized key so the same item restated across runs collapses to one."""
+    return re.sub(r"[^a-z0-9 ]+", " ", text.lower())[:120].strip()
+
+
+def extract_open_actions(entries, with_counts: bool = False):
+    """Pull "Action required" items out of recent decisions.md entries.
+
+    The identity phase has been writing these every run and reading none of
+    them back, so the same item is restated indefinitely. The live vault on
+    2026-08-20 carried a Gate 1 telemetry item that had been repeated daily
+    for eight weeks. Surfacing them with a restatement count lets the next run
+    close an item or escalate it instead of copying it forward again.
+
+    Returns a list of strings, or of ``{"text", "runs"}`` dicts when
+    *with_counts* is set, ordered by how many runs have restated each item.
+    """
+    seen: dict[str, dict] = {}
+    for entry in entries or []:
+        entry_keys: set[str] = set()
+        for line in _ACTION_LINE.findall(entry or ""):
+            parts = [p.strip(" .;") for p in _ACTION_ITEM.split(line) if p.strip(" .;")]
+            for part in parts:
+                key = _action_fingerprint(part)
+                if not key:
+                    continue
+                if key not in seen:
+                    seen[key] = {"text": part, "runs": 0}
+                # One entry restating an item twice still counts as one run.
+                if key not in entry_keys:
+                    seen[key]["runs"] += 1
+                    entry_keys.add(key)
+
+    items = sorted(seen.values(), key=lambda d: (-d["runs"], d["text"]))
+    return items if with_counts else [i["text"] for i in items]
+
+
 def build_evolve_prompt(vault_dir: Path, pipeline_results: dict) -> str:
     """Build a prompt that instructs an LLM to produce a JSON evolution diff.
 
@@ -137,7 +190,16 @@ def build_evolve_prompt(vault_dir: Path, pipeline_results: dict) -> str:
     # Build structured sections for social and newsletter results
     social = pipeline_results.get("social", {})
     social_section = ""
-    if social and social.get("topic"):
+    if social and social.get("skipped"):
+        reason = social.get("skip_reason", "--skip-social")
+        social_section = f"""
+## Social Pipeline Results
+This run skipped the social phase on purpose ({reason}), which is how every
+scheduled run works. Topic selection and both approval gates did not execute.
+Do not record this as missing data, a telemetry gap, or an unresolved issue,
+and do not carry it forward as an action item.
+"""
+    elif social and social.get("topic"):
         social_section = f"""
 ## Social Pipeline Results
 - Topic: {social.get('topic', 'none')} (score: {social.get('topic_score', 'N/A')})
@@ -165,6 +227,25 @@ def build_evolve_prompt(vault_dir: Path, pipeline_results: dict) -> str:
 - Newsletter generated: {pipeline_results.get('newsletter_generated', False)}
 """
 
+    open_actions = extract_open_actions(recent_decisions, with_counts=True)
+    actions_section = ""
+    if open_actions:
+        lines = []
+        for item in open_actions[:8]:
+            runs = item["runs"]
+            age = f" (restated in {runs} runs)" if runs > 1 else ""
+            lines.append(f"- {item['text']}{age}")
+        actions_section = (
+            "\n## Open Action Items\n"
+            "Carried from the decisions entries above. For each one, this run "
+            "must do exactly one of: mark it CLOSED with the evidence that "
+            "closed it, restate it only if today's data still supports it, or "
+            "DROP it as unactionable. An item restated in 3 or more runs "
+            "without progress is not an action item, it is noise: either "
+            "escalate it into soul.md as a known limitation or drop it.\n\n"
+            + "\n".join(lines) + "\n"
+        )
+
     return f"""\
 You are the EVOLVE phase of the MindPattern pipeline. Your job is to review
 the current identity files and this run's results, then propose small,
@@ -187,6 +268,7 @@ incremental updates to keep the identity files accurate and useful.
 {core_results}
 {social_section}
 {newsletter_section}
+{actions_section}
 
 ## Instructions
 
@@ -207,15 +289,11 @@ Length discipline:
   user gravitates toward, what gets killed at gates. This section should grow over time.
 - **Evolution Log**: Append a dated one-line entry summarizing what changed this run.
 
-### voice.md — UPDATE when you notice patterns:
-- If the user's gate feedback suggests voice issues (edits, rejections with style notes),
-  update the relevant voice section.
-- If the newsletter evaluation shows recurring patterns (low actionability, hedging),
-  add guidance to prevent it.
-
-### user.md — UPDATE when preferences shift:
-- Track topic preference changes from gate feedback.
-- Note what the user approves enthusiastically vs what they edit heavily.
+### voice.md and user.md — READ ONLY
+Both files are hand-edited by the user and are shown above for context only.
+Return "none" for both, or omit them. A diff naming either one is discarded
+and logged. If you believe one of them needs a change, say so in the
+decisions.md entry as a recommendation rather than proposing an edit.
 
 ### decisions.md — ALWAYS append a detailed entry including:
 - Topic selected/killed + score + reasoning
@@ -327,14 +405,29 @@ def apply_evolution_diff(
     changes_made: list[str] = []
     errors: list[str] = []
     warnings: list[str] = []
+    skipped_readonly: list[str] = []
 
     if not isinstance(diff_json, dict):
-        return {"changes_made": [], "errors": ["diff_json must be a dict"], "warnings": []}
+        return {
+            "changes_made": [], "errors": ["diff_json must be a dict"],
+            "warnings": [], "skipped_readonly": [],
+        }
 
     for key, spec in diff_json.items():
         # Reject unknown keys.
         if key not in ALLOWED_KEYS:
             errors.append(f"Unknown key '{key}' — only {sorted(ALLOWED_KEYS)} are allowed")
+            continue
+
+        # Read-only at runtime (voice.md, user.md).
+        if key not in RUNTIME_WRITABLE_KEYS:
+            if isinstance(spec, dict) and spec.get("action") in (None, "none"):
+                continue
+            skipped_readonly.append(key)
+            warnings.append(
+                f"'{key}' is hand-edited and was not written; "
+                f"proposed change discarded"
+            )
             continue
 
         # Each value must be a dict.
@@ -416,4 +509,9 @@ def apply_evolution_diff(
             except Exception as exc:
                 errors.append(f"Failed to update '{section}' in {FILE_MAP[key]}: {exc}")
 
-    return {"changes_made": changes_made, "errors": errors, "warnings": warnings}
+    return {
+        "changes_made": changes_made,
+        "errors": errors,
+        "warnings": warnings,
+        "skipped_readonly": skipped_readonly,
+    }

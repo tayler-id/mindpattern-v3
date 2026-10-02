@@ -77,6 +77,59 @@ def test_happy_path_extracts_and_cleans_wal(client):
     assert not (root / "ramsay" / "memory.db-wal").exists()
 
 
+def test_flushes_to_disk_before_reporting_success(client, monkeypatch):
+    """The pipeline restarts the machine seconds after this response; an
+    unflushed extract is lost and served as empty files (2026-08-04)."""
+    from dashboard.routes import sync_upload
+
+    calls: list[str] = []
+    monkeypatch.setattr(sync_upload.os, "sync", lambda: calls.append("sync"))
+    body = _bundle({"reports/ramsay/site-stories/2026-08-04/a.json": b'{"k":1}'})
+    assert _post(client, body).status_code == 200
+    assert calls == ["sync"], "extract must be fsynced before the caller is told it is safe"
+
+
+def test_rejects_truncated_extraction(client, monkeypatch):
+    """A tar that returns success but leaves short files must not report ok."""
+    from dashboard.routes import sync_upload
+
+    http, root = client
+    real_extractall = tarfile.TarFile.extractall
+
+    def truncating_extractall(self, path, **kwargs):
+        real_extractall(self, path, **kwargs)
+        # Simulate the half-flushed unpack: the story artifact lands empty.
+        Path(path, "reports/ramsay/site-stories/2026-08-04/a.json").write_bytes(b"")
+
+    monkeypatch.setattr(tarfile.TarFile, "extractall", truncating_extractall)
+    body = _bundle({"reports/ramsay/site-stories/2026-08-04/a.json": b'{"k":1}'})
+    response = _post(client, body)
+    assert response.status_code == 500, response.text
+    payload = response.json()
+    assert payload["short_count"] == 1
+    assert "site-stories/2026-08-04/a.json" in payload["short_files"][0]
+
+
+def test_short_extractions_flags_missing_and_truncated(tmp_path):
+    from dashboard.routes.sync_upload import _short_extractions
+
+    good = tarfile.TarInfo("reports/ramsay/good.json")
+    good.size = 3
+    truncated = tarfile.TarInfo("reports/ramsay/truncated.json")
+    truncated.size = 10
+    absent = tarfile.TarInfo("reports/ramsay/absent.json")
+    absent.size = 4
+    directory = tarfile.TarInfo("reports/ramsay")
+    directory.type = tarfile.DIRTYPE
+
+    (tmp_path / "reports" / "ramsay").mkdir(parents=True)
+    (tmp_path / "reports" / "ramsay" / "good.json").write_bytes(b"abc")
+    (tmp_path / "reports" / "ramsay" / "truncated.json").write_bytes(b"")
+
+    short = _short_extractions([good, truncated, absent, directory], tmp_path)
+    assert short == ["reports/ramsay/truncated.json", "reports/ramsay/absent.json"]
+
+
 def test_pipeline_secret_file_fallback(tmp_path, monkeypatch):
     from orchestrator import sync as sync_mod
 

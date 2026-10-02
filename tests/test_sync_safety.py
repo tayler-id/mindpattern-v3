@@ -90,6 +90,17 @@ class TestSnapshotDb:
 
 
 class TestStaleSidecarRemoval:
+    @pytest.fixture(autouse=True)
+    def _no_https_upload(self):
+        """This test is about the remote extract command, which only the
+        flyctl path runs. Without this stub sync_to_fly tried its HTTPS
+        upload against the live box first."""
+        with patch(
+            "orchestrator.sync.upload_bundle_http",
+            return_value={"success": False, "bytes_uploaded": 0, "error": "not configured"},
+        ) as stub:
+            yield stub
+
     def test_extraction_removes_wal_shm_in_same_command(self, tmp_path):
         """The rm of -wal/-shm must be IN the extraction command — a second
         command can race the dashboard reopening the database."""

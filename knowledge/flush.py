@@ -77,6 +77,16 @@ Be concise. Each section should have 2-5 bullets max. If a section has nothing w
 """
 
 
+def _flush_route():
+    """The knowledge_flush route from config/models.json (this runs as a bare script)."""
+    root = str(Path(__file__).resolve().parent.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from orchestrator.router import get_route
+
+    return get_route("knowledge_flush")
+
+
 def _run_claude_extract(context: str) -> str | None:
     """Use claude -p to extract knowledge from conversation context."""
     prompt = FLUSH_PROMPT.format(context=context)
@@ -84,10 +94,11 @@ def _run_claude_extract(context: str) -> str | None:
     env = os.environ.copy()
     env["CLAUDE_INVOKED_BY"] = "flush"
 
+    route = _flush_route()
     cmd = [
         "claude", "-p", prompt,
-        "--model", "claude-sonnet-4-6",
-        "--max-turns", "1",
+        "--model", route.model,
+        "--max-turns", str(route.max_turns or 1),
         "--output-format", "text",
     ]
 
@@ -96,7 +107,7 @@ def _run_claude_extract(context: str) -> str | None:
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=route.timeout_s,
             env=env,
         )
         if result.returncode == 0 and result.stdout.strip():

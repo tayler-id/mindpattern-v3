@@ -66,7 +66,8 @@ class CheckResult:
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
-KNOW_RE = re.compile(r"#\s*@know:\s*\[\[([^\]]+)\]\]")
+# A whole-line comment only: the same text inside a string or a docstring is not a reference.
+KNOW_RE = re.compile(r"^\s*#\s*@know:\s*\[\[([^\]]+)\]\]")
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 REQUIRE_CODE_RE = re.compile(r"require-code-mention:\s*true", re.IGNORECASE)
 FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
@@ -521,7 +522,7 @@ def _scan_with_ripgrep(project_root: str, exclude_dirs: list[str]) -> list[CodeR
     try:
         result = subprocess.run(
             ["rg", "--no-heading", "--line-number", "--type", "py",
-             r"#\s*@know:\s*\[\[", *exclude_args, project_root],
+             r"^\s*#\s*@know:\s*\[\[", *exclude_args, project_root],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode > 1:
@@ -558,7 +559,8 @@ def _scan_with_pathlib(project_root: str, exclude_dirs: list[str]) -> list[CodeR
     root = Path(project_root)
 
     for py_file in root.rglob("*.py"):
-        if any(excluded in py_file.parts for excluded in exclude_dirs):
+        # Relative to the root: a checkout under .claude/worktrees/ must still be scanned.
+        if any(excluded in py_file.relative_to(root).parts for excluded in exclude_dirs):
             continue
         try:
             text = py_file.read_text(encoding="utf-8")

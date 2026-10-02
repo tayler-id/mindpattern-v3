@@ -4,6 +4,8 @@
 Embedding model management and vector operations for similarity search and dedup.
 
 ## API
+Embedding calls that need the model, and pure vector math that does not.
+
 - `embed_text(text) -> list[float]` — Single text embedding (requires fastembed)
 - `embed_texts(texts) -> list[list[float]]` — Batch embeddings (requires fastembed)
 - `cosine_similarity(a, b) -> float` — Cosine similarity, handles zero vectors safely
@@ -13,12 +15,14 @@ Embedding model management and vector operations for similarity search and dedup
 - `batch_similarities(query, embeddings, threshold?) -> list[tuple[int, float]]` — Compute similarities against serialized blobs, filter by threshold, sort descending
 
 ## Test Coverage
-- `tests/test_embeddings.py` — 15 tests covering all pure math functions
-- Tests do NOT import embed_text/embed_texts (require fastembed model download)
+Two test files, and neither needs the embedding model or a download.
+
+- `tests/test_embeddings.py` — 17 tests: the pure math functions, plus cache-dir resolution and model construction with the fastembed constructor patched out
+- `tests/test_offline_embeddings.py` — the deterministic embedding double in `tests/conftest.py`; the `offline_embeddings` fixture installs it as `_model`, so a test whose path reaches `embed_text`/`embed_texts` runs without the fastembed model or a download
 
 ## Known Issues
 - Thread safety: module-level `_model` singleton not thread-safe for concurrent imports
 - `batch_similarities` uses dot product (not cosine), assumes normalized vectors
 
 ## Last Updated
-2026-04-02 — convention fix: `Optional[float]` → `float | None` (line 76)
+2026-09-15 — tests reach `embed_text`/`embed_texts` through the offline double in `tests/conftest.py`

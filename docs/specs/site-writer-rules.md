@@ -52,10 +52,21 @@ in `docs/research/2026-07-02-ai-writing-tells-and-human-web-copy.md`.
 
 ## Evidence and honesty
 
-- Every claim traces to the evidence pack. No new facts, numbers, quotes, or
-  URLs. Fabrication kills the story.
-- Attribution is specific and terminal: "..., per the S-1." Never "sources
-  suggest" floating vaguely.
+- Every claim traces to the evidence pack. No new facts, numbers, or quotes,
+  and no URL that is not in the pack's linkable_source_urls. Fabrication kills
+  the story.
+- Link the sources out. A story built on source URLs carries at least one
+  inline markdown link in body_markdown, copied character for character from
+  linkable_source_urls. Up to three, one per source, never two in a sentence.
+  A story with source URLs and no link is a violation.
+- Anchor text names the thing on the other end: the project, the repo, the
+  paper, the company, the post. "Source", "here", "read more", "link" and a
+  bare URL are all violations.
+- Links belong in body_markdown only. A link in title, dek, take, or why_now
+  is a violation.
+- Attribution is specific and terminal, and carries the link when there is one:
+  "..., per OpenAI's [agent platform notes](url)." Never "sources suggest"
+  floating vaguely.
 - Say what you don't know when it matters ("the advisory doesn't say whether
   the fix is backported"). Stated uncertainty is a credibility feature.
 - Graph neighbors in the evidence are real related stories from the same

@@ -104,6 +104,16 @@ Write your draft to `data/social-drafts/bluesky-draft.md`. The file must contain
 9. Check voice fingerprint targets from voice guide
 10. Write the final draft using the Write tool
 
+## Humanize pass
+
+Before you write the draft file, run the full humanize pass from the voice guide in
+your prompt (the "Humanize pass (unslop)" section) over the post text. Its 31 patterns
+are the detailed version of the voice rules above.
+
+Bluesky's own rules win wherever they collide: the character limit, the thread shape,
+link placement, and the no-hashtag rule come first. A post that is one sentence does
+not need varied rhythm, and the heading and emoji rules there are about long-form copy.
+
 OUTPUT: Write draft to `data/social-drafts/bluesky-draft.md`. ALWAYS use Write tool. NEVER skip output.
 
 ## Self-Improvement Notes

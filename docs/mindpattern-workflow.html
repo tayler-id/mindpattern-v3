@@ -1,0 +1,695 @@
+<title>MindPattern Interview Brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+
+<style>
+:root {
+  --bg:#E9EBEE; --surface:#FAFAFB; --surface-2:#F1F2F5;
+  --ink:#14171C; --ink-2:#3A4049; --muted:#676D78;
+  --hair:#C9CDD4; --hair-soft:#DCDFE4;
+  --py:#2F5570; --llm:#8A5A12; --warn:#8C3B2E;
+  --shadow:0 1px 0 rgba(20,23,28,.04), 0 8px 24px -18px rgba(20,23,28,.35);
+  --f-display:"Archivo","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#131519; --surface:#1B1E24; --surface-2:#21252C;
+    --ink:#E7E9ED; --ink-2:#BFC4CD; --muted:#8B929E;
+    --hair:#333944; --hair-soft:#272C34;
+    --py:#86AECC; --llm:#D6A64C; --warn:#D98878;
+    --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#131519; --surface:#1B1E24; --surface-2:#21252C;
+  --ink:#E7E9ED; --ink-2:#BFC4CD; --muted:#8B929E;
+  --hair:#333944; --hair-soft:#272C34;
+  --py:#86AECC; --llm:#D6A64C; --warn:#D98878;
+  --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.9);
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--f-body);
+  font-size:17.5px; line-height:1.68; -webkit-font-smoothing:antialiased; }
+.wrap { display:grid; grid-template-columns:224px minmax(0,1fr); gap:56px;
+  max-width:1140px; margin:0 auto; padding:0 32px 120px; }
+
+.rail { position:sticky; top:0; align-self:start; max-height:100vh; overflow-y:auto; padding:40px 0; }
+.rail-title { font-family:var(--f-display); font-size:11.5px; font-weight:700; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 14px; }
+.rail nav { display:flex; flex-direction:column; }
+.rail a { font-family:var(--f-display); font-size:13.5px; font-weight:500; color:var(--ink-2);
+  text-decoration:none; padding:7px 0 7px 12px; border-left:1px solid var(--hair-soft); line-height:1.35; }
+.rail a:hover, .rail a:focus-visible { color:var(--ink); background:var(--surface-2); border-left-color:var(--hair); }
+.rail a:focus-visible { outline:2px solid var(--ink-2); outline-offset:-2px; }
+
+header.mast { padding:64px 0 40px; border-bottom:1px solid var(--hair); }
+.eyebrow { font-family:var(--f-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--muted); margin:0 0 18px; }
+h1 { font-family:var(--f-display); font-weight:700; font-size:clamp(36px,5vw,56px); line-height:1.04;
+  letter-spacing:-.02em; margin:0 0 22px; text-wrap:balance; }
+.standfirst { font-size:20px; line-height:1.55; color:var(--ink-2); max-width:64ch; margin:0 0 16px; }
+
+section { padding:56px 0 0; scroll-margin-top:24px; }
+h2 { font-family:var(--f-display); font-weight:700; font-size:30px; letter-spacing:-.015em;
+  margin:0 0 14px; text-wrap:balance; }
+h2 .num { font-family:var(--f-mono); font-weight:500; font-size:13px; color:var(--muted);
+  display:block; margin-bottom:8px; letter-spacing:.08em; }
+h3 { font-family:var(--f-display); font-weight:600; font-size:20px; margin:36px 0 10px; letter-spacing:-.005em; }
+h4 { font-family:var(--f-display); font-weight:600; font-size:15.5px; margin:26px 0 6px; }
+p { max-width:67ch; margin:0 0 16px; }
+.lede { font-size:19px; color:var(--ink-2); max-width:64ch; }
+ul, ol { max-width:67ch; padding-left:22px; margin:0 0 18px; }
+li { margin-bottom:9px; }
+a { color:var(--ink); text-underline-offset:2px; }
+code, .path { font-family:var(--f-mono); font-size:.84em; background:var(--surface-2);
+  padding:1px 5px; border-radius:2px; color:var(--ink-2); }
+pre { font-family:var(--f-mono); font-size:13px; line-height:1.7; background:var(--surface);
+  color:var(--ink-2); border:1px solid var(--hair-soft); border-radius:3px; padding:16px 18px;
+  overflow-x:auto; margin:20px 0; }
+pre code { background:none; padding:0; font-size:inherit; }
+
+.chip { display:inline-flex; align-items:baseline; gap:5px; font-family:var(--f-mono); font-size:10.5px;
+  font-weight:500; text-transform:uppercase; letter-spacing:.07em; background:var(--surface-2);
+  border:1px solid var(--hair-soft); border-radius:2px; padding:2px 6px; white-space:nowrap; color:var(--ink-2); }
+.chip .g { font-size:9px; }
+.chip.py .g { color:var(--py); }
+.chip.llm .g { color:var(--llm); }
+
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(126px,1fr)); border:1px solid var(--hair);
+  border-radius:3px; background:var(--surface); margin:32px 0 0; overflow:hidden; }
+.stat { padding:16px 18px; border-right:1px solid var(--hair-soft); }
+.stat:last-child { border-right:0; }
+.stat b { display:block; font-family:var(--f-display); font-weight:700; font-size:25px;
+  letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+.stat span { display:block; font-family:var(--f-mono); font-size:11px; text-transform:uppercase;
+  letter-spacing:.07em; color:var(--muted); margin-top:3px; }
+
+.tw { overflow-x:auto; margin:22px 0 10px; border:1px solid var(--hair); border-radius:3px; background:var(--surface); }
+table { border-collapse:collapse; width:100%; font-size:14.5px; font-family:var(--f-display); font-weight:500; }
+th { text-align:left; font-family:var(--f-mono); font-size:10.5px; font-weight:600; text-transform:uppercase;
+  letter-spacing:.08em; color:var(--muted); padding:11px 14px; border-bottom:1px solid var(--hair); white-space:nowrap; }
+td { padding:11px 14px; border-bottom:1px solid var(--hair-soft); vertical-align:top; color:var(--ink-2); line-height:1.5; }
+tr:last-child td { border-bottom:0; }
+td.m, th.m { font-family:var(--f-mono); font-size:12.5px; font-variant-numeric:tabular-nums; }
+td.n { color:var(--ink); font-weight:600; }
+
+.box { background:var(--surface); border:1px solid var(--hair); border-radius:3px;
+  padding:18px 20px; margin:24px 0; box-shadow:var(--shadow); }
+.box .kicker { font-family:var(--f-mono); font-size:10.5px; font-weight:600; text-transform:uppercase;
+  letter-spacing:.09em; color:var(--muted); margin:0 0 8px; }
+.box p:last-child { margin-bottom:0; }
+.box.scar .kicker::before { content:"\25B2\00A0"; color:var(--warn); }
+.box.trap .kicker::before { content:"\2716\00A0"; color:var(--warn); }
+.box.say { background:var(--surface-2); }
+.box.say .kicker::before { content:"\275D\00A0"; color:var(--muted); }
+.box.say p { font-size:19px; line-height:1.55; color:var(--ink); font-style:normal; max-width:60ch; }
+
+dl.gloss { margin:22px 0; max-width:70ch; }
+dl.gloss dt { font-family:var(--f-mono); font-size:13.5px; font-weight:600; color:var(--ink);
+  margin:20px 0 4px; }
+dl.gloss dd { margin:0; color:var(--ink-2); }
+dl.gloss dt:first-child { margin-top:0; }
+
+.phase { border-top:1px solid var(--hair); padding:26px 0 8px; }
+.phase:first-of-type { border-top:0; }
+.phase-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:12px; margin-bottom:8px; }
+.phase-num { font-family:var(--f-mono); font-size:13px; font-weight:600; color:var(--muted); font-variant-numeric:tabular-nums; }
+.phase-name { font-family:var(--f-display); font-weight:700; font-size:21px; letter-spacing:-.01em; }
+
+.qa { border-top:1px solid var(--hair-soft); padding:24px 0 4px; }
+.qa .q { font-family:var(--f-display); font-weight:600; font-size:18px; margin:0 0 10px; color:var(--ink); }
+
+figure { margin:28px 0; }
+figcaption { font-family:var(--f-mono); font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.6; max-width:66ch; }
+svg { display:block; max-width:100%; height:auto; }
+footer { margin-top:70px; padding-top:22px; border-top:1px solid var(--hair);
+  font-family:var(--f-mono); font-size:12px; color:var(--muted); }
+footer p { max-width:75ch; }
+
+@media (max-width:900px) {
+  .wrap { grid-template-columns:minmax(0,1fr); gap:0; padding:0 22px 80px; }
+  .rail { position:static; max-height:none; padding:28px 0 0; }
+  .rail nav { display:grid; grid-template-columns:repeat(auto-fill,minmax(148px,1fr)); }
+  header.mast { padding-top:34px; }
+}
+@media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+
+<div class="wrap">
+<aside class="rail">
+  <p class="rail-title">Contents</p>
+  <nav>
+    <a href="#open">The opening answer</a>
+    <a href="#words">Words you'll have to define</a>
+    <a href="#bet">The design bet</a>
+    <a href="#headless">How Claude gets called</a>
+    <a href="#morning">One morning, end to end</a>
+    <a href="#research">The thirteen agents</a>
+    <a href="#phases">All twelve phases</a>
+    <a href="#broke">What broke, and what it taught</a>
+    <a href="#audit">The honest audit</a>
+    <a href="#questions">Questions you'll get</a>
+    <a href="#traps">Traps</a>
+  </nav>
+</aside>
+
+<main>
+
+<header class="mast">
+  <p class="eyebrow">Interview prep &middot; MindPattern v3 &middot; 21 August 2026</p>
+  <h1>Everything you need to explain the system out loud</h1>
+  <p class="standfirst">Written for you, not for them. The reader I had in mind while writing is an engineer who builds agent systems and has never heard of MindPattern, because that is roughly who reads a book like this one, and because saying it out loud to that person is the actual test.</p>
+  <p class="standfirst">Every number here was read out of the live databases and the git history on 21 August 2026, not from the README. Where the README and the code disagree, I went with the code and flagged it.</p>
+
+  <div class="stats">
+    <div class="stat"><b>179</b><span>issues shipped</span></div>
+    <div class="stat"><b>21,307</b><span>findings stored</span></div>
+    <div class="stat"><b>2,531</b><span>sources tracked</span></div>
+    <div class="stat"><b>13</b><span>research agents</span></div>
+    <div class="stat"><b>~90k</b><span>lines of Python</span></div>
+    <div class="stat"><b>1,797</b><span>passing tests</span></div>
+  </div>
+</header>
+
+<section id="open">
+  <h2><span class="num">01</span>The opening answer</h2>
+  <p class="lede">They will open with some version of "so what is it?" You have about ninety seconds before they decide how technical to go. Lead with the shape of the thing, not the stack.</p>
+
+  <div class="box say">
+    <p class="kicker">Say something like this</p>
+    <p>It's a research pipeline that runs itself every morning. At five o'clock a job wakes my Mac, pulls from eight sources, then launches thirteen separate Claude processes that each go and research one beat. Their findings get deduped against about twenty-one thousand things the system already knows, and two more Claude calls turn what survives into a ten-thousand-word newsletter that lands in my inbox thirty minutes after it starts. Then it publishes a public site, scores its own output, and edits its own notes about how it's doing. It's been doing that for 179 days.</p>
+  </div>
+
+  <p>That answer works because it is concrete, it has a number in almost every clause, and it ends on a fact that is hard to argue with. It also sets up the two questions you actually want them to ask, which are how the thirteen agents work and how much of it the model is really deciding.</p>
+
+  <p>Then the framing that carries the whole rest of the conversation:</p>
+
+  <div class="box say">
+    <p class="kicker">The line to plant early</p>
+    <p>Python owns control flow. Claude owns judgment and prose. The model never decides what happens next, and there is no line of code anywhere in the project where a model's output picks the next step.</p>
+  </div>
+
+  <p>Plant that early and everything afterwards has somewhere to attach. Every design decision in the system is downstream of it, including the ones that turned out to be wrong.</p>
+</section>
+
+<section id="words">
+  <h2><span class="num">02</span>Words you'll have to define</h2>
+  <p class="lede">These are all invented, and none of them mean anything outside this repo. In an interview you will reach for them without noticing. Here is the one-sentence version of each, so you can define it in stride instead of stalling.</p>
+
+  <dl class="gloss">
+    <dt>preflight</dt>
+    <dd>The deterministic gathering pass that runs before any model does. Plain Python pulls from eight sources in parallel, tags each item as new or already-covered, and routes it to whichever agent owns that beat. The agents never start from a blank page.</dd>
+
+    <dt>a finding</dt>
+    <dd>One atomic research result: a title, a two or three sentence summary, an importance rating, and a source URL. Findings are the currency of the whole system. Everything downstream operates on them, and there are 21,307 in the database.</dd>
+
+    <dt>a phase</dt>
+    <dd>One of twelve fixed steps the pipeline moves through in a strict order. Two of them are critical, meaning the run dies if they fail. The other ten degrade and the run keeps going.</dd>
+
+    <dt>an agent (here)</dt>
+    <dd>Not a subagent inside a session. A separate operating-system process running the Claude CLI, with its own context window, its own tool budget, and its own timeout. Worth stating explicitly, because most people will assume you mean the other thing.</dd>
+
+    <dt>a skill file</dt>
+    <dd>A markdown file that defines one agent. The file is the agent. There is no per-agent Python. Editing the markdown changes behavior the next morning, and the system notices the file changed and watches whether quality moved.</dd>
+
+    <dt>the vault</dt>
+    <dd>An Obsidian folder of markdown the system writes about itself: its identity files, daily notes, one page per source. SQLite is the source of truth and the vault is a readable copy.</dd>
+
+    <dt>soul.md, voice.md, user.md</dt>
+    <dd>Four identity files that get loaded into every agent prompt and both writing passes. soul.md is the system's sense of its own purpose, voice.md is the writing guide, user.md is who it's writing for, decisions.md is its running journal.</dd>
+
+    <dt>a gate</dt>
+    <dd>A point where the pipeline stops and waits for you in Slack. Gate 1 approves the social topic before anything is written. Gate 2 approves the finished drafts before anything is posted.</dd>
+
+    <dt>the EIC</dt>
+    <dd>Editor-in-Chief. The agent that reads the day's findings and either picks the one thing worth posting about or declares a kill day.</dd>
+
+    <dt>a kill day</dt>
+    <dd>The EIC deciding nothing today clears the bar, so nothing gets posted. Worth mentioning unprompted, because a system with permission to publish nothing is more interesting than one that posts daily no matter what.</dd>
+
+    <dt>the expeditor</dt>
+    <dd>The last automated quality check before a human sees a draft. It reads the complete package and returns pass or fail.</dd>
+
+    <dt>a receipt</dt>
+    <dd>A row claimed in the database before any irreversible external action, keyed like <code>newsletter:2026-08-20</code>. Claiming it twice fails, so a crash-and-resume physically cannot send the same email twice.</dd>
+
+    <dt>the harness</dt>
+    <dd>A second, separate loop where agents find issues in the codebase, plan fixes, write tests first, and open pull requests. Not part of the daily run. Explained honestly in the audit section, because it is currently dormant.</dd>
+  </dl>
+</section>
+
+<section id="bet">
+  <h2><span class="num">03</span>The design bet</h2>
+  <p class="lede">If the book has a thesis-shaped hole in its agentic-systems chapter, this is what goes in it. Take your time on this one.</p>
+
+  <p>The bet is that you get a reliable system by making the boundary between deterministic code and model judgment explicit, and then defending it. Not by making the model smarter, and not by adding more agents. By being strict about which decisions a model is allowed to make at all.</p>
+
+  <p>In practice that means <span class="path">orchestrator/pipeline.py</span> is a 158-line state machine with a frozen phase order and a transition table. A phase can move to the next phase in the sequence, to failed, or to completed. Anything else raises an exception. The model has no input into that, ever. What the model does get is bounded and specific: read this evidence and form a judgment, or take this material and write it well.</p>
+
+  <p>The reason this matters is not philosophical, it is operational. Prompting is stochastic and a pipeline that ships to subscribers every morning cannot be. Here is the story that proves it, and it is a good one to tell because it is small and completely unambiguous.</p>
+
+  <div class="box scar">
+    <p class="kicker">The em-dash experiment nobody meant to run</p>
+    <p>The house style bans em dashes. The rule was in the voice guide, which is loaded into the newsletter writer's prompt on every single run. On 25, 26 and 27 July 2026 the same model, the same prompt and the same voice guide produced 42 em dashes, then 2, then 52. Nothing changed between those runs except the sampling.</p>
+    <p>The lesson is not that the model is unreliable. It is that asking harder was never going to close that gap, because the gap is variance and instructions do not remove variance. So the rule moved out of the prompt and into <span class="path">orchestrator/prose_gate.py</span>, a deterministic pass over the finished text with a budget of six per issue, protected spans so an em dash inside a code block or a URL is left alone, and a repair step. The count has been in range every run since.</p>
+  </div>
+
+  <p>The generalization is the quotable part, and it is worth having ready in one sentence.</p>
+
+  <div class="box say">
+    <p class="kicker">Say something like this</p>
+    <p>Anything a regular expression can check, code checks, and I stopped asking the model for it. Anything that needs taste stays in the prompt, because code can't do taste. The mistake I kept making early on was putting mechanical rules in the prompt and then being surprised when they held four days out of five.</p>
+  </div>
+
+  <p>There is a second-order version of this that is more interesting and slightly less flattering, so save it for when they push. The boundary is not free. Every time you move a rule from the prompt into code you add a piece of machinery that can itself rot, and about half the things I found when I audited this system properly were pieces of that machinery quietly doing nothing. The audit section has the details.</p>
+</section>
+
+<section id="headless">
+  <h2><span class="num">04</span>How Claude actually gets called</h2>
+  <p class="lede">This surprises people, so it is worth landing clearly. There is no API integration. Every model call in this system shells out to the Claude Code command-line tool as a subprocess.</p>
+
+  <p>No <code>anthropic</code> package in the requirements file. No API key anywhere in the project. It runs on a personal Claude subscription through the CLI in print mode, which means non-interactive, one prompt in, text out, no session. A single 78-line module, <span class="path">core/claude_cli.py</span>, is the only place the system touches a model.</p>
+
+  <pre><code>claude -p "&lt;the whole prompt&gt;" \
+  --model opus \
+  --max-turns 35 \
+  --output-format text \
+  --append-system-prompt-file prompts/research-agent-system.md \
+  --allowedTools WebSearch \
+  --allowedTools WebFetch \
+  --allowedTools "Bash(mcporter call *)" \
+  --allowedTools "Bash(twitter *)" \
+  --allowedTools "Bash(yt-dlp *)"</code></pre>
+
+  <p>Three implementation details in that wrapper are worth knowing, because each one exists because something broke.</p>
+
+  <p><strong>The subprocess gets its own process group.</strong> <code>start_new_session=True</code>, so when a thirty-minute timeout fires it kills the CLI and every tool process the CLI spawned. Without that you leave orphaned <code>yt-dlp</code> children running after the agent is gone.</p>
+
+  <p><strong>The environment carries the agent's identity.</strong> Three variables go into the child process so a session-end hook can file that agent's transcript in the right folder for later analysis. It is how you get per-agent forensics out of a system that is just spawning processes.</p>
+
+  <p><strong>Prompts over 100,000 characters go through stdin instead of an argument.</strong> Past that the operating system's argument limit truncates silently. The synthesis prompt crosses that line most days, because it carries the entire day's findings.</p>
+
+  <h3>Three shapes of call, and why there are three</h3>
+  <p>Every model call in the system is one of three patterns, distinguished by where the output lands. That distinction turns out to matter more than it sounds.</p>
+
+  <div class="tw"><table>
+    <tr><th>Pattern</th><th>Where output goes</th><th>Who uses it</th></tr>
+    <tr><td class="n m">run_single_agent()</td><td>JSON on stdout, parsed by a balanced-brace scanner</td><td>The 13 research agents</td></tr>
+    <tr><td class="n m">run_claude_prompt()</td><td>stdout is the deliverable, published as-is</td><td>The newsletter writer, story selection, social drafts</td></tr>
+    <tr><td class="n m">run_agent_with_files()</td><td>The agent writes a file, Python reads it back</td><td>EIC, art director, critics, expeditor</td></tr>
+  </table></div>
+
+  <p>The middle one is the dangerous pattern and it is worth saying why. When stdout <em>is</em> the newsletter, anything the model prints becomes the product. There is a check called <code>_is_bare_api_error()</code> whose entire job is to notice that the CLI printed "API Error: connection closed mid-response" to stdout with a zero exit code, because without it that string becomes the newsletter. It is anchored to the start of the text so a story that is genuinely about API errors still publishes fine.</p>
+
+  <h3>Tool grants are pre-approvals, not a sandbox</h3>
+  <p>People assume <code>--allowedTools</code> is a fence. It is not. It grants the listed rules without a permission prompt; read-only tools work regardless. Two rules govern what goes on that list.</p>
+  <p>Raw <code>curl</code> is deliberately never granted, because scraped web content must not reach a shell that can make outbound POST requests. Deep page reads go through WebFetch instead. And every shell grant must name a binary that is actually installed, which is checked at dispatch time by a function called <code>missing_granted_binaries()</code>. That check exists because of one of the better failure stories in the whole project.</p>
+
+  <div class="box scar">
+    <p class="kicker">The grant that agreed with the prompt and was still wrong</p>
+    <p>On 24 July 2026 the grant list allowed a tool called <code>xreach</code> and the research prompt told all thirteen agents to run <code>xreach search</code>. Grant and prompt matched perfectly. The tool had been replaced a month earlier and was not installed. Agents hit a missing binary and, rather than make something up, several of them refused in prose and the day's research degraded.</p>
+    <p>The point worth making in a book is that internal consistency between your prompt and your config proves nothing. Both can be consistently wrong. The only check that would have caught it was one against reality, so now the dispatcher looks up every granted binary on the PATH before it starts and warns.</p>
+  </div>
+
+  <h3>The system prompt does exactly one job</h3>
+  <p>Execution context lives in a separate file appended as a system prompt, never in the task text. That sounds like a stylistic choice and it is not.</p>
+  <p>On the same bad day in July, seven of thirteen agents declined their task. Their reasoning, in their own words, was that the prompt looked like a transcript someone had pasted into an interactive Claude Code session, and that complying would mean fabricating a payload of twenty findings. Both readings were wrong, but they were reasonable readings of what the agent could see.</p>
+  <p>The fix is small and generalizes well. User input cannot credibly assert that no human is present, because user input is exactly what a human would type. Put that claim in the system prompt, where it is a property of the harness rather than a claim inside the message. The same file also states plainly that the finding count describes a normal day rather than a quota, and that returning fewer real findings is always the correct behavior. Refusal rates went to roughly zero.</p>
+</section>
+
+<section id="morning">
+  <h2><span class="num">05</span>One morning, end to end</h2>
+  <p class="lede">Walking them through a single real run is usually the most effective thing you can do, because it turns an architecture diagram into a story with a clock on it. These are the actual trace rows for the run on 20 August 2026, in Pacific time.</p>
+
+  <div class="tw"><table>
+    <tr><th class="m">Time</th><th>Phase</th><th class="m">Took</th><th>What happened</th></tr>
+    <tr><td class="m">05:00:05</td><td class="n">Init</td><td class="m">14s</td><td>Loaded preferences, pulled reply emails, hashed every prompt file so a later quality change can be traced to a prompt edit</td></tr>
+    <tr><td class="m">05:00:19</td><td class="n">Trend scan</td><td class="m">3m 11s</td><td>Eight sources fetched in parallel, every item compared against ten days of history, trends clustered by embedding similarity</td></tr>
+    <tr><td class="m">05:03:30</td><td class="n">Research</td><td class="m">19m 50s</td><td>Thirteen Claude processes launched, six running at a time. 189 findings survived the gates</td></tr>
+    <tr><td class="m">05:23:20</td><td class="n">Synthesis</td><td class="m">6m 50s</td><td>Two Opus passes. One picked five stories, one wrote 11,904 words</td></tr>
+    <tr><td class="m">05:30:10</td><td class="n">Deliver</td><td class="m">1s</td><td>Markdown to HTML, sent through Resend, receipt claimed before the send</td></tr>
+    <tr><td class="m">05:30:11</td><td class="n">Site content</td><td class="m">2h 47m</td><td>Public site stories, entity dossiers, knowledge-graph extraction over the day's findings</td></tr>
+    <tr><td class="m">08:17:28</td><td class="n">Learn</td><td class="m">24s</td><td>Scored the run, compared to the 7-day average, ran the memory lifecycle</td></tr>
+    <tr><td class="m">08:17:52</td><td class="n">Social, engagement, identity</td><td class="m">under 1s</td><td>Social and engagement skipped, because scheduled runs pass a flag that turns them off</td></tr>
+    <tr><td class="m">08:18:35</td><td class="n">Mirror</td><td class="m">2s</td><td>Regenerated the readable Obsidian copy of everything in SQLite</td></tr>
+    <tr><td class="m">08:18:37</td><td class="n">Sync</td><td class="m">3m 6s</td><td>Uploaded to the cloud host, restarted it, warmed the public site's cache</td></tr>
+  </table></div>
+
+  <p>The number to lead with from that table is thirty minutes. The newsletter is in the inbox at 05:30, half an hour after the run begins. Everything after it, the public site, the learning, the sync, takes another two hours and fifty minutes and cannot delay the email by design. That is why delivery sits fifth in a twelve-phase pipeline instead of last, and it is a decision worth defending out loud, because the obvious ordering would put publishing at the end.</p>
+
+  <div class="box say">
+    <p class="kicker">If they ask what the hardest scheduling problem was</p>
+    <p>Getting a laptop to be a reliable server. The scheduler fires every fifteen minutes across a five-hour window, so nineteen of the twenty triggers do nothing. That sounds wasteful until you learn that macOS skips its scheduled wake when the machine is on battery, and both the power daemon and the calendar scheduler had silently drifted onto the wrong timezone after I moved. Dense triggers mean the run starts within fifteen minutes of the first time the lid opens, instead of waiting for the next hour.</p>
+  </div>
+</section>
+
+<section id="research">
+  <h2><span class="num">06</span>The thirteen agents, in depth</h2>
+  <p class="lede">This is the part they will want to slow down on, so it is worth being able to explain it three levels deep. Start with what they are, then how they are dispatched, then what happens to what they bring back.</p>
+
+  <figure>
+    <svg viewBox="0 0 720 300" role="img" aria-label="Diagram showing eight preflight sources feeding a router, which fans out to thirteen agent processes, whose findings pass through four Python gates into the findings table" style="color: var(--muted)">
+      <g fill="none" stroke="currentColor" stroke-width="1">
+        <rect x="8" y="14" width="128" height="272" rx="2"/>
+        <rect x="228" y="14" width="150" height="272" rx="2"/>
+        <rect x="470" y="60" width="120" height="180" rx="2"/>
+        <rect x="628" y="118" width="84" height="64" rx="2"/>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor" letter-spacing="1">
+        <text x="14" y="9">8 SOURCES, PARALLEL</text>
+        <text x="234" y="9">13 AGENTS, 6 AT A TIME</text>
+        <text x="476" y="55">PYTHON GATES</text>
+        <text x="634" y="113">STORAGE</text>
+      </g>
+      <g font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor">
+        <text x="20" y="42">rss</text><text x="20" y="72">arxiv</text><text x="20" y="102">github</text>
+        <text x="20" y="132">hn</text><text x="20" y="162">reddit</text><text x="20" y="192">twitter</text>
+        <text x="20" y="222">exa</text><text x="20" y="252">youtube</text>
+        <text x="240" y="42">news</text><text x="240" y="60">agents</text><text x="240" y="78">arxiv</text>
+        <text x="240" y="96">github-pulse</text><text x="240" y="114">hn</text><text x="240" y="132">reddit</text>
+        <text x="240" y="150">rss</text><text x="240" y="168">sources</text><text x="240" y="186">projects</text>
+        <text x="240" y="204">thought-leaders</text><text x="240" y="222">vibe-coding</text>
+        <text x="240" y="240">saas-disruption</text><text x="240" y="258">skill-finder</text>
+        <text x="480" y="88">cross-agent</text><text x="480" y="104">dedup 0.85</text>
+        <text x="480" y="134">policy engine</text><text x="480" y="150">injection scan</text>
+        <text x="480" y="180">stale-source</text><text x="480" y="196">30-day gate</text>
+        <text x="480" y="222">sim &gt; 0.90</text>
+        <text x="636" y="146">findings</text><text x="636" y="162">21,307</text>
+      </g>
+      <g stroke="currentColor" stroke-width="1" fill="none" opacity=".55">
+        <path d="M136 150 L 172 150"/><path d="M172 40 L 172 260"/>
+        <path d="M172 40 L 228 40 M172 90 L 228 90 M172 150 L 228 150 M172 210 L 228 210 M172 260 L 228 260"/>
+        <path d="M378 150 L 470 150"/><path d="M590 150 L 628 150"/>
+      </g>
+      <g fill="currentColor" opacity=".55">
+        <path d="M228 150 l -6 -3 v6 z"/><path d="M470 150 l -6 -3 v6 z"/><path d="M628 150 l -6 -3 v6 z"/>
+      </g>
+    </svg>
+    <figcaption>Deterministic gathering feeds a routing table. Each agent is its own process. Four Python gates stand between what an agent returns and what gets stored.</figcaption>
+  </figure>
+
+  <h3>What an agent actually is</h3>
+  <p>Thirteen markdown files in one directory. That is the whole roster. Each file is between 65 and 162 lines and names the specific sources, people, subreddits and quality bar for one beat. There is no Python behind any individual agent. When the pipeline dispatches, it reads the markdown, wraps it in a standard scaffold, and hands the result to a fresh Claude process.</p>
+
+  <p>Correct people early if they picture subagents inside a session, because it changes what the design is doing. Each agent here is a separate operating-system process with its own context window, its own tool budget and its own thirty-minute timeout. Python owns the fan-out with a thread pool that runs six at a time, so seven of the thirteen are queued at any moment.</p>
+
+  <p>Six rather than thirteen is a throttle, and the reasoning is worth having ready because it is a nice systems answer. When all thirteen hit rate limits at the same moment, their retries become the next overload. So the backoff uses full jitter, a random delay drawn from zero up to the current cap, rather than a fixed wait. Fixed backoff would just reassemble the wave one step later.</p>
+
+  <div class="box say">
+    <p class="kicker">Why thirteen rather than one big agent</p>
+    <p>Three reasons and they compound. Context isolation, so a heavy paper day can't crowd the security beat out of the window. Failure isolation, so one agent timing out costs a thirteenth of the day instead of everything. And prompt specificity, because each file can name real sources and a real quality bar for its beat, and a single prompt covering all thirteen beats cannot be that specific about any of them.</p>
+  </div>
+
+  <div class="tw"><table>
+    <tr><th>Agent</th><th>Beat</th><th>Pre-fed from</th></tr>
+    <tr><td class="n">news</td><td>Model releases, funding, launches, policy, hardware, last 48 hours</td><td class="m">hn, twitter</td></tr>
+    <tr><td class="n">agents</td><td>Agent frameworks and SDKs, protocols, production deployments</td><td class="m">arxiv</td></tr>
+    <tr><td class="n">arxiv</td><td>Papers with practitioner implications, publication date verified from the ID</td><td class="m">arxiv</td></tr>
+    <tr><td class="n">github-pulse</td><td>Repos gaining traction one to two weeks before the press notices</td><td class="m">github</td></tr>
+    <tr><td class="n">hn</td><td>Community-validated stories above 100 points, including the skeptical threads</td><td class="m">hn</td></tr>
+    <tr><td class="n">reddit</td><td>Real adoption signals and failure modes across ten subreddits</td><td class="m">reddit</td></tr>
+    <tr><td class="n">rss</td><td>Fifteen-plus practitioner blogs and lab feeds that never surface in web search</td><td class="m">rss</td></tr>
+    <tr><td class="n">sources</td><td>Named high-signal newsletters, podcasts and YouTube channels</td><td class="m">youtube, rss</td></tr>
+    <tr><td class="n">projects</td><td>Viral repos, Show HN, Product Hunt, things people actually built</td><td class="m">github</td></tr>
+    <tr><td class="n">thought-leaders</td><td>Named people. Amodei, Altman, Karpathy, LeCun, Chollet, Ng</td><td class="m">twitter</td></tr>
+    <tr><td class="n">vibe-coding</td><td>Coding agents and workflows, with three mandatory output sections</td><td class="m">reddit, github, youtube</td></tr>
+    <tr><td class="n">saas-disruption</td><td>Which SaaS categories are being replaced and by what</td><td class="m">rss, the SaaS set</td></tr>
+    <tr><td class="n">skill-finder</td><td>Ten concrete, non-obvious, sourced techniques a day</td><td class="m">nothing, works from scratch</td></tr>
+  </table></div>
+
+  <h3>What goes into one agent's prompt</h3>
+  <p>Nine blocks in a fixed order. The output contract appears at both the top and the bottom, because instruction-following degrades in the middle of a long prompt and the contract is the one thing that cannot be missed.</p>
+  <ol>
+    <li>The JSON schema, and the words "output ONLY valid JSON"</li>
+    <li>The system's identity file, so every agent shares a sense of what the project is for</li>
+    <li>The file describing who the newsletter is written for</li>
+    <li>That agent's own skill file, its domain and sources and quality bar</li>
+    <li>Memory: this agent's findings from the last seven days, its best-performing sources, what the other twelve agents have already found today with semantic overlap flagged, and cross-agent patterns learned over time</li>
+    <li>Today's detected trends</li>
+    <li>The pre-fetched items routed to this agent, with anything already covered struck through and dated</li>
+    <li>Instructions for going past the pre-fetched set using semantic search, page fetching, Twitter and YouTube</li>
+    <li>A novelty requirement and a mandatory six-point self-critique the agent must run before emitting anything</li>
+  </ol>
+
+  <p>The self-critique block is the one worth quoting, because it is doing the most work for the least machinery. Before it outputs anything the agent has to drop any finding whose primary source is older than 48 hours, any topic already covered in the last ten days without genuinely new data, and any rewrite that adds nothing to the original. Anything it can only find one source for gets downgraded rather than dropped.</p>
+
+  <h3>What happens to what comes back</h3>
+  <p>Findings do not go straight into the database. Four gates stand between an agent's output and storage, and they check different things on purpose.</p>
+  <ol>
+    <li><strong>Cross-agent dedup.</strong> All findings from all thirteen agents get embedded and compared to each other. Near-duplicates above 0.85 collapse to whichever copy scores better on summary depth, importance and having a source URL.</li>
+    <li><strong>The policy engine.</strong> Required fields, a valid importance value, URL sanity, banned entities, and eight named prompt-injection patterns. This runs before storage, so bad findings never enter memory rather than getting cleaned up later.</li>
+    <li><strong>The stale-source gate.</strong> If a URL's own path encodes a date more than thirty days old, it is recycled content rather than news. No embeddings involved, just string parsing, which means it works even when everything else is having a bad day.</li>
+    <li><strong>The history gate.</strong> Semantic similarity above 0.90 against 180 days of stored findings.</li>
+  </ol>
+  <p>On 20 August, 189 findings survived all four. If zero survive, the phase raises and the whole run fails, on the grounds that a newsletter with no research behind it is worse than no newsletter.</p>
+
+  <h3>When an agent fails</h3>
+  <p>The CLI writes API errors to standard output, sometimes with a zero exit code, so the classifier reads both streams and sorts every failure into one of five buckets: overloaded, rate limited, server error, parse error, or other. The first three retry with jittered backoff up to three attempts. Parse error gets exactly one corrective retry with explicit headless framing appended, because a clean exit with unparseable output almost always means the model wrote an essay instead of JSON. Above all of that, the phase re-dispatches any agent that finished with an error and nothing to show, once, on the theory that a transient cause has usually passed by the time the first wave finishes.</p>
+
+  <div class="box scar">
+    <p class="kicker">Why that re-dispatch exists</p>
+    <p>On 19 August 2026 the Mac was on battery and went to sleep mid-run. Twelve of the thirteen agents died mid-response and a twelve-finding issue went out. Software cannot prevent that sleep. What it can do is warn at the very start of the run while the warning is still useful, and give a dead agent one automatic second pass. Both of those exist now because of that morning.</p>
+  </div>
+</section>
+
+<section id="phases">
+  <h2><span class="num">07</span>All twelve phases</h2>
+  <p class="lede">Reference material. You will not walk through all twelve out loud, but you should be able to answer a question about any of them without hedging.</p>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">01</span><span class="phase-name">Init</span><span class="chip py"><span class="g">&#9632;</span> mostly Python</span></div>
+    <p>Housekeeping with one model call in it. Checks whether the Mac is on battery and sends a Slack warning if so. Pulls in anything posted from your phone. Fetches reply emails, and if any are unprocessed, sends them to a small Claude call that extracts topic preferences and writes them as numeric weights the story selector reads later. Then hashes every prompt file in the project so that if quality moves tomorrow, the system can point at which prompt you edited.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">02</span><span class="phase-name">Trend scan</span><span class="chip py"><span class="g">&#9632;</span> no model at all</span></div>
+    <p>This used to be a Claude call and now has none, which is a small story worth telling because it runs the design bet in reverse. Eight source modules run concurrently on a thread pool. Everything they return gets embedded locally and compared against ten days of stored findings, with anything above 0.85 similarity tagged as already covered, carrying the date and the agent that first found it. A time-decay curve loosens that threshold for older matches, so a story that has genuinely developed is not censored for resembling its own earlier version.</p>
+    <p>Trends then come out of clustering those items by similarity and scoring the clusters on engagement and source diversity. No judgment required, so no model required. It also means a resumed run can redo this step for free, which matters when something crashes.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">03</span><span class="phase-name">Research</span><span class="chip llm"><span class="g">&#9670;</span> 13 to 26 processes</span><span class="chip py"><span class="g">&#9632;</span> critical</span></div>
+    <p>Covered in full in the previous section. One of the two phases where failure kills the run.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">04</span><span class="phase-name">Synthesis</span><span class="chip llm"><span class="g">&#9670;</span> 2 Opus passes</span><span class="chip py"><span class="g">&#9632;</span> critical</span></div>
+    <p><strong>Pass one picks the stories.</strong> It gets the day's findings after a source-rebalancing step, each one carrying an inline marker if a past issue already cited that URL, plus your preference weights, the trend list, and a formatted block of every story published in the last twenty-one days. It returns exactly five stories with reasons.</p>
+    <p>Then a deterministic tripwire compares that selection against the published archive by word overlap. If it repeats something, the pipeline forces exactly one re-pick with the offending titles named. If the second attempt still repeats, the issue publishes anyway and you get a Slack alert. Never a silent repeat, and never a blocked newsletter.</p>
+    <p><strong>Pass two writes the issue.</strong> Its prompt opens with an output contract that says, in effect, your standard output is published verbatim to subscribers, so emit only newsletter markdown and never mention tools, sessions, finding counts, dedup, or coverage constraints. That last clause is specific and earned: on 19 August a degraded run opened by telling subscribers that the selection pass had only cleared one story.</p>
+    <p>Three attempts. If all three fail, Python assembles a plain source-list brief from stored findings and sends an urgent alert rather than shipping nothing. Afterwards, all in code: strip any process narration before the first heading, replace whatever headline the model wrote with a deterministic one, run the prose gate, write the file, run the URL tripwire, score the issue on six dimensions, and assess the quality floor.</p>
+    <div class="box scar">
+      <p class="kicker">The quality floor no longer touches the newsletter</p>
+      <p>It used to be able to. On 13 July 2026 a thin research day tripped the floor and a finished, perfectly good newsletter was replaced by a bare list of links. That is a worse outcome than publishing something slightly weak. Now the floor only reports. It writes to the trace database and alerts Slack, and the issue the writer produced goes out untouched. The general rule that came out of it is that a quality check should be allowed to tell you something is wrong and not allowed to fix it by making it worse.</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">05</span><span class="phase-name">Deliver</span><span class="chip py"><span class="g">&#9632;</span> no model</span></div>
+    <p>Validates the file, appends a feedback footer, converts markdown to HTML, and posts to the email API with both HTML and plain-text bodies, retrying with backoff. Subscribers get a separate broadcast built from the pre-footer copy.</p>
+    <p>Two safety mechanisms are worth explaining because they are the kind of thing people underestimate until it bites them. A receipt keyed to the date is claimed before the send, so a crash-and-resume physically cannot send twice. And the marker file that tells the scheduler the day is done is written only when delivery is confirmed.</p>
+    <div class="box scar">
+      <p class="kicker">Why that marker moved</p>
+      <p>On 13 June 2026 the shell wrapper touched the done-marker before running the pipeline. The pipeline then crashed at startup. The marker said the day was finished, so every retry window that morning skipped, and no newsletter went out at all. A bug that lasted one second became an outage that lasted a day. The marker now belongs to the delivery phase and nothing else can write it.</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">06</span><span class="phase-name">Site content</span><span class="chip py"><span class="g">&#9632;</span> deterministic core</span><span class="chip llm"><span class="g">&#9670;</span> writer and critic</span></div>
+    <p>Builds the public website. A deterministic engine reads a public-safe view of the corpus, picks candidate stories, assembles an evidence pack for each, and generates the copy. A live writer agent and a desk-editor critic sit on top, and both are entirely optional. If the model is unavailable, or its draft fails a deterministic copy lint, the deterministic version ships instead. That is a design pattern worth naming out loud, because most people build it the other way around and have no fallback at all.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">07</span><span class="phase-name">Learn</span><span class="chip py"><span class="g">&#9632;</span> Python</span><span class="chip llm"><span class="g">&#9670;</span> one small call</span></div>
+    <p>Scores the run and compares it to the seven-day average, storing a lesson if it dropped. Attributes any quality change to prompt files edited since the last run. Extracts entity relationships from high-importance findings. Then the memory lifecycle: cluster the agents' own observations into shared patterns, promote a pattern once enough different agents have seen it, and archive what has gone stale. Read the audit section before you describe this one confidently, because until yesterday most of it was doing nothing.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">08</span><span class="phase-name">Social</span><span class="chip llm"><span class="g">&#9670;</span> ~8 agents in sequence</span></div>
+    <p>Off by default on scheduled runs, because it needs you at the approval gates. Eleven steps: post anything deferred from yesterday, check rate limits before spending a single token, let the EIC pick a topic, gate 1 in Slack, creative brief, optional illustration, per-platform writers in parallel, blind critics for up to three rounds, deterministic policy validation, a humanizer pass, the expeditor as a final check, gate 2 in Slack, then posting with random jitter inside a configured window.</p>
+    <p>The detail people react to is the kill day. If the EIC decides nothing today is worth publishing, nothing gets published, and that outcome is recorded as a negative signal rather than as a failure.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">09</span><span class="phase-name">Engagement</span><span class="chip llm"><span class="g">&#9670;</span> finder and writer</span></div>
+    <p>Finds conversations worth replying to based on the day's research, drafts substantive replies, routes them through the same Slack approval path, then posts and follows. Every follow is receipt-guarded so a retry cannot double-follow anyone.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">10</span><span class="phase-name">Identity</span><span class="chip llm"><span class="g">&#9670;</span> one call</span></div>
+    <p>The system edits its own identity files. It assembles a summary of the day and asks for a structured diff, which Python then validates and applies with size limits and content sanitizing. Those files are loaded back into every agent prompt the next morning, which is the mechanism by which the loop is supposed to close. Whether it actually closes is covered in the audit.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">11</span><span class="phase-name">Mirror</span><span class="chip py"><span class="g">&#9632;</span> no model</span></div>
+    <p>Regenerates the database contents as browsable markdown: daily notes, a page per source, topics, people, past issues. SQLite stays authoritative. The vault exists so a human can wander through what the system knows without writing a query.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">12</span><span class="phase-name">Sync</span><span class="chip py"><span class="g">&#9632;</span> no model</span></div>
+    <p>Bundles the database and the day's reports into a single archive and uploads it in one connection rather than thirty. Restarts the cloud app so it reopens the replaced database file, waits for its warm-up, then requests the day's new pages one at a time so the CDN has them cached before the first reader arrives.</p>
+  </div>
+</section>
+
+<section id="broke">
+  <h2><span class="num">08</span>What broke, and what it taught</h2>
+  <p class="lede">This is your strongest material and you should not hold it back. A book about agentic systems is full of people describing architectures that work. Almost nobody brings receipts for the ways theirs failed, and the failures are where the actual knowledge is.</p>
+
+  <p>Each of these is a real incident with a date, and each one left a specific piece of code behind. Told in that order, incident then artifact, they land as engineering rather than as confession.</p>
+
+  <div class="tw"><table>
+    <tr><th class="m">Date</th><th>What happened</th><th>What it left behind</th></tr>
+    <tr><td class="m">13 Jun</td><td>The wrapper marked the day done before running. The run crashed at startup, every retry skipped, no newsletter all day</td><td>Only the delivery phase can write that marker now</td></tr>
+    <tr><td class="m">26 Jun</td><td>A commit meant to restore tool access actually revoked web search and fetch approval in headless mode. Seventeen days of degraded research before anyone noticed</td><td>Explicit grants, plus a startup check that every granted binary exists</td></tr>
+    <tr><td class="m">13 Jul</td><td>A thin research day tripped the quality floor and a finished newsletter was replaced with a bare link list</td><td>The floor reports and alerts. It cannot rewrite output</td></tr>
+    <tr><td class="m">14 Jul</td><td>A sync upload flaked, which triggered a second full pipeline run that doubled the day's findings and rewrote a published issue</td><td>A sync-only retry path, so a failed upload never re-runs research</td></tr>
+    <tr><td class="m">24 Jul</td><td>Seven of thirteen agents refused their task, having decided the prompt was a transcript pasted into an interactive session</td><td>Execution context moved into the system prompt, where user input cannot forge it</td></tr>
+    <tr><td class="m">25 to 27 Jul</td><td>The same prompt produced 42, then 2, then 52 em dashes</td><td>A deterministic prose gate with a budget of six</td></tr>
+    <tr><td class="m">17 Aug</td><td>An audit found 26 stories re-reported as new across 20 issues, while every automated dedup check scored green</td><td>A fifth dedup layer that reads published issues rather than stored findings</td></tr>
+    <tr><td class="m">19 Aug</td><td>The Mac slept mid-run on battery. Twelve of thirteen agents died mid-response and a twelve-finding issue shipped</td><td>A battery warning at startup and one automatic re-dispatch of dead agents</td></tr>
+  </table></div>
+
+  <h3>The one that generalizes best</h3>
+  <p>If you only tell one of these, tell 17 August, because it is the one with a lesson that transfers to any system with layered checks.</p>
+  <p>There were four dedup layers at the time, and all four were working correctly. The problem was that all four compared <em>findings</em> to other findings. Not one of them ever looked at what past issues had actually published. So a story could be re-reported as news, and every gauge stayed green, because no gauge was pointed at the thing that mattered.</p>
+
+  <div class="box say">
+    <p class="kicker">Say something like this</p>
+    <p>I had four deduplication layers and all four passed while the newsletter re-reported twenty-six stories in twenty issues. They were all measuring the same thing from slightly different angles. The fix wasn't a better threshold, it was a check that read the published issues themselves, in plain string comparison with no embeddings in it, so it keeps working on the days everything else is broken.</p>
+  </div>
+
+  <p>That last clause is the part worth emphasizing. The new layer is deliberately the dumbest one in the system, stemmed word overlap and nothing else, precisely so it does not share a failure mode with the four sophisticated layers it backs up.</p>
+</section>
+
+<section id="audit">
+  <h2><span class="num">09</span>The honest audit</h2>
+  <p class="lede">Yesterday I went through the databases and the git history instead of reading the code, and found that a meaningful share of the self-improvement machinery was running every day and doing nothing. This is the section to volunteer rather than wait to be asked about, and it is genuinely the most interesting thing you can offer a book.</p>
+
+  <h3>Three loops were built. One was running.</h3>
+
+  <p><strong>Working.</strong> The quality loop. Every run gets scored on six dimensions, compared against the seven-day average, and a drop writes a lesson. That is a real 175-run time series, and the 19 August collapse from 0.719 to 0.573 showed up in it the same day. This part does what it says.</p>
+
+  <p><strong>Half working.</strong> Identity. It writes genuine daily analysis into its journal and reads the last seven entries back, so there is a real loop turning. But the voice guide, the file that actually shapes the prose, had not changed a single line since 26 June, and the file describing the reader had not changed since 1 July. The loop was turning without moving anything. Worse, because scheduled runs skip the social phase, four of the eight inputs to that prompt arrive absent every day, and the system had been dutifully recording the same missing-telemetry item as an unresolved action for eight consecutive weeks without anything ever reading it back.</p>
+
+  <p><strong>Dormant.</strong> Pattern consolidation, and the harness. The consolidation step clusters agent observations into shared rules that get fed back into every agent's prompt. It runs daily. It reads a table that nothing has ever written to, so it clusters an empty set and exits. The 223 patterns in that table were all created between 3 March and 9 April, and all thirteen agents had been reading that frozen April snapshot every morning since, labelled as live cross-agent learnings.</p>
+
+  <p>The harness, meanwhile, genuinely worked: sixteen pull requests from harness branches, all sixteen merged, between 1 and 3 April. Then it stopped. Every one of its 34 tickets was created in that same three-day window. Its audit log has one line in it, dated 7 May. Its feedback file, the mechanism by which merge decisions were supposed to teach the scout what gets accepted, is an empty array and always has been. There is no scheduler for it. It is a manual command nobody has run in four months.</p>
+
+  <div class="box trap">
+    <p class="kicker">Do not say "it improves itself" unqualified</p>
+    <p>You will be tempted, and someone technical will ask what improved and when. The strong version of this answer is the honest one, and it is better material anyway: three loops built, one running, and here is exactly how I found out which was which.</p>
+  </div>
+
+  <h3>The two bugs underneath</h3>
+  <p>When I dug in, the consolidation failure turned out to be two separate defects stacked, and both are the kind that only show up in production data.</p>
+  <p>The first is that nothing wrote the input table. The pattern-learning loop was built to consume agent self-observations, and the agents were never asked to produce any. The output schema had findings and nothing else.</p>
+  <p>The second is subtler and better as a story. The consolidation step loads existing patterns to check whether a new observation matches one, and it filtered on status equals active. But the promotion step, which runs right after, flips any pattern that has matured to status promoted. So the moment a pattern became established, consolidation could no longer see it, and the next matching observation created a duplicate instead of incrementing the original. The bug specifically hit the patterns that mattered most, and it hid inside a code path that had been dormant so long nobody would have noticed either way.</p>
+
+  <div class="box say">
+    <p class="kicker">The line that makes this land</p>
+    <p>The lesson isn't that I had bugs. It's that a loop with no output nobody checks will run in silence for months and look completely healthy from the outside. The learn phase logged a successful consolidation every single morning. It was consolidating nothing. If I hadn't gone and counted rows in the database, I'd have kept telling people it was self-improving.</p>
+  </div>
+
+  <h3>What is fixed as of today</h3>
+  <p>This is a good thing to be able to say in present tense, because it turns the audit from a confession into a work log. All of it is committed, on a branch, with tests that were watched failing first.</p>
+  <ul>
+    <li>Research agents now emit an optional array of self-observations alongside their findings, capped at six per agent, and the research phase persists them. That is the input the consolidation step was always waiting for.</li>
+    <li>The consolidation query now matches against promoted patterns as well as active ones, so an established pattern absorbs new observations instead of spawning a copy.</li>
+    <li>A third bug surfaced while writing a test for the second: the note-storing function inserted its row before computing the embedding, so an embedding failure left an orphan row that the next successful call committed without one. It embeds first now, which makes the write all-or-nothing.</li>
+    <li>Quality-drop lessons now name a cause. Instead of "Overall score 0.573 vs 7-day avg 0.719" they read "only 1/13 agents contributed; agents that errored: hn-researcher, reddit-researcher; sources degraded: reddit".</li>
+    <li>The voice guide and the reader file are now read-only at runtime, after the flat-tone episode in August, and a diff proposing changes to either is discarded and logged rather than applied.</li>
+    <li>Unresolved journal items are fed forward with a count of how many runs have restated them, with instructions to close, restate with evidence, or drop. Anything restated three times without progress is required to be escalated or dropped rather than copied forward again.</li>
+  </ul>
+
+  <h3>The database, honestly</h3>
+  <p>Sixty-one tables across two SQLite files sounds like more system than it is, so I counted. In the main database, fourteen tables are written every run and another five on events. Eight are frozen at various dates between March and July. Five have never held a single row. There is also a full-text index built over the findings table that was never populated, so a search against it returns nothing, though nothing queries it either, which makes it dead weight rather than a broken feature.</p>
+  <p>The trace database is worse: nine of its eighteen tables are empty, and three of those nine are superseded duplicates of tables that <em>are</em> live. One module still creates the old names on every open while two other modules write the new ones. Two generations of schema, both shipping, neither aware of the other.</p>
+  <div class="box say">
+    <p class="kicker">If they ask about the dead tables</p>
+    <p>Every one of them is a feature I started and a decision I never made explicitly. That's what accumulation looks like in a system that only one person reviews. The tables aren't the problem, the problem is that nothing in my process ever asked "is this still true?" until I sat down and asked it by hand.</p>
+  </div>
+</section>
+
+<section id="questions">
+  <h2><span class="num">10</span>Questions you'll get</h2>
+  <p class="lede">These are the ones worth having a real answer to rather than improvising. Each of them has a version that is true and interesting, which is better than one that is just impressive.</p>
+
+  <div class="qa">
+    <p class="q">Is this agentic, or is it just a workflow with LLM calls in it?</p>
+    <p>Both, at different levels, and the distinction is the whole design. The outer loop is a hard-coded state machine with no model anywhere in the control path. The inner work is genuinely agentic: each research agent runs up to thirty-five turns, decides which tools to use, follows leads it finds mid-run, and applies its own critique before answering. Agency stops at the phase boundary. I would rather have thirteen agents with real latitude inside a rigid frame than one agent deciding what the pipeline does next.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">Which model, and what does it cost you?</p>
+    <p>The Claude command-line tool in headless mode, running against a personal subscription. Research agents and both writing passes are on Opus, using the million-token context variant where the entire day's findings have to sit in one window. Sonnet handles the bounded writing and review work. There is no API key in the project and nothing calls the paid API, which is unusual enough that it is worth saying plainly.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">What stops it hallucinating an entire newsletter?</p>
+    <p>Four things in sequence, and the first one is a prompt decision rather than code. The system prompt states that the finding count describes a normal day rather than a quota, and that returning fewer real findings is always correct, which removes the pressure that makes fabrication attractive. Then the policy engine rejects any finding without a source URL before it is stored. Then the stale-source and 180-day similarity gates drop recycled material. Then the evaluator scores source density in the published text. If the model would rather refuse than fabricate, that is the designed outcome and the pipeline records it as a degraded run.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">What was actually the hardest part?</p>
+    <p>Everything at the seams, where non-determinism meets code that expects a shape. A model refusing in prose where a parser expected JSON. The same prompt producing forty-two em dashes one day and two the next. A tool grant naming a binary nobody had installed. None of those are model quality problems and none of them are fixable by prompting harder. The pattern in every fix is the same: move the check out of the prompt and into code, at the exact point where the failure would otherwise do damage.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">How much do you actually trust it?</p>
+    <p>Enough to let it publish without reading it first, not enough to let it post to social media without an approval gate. That line is where it is because email to my own list is recoverable and a bad post is not. The interesting part is that the trust is not in the model, it is in the gates around it. I would not trust the same model with no prose gate, no dedup layers, and no receipts.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">What would you build differently?</p>
+    <p>Two things. The site-building phase takes two hours and forty-seven minutes and sits inside the same sequential run as everything else, which is architecturally silly. It should be a separate job triggered after delivery. And the second is the audit finding: I built three self-improvement loops and never instrumented whether any of them were producing output. A loop that runs and does nothing looks exactly like a loop that works, right up until you count rows.</p>
+  </div>
+
+  <div class="qa">
+    <p class="q">Could someone else run this?</p>
+    <p>The research roster could move to a completely different domain without touching Python, because every agent is a markdown file and the dispatcher checks a per-user override directory before the defaults. What would not transfer is everything shaped by this machine: a laptop scheduler, a macOS keychain, a personal subscription. It is a single-user system that happens to be built like a multi-user one, and I would be honest about that rather than overclaiming it as a product.</p>
+  </div>
+</section>
+
+<section id="traps">
+  <h2><span class="num">11</span>Traps</h2>
+  <p class="lede">Specific things to avoid saying, mostly because they are either wrong or because they invite a follow-up you cannot answer cleanly.</p>
+
+  <div class="box trap">
+    <p class="kicker">Do not say twelve agents</p>
+    <p>It is thirteen. Thirteen skill files, thirteen dispatched, and thirteen active on eighteen of the last twenty runs. The number appears in the quality thresholds too, so getting it wrong is checkable.</p>
+  </div>
+
+  <div class="box trap">
+    <p class="kicker">Do not say the research agents run on Sonnet</p>
+    <p>The docstring in the code still says "13x Sonnet" and it is stale. The router has said Opus for a while and the router is what executes. If you glance at the code mid-interview you will read the wrong thing.</p>
+  </div>
+
+  <div class="box trap">
+    <p class="kicker">Do not describe the schedule as hourly from 7 to 11</p>
+    <p>That is what the project README says and it has been wrong for a while. The real schedule fires every fifteen minutes from 05:00 to 09:45, with the wrapper enforcing a 05:00 to 09:59 window.</p>
+  </div>
+
+  <div class="box trap">
+    <p class="kicker">Do not call `--allowedTools` a sandbox</p>
+    <p>It is a pre-approval list, not a fence. Read-only tools work whether or not they are listed. If you describe it as a security boundary, a security-minded reader will correctly push back and you will lose the thread.</p>
+  </div>
+
+  <div class="box trap">
+    <p class="kicker">Do not quote table counts from the README</p>
+    <p>It says seventeen-plus and fourteen. The real numbers are 43 and 18, and roughly half of those are dead. Use the audit section's version.</p>
+  </div>
+
+  <h3>One thing to be ready for</h3>
+  <p>If the interviewer is sharp, at some point they will ask whether all this machinery actually produces a better newsletter than a single well-prompted model call would. That is the right question and it deserves a real answer rather than a defensive one.</p>
+  <p>The honest version: for any one issue, probably not by much. What the machinery buys is that the 179th issue is as good as the 5th, that it does not repeat itself across months, that a bad source day degrades instead of producing confident nonsense, and that when something does break there is a trace explaining which of twelve phases failed and why. That is a reliability argument, not a quality argument, and it is stronger for being framed that way.</p>
+</section>
+
+<footer>
+  <p>Prepared 21 August 2026 from the working tree on branch <code>fix/restore-learning-loops</code>. Every figure read live from memory.db and traces.db. Phase timings from run <code>research-2026-08-20-326ede</code>. Harness history from the git log and the GitHub CLI. Where this document and the project README disagree, the README is out of date.</p>
+</footer>
+
+</main>
+</div>

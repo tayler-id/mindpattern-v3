@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from core import findings_store
+from core.model_cli import ToolPolicy, disallowed as as_disallowed, run_task_process
+from core.trace_store import run_context
 from core.claude_cli import run_claude_process
 from memory.embeddings import embed_texts
 from . import router
@@ -64,7 +67,10 @@ def _dry_run_prompt_output(task_type: str) -> str:
     if task_type == "learnings_update":
         return "# Learnings\n\nDry-run: Claude updater skipped.\n"
     if task_type == "synthesis_pass1":
-        return "Dry-run story selection. Use placeholder synthesis output."
+        # Same shape as a real selection, so a dry run walks the real path
+        # (republish check, deep-dive matching) without a model call.
+        return json.dumps([{"story_title": "Dry-run placeholder story", "agent": "dry-run",
+                            "section": "dry-run", "reason": "placeholder selection"}])
     if task_type == "synthesis_pass2":
         date_label = _pipeline_date or "unknown date"
         return f"# Dry-Run Report - {date_label}\n\nThis is a dry-run placeholder.\n"
@@ -95,7 +101,19 @@ def _agent_env(agent_name: str) -> dict[str, str]:
         env["MINDPATTERN_DATE"] = _pipeline_date
     vault = PROJECT_ROOT / "data" / "ramsay" / "mindpattern"
     env["MINDPATTERN_VAULT"] = str(vault)
+    # `mp` (bin/mp) and the file it stores this agent's findings in.
+    context = run_context()
+    user_id = context.user_id or os.environ.get("MP_USER_ID") or "ramsay"
+    env["PATH"] = agent_path()
+    env["MP_USER_ID"] = user_id
+    env["MP_RUN_DATE"] = _pipeline_date or context.run_date or datetime.now().strftime("%Y-%m-%d")
+    env["MP_FINDINGS_FILE"] = str(findings_store.path_for(user_id, context.run_id or "adhoc", agent_name))
     return env
+
+
+def agent_path() -> str:
+    """PATH for agent processes: the repo's bin/ (for `mp`) first."""
+    return f"{PROJECT_ROOT / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}"
 
 # Pre-approvals for headless `claude -p` runs — NOT a fence. --allowedTools
 # grants the listed rules without prompting; every other tool stays available
@@ -115,6 +133,8 @@ def _agent_env(agent_name: str) -> dict[str, str]:
 AGENT_ALLOWED_TOOLS = [
     "WebSearch",
     "WebFetch",
+    "Bash(mp *)",             # store findings, check coverage, fetch pages (bin/mp)
+    "Bash(bin/mp *)",         # the same tool by path; an Oct 2 replay agent called it so and gave up
     "Bash(mcporter call *)",  # Exa semantic search
     "Bash(twitter *)",        # Twitter/X search (agent-reach's active backend)
     "Bash(yt-dlp *)",         # YouTube transcripts
@@ -132,12 +152,12 @@ _BASH_GRANT_RE = re.compile(r"^Bash\(\s*(\S+)")
 
 
 def granted_shell_binaries(allowed_tools: list[str] | None) -> set[str]:
-    """Binaries named by the `Bash(...)` rules in an --allowedTools list."""
+    """Binaries named by the `Bash(...)` rules in an --allowedTools list. `bin/mp` is `mp`."""
     binaries = set()
     for rule in allowed_tools or []:
         match = _BASH_GRANT_RE.match(str(rule))
         if match:
-            binaries.add(match.group(1))
+            binaries.add(match.group(1).rsplit("/", 1)[-1])
     return binaries
 
 
@@ -150,7 +170,7 @@ def missing_granted_binaries(allowed_tools: list[str] | None) -> list[str]:
     """
     return sorted(
         name for name in granted_shell_binaries(allowed_tools)
-        if not shutil.which(name)
+        if not shutil.which(name, path=agent_path())
     )
 
 
@@ -164,34 +184,20 @@ RESEARCH_SYSTEM_PROMPT = PROJECT_ROOT / "prompts" / "research-agent-system.md"
 FINDINGS_TARGET_MIN = 20
 FINDINGS_TARGET_MAX = 25
 
-
-def _build_claude_command(
-    prompt_arg: str,
-    *,
-    model: str,
-    max_turns: int,
-    system_prompt_file: str | None = None,
-    allowed_tools: list[str] | None = None,
-    disallowed_tools: str | None = None,
-) -> list[str]:
-    """Build the common Claude CLI command shape used by dispatch helpers."""
-    cmd = [
-        "claude", "-p", prompt_arg,
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--output-format", "text",
-    ]
-
-    if system_prompt_file:
-        cmd.extend(["--append-system-prompt-file", system_prompt_file])
-
-    for tool in allowed_tools or []:
-        cmd.extend(["--allowedTools", tool])
-
-    if disallowed_tools:
-        cmd.extend(["--disallowedTools", disallowed_tools])
-
-    return cmd
+# Self-improvement notes an agent may emit alongside its findings. This is the
+# input to memory.patterns.consolidate(); without it validated_patterns froze
+# on 2026-04-09 and every agent has been reading a stale April snapshot since.
+# Caps are deliberate: notes are secondary to findings and must never crowd
+# out the payload or become a second essay channel.
+MAX_NOTES_PER_AGENT = 6
+MAX_NOTE_CHARS = 400
+NOTE_TYPES = (
+    "source_quality",
+    "search_strategy",
+    "discovery",
+    "pattern",
+    "skip_list",
+)
 
 
 @dataclass
@@ -199,6 +205,7 @@ class AgentResult:
     """Result from a single agent execution."""
     agent_name: str
     findings: list[dict] = field(default_factory=list)
+    notes: list[dict] = field(default_factory=list)
     raw_output: str = ""
     exit_code: int = 0
     duration_ms: int = 0
@@ -251,6 +258,37 @@ def get_agent_skill_path(agent_name: str, user_id: str, vertical: str = "ai-tech
     if override.exists():
         return override
     return PROJECT_ROOT / "verticals" / vertical / "agents" / f"{agent_name}.md"
+
+
+# Findings stored with `mp` survive the turn cap: on Sep 27 and Sep 29 2026, 6
+# and 4 of 13 agents spent all 35 turns and printed nothing, so a whole day of
+# their research was lost. Fields go in a quoted heredoc, one per line: Claude
+# Code's Bash check refused every inline-JSON `mp finding add` in the Oct 2
+# replay, and the quoted heredoc passes apostrophes and `$` through untouched.
+# `mp fetch` keeps whole pages out of the context that every later turn
+# re-reads (52.6M cached tokens on Oct 1).
+STORE_FINDINGS_SECTION = """## Store each finding as you confirm it (REQUIRED)
+You have a limited number of turns, and every command uses one. Store findings as they pass the Self-Critique Gate, a few at a time, not all at the end:
+
+```
+mp finding add <<'EOF'
+title: ...
+summary: ...
+importance: high
+category: ...
+source_url: https://...
+source_name: ...
+EOF
+```
+
+One field per line. To store several findings in one command, put a line containing only `---` between them. `importance` is high, medium, or low. Never write a finding as JSON in a Bash command: the command is refused. The command checks each finding against the research policy and the last 180 days of coverage, and says why it rejects one: fix it or drop it. A stored finding counts even if you run out of turns.
+
+- Before you research your leads, check them in one call: `mp seen "<url or title>" "<another>"`.
+- To read a page, prefer `mp fetch <url> --max-chars 6000` over loading the whole page. If the reply has a `next_offset`, run it again with `--offset <next_offset>` to read on.
+- `mp findings list` shows what you have stored so far.
+- Run each `mp` command on its own. A pipe or `;` into any other program needs approval and is refused.
+
+When you finish, still output the JSON object below with every finding. It is merged with what you stored."""
 
 
 def build_agent_prompt(
@@ -397,8 +435,31 @@ Do not explain your full reasoning — just output the finding.
       "source_name": "string",
       "date_found": "{date_str}"
     }}
+  ],
+  "notes": [
+    {{
+      "note_type": "source_quality|search_strategy|discovery|pattern|skip_list",
+      "content": "string (one sentence, concrete, names the source or method)"
+    }}
   ]
 }}
+
+"findings" is the payload and is required. "notes" is optional and secondary:
+up to {MAX_NOTES_PER_AGENT} short observations about YOUR OWN RUN, not about
+the news. They are clustered across agents over time into shared operating
+rules, so write them for the version of you that runs tomorrow:
+
+- source_quality — which source paid off or wasted the run, and why.
+  "arXiv cs.AI gave 6 builder-actionable papers; cs.NE gave none."
+- search_strategy — a query or tool that worked better than the obvious one.
+  "Exa semantic search beat WebSearch for agent-framework release notes."
+- discovery — a source or feed you found that is not in your skill file.
+- pattern — a recurring shape you noticed in your beat.
+- skip_list — something that reliably wastes time and should be skipped.
+
+Write a note only when you actually learned something this run. Zero notes is
+a valid and common answer. Never invent one, and never restate a finding as a
+note.
 
 ---
 
@@ -460,12 +521,6 @@ When evaluating a story's importance, consider:
 - Is this a genuine development or marketing hype?
 - Could this be old news resurfacing? Check the actual publication date, not when it was shared.
 
-### Subagent Delegation
-For high-signal stories that need deep investigation, spawn a subagent:
-- Use the Agent tool to delegate deep reads of long documents
-- Spawn subagents for parallel verification across multiple sources
-- Do NOT spawn subagents for simple searches — use WebSearch directly
-
 ### Self-Critique Gate (MANDATORY — do this BEFORE outputting JSON)
 Review EVERY finding against these checks before including it:
 
@@ -477,10 +532,13 @@ Review EVERY finding against these checks before including it:
 6. **ArXiv Date Check**: If citing an arXiv paper, verify the ID date prefix matches the last 7 days (e.g., "2603" = March 2026). Papers from months ago are NOT new.
 
 Drop any finding that fails checks 1, 2, or 3. Downgrade any finding that fails checks 4 or 5.
+
+{STORE_FINDINGS_SECTION}
 {preflight_section}{search_section}
 ---
 
-CRITICAL REMINDER: Output ONLY the JSON object with "findings" array. No other text.
+CRITICAL REMINDER: Output ONLY the JSON object. "findings" is required;
+"notes" is optional and may be omitted or empty. No other text.
 """
     return prompt
 
@@ -531,16 +589,39 @@ def _retry_delay(attempt: int, base_delay: float, max_delay: float, rng: random.
     return rng.uniform(0, cap)
 
 
+def merge_findings(printed: list[dict], stored: list[dict]) -> list[dict]:
+    """Printed findings first, then stored ones not already printed (same source URL)."""
+    seen = {str(f.get("source_url", "")).strip().rstrip("/").lower() for f in printed}
+    merged = list(printed)
+    for finding in stored:
+        key = str(finding.get("source_url", "")).strip().rstrip("/").lower()
+        if key not in seen:
+            seen.add(key)
+            merged.append(finding)
+    return merged
+
+
 def _run_agent_attempt(
     agent_name: str,
-    cmd: list[str],
+    task_type: str,
+    prompt: str,
+    system_prompt: str | None,
     env: dict,
     timeout: int,
     start: float,
 ) -> AgentResult:
-    """Run one Claude CLI process attempt and classify the outcome."""
+    """Run one model call attempt through core.model_cli and classify the outcome."""
     result = AgentResult(agent_name=agent_name)
-    process = run_claude_process(cmd, timeout=timeout, cwd=PROJECT_ROOT, env=env)
+    process = run_task_process(
+        task_type,
+        prompt=prompt,
+        system_prompt_file=system_prompt,
+        tools=ToolPolicy(allowed=tuple(AGENT_ALLOWED_TOOLS), disallowed=as_disallowed(RESEARCH_DISALLOWED_TOOLS)),
+        unit=agent_name,
+        cwd=PROJECT_ROOT,
+        env=env,
+        runner=run_claude_process,
+    )
     result.duration_ms = int((time.monotonic() - start) * 1000)
 
     if process.timed_out:
@@ -560,6 +641,10 @@ def _run_agent_attempt(
     result.raw_output = stdout
 
     findings = _parse_findings(stdout, agent_name) if stdout and stdout.strip() else []
+    stored = findings_store.read_findings(Path(env["MP_FINDINGS_FILE"])) if env.get("MP_FINDINGS_FILE") else []
+    if stored:
+        findings = merge_findings(findings, stored)
+    result.notes = _parse_notes(stdout, agent_name) if stdout and stdout.strip() else []
     if findings:
         # Success even with a non-zero exit (e.g. a post-output hook failed)
         # — we still got usable findings.
@@ -645,14 +730,7 @@ def run_single_agent(
     # pasted into an interactive session and declined it (2026-07-24: 7 of 13).
     system_prompt = str(RESEARCH_SYSTEM_PROMPT) if RESEARCH_SYSTEM_PROMPT.exists() else None
 
-    cmd = _build_claude_command(
-        prompt,
-        model=model,
-        max_turns=max_turns,
-        system_prompt_file=system_prompt,
-        allowed_tools=AGENT_ALLOWED_TOOLS,
-        disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
-    )
+    attempt_prompt = prompt
 
     logger.info(
         f"run_single_agent START: agent={agent_name}, model={model}, "
@@ -666,7 +744,7 @@ def run_single_agent(
     result = AgentResult(agent_name=agent_name)
     corrective_retry_used = False
     for attempt in range(max_attempts):
-        result = _run_agent_attempt(agent_name, cmd, env, timeout, start)
+        result = _run_agent_attempt(agent_name, task_type, attempt_prompt, system_prompt, env, timeout, start)
 
         if result.classification == "parse_error" and not corrective_retry_used:
             corrective_retry_used = True
@@ -678,14 +756,7 @@ def run_single_agent(
             # Keep system_prompt_file: the retry previously rebuilt the command
             # without it, so the corrective attempt ran with WEAKER framing than
             # the first one and re-refused in ~2s (2026-07-24).
-            cmd = _build_claude_command(
-                prompt + _corrective_retry_suffix(agent_name),
-                model=model,
-                max_turns=max_turns,
-                system_prompt_file=system_prompt,
-                allowed_tools=AGENT_ALLOWED_TOOLS,
-                disallowed_tools=RESEARCH_DISALLOWED_TOOLS,
-            )
+            attempt_prompt = prompt + _corrective_retry_suffix(agent_name)
             continue
 
         if result.classification not in _TRANSIENT_CLASSIFICATIONS:
@@ -830,6 +901,64 @@ def _parse_findings(output: str, agent_name: str) -> list[dict]:
     return []
 
 
+def _parse_notes(output: str, agent_name: str) -> list[dict]:
+    """Parse the optional `notes` array from agent output.
+
+    Notes are self-observations ("arXiv gave 6 actionable papers today",
+    "Exa beat WebSearch for framework releases") that consolidate() clusters
+    into validated_patterns. They are strictly optional: an agent that emits
+    only findings is behaving correctly, so every failure path here returns
+    an empty list rather than raising. Findings must never be lost because a
+    note was malformed.
+    """
+    payload = None
+    try:
+        candidate = json.loads(output.strip())
+        if isinstance(candidate, dict):
+            payload = candidate
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    if payload is None:
+        for block in _extract_balanced_json_blocks(output or ""):
+            try:
+                candidate = json.loads(block)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and "notes" in candidate:
+                payload = candidate
+                break
+
+    if not isinstance(payload, dict):
+        return []
+
+    raw = payload.get("notes")
+    if not isinstance(raw, list):
+        return []
+
+    notes: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        note_type = str(item.get("note_type") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if not note_type or not content:
+            continue
+        if note_type not in NOTE_TYPES:
+            note_type = "pattern"
+        notes.append({
+            "note_type": note_type,
+            "content": content[:MAX_NOTE_CHARS],
+        })
+        if len(notes) >= MAX_NOTES_PER_AGENT:
+            break
+
+    if notes:
+        logger.info("Agent %s emitted %d self-improvement note(s)",
+                    agent_name, len(notes))
+    return notes
+
+
 def _finding_quality_score(finding: dict) -> float:
     """Score a finding for dedup tiebreaking: higher = better quality."""
     summary_len = len(finding.get("summary", ""))
@@ -937,6 +1066,7 @@ def dispatch_research_agents(
     max_workers: int = 6,
     vertical: str = "ai-tech",
     preflight_data: dict | None = None,
+    only: set[str] | None = None,
 ) -> list[AgentResult]:
     """Dispatch all research agents in parallel via concurrent.futures.
 
@@ -947,11 +1077,15 @@ def dispatch_research_agents(
         trends: Trending topics from Phase 2.
         max_workers: Max parallel agents.
         vertical: Vertical config to use.
+        only: Restrict dispatch to these agent names (corrective re-dispatch
+            of agents that failed the first pass). None = all agents.
 
     Returns:
         List of AgentResult, one per agent.
     """
     agents, agents_dir = get_agent_list(user_id, vertical)
+    if only is not None:
+        agents = [a for a in agents if a in only]
     soul_path = PROJECT_ROOT / "verticals" / vertical / "SOUL.md"
 
     logger.info(f"Dispatching {len(agents)} research agents (max {max_workers} parallel)")
@@ -1038,12 +1172,24 @@ def run_agent_with_files(
     output_file: str,
     allowed_tools: list[str] | None = None,
     task_type: str = "eic",
+    stdout_on_missing: bool = False,
 ) -> dict | None:
     """Run a claude -p call that writes its output to a file.
 
     Unlike run_claude_prompt() which returns stdout text, this function
     expects the agent to write structured output (JSON or markdown) to
     output_file. Returns parsed dict or None on failure.
+
+    ``stdout_on_missing`` returns ``{"_stdout": ...}`` when the file is absent
+    or empty but the process still printed something. Agents sometimes answer
+    in prose instead of writing the file they were asked for: on 2026-08-23 the
+    LinkedIn critic did it twice with exit code 0, and a perfectly good APPROVED
+    was discarded, costing three writer iterations.
+
+    Opt in only where stdout is cheap to be wrong about. A critic verdict picks
+    APPROVED or REVISE and the caller can fall back to REVISE. A *writer* must
+    never opt in: on 2026-07-14 a writer narrating a denied tool call into
+    stdout was published verbatim.
     """
     if allowed_tools is None:
         allowed_tools = FILE_AGENT_DEFAULT_ALLOWED_TOOLS
@@ -1072,19 +1218,16 @@ def run_agent_with_files(
         return payload
 
     # Prevent subagent dispatch — agents must do their own work
-    cmd = _build_claude_command(
-        prompt,
-        model=model,
-        max_turns=max_turns,
+    process = run_task_process(
+        task_type,
+        prompt=prompt,
         system_prompt_file=system_prompt_file,
-        allowed_tools=allowed_tools,
-        disallowed_tools=FILE_AGENT_DISALLOWED_TOOLS,
+        tools=ToolPolicy(allowed=tuple(allowed_tools), disallowed=as_disallowed(FILE_AGENT_DISALLOWED_TOOLS)),
+        unit=task_type,
+        cwd=PROJECT_ROOT,
+        env=_agent_env(task_type),
+        runner=run_claude_process,
     )
-
-    # Pass agent identity to SessionEnd hook for transcript capture
-    env = _agent_env(task_type)
-
-    process = run_claude_process(cmd, timeout=timeout, cwd=PROJECT_ROOT, env=env)
     if process.timed_out:
         logger.warning(f"Agent {task_type} timed out after {timeout}s")
     if process.error and not process.timed_out:
@@ -1101,11 +1244,14 @@ def run_agent_with_files(
     )
 
     # Read and parse output file
-    if not output_path.exists():
-        return None
-
-    content = output_path.read_text().strip()
+    content = output_path.read_text().strip() if output_path.exists() else ""
     if not content:
+        if stdout_on_missing and stdout and stdout.strip():
+            logger.warning(
+                "Agent %s wrote no output file; returning stdout for salvage",
+                task_type,
+            )
+            return {"_stdout": stdout}
         return None
 
     if output_path.suffix == ".md":
@@ -1181,14 +1327,7 @@ def run_claude_prompt(
     # via stdout, not write to files. Write/Edit would let the agent put the
     # newsletter in a file instead of returning it.
     tools = allowed_tools if allowed_tools is not None else PROMPT_DEFAULT_ALLOWED_TOOLS
-    cmd = _build_claude_command(
-        "-" if use_stdin else prompt,
-        model=model,
-        max_turns=max_turns,
-        system_prompt_file=system_prompt_file,
-        allowed_tools=tools,
-        disallowed_tools=PROMPT_DISALLOWED_TOOLS,
-    )
+    tool_policy = ToolPolicy(allowed=tuple(tools), disallowed=as_disallowed(PROMPT_DISALLOWED_TOOLS))
 
     # Pass agent identity to SessionEnd hook for transcript capture
     env = _agent_env(task_type)
@@ -1203,12 +1342,15 @@ def run_claude_prompt(
 
     for attempt in range(max_attempts):
         call_start = time.monotonic()
-        result = run_claude_process(
-            cmd,
-            input_text=prompt if use_stdin else None,
-            timeout=timeout,
+        result = run_task_process(
+            task_type,
+            prompt=prompt,
+            system_prompt_file=system_prompt_file,
+            tools=tool_policy,
+            unit=task_type,
             cwd=PROJECT_ROOT,
             env=env,
+            runner=run_claude_process,
         )
         call_duration = time.monotonic() - call_start
 

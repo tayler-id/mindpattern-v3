@@ -32,7 +32,19 @@
 - **Hardcoded thresholds** — Embedding similarity: 0.75 (patterns), 0.80 (social dedup), 0.85 (preflight dedup), 0.90 (finding dedup). None configurable.
 - **Voice guide loaded per-call** — social/critics.py loads voice.md on every review call. Should cache.
 
+## Open After the Models Harness (2026-10-02)
+
+These came out of the real replays and the merge of PRs #26, #27 and #33.
+
+- **Seven duplicate story pairs.** Each has a bare and a date-prefixed file in one date folder, so [[dashboard/campaignos]] refuses the slug and the story returns 404 until one file of each pair is removed.
+- **Research on Sonnet 5.5 finds fewer stories.** Four Oct 2 replays found 8 to 14 new stories for two agents against 17 on Opus 5.5. See [[orchestrator/router]].
+- **`test_learning_loop::TestConsolidateSeesPromotedPatterns` fails.** It failed before the harness work and still does.
+- **launchd fires about three hours late** until the Mac restarts, because the agent kept a stale time zone. SIP blocks restarting the agent alone.
+- **Each `claude -p` triggers an Automic Vault prompt** for `gh auth token` until a vault rule allows it.
+
 ## Harness-Specific
+
+Problems in the harness loop itself, not in the pipeline it improves.
 
 - **Worktree reuse** — FIXED: replaced find_newest_worktree() with deterministic `.harness-worktrees/{ticket-id}`.
 - **No mark_open()** — Can't reset tickets to open via CLI. Must edit JSON manually.
@@ -47,6 +59,8 @@
 2026-04-01 18:08 — updated with deep analysis findings.
 
 ## Scout Findings (2026-04-01 19:03)
+
+Tickets the scout filed on its first run.
 
 - **[P2] 2026-04-01-R014** — Add quality-driven cascade model routing for research agents. Files: orchestrator/router.py, orchestrator/agents.py, orchestrator/traces_db.py, config.json
 - **[P3] 2026-03-31-R001** — Evaluate promptfoo or inspect-ai for agent eval framework. Files: tests/prompts/promptfoo.yaml, orchestrator/evaluator.py

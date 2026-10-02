@@ -10,6 +10,9 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable
+from urllib.parse import urlsplit, urlunsplit
+
+from orchestrator import word_bank
 
 COPY_FIELDS = ("title", "dek", "take", "why_now", "body_markdown")
 PUBLIC_TEXT_FIELDS = ("title", "dek", "take", "why_now")
@@ -146,6 +149,37 @@ CONTRACTION_RE = re.compile(
 MARKDOWN_PUBLIC_RE = re.compile(r"\[[^\]]+\]\([^)]+\)|\*\*|__|`|^#{1,6}\s", re.M)
 URL_RE = re.compile(r"https?://[^\s)\"']+")
 WORD_RE = re.compile(r"\b[\w']+\b")
+# [anchor](https://example.com/path "optional title")
+MARKDOWN_LINK_RE = re.compile(
+    r"\[([^\]]+)\]\(\s*<?(https?://[^\s)>]+)>?(?:\s+[\"'][^\"']*[\"'])?\s*\)"
+)
+# Anchor text that names nothing. Outbound links are the site's SEO, and a
+# link anchored "Source" passes no signal about what sits on the other end.
+GENERIC_ANCHOR_TEXT = {
+    "article",
+    "blog post",
+    "click here",
+    "details",
+    "here",
+    "link",
+    "more",
+    "post",
+    "read more",
+    "reference",
+    "see here",
+    "source",
+    "sources",
+    "the article",
+    "the link",
+    "the post",
+    "the source",
+    "this",
+    "this link",
+    "this one",
+}
+# One link per source up to three. Past three the body reads as a link farm at
+# the 150-350 word budget.
+MAX_EXPECTED_INLINE_LINKS = 3
 
 
 @dataclass(frozen=True)
@@ -216,14 +250,16 @@ def lint_site_copy(
     }
     joined = "\n".join(text_by_field.values())
 
+    allowed = set(allowed_urls or set())
+
     issues.extend(_hard_fail_voice_issues(text_by_field))
-    issues.extend(_invented_url_issues(text_by_field, allowed_urls=allowed_urls or set()))
+    issues.extend(_invented_url_issues(text_by_field, allowed_urls=allowed))
     issues.extend(_raw_markdown_issues(text_by_field))
     issues.extend(_internal_machinery_issues(text_by_field))
     issues.extend(_unsupported_temporal_issues(text_by_field))
 
     if include_revise:
-        issues.extend(_revise_issues(copy, text_by_field, joined))
+        issues.extend(_revise_issues(copy, text_by_field, joined, allowed_urls=allowed))
 
     return issues
 
@@ -265,6 +301,45 @@ def copy_allowed_urls_from_refs(refs: Iterable[dict[str, Any]] | None) -> set[st
     }
 
 
+def required_inline_links(source_count: int) -> int:
+    """How many inline source links a story with this many sources should carry."""
+    if source_count <= 0:
+        return 0
+    return min(int(source_count), MAX_EXPECTED_INLINE_LINKS)
+
+
+def markdown_links(text: str) -> list[tuple[str, str]]:
+    """Return (anchor text, url) for every inline markdown link in ``text``."""
+    return [(anchor.strip(), url) for anchor, url in MARKDOWN_LINK_RE.findall(text or "")]
+
+
+def normalize_url(url: str) -> str:
+    """Fold the differences a writer can introduce while copying a source URL.
+
+    Trailing sentence punctuation, a wrapping ``<>``, ``www.``, host case and a
+    trailing slash all compare equal. Without this a legitimate source link
+    fails the invented-URL check and costs a whole regeneration.
+
+    The fragment is NOT folded away. Doing so let the writer bolt any
+    ``#invented-anchor`` onto a real source URL without tripping the only hard
+    stop on fabricated links, and the rules already say to copy the URL
+    character for character.
+    """
+    cleaned = str(url or "").strip().lstrip("<([").rstrip(".,;:!?'\")]>")
+    try:
+        parts = urlsplit(cleaned)
+    except ValueError:
+        return cleaned.lower()
+    if not parts.scheme or not parts.netloc:
+        return cleaned.lower()
+    netloc = parts.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    return urlunsplit(
+        (parts.scheme.lower(), netloc, parts.path.rstrip("/"), parts.query, parts.fragment)
+    )
+
+
 def _hard_fail_voice_issues(text_by_field: dict[str, str]) -> list[CopyLintIssue]:
     issues: list[CopyLintIssue] = []
     for field, text in text_by_field.items():
@@ -298,6 +373,22 @@ def _hard_fail_voice_issues(text_by_field: dict[str, str]) -> list[CopyLintIssue
                         )
                     )
                     break
+        # Shared word bank. BANNED_WORDS above predates it and stays as the
+        # site's own list; the bank adds the terms measured across the
+        # newsletter corpus so a tell cannot be banned on one surface only.
+        for hit in word_bank.scan(text, "site"):
+            if hit.entry.tier != "ban":
+                continue
+            issues.append(
+                CopyLintIssue(
+                    "word_bank",
+                    hit.entry.site_severity,
+                    field,
+                    _excerpt(hit.examples[0] if hit.examples else hit.entry.term),
+                    f"Word bank: \"{hit.entry.term}\". "
+                    f"Write instead: {hit.entry.instead}",
+                )
+            )
     return issues
 
 
@@ -307,10 +398,11 @@ def _invented_url_issues(
     allowed_urls: set[str],
 ) -> list[CopyLintIssue]:
     issues: list[CopyLintIssue] = []
+    allowed = {normalize_url(url) for url in allowed_urls}
     for field, text in text_by_field.items():
         for url in URL_RE.findall(text):
             normalized = url.rstrip(".,;")
-            if normalized not in allowed_urls:
+            if normalize_url(normalized) not in allowed:
                 issues.append(
                     CopyLintIssue(
                         "invented_url",
@@ -383,6 +475,8 @@ def _revise_issues(
     copy: dict[str, Any],
     text_by_field: dict[str, str],
     joined: str,
+    *,
+    allowed_urls: set[str] | None = None,
 ) -> list[CopyLintIssue]:
     issues: list[CopyLintIssue] = []
     body = text_by_field.get("body_markdown", "")
@@ -390,7 +484,14 @@ def _revise_issues(
     dek = text_by_field.get("dek", "")
     title = text_by_field.get("title", "")
 
-    word_count = len(WORD_RE.findall(body))
+    issues.extend(_source_link_issues(body, allowed_urls or set()))
+
+    # Prose checks read the body with link URLs collapsed to their anchor text.
+    # A raw URL splits on its dots inside _sentences and inflates the word
+    # count, so an honest link would otherwise cost the writer a revise pass.
+    prose = _link_prose(body)
+
+    word_count = len(WORD_RE.findall(prose))
     if body and not 150 <= word_count <= 350:
         issues.append(
             CopyLintIssue(
@@ -402,7 +503,7 @@ def _revise_issues(
             )
         )
 
-    for sentence in _sentences(body):
+    for sentence in _sentences(prose):
         sentence_words = len(WORD_RE.findall(sentence))
         if sentence_words > 25:
             issues.append(
@@ -416,7 +517,7 @@ def _revise_issues(
             )
             break
 
-    openers = _paragraph_openers(body)
+    openers = _paragraph_openers(prose)
     repeated = next((item for item in sorted(set(openers)) if openers.count(item) > 1), "")
     if repeated:
         issues.append(
@@ -486,7 +587,7 @@ def _revise_issues(
             )
         )
 
-    last_paragraph = _last_paragraph(body)
+    last_paragraph = _last_paragraph(prose)
     match = SUMMARY_CLOSER_RE.search(last_paragraph)
     if match:
         issues.append(
@@ -499,7 +600,7 @@ def _revise_issues(
             )
         )
 
-    sentence_lengths = [len(WORD_RE.findall(sentence)) for sentence in _sentences(body)]
+    sentence_lengths = [len(WORD_RE.findall(sentence)) for sentence in _sentences(prose)]
     if len(sentence_lengths) >= 4 and max(sentence_lengths[:4]) - min(sentence_lengths[:4]) <= 3:
         issues.append(
             CopyLintIssue(
@@ -512,6 +613,83 @@ def _revise_issues(
         )
 
     return issues
+
+
+# Codes the publish gate reports but never blocks on. A story with no outbound
+# link still publishes; the run has to record that it happened.
+LINK_LINT_CODES = frozenset(
+    {"missing_source_link", "too_few_source_links", "generic_link_anchor"}
+)
+
+
+def _bare_anchor(anchor: str) -> str:
+    """Anchor text with emphasis and quote characters stripped for comparison."""
+    return anchor.lower().strip("*_`\"\u2018\u2019\u201c\u201d'.,:;!? ")
+
+
+def _source_link_issues(body: str, allowed_urls: set[str]) -> list[CopyLintIssue]:
+    """Stories built on sources have to link those sources.
+
+    Outbound links are how the site earns SEO, and 63 of 63 stories written on
+    2026-08-23 carried none. Severity is revise, not fail: a missing link is
+    worth a rewrite pass, not a rejected draft and a full regeneration.
+    """
+    source_count = len(allowed_urls)
+    if not body or not source_count:
+        return []
+
+    issues: list[CopyLintIssue] = []
+    links = markdown_links(body)
+    target = required_inline_links(source_count)
+    if not links:
+        return [
+            CopyLintIssue(
+                "missing_source_link",
+                "revise",
+                "body_markdown",
+                _excerpt(body),
+                f"The evidence carries {source_count} source URL{'' if source_count == 1 else 's'} "
+                "and the body links none. "
+                f"Link {target} of them inline as [descriptive anchor](url).",
+            )
+        ]
+
+    # required_inline_links sizes the ask in the prompt, so it also has to
+    # measure the answer. Without this the ceiling of three was decorative and
+    # a five-source story passed on one link.
+    if len(links) < target:
+        issues.append(
+            CopyLintIssue(
+                "too_few_source_links",
+                "revise",
+                "body_markdown",
+                f"{len(links)} of {target}",
+                f"The evidence carries {source_count} source URLs and the body links "
+                f"{len(links)}. Link {target} of them inline, one per source.",
+            )
+        )
+
+    # Every weak anchor, not just the first: a body with three placeholder
+    # anchors needs three fixes, and the writer only sees what is reported.
+    for anchor, _ in links:
+        if _bare_anchor(anchor) in GENERIC_ANCHOR_TEXT:
+            issues.append(
+                CopyLintIssue(
+                    "generic_link_anchor",
+                    "revise",
+                    "body_markdown",
+                    _excerpt(anchor),
+                    f'Link anchor "{anchor}" names nothing. Anchor the link to the project, '
+                    "repo, paper, company, or post it points at.",
+                )
+            )
+    return issues
+
+
+def _link_prose(text: str) -> str:
+    """The body with link URLs dropped, keeping anchor text in place."""
+    without_links = MARKDOWN_LINK_RE.sub(lambda match: match.group(1), text)
+    return URL_RE.sub("", without_links)
 
 
 def _sentences(text: str) -> list[str]:

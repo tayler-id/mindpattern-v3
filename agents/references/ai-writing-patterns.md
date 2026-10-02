@@ -18,7 +18,7 @@ Quick-reference for the humanizer agent. Each pattern includes a before/after ex
 
 ### 4. Vague attributions
 - BEFORE: "Experts suggest that RAG will replace fine-tuning for most enterprise use cases."
-- AFTER: "I've seen three teams at YC Demo Day pitch RAG-over-fine-tuning. The pattern's spreading."
+- AFTER: "In its survey of 400 teams, [Source] found most chose RAG over fine-tuning." Name who said it and link it. Never invent a first-person sighting to stand in for a source.
 
 ### 5. Formulaic challenge sections
 - BEFORE: "Despite challenges in scaling, the project continues to thrive and grow."
@@ -36,7 +36,7 @@ Quick-reference for the humanizer agent. Each pattern includes a before/after ex
 
 ### 8. Rule of three overuse
 - BEFORE: "Fast. Reliable. Scalable. That's what the new API delivers."
-- AFTER: "The new API is fast enough that I stopped batching requests."
+- AFTER: "The new API answers in 120 ms at the median, fast enough that batching stops paying off." Use the number from the source.
 
 ### 9. Synonym cycling
 - BEFORE: "The tool... the platform... the solution... the offering..."
@@ -44,7 +44,7 @@ Quick-reference for the humanizer agent. Each pattern includes a before/after ex
 
 ### 10. False ranges
 - BEFORE: "From startups to enterprises, from engineers to designers, everyone is adopting AI."
-- AFTER: "Adoption is wide. My designer friends use Midjourney daily now."
+- AFTER: "Figma, Canva, and Adobe all ship image models inside their editors." Name adopters you can source; never cite friends or colleagues.
 
 ## Style Patterns
 

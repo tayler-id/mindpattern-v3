@@ -83,7 +83,17 @@ def _api_call_with_retry(
 
     Returns the Response object on success.
     Raises requests.HTTPError after exhausting retries.
+
+    Every platform client (X, Bluesky, LinkedIn) funnels through here, so
+    this single guard keeps an autonomous-routine sandbox from reaching
+    any social network (no harness import — checked via env on purpose).
     """
+    if os.environ.get("MP_SANDBOX") == "1":
+        raise RuntimeError(
+            f"MP_SANDBOX=1: refusing social API call {method} {url} "
+            "(autonomous sandbox active)"
+        )
+
     last_resp: requests.Response | None = None
 
     for attempt in range(max_retries + 1):

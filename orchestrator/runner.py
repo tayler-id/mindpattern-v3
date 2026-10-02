@@ -19,12 +19,16 @@ from pathlib import Path
 import memory
 from . import agents as agent_dispatch
 from .arcs import format_arcs_for_synthesis, load_narrative_arcs
+from core import trace_store
+from core.trace_store import set_run_context
 from .checkpoint import Checkpoint
 from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
+from . import deep_dive, editorial, newsletter_editor, word_bank
 from .prose_gate import sanitize as prose_sanitize
+from . import published_history
 from .traces_db import (
     get_db as get_traces_db,
     create_pipeline_run,
@@ -100,7 +104,12 @@ def _source_health_for_trace(preflight_data: dict) -> dict:
 
 
 def _site_content_trace_payload(result: dict) -> dict:
-    """Compact site-content status for traces without artifact paths or raw text."""
+    """Compact site-content status for traces without artifact paths or raw text.
+
+    outbound_link_count and stories_without_links are here because 63 of 63
+    stories published on 2026-08-23 carried no link out and no part of the run
+    said so. The next run answers "did the links land?" from its own trace.
+    """
     return {
         "status": result.get("status", "unknown"),
         "mode": result.get("mode", ""),
@@ -108,8 +117,160 @@ def _site_content_trace_payload(result: dict) -> dict:
         "candidates_considered": result.get("candidates_considered", 0),
         "generated_story_count": result.get("generated_story_count", 0),
         "degraded_story_count": result.get("degraded_story_count", 0),
+        "outbound_link_count": result.get("outbound_link_count", 0),
+        "stories_without_links": result.get("stories_without_links", 0),
         "artifacts_written": len(result.get("artifacts_written") or []),
     }
+
+
+def _selected_titles_from_pass1(pass1_output: str) -> list[str]:
+    """Best-effort parse of the selector's JSON array into story titles.
+
+    The selector is prompted to emit bare JSON, but retries and fallbacks can
+    hand back fenced or prose-wrapped output. Returns [] when no titles can be
+    recovered — the republish tripwire then simply has nothing to check.
+    """
+    text = pass1_output.strip()
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        selections = json.loads(match.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(selections, list):
+        return []
+    titles = []
+    for entry in selections:
+        if isinstance(entry, dict) and entry.get("story_title"):
+            titles.append(str(entry["story_title"]))
+    return titles
+
+
+def _on_battery_power(pmset_output: str | None = None) -> bool:
+    """True when macOS reports the machine is drawing from battery."""
+    if pmset_output is None:
+        if sys.platform != "darwin":
+            return False
+        proc = subprocess.run(
+            ["pmset", "-g", "batt"], capture_output=True, text=True, timeout=10,
+        )
+        pmset_output = proc.stdout
+    return "Battery Power" in (pmset_output or "")
+
+
+def _failed_agent_names(agent_results: list) -> list[str]:
+    """Agents whose run produced an error and no findings — worth one retry.
+
+    2026-08-19: the Mac slept mid-run, 12 of 13 agents died mid-response, and
+    the day's issue was written from 12 findings because nothing re-dispatched
+    them even though the machine was awake again by synthesis time.
+    """
+    return [
+        r.agent_name for r in agent_results
+        if r.error and not r.findings
+    ]
+
+
+def _merge_retry_results(original: list, retried: list) -> list:
+    """Replace a failed result with its retry when the retry found anything."""
+    by_name = {r.agent_name: r for r in retried}
+    merged = []
+    for result in original:
+        retry = by_name.get(result.agent_name)
+        if retry is not None and retry.findings:
+            merged.append(retry)
+        else:
+            merged.append(result)
+    return merged
+
+
+def _build_quality_drop_lesson(
+    quality: dict,
+    agent_coverage: dict | None = None,
+    source_health_summary: dict | None = None,
+) -> str:
+    """One line naming why the day's quality dropped.
+
+    This text is injected into the synthesis prompt as "Previous failures to
+    avoid", so it has to describe a cause the writer or a human can act on.
+    Every historical row instead read "Overall score 0.573 vs 7-day avg
+    0.719", which restates the number that already triggered the alert.
+    """
+    coverage = agent_coverage or {}
+    sources = source_health_summary or {}
+
+    score = quality.get("overall_score")
+    avg = quality.get("7day_avg")
+    score_txt = f"{score:.3f}" if isinstance(score, (int, float)) else str(score)
+    header = f"Quality {score_txt}"
+    if isinstance(avg, (int, float)):
+        header += f" vs 7-day avg {avg:.3f}"
+
+    causes: list[str] = []
+
+    contributing = coverage.get("contributing_agents")
+    target = coverage.get("target_agents")
+    if isinstance(contributing, int) and isinstance(target, int) and contributing < target:
+        causes.append(f"only {contributing}/{target} agents contributed")
+
+    def _named(items, label, limit=4):
+        items = [str(i) for i in (items or [])]
+        if not items:
+            return None
+        shown = ", ".join(items[:limit])
+        extra = f" +{len(items) - limit} more" if len(items) > limit else ""
+        return f"{label}: {shown}{extra}"
+
+    for part in (
+        _named(coverage.get("failed_agents"), "agents that errored"),
+        _named(coverage.get("zero_finding_agents"), "agents returning zero"),
+        _named(sources.get("degraded_sources"), "sources degraded"),
+    ):
+        if part:
+            causes.append(part)
+
+    if not causes:
+        return (
+            f"{header}. No degraded agents or sources recorded, so the drop is "
+            f"editorial rather than operational: check story selection and the "
+            f"dedup gates before blaming intake."
+        )
+
+    lesson = f"{header}. Likely cause, {'; '.join(causes)}."
+    return lesson[:400]
+
+
+def _store_agent_notes(db, agent_results: list, date_str: str) -> int:
+    """Persist agent self-improvement notes. Returns the count stored.
+
+    This is the input to memory.patterns.consolidate(). Nothing wrote this
+    table before 2026-08-21, so consolidate clustered an empty set on every
+    run and validated_patterns froze on 2026-04-09 while all 13 agents kept
+    reading that stale April snapshot as "cross-agent learnings".
+
+    Per-note try/except is deliberate: store_note() embeds each note, and one
+    embedding failure must not discard the rest of the day's observations.
+    Notes are enrichment — never raise out of here.
+    """
+    stored = 0
+    for result in agent_results:
+        for note in getattr(result, "notes", None) or []:
+            try:
+                memory.store_note(
+                    db,
+                    run_date=date_str,
+                    agent=result.agent_name,
+                    note_type=note["note_type"],
+                    content=note["content"],
+                )
+                stored += 1
+            except Exception as e:
+                logger.warning(
+                    "Failed to store note from %s (%s): %s",
+                    result.agent_name, note.get("note_type"), e,
+                )
+    return stored
 
 
 def _assess_agent_coverage(agent_results: list) -> dict:
@@ -480,6 +641,8 @@ class ResearchPipeline:
             run_id=self.pipeline.run_id,
             status="running",
         )
+        # Every model call from here on is filed under this run (core.trace_store).
+        set_run_context(run_id=self.traces_run_id, run_date=self.date_str, user_id=self.user_id, phase=None)
 
     def run_sync_only(self) -> int:
         """Re-run only the Fly sync phase.
@@ -550,6 +713,7 @@ class ResearchPipeline:
                 )
         self.traces_run_id = resume_id
         self.pipeline.run_id = resume_id
+        set_run_context(run_id=resume_id)
         self.pipeline.current_phase = resume_phase
 
         # Rehydrate what completed-phase checkpoints can restore. Preflight
@@ -591,6 +755,7 @@ class ResearchPipeline:
                     if self.pipeline.current_phase != phase:
                         self.pipeline.transition(phase)
                     logger.info(f"Phase: {phase.value}")
+                    set_run_context(phase=phase.value)
 
                     # Log phase start to traces.db
                     log_event(self.traces_conn, self.traces_run_id,
@@ -828,6 +993,21 @@ class ResearchPipeline:
 
     def _phase_init(self) -> dict:
         """Phase 1: Init (Python only, no LLM)."""
+        # On battery, caffeinate -s is inert and a closed lid sleeps the Mac
+        # regardless of assertions. 2026-08-19: the machine slept mid-run and
+        # 12 of 13 research agents died mid-response. Software cannot prevent
+        # that sleep — but it can say so loudly at the moment it still helps.
+        try:
+            if _on_battery_power():
+                logger.warning("Pipeline starting on battery power")
+                self._send_alert(
+                    ":battery: The pipeline is starting on BATTERY power. "
+                    "If the lid closes or the Mac sleeps, research agents "
+                    "will die mid-response (2026-08-19 incident). Plug it in."
+                )
+        except Exception as e:
+            logger.debug(f"Battery check failed: {e}")
+
         prefs = memory.list_preferences(self.db, email=self.user_config.get("email"), effective=True)
         logger.info(f"Loaded {len(prefs)} preferences")
 
@@ -1092,6 +1272,44 @@ class ResearchPipeline:
             preflight_data=preflight_data,
         )
 
+        # One corrective re-dispatch for agents that errored with nothing to
+        # show. Transient causes (a sleep window, a server error burst) have
+        # usually passed by the time the first wave finishes.
+        failed_agents = _failed_agent_names(self.agent_results)
+        if failed_agents:
+            logger.warning(
+                f"Re-dispatching {len(failed_agents)} failed agents once: "
+                f"{', '.join(sorted(failed_agents))}"
+            )
+            log_event(self.traces_conn, self.traces_run_id,
+                      "research_agent_retry",
+                      json.dumps({"agents": sorted(failed_agents)}))
+            try:
+                retry_results = agent_dispatch.dispatch_research_agents(
+                    user_id=self.user_id,
+                    date_str=self.date_str,
+                    context_fn=context_fn,
+                    trends=self.trends,
+                    max_workers=6,
+                    preflight_data=preflight_data,
+                    only=set(failed_agents),
+                )
+                self.agent_results = _merge_retry_results(
+                    self.agent_results, retry_results)
+                recovered = [
+                    r.agent_name for r in self.agent_results
+                    if r.agent_name in failed_agents and r.findings
+                ]
+                logger.info(
+                    f"Agent retry recovered {len(recovered)}/"
+                    f"{len(failed_agents)}: {', '.join(sorted(recovered))}"
+                )
+                log_event(self.traces_conn, self.traces_run_id,
+                          "research_agent_retry_result",
+                          json.dumps({"recovered": sorted(recovered)}))
+            except Exception as e:
+                logger.warning(f"Agent retry dispatch failed (non-critical): {e}")
+
         agent_coverage = _assess_agent_coverage(self.agent_results)
         self.research_quality = {"agent_coverage": agent_coverage}
         if agent_coverage["degraded"]:
@@ -1230,6 +1448,24 @@ class ResearchPipeline:
             except Exception as e:
                 logger.warning(f"Monitor record_agent_metrics failed for {result.agent_name}: {e}")
 
+        # Agent self-improvement notes → the input to consolidate() in LEARN.
+        # Enrichment only: never fail research over a note.
+        notes_stored = 0
+        try:
+            notes_stored = _store_agent_notes(
+                self.db, self.agent_results, self.date_str)
+            agents_with_notes = sum(
+                1 for r in self.agent_results if getattr(r, "notes", None))
+            logger.info(
+                f"Agent notes: {notes_stored} stored from "
+                f"{agents_with_notes}/{len(self.agent_results)} agents")
+            log_event(self.traces_conn, self.traces_run_id,
+                      "agent_notes_stored",
+                      json.dumps({"notes": notes_stored,
+                                  "agents": agents_with_notes}))
+        except Exception as e:
+            logger.warning(f"Agent note storage failed (non-critical): {e}")
+
         # Batch-level policy report (count envelope, summary length) — the
         # per-finding storage gate above already blocked invalid findings.
         if total_policy_skipped:
@@ -1276,6 +1512,7 @@ class ResearchPipeline:
             "agents_dispatched": len(self.agent_results),
             "agents_succeeded": successful,
             "findings_stored": total_stored,
+            "notes_stored": notes_stored,
             "research_degraded": agent_coverage["degraded"],
             "agent_coverage": agent_coverage,
         }
@@ -1341,11 +1578,39 @@ class ResearchPipeline:
                       json.dumps(source_balance))
 
         # Build summaries for pass 1 — full text, not truncated (we have 1M context)
+        # Per-finding "already covered" markers, keyed on source URL against
+        # 30 days of published issues. The prompt-level list alone does not
+        # work — the 2026-08-19 writer test reproduced every URL-level repeat
+        # with that list present, because the writer will not cross-reference
+        # hundreds of titles against hundreds of findings. The warning goes on
+        # the finding itself.
+        covered_url_dates: dict[str, list[str]] = {}
+        try:
+            covered_url_dates = published_history.published_url_dates(
+                published_history.published_stories(
+                    PROJECT_ROOT / "reports" / self.user_id,
+                    self.date_str, days=30,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Covered-URL map unavailable (non-critical): {e}")
+
+        def _covered(finding: dict) -> str:
+            return published_history.covered_marker(
+                finding.get("source_url"), covered_url_dates)
+
+        marked_count = sum(1 for f in story_findings if _covered(f))
+        if marked_count:
+            logger.info(
+                f"Marked {marked_count}/{len(story_findings)} candidate "
+                f"findings as already-covered by source URL"
+            )
+
         summaries = []
         for f in story_findings:
             source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or ''
             summaries.append(
-                f"[{f['agent']}] ({f['importance']}) {f['title']}\n"
+                f"[{f['agent']}] ({f['importance']}) {_covered(f)}{f['title']}\n"
                 f"  Source: {source}\n"
                 f"  {f['summary']}"
             )
@@ -1362,13 +1627,33 @@ class ResearchPipeline:
 
         newsletter_title = self.user_config.get("newsletter_title", "Research Agent")
 
+        # Published-issue history: the one dedup layer that looks at what past
+        # issues actually ran, not at stored findings (2026-08-17 audit: 26
+        # re-reported stories in 20 issues while every findings-level gate
+        # passed). Best-effort — an empty archive just yields no block.
+        published_block = ""
+        published_stories = []
+        try:
+            # 21 days: the longest observed re-report gap that word overlap
+            # could have caught was 17 days (the MCP 2026-07-28 spec re-led
+            # an issue on 08-14).
+            published_stories = published_history.published_stories(
+                PROJECT_ROOT / "reports" / self.user_id, self.date_str,
+                days=21,
+            )
+            published_block = published_history.format_published_block(
+                published_stories)
+        except Exception as e:
+            logger.warning(f"Published-history load failed (non-critical): {e}")
+
         # Pass 1: Story selection
         pass1_prompt = (
-            f"Select exactly 5 stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
+            f"Select exactly {editorial.load().top_stories} stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
-            f"## Findings\n" + "\n".join(summaries)
+            + (f"{published_block}\n\n" if published_block else "")
+            + f"## Findings\n" + "\n".join(summaries)
         )
 
         logger.info(
@@ -1379,6 +1664,7 @@ class ResearchPipeline:
         pass1_output = ""
         pass1_degraded = False
         pass1_max_attempts = 3
+        republish_repick_done = False
         for attempt in range(1, pass1_max_attempts + 1):
             pass1_start = time.monotonic()
             pass1_output, exit_code = agent_dispatch.run_claude_prompt(
@@ -1393,6 +1679,70 @@ class ResearchPipeline:
                 f"duration={pass1_duration:.1f}s"
             )
             if exit_code == 0 and pass1_output.strip():
+                # Republish tripwire: deterministic check of the selection
+                # against the published-issue archive. One forced re-pick,
+                # then publish with a loud alert — never a silent repeat.
+                republish_flags = []
+                if published_stories:
+                    try:
+                        republish_flags = published_history.flag_republished(
+                            _selected_titles_from_pass1(pass1_output),
+                            published_stories,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Republish check failed (non-critical): {e}")
+                if (republish_flags and not republish_repick_done
+                        and attempt < pass1_max_attempts):
+                    republish_repick_done = True
+                    log_event(self.traces_conn, self.traces_run_id,
+                              "selection_republish_repick",
+                              json.dumps(republish_flags))
+                    logger.warning(
+                        "Selection repeats %d published stor%s; forcing one "
+                        "re-pick: %s",
+                        len(republish_flags),
+                        "y" if len(republish_flags) == 1 else "ies",
+                        "; ".join(
+                            f"'{f['selected_title'][:60]}' ran {f['published_date']}"
+                            for f in republish_flags[:3]
+                        ),
+                    )
+                    pass1_prompt += (
+                        "\n\n## REPUBLISH CORRECTION (attempt "
+                        f"{attempt} rejected)\n"
+                        "Your selection repeated these already-published "
+                        "stories:\n"
+                        + "\n".join(
+                            f"- \"{f['selected_title']}\" — already ran on "
+                            f"{f['published_date']} as \"{f['published_title']}\""
+                            for f in republish_flags
+                        )
+                        + "\nReplace each one with a different story, unless "
+                        "there is a genuinely new development — in that case "
+                        "keep it and name the new development and the prior "
+                        "run date in its \"reason\" field."
+                    )
+                    continue
+                if republish_flags:
+                    log_event(self.traces_conn, self.traces_run_id,
+                              "selection_republish_flag",
+                              json.dumps(republish_flags))
+                    pairs = "\n".join(
+                        f"- '{f['selected_title'][:80]}' ≈ "
+                        f"'{f['published_title'][:80]}' ({f['published_date']}, "
+                        f"sim={f['similarity']})"
+                        for f in republish_flags
+                    )
+                    logger.warning(
+                        "Selection still repeats published stories after "
+                        f"re-pick:\n{pairs}")
+                    self._send_alert(
+                        f":warning: Newsletter {self.date_str} re-selects "
+                        f"{len(republish_flags)} previously published "
+                        f"stor{'y' if len(republish_flags) == 1 else 'ies'} "
+                        f"after a forced re-pick:\n{pairs}"
+                    )
                 break
 
             output_preview = (pass1_output or "")[:200].replace("\n", "\\n")
@@ -1440,7 +1790,7 @@ class ResearchPipeline:
         for f in today_findings:
             source = _format_source(f.get("source_name"), f.get("source_url"))
             full_findings.append(
-                f"### [{f['agent']}] {f['title']} ({f['importance']})\n"
+                f"### [{f['agent']}] {_covered(f)}{f['title']} ({f['importance']})\n"
                 f"Source: {source}\n{f['summary']}\n"
             )
 
@@ -1501,20 +1851,65 @@ class ResearchPipeline:
                 json.dumps({"error": f"{type(e).__name__}: {e}"}),
             )
 
+        # Deep dives on the picks (config task "story_deep_dive"): primary
+        # source, corroboration, numbers, and the strongest counterpoint for
+        # each, stored with `mp evidence add`. Fails open to the findings alone.
+        deep_dive_block = ""
+        dive_limit = editorial.load().deep_dive_stories
+        if dive_limit and not self.dry_run and os.environ.get("MP_DRY_RUN") != "1":
+            try:
+                stories = deep_dive.stories_from_selection(pass1_output, today_findings, dive_limit)
+                if stories:
+                    evidence_dir = PROJECT_ROOT / "data" / self.user_id / "runs" / self.traces_run_id / "deep-dive"
+                    stories = deep_dive.run_deep_dives(
+                        stories, evidence_dir=evidence_dir,
+                        env={"MP_USER_ID": self.user_id, "MP_RUN_DATE": self.date_str})
+                    deep_dive_block = deep_dive.evidence_block(stories)
+                    log_event(self.traces_conn, self.traces_run_id, "deep_dive",
+                              json.dumps(deep_dive.summary(stories)))
+                    logger.info("Deep dives: %s", deep_dive.summary(stories))
+            except Exception as e:
+                logger.warning(f"Deep dives failed open: {e}")
+
+        # Rendered from the same rows the prose gate measures after the write,
+        # so the writer is never marked down for a term nobody showed it.
+        bank_block = word_bank.prompt_block("newsletter")
+
         pass2_prompt = (
             "OUTPUT CONTRACT: Your stdout is published verbatim to subscribers "
             "as today's newsletter. Output ONLY finished newsletter markdown, "
             "beginning with the `#` title line. Never mention tools, skills, "
-            "workflows, approvals, sessions, or your own process. Do not "
-            "invoke any tools — everything you need is in this prompt.\n\n"
+            "workflows, approvals, sessions, or your own process. That "
+            "includes editorial mechanics: never state how many findings, "
+            "agents, or sources the pipeline had, never mention story "
+            "selection, dedup, or coverage constraints, and never apologize "
+            "for or explain the shape of the issue (2026-08-19: a degraded "
+            "run opened by telling subscribers the selection pass could only "
+            "clear one story). Write the best issue the material supports and "
+            "let it stand without commentary. Do not invoke any tools — "
+            "everything you need is in this prompt.\n\n"
             f"Write the \"{newsletter_title}\" newsletter for {self.date_str}.\n\n"
             f"{soul_text}"
             f"{voice_text}"
             f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
             f"{fallback_mode_text}"
             f"## Story Selection\n{pass1_output}\n\n"
+            f"{deep_dive_block + chr(10) if deep_dive_block else ''}"
             f"{narrative_arcs_context}\n\n"
-            f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
+            + (
+                "## Section-Item Dedup\n"
+                "The Already Published list below binds every section item, "
+                "not just the Top 5. Do not write an item that re-reports a "
+                "listed story — including a repo already covered whose star "
+                "count merely moved — unless there is a genuinely new "
+                "development, and then name it and the prior run date. This "
+                "list is working material: never mention it, dedup, or prior "
+                "coverage constraints in the newsletter itself.\n\n"
+                f"{published_block}\n\n"
+                if published_block else ""
+            )
+            + f"## Word bank\n\n{bank_block}\n"
+            + f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"{failure_text}"
         )
@@ -1621,13 +2016,25 @@ class ResearchPipeline:
                           }))
                 break
 
+        # Line edits by a second model family (config task "newsletter_editor",
+        # GPT-6.1 Sol), applied under a fact guard. The writing-policy hits are
+        # its first targets. Fails open to the writer's text.
+        if self.newsletter_text.strip():
+            editor = newsletter_editor.edit_newsletter(self.newsletter_text)
+            self.newsletter_text = editor.text
+            log_event(self.traces_conn, self.traces_run_id, "newsletter_editor",
+                      json.dumps(editor.summary()))
+            logger.info("Newsletter editor: %s", editor.summary())
+
         # Deterministic prose gate, applied to whichever text the loop produced
         # (written or fallback) and before anything reads it. Style rules a
         # regex can enforce are enforced here rather than asked for in the
         # prompt: on 2026-07-25/26/27 the same model, prompt and voice guide
         # emitted 42, 2 and 52 em-dashes, so prompting alone cannot hold it.
         self.newsletter_text, prose_report = prose_sanitize(self.newsletter_text)
-        if prose_report["replaced"] or prose_report["remaining_over_budget"]:
+        if (prose_report["replaced"]
+                or prose_report["length_claims_corrected"]
+                or prose_report["remaining_over_budget"]):
             log_event(self.traces_conn, self.traces_run_id,
                       "prose_gate", json.dumps(prose_report))
 
@@ -1641,6 +2048,35 @@ class ResearchPipeline:
 
         word_count = len(self.newsletter_text.split())
         logger.info(f"Newsletter written: {word_count} words → {report_path}")
+
+        # URL tripwire: stories citing a source a past issue already cited
+        # (30 days, standing tracker pages exempt). Visibility only — the
+        # issue is published as written, but a repeat is never silent.
+        try:
+            url_history = published_history.published_stories(
+                report_dir, self.date_str, days=30,
+            )
+            url_flags = published_history.flag_republished_urls(
+                self.newsletter_text, url_history, date=self.date_str,
+            )
+            if url_flags:
+                log_event(self.traces_conn, self.traces_run_id,
+                          "newsletter_republish_urls", json.dumps(url_flags))
+                lines = "\n".join(
+                    f"- '{f['title'][:70]}' cites {f['url'][:60]} "
+                    f"(ran: {', '.join(f['prior_dates'])})"
+                    for f in url_flags[:8]
+                )
+                logger.warning(
+                    f"{len(url_flags)} stories cite already-published "
+                    f"sources:\n{lines}")
+                self._send_alert(
+                    f":warning: Newsletter {self.date_str}: {len(url_flags)} "
+                    f"stor{'y' if len(url_flags) == 1 else 'ies'} cite "
+                    f"sources a past issue already covered:\n{lines}"
+                )
+        except Exception as e:
+            logger.warning(f"URL republish check failed (non-critical): {e}")
 
         # Evaluate newsletter quality with NewsletterEvaluator
         eval_scores = {}
@@ -1869,11 +2305,7 @@ class ResearchPipeline:
                 "reason": "MP_SITE_CONTENT_DISABLED=1",
             }
 
-        try:
-            max_stories = int(os.environ.get("MP_SITE_CONTENT_MAX_STORIES", "5"))
-        except ValueError:
-            max_stories = 5
-        max_stories = max(1, min(max_stories, 10))
+        max_stories = editorial.load().candidate_stories_per_day
 
         try:
             from .site_content_engine import run_site_content_for_date
@@ -1907,11 +2339,16 @@ class ResearchPipeline:
             try:
                 from .site_content_engine import write_issue_stories_for_date
 
+                # The writer->critic loop was 54% of a run's input tokens and
+                # 80% of its output at ~80 stories a day. Unwritten units stay
+                # on the site as newsletter-backed pages.
+                max_issue_stories = editorial.load().issue_stories_per_day
                 issue_outcome = write_issue_stories_for_date(
                     date=self.date_str,
                     user=self.user_id,
                     reports_root=PROJECT_ROOT / "reports",
                     story_copywriter=copywriter,
+                    max_written=max_issue_stories,
                 )
                 log_event(
                     self.traces_conn,
@@ -1997,8 +2434,28 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning("KG build failed open: %s", e)
 
+    def _check_usage_and_prune_traces(self) -> None:
+        """Alert when this run's model usage passes the soft budget, then drop
+        raw traces past their retention (policies/observability.json). Never
+        blocks the run."""
+        try:
+            policy = trace_store.load_observability_policy()
+            totals = trace_store.run_totals(self.traces_run_id, user_id=self.user_id)
+            log_event(self.traces_conn, self.traces_run_id, "model_usage", json.dumps(totals))
+            over = trace_store.over_budget(totals, policy)
+            if over:
+                log_event(self.traces_conn, self.traces_run_id, "usage_over_budget", json.dumps(over))
+                self._send_alert(f":money_with_wings: Run {self.traces_run_id} went over its soft budget: "
+                                 + "; ".join(over) + f". See: python -m orchestrator.trace show {self.traces_run_id}")
+            removed = trace_store.prune_raw_traces(policy.raw_trace_days, user_id=self.user_id)
+            if removed:
+                logger.info("Pruned raw traces for %d day(s) past %d days", len(removed), policy.raw_trace_days)
+        except Exception as e:
+            logger.warning(f"Usage check and trace pruning failed (non-critical): {e}")
+
     def _phase_learn(self) -> dict:
         """Phase 6: Learn (Python + one Sonnet call)."""
+        self._check_usage_and_prune_traces()
         trending_topics = [t.get("topic", "") for t in self.trends] if self.trends else None
         quality = memory.evaluate_run(self.db, self.date_str, trending_topics=trending_topics)
         logger.info(f"Quality score: {quality.get('overall_score', 'N/A')}")
@@ -2007,7 +2464,15 @@ class ResearchPipeline:
             memory.store_failure(
                 self.db, self.date_str, "quality_drop",
                 quality["warning"],
-                f"Overall score {quality['overall_score']:.3f} vs 7-day avg {quality.get('7day_avg', 'N/A')}"
+                _build_quality_drop_lesson(
+                    quality,
+                    agent_coverage=getattr(
+                        self, "research_quality", {}).get("agent_coverage"),
+                    source_health_summary=(
+                        self.preflight_data.get("source_health_summary")
+                        if self.preflight_data else None
+                    ),
+                ),
             )
 
         # ── Prompt regression check ────────────────────────────────
@@ -2384,11 +2849,22 @@ class ResearchPipeline:
                 # Phase 3 (precompute at publish): the restart wiped the
                 # dashboard caches, so wait for its warm-up and seed the
                 # public site's CDN before the morning's first readers.
+                # Ordering is load-bearing: restart first, then
+                # warm_public_site (which waits on the backend warm-up before
+                # it purges and crawls). Do not reorder.
                 try:
                     warm = warm_public_site(date=self.date_str)
                     logger.info(f"Public site warm-up: {warm}")
                 except Exception as exc:
                     logger.warning(f"Public site warm-up failed (non-fatal): {exc}")
+                # The backend keeps backfilling story files to its volume
+                # after its warm-up reports done, so ask where coverage
+                # stands and put the answer in the phase result the
+                # pipeline log prints.
+                backfill = self._warmup_backfill_snapshot()
+                if backfill is not None:
+                    result["warmup_backfill"] = backfill
+                    logger.info(f"Story disk backfill: {backfill}")
             else:
                 logger.warning(f"Fly restart failed: {restart.get('error')}")
         else:
@@ -2405,6 +2881,28 @@ class ResearchPipeline:
             )
 
         return result
+
+    def _warmup_backfill_snapshot(self) -> dict | None:
+        """One bounded GET of the backend's warm-up status, backfill part only.
+
+        Observability for the SYNC phase log, nothing more: any failure
+        returns None rather than touching the phase outcome, and an old
+        build without the backfill key answers None the same way.
+        """
+        from .sync import BACKEND_URL
+
+        try:
+            with urllib.request.urlopen(
+                f"{BACKEND_URL}/api/warmup/status", timeout=20
+            ) as response:
+                status = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            logger.warning(
+                f"Could not read warm-up status for the backfill summary: {exc}"
+            )
+            return None
+        record = status.get("backfill") if isinstance(status, dict) else None
+        return dict(record) if isinstance(record, dict) else None
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
@@ -2434,6 +2932,11 @@ class ResearchPipeline:
 
         Never raises: a broken alert path must not take a run down.
         """
+        if os.environ.get("MP_DISABLE_OUTBOUND") == "1":
+            # Replays and dry runs must not page anyone (AGENTS.md: every
+            # outbound side effect honors the kill switch).
+            logger.warning("ALERT NOT SENT (MP_DISABLE_OUTBOUND=1): %s", message[:300])
+            return False
         channel = os.environ.get("MP_ALERT_SLACK_CHANNEL", "C0ALSRHAATH")
         try:
             result = subprocess.run(

@@ -13,6 +13,9 @@ build/
 # Data (sacred — never commit the DBs)
 data/*/memory.db
 data/*/traces.db
+# Raw model-call streams and replays: full prompts and tool output, local only
+data/*/traces/
+data/*/replays/
 *.db
 *.db.*
 users.json
@@ -73,6 +76,10 @@ Thumbs.db
 !.agents/skills/mindpattern-repo-release/**
 !.agents/skills/rabbit-hole-site-quality/
 !.agents/skills/rabbit-hole-site-quality/**
+!.agents/skills/verify-mindpattern/
+!.agents/skills/verify-mindpattern/**
+!.agents/skills/mindpattern-checkpoints/
+!.agents/skills/mindpattern-checkpoints/**
 .pi/
 .kiro/
 

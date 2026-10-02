@@ -1,6 +1,7 @@
 """Claim ledger for multi-agent backfill (orchestrator/site_backfill.py)."""
 
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -47,6 +48,30 @@ def test_concurrent_claims_never_overlap(pool):
     all_slugs = [slug for r in results for slug in r["slugs"]]
     assert len(all_slugs) == len(set(all_slugs)), "two agents claimed the same story"
     assert sum(len(r["slugs"]) for r in results) <= 20
+
+
+def test_claim_visible_to_a_concurrent_reaper_is_already_complete(pool, monkeypatch):
+    """CI saw 21 claims over 20 stories. One agent's reap_expired_claims ran
+    while another agent had created a claim file but not yet written its
+    payload; reap treats an unparseable file as junk and deletes it, and the
+    slug is free to claim again. Run the reap at exactly that point."""
+    real_open = os.open
+
+    def open_then_reap(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if flags & os.O_EXCL:
+            bf.reap_expired_claims("ramsay", pool)
+        return fd
+
+    monkeypatch.setattr(os, "open", open_then_reap)
+    first = bf.claim_batch(user="ramsay", reports_root=pool, size=5, agent="one")
+    monkeypatch.setattr(os, "open", real_open)
+
+    assert len(first["slugs"]) == 5
+    assert set(bf._active_claims("ramsay", pool)) == set(first["slugs"])
+    second = bf.claim_batch(user="ramsay", reports_root=pool, size=50, agent="two")
+    assert not set(first["slugs"]) & set(second["slugs"])
+    assert len(second["slugs"]) == 15
 
 
 def test_claimed_stories_excluded_from_next_claim(pool):
@@ -102,24 +127,35 @@ def test_status_counts(pool):
 
 
 def test_cmd_provider_receives_prompt_on_stdin(monkeypatch):
+    from core.claude_cli import ClaudeProcessResult
     from orchestrator import site_writer as sw
 
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append((argv, kwargs.get("input_text")))
+        return ClaudeProcessResult("{}", "", 0)
+
     monkeypatch.setenv("MP_SITE_STORY_WRITER", "cmd:my-writer --flag")
-    cmd, stdin_text = sw.writer_command("PROMPT TEXT")
-    assert cmd == ["sh", "-c", "my-writer --flag"]
-    assert stdin_text == "PROMPT TEXT"
+    sw.run_writer("PROMPT TEXT", runner=runner)
+    argv, stdin_text = calls[-1]
+    assert argv == ["sh", "-c", "my-writer --flag"]
+    assert stdin_text.endswith("PROMPT TEXT")
     assert sw.writer_label() == "cmd"
 
     monkeypatch.setenv("MP_SITE_STORY_WRITER", "codex")
-    cmd, stdin_text = sw.writer_command("PROMPT TEXT")
-    assert cmd[0] == "codex" and cmd[1] == "exec"
+    sw.run_writer("PROMPT TEXT", runner=runner)
+    argv, _ = calls[-1]
+    assert argv[:2] == ["codex", "exec"]
+    assert argv[argv.index("-m") + 1] == "gpt-6.1-sol"
     assert sw.writer_label() == "codex"
 
     monkeypatch.setenv("MP_SITE_STORY_WRITER", "claude")
-    cmd, stdin_text = sw.writer_command("PROMPT TEXT")
-    assert cmd[0] == "claude"
+    sw.run_writer("PROMPT TEXT", runner=runner)
+    argv, _ = calls[-1]
+    assert argv[:3] == ["claude", "-p", "PROMPT TEXT"]
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5"
     assert sw.writer_label() == "claude-cli"
-
 
 def test_notebook_tracks_claims_and_outcomes(pool, monkeypatch):
     claim = bf.claim_batch(user="ramsay", reports_root=pool, size=3, agent="nb")
@@ -170,7 +206,7 @@ def test_run_claim_output_artifact_passes_the_full_quality_gate(tmp_path, monkey
             "title": "OpenAI puts agent controls on the buyer's scorecard",
             "dek": "Controls become the procurement question for agent platforms.",
             "take": "Controls are the new moat, and OpenAI knows it.",
-            "why_now": "The controls shipped with the July 2 briefing cycle.",
+            "why_now": "OpenAI published the controls on July 2.",
             "body_markdown": "OpenAI released new controls.\n\nThat changes procurement reviews.",
         },
     )
@@ -225,7 +261,7 @@ def test_run_claim_lint_failure_is_retryable_without_writing_artifact(tmp_path, 
             "title": "OpenAI puts agent controls on the buyer's scorecard",
             "dek": "Controls become the procurement question for agent platforms.",
             "take": "Controls are the new moat, and OpenAI knows it.",
-            "why_now": "The July 2 briefing cycle made controls visible.",
+            "why_now": "OpenAI made the controls visible on July 2.",
             "body_markdown": "This robust copy must not be written.",
         },
     )

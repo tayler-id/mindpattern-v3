@@ -1,6 +1,6 @@
 # MindPattern v3 — System Architecture
 
-> Autonomous AI research pipeline. Runs daily at 7 AM. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
+> Autonomous AI research pipeline. Runs daily through a guarded launcher. Gathers data from 8 sources, dispatches 13 research agents, writes a newsletter, posts to social media, and improves itself after every run.
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart TD
-    LAUNCHD["macOS launchd<br/>7 AM daily"] --> WRAPPER["run-launchd.sh<br/>Idempotent wrapper"]
+    LAUNCHD["macOS launchd<br/>Guarded daily publishing"] --> WRAPPER["run-launchd.sh<br/>Idempotent wrapper"]
     WRAPPER --> RUN["run.py"]
     RUN --> INIT
 
@@ -16,8 +16,8 @@ flowchart TD
         direction TB
         INIT["INIT<br/>Load prefs, feedback, failures"]
         TREND["TREND_SCAN<br/>Haiku: 5-8 trending topics"]
-        RESEARCH["RESEARCH<br/>Preflight + 13 Sonnet agents"]
-        SYNTH["SYNTHESIS<br/>Opus: 4500-word newsletter"]
+        RESEARCH["RESEARCH<br/>Preflight + 13 Sonnet 5.5 agents<br/>findings stored with mp"]
+        SYNTH["SYNTHESIS<br/>Opus 5.5 picks, Sonnet 5.5 deep dives,<br/>Opus 5.5 writes, Sol edits"]
         DELIVER["DELIVER<br/>HTML email via Resend"]
         LEARN["LEARN<br/>Quality scoring + entity graph"]
         SOCIAL["SOCIAL<br/>EIC → writers → critics → post"]
@@ -85,6 +85,7 @@ Each agent receives:
 4. Preflight items tagged NEW / ALREADY_COVERED
 5. Phase 1: evaluate preflight items (floor)
 6. Phase 2: explore with Agent Reach tools (ceiling)
+7. `mp`, to store each finding the moment it passes the gate, check coverage, and fetch pages in slices. A stored finding survives the turn cap.
 
 ---
 
@@ -218,7 +219,10 @@ flowchart TD
         AGENT_RUNS["agent_runs"]
         CHECKPOINTS["checkpoints"]
         PROMPT_VERSIONS["prompt_tracker"]
+        MODEL_CALLS["model_calls<br/>+ model_call_steps"]
     end
+
+    RAW_TRACES["data/ramsay/traces/<br/>raw model streams, local only, 90 days"]
 
     subgraph VAULT_DATA["data/ramsay/mindpattern/ (Obsidian)"]
         AGENT_LOGS["agents/{name}/{date}.md<br/>Full execution transcripts"]
@@ -315,8 +319,8 @@ flowchart LR
     subgraph MACOS["macOS Services"]
         MESSAGES["Messages.db<br/>iMessage gates<br/>FDA required"]
         KEYCHAIN["macOS Keychain<br/>API keys"]
-        LAUNCHD_SVC["launchd<br/>7 AM schedule"]
-        PMSET["pmset<br/>6:55 AM wake"]
+        LAUNCHD_SVC["launchd<br/>Host-loaded schedule"]
+        PMSET["pmset<br/>Host wake configuration"]
     end
 
     PREFLIGHT_M --> ARXIV_API & GH_API & HN_API & REDDIT_API
@@ -471,7 +475,7 @@ mindpattern-v3/
 │   │   └── mindpattern-eval/   # Pipeline evaluation skill
 │   └── handoffs/               # Session handoff documents
 │
-├── tests/                      # 58+ tests across 7 files
+├── tests/                      # pytest suite, tests/test_*.py
 ├── config.json                 # Global config
 ├── users.json                  # User definitions
 ├── social-config.json          # Social pipeline config
@@ -483,18 +487,27 @@ mindpattern-v3/
 
 ## Model Routing
 
-| Task | Model | Max Turns | Timeout | Cost Tier |
-|------|-------|-----------|---------|-----------|
-| Trend scan | Haiku | 5 | 60s | Low |
-| Research agents (13x) | Sonnet | 25 | 1800s | Medium |
-| Synthesis pass 1 | Opus 1M | 10 | 600s | High |
-| Synthesis pass 2 | Opus 1M | 30 | 900s | High |
-| EIC | Opus 1M | 15 | 600s | High |
-| Writers / Critics | Sonnet | 15 / 5 | 300s / 120s | Medium |
-| Humanizer / Expeditor | Sonnet | 5 | 120s | Medium |
-| Analyzer | Opus 1M | 10 | 600s | High |
-| Learnings | Sonnet | 5 | 120s | Medium |
-| Engagement | Sonnet | 10 / 5 | 300s / 120s | Medium |
+Routes live in [`config/models.json`](../config/models.json), not in code. `python -m core.config check` validates the file and prints every route. As of 2026-10-02:
+
+| Task | Model | Effort | Max Turns | Timeout |
+|------|-------|--------|-----------|---------|
+| Trend scan, KG extraction | Haiku 4.5 | none | 5, 1 | 60s, 300s |
+| Research agents (13x) | Sonnet 5.5 | high | 35 | 1800s |
+| Story selection, newsletter | Opus 5.5 | high | 10, 30 | 600s, 900s |
+| Deep dives (one per Top story) | Sonnet 5.5 | medium | 15 | 600s |
+| Newsletter editor | GPT-6.1 Sol via Codex, Sonnet 5.5 fallback | medium | n/a | 600s |
+| Site story writer | Sonnet 5.5 | medium | 8 | 300s |
+| Site story critic | GPT-6.1 Sol via Codex, Sonnet 5.5 fallback | medium | n/a | 300s |
+| EIC, evolve | Opus 5.5 | high | 15, 10 | 600s |
+| Social writers and critics | `sonnet` alias | high | 5 to 15 | 120s to 360s |
+
+### Model calls and tracing
+
+Every call, Claude or Codex, goes through `core/model_cli.py`. It runs the CLI with the user's plugins, hooks and MCP servers switched off, falls back once on timeout or rate limit, and checks structured answers against `contracts/*.schema.json`.
+
+Each call is a row in `traces.db` (`model_calls`, one child row per subagent, `model_call_steps` per tool call), and its raw stream is kept in `data/<user>/traces/` for 90 days. `python -m orchestrator.trace show <run> --steps` shows what every agent did. LEARN alerts on a run past the soft budget in `policies/observability.json`.
+
+`tools/replay_day.py` reruns a past day's synthesis or research on real data in a scratch copy, and `tools/bakeoff.py` puts two issues side by side, blind.
 
 ---
 
@@ -511,29 +524,30 @@ All sensitive credentials stored in macOS Keychain:
 Additional requirements:
 - **Full Disk Access**: `/bin/bash` and `python3.14` must have FDA for Messages.db access
 - **Claude Pro subscription**: CLI authenticates via account (no API key needed)
-- **pmset wakepoweron**: Mac wakes at 6:55 AM for 7 AM pipeline run
+- **Host wake configuration**: separate from the launch calendar; see [Scheduling](#scheduling) for evidence limits.
 
 ---
 
 ## Scheduling
 
-```mermaid
-flowchart LR
-    PMSET["pmset wakepoweron<br/>6:55 AM"] --> WAKE["Mac wakes"]
-    WAKE --> LAUNCHD_T["launchd<br/>com.taylerramsay.daily-research<br/>7:00 AM + RunAtLoad"]
-    LAUNCHD_T --> WRAPPER_T["run-launchd.sh"]
+### Checked-in behavior
 
-    WRAPPER_T --> CHECK1{"Already ran today?<br/>/tmp/mindpattern-ran-{date}"}
-    CHECK1 -->|"yes"| SKIP["Skip"]
-    CHECK1 -->|"no"| CHECK2{"Lock file exists?"}
-    CHECK2 -->|"stale"| CLEAN["Remove stale lock"]
-    CHECK2 -->|"active PID"| SKIP
-    CLEAN --> FDA{"FDA check<br/>Python reads Messages.db?"}
-    CHECK2 -->|"no"| FDA
-    FDA -->|"warn if failed"| CAFF["caffeinate -i -s"]
-    CAFF --> PIPELINE_T["python3 run.py"]
-    PIPELINE_T --> MARKER["touch /tmp/mindpattern-ran-{date}"]
-```
+The sources of truth are [`deploy/com.mindpattern.pipeline.plist`](../deploy/com.mindpattern.pipeline.plist) and [`run-launchd.sh`](../run-launchd.sh), not the example lifecycle times elsewhere in older docs.
+
+- The plist names `com.mindpattern.pipeline`, requests triggers every 15 minutes from 05:00 through 09:45 in the host's local time, and sets `RunAtLoad` to false.
+- The wrapper admits starts only from 05:00 through 09:59. This is a start window, not a completion deadline; a running pipeline can continue after 10:00.
+- Delivery and sync markers determine whether work is needed. Both present means skip. Delivery present without sync means `--sync-only`; missing delivery permits another pipeline attempt. The wrapper does not mark delivery merely because the process exited.
+- The wrapper skips a slot when the Mac is on battery without a full wake, or when api.anthropic.com does not answer, and the next slot tries again. On 2026-09-28 and 09-29 runs started in a two-second dark wake crawled through DNS failures for 14 hours.
+- An atomic directory lock prevents concurrent wrapper runs; the wrapper reclaims stale locks when the recorded PID is no longer alive. These guards permit retries, not a guarantee of exactly one invocation per day.
+- The wrapper pulls `origin/main --ff-only` only when its checkout is on `main`. On other branches it uses local code without pulling. Do not switch or edit the publishing checkout as part of documentation or development work.
+
+### Installed, loaded, and observed schedules
+
+The repository plist describes checked-in intent. An installed plist can differ from it, and the file on disk does not prove which configuration launchd has loaded, either now or historically. This documentation does not establish a precise current live schedule.
+
+For an operational investigation, compare the repository configuration with the installed file and read-only loaded-job information on the publishing host. Use timestamped `reports/launchd-decisions.log` entries to establish actual invocations and skips, and pipeline records to establish delivery and sync. A present-day plist cannot explain historical trigger times by itself. Do not reload a job or run the launcher just to check documentation.
+
+Host wake and sleep behavior is separate from the launch calendar. The wrapper uses `caffeinate -i -s`, but those assertions do not guarantee execution through battery or lid sleep. A launch calendar is not a delivery-time guarantee; investigate delayed runs using power history as well as pipeline timestamps.
 
 ---
 
