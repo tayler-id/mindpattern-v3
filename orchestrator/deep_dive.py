@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SYSTEM_PROMPT = PROJECT_ROOT / "agents" / "story-deep-dive.md"
 TASK = "story_deep_dive"
-TOOLS = ToolPolicy(allowed=("WebSearch", "WebFetch", "Bash(mp *)"),
+TOOLS = ToolPolicy(allowed=("WebSearch", "WebFetch", "Bash(mp *)", "Bash(bin/mp *)"),
                    disallowed=("Agent", "Write", "Edit", "NotebookEdit", "Skill"))
 MAX_PARALLEL = 3
 _WORD = re.compile(r"[a-z0-9]+")

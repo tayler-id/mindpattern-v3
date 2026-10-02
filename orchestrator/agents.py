@@ -134,6 +134,7 @@ AGENT_ALLOWED_TOOLS = [
     "WebSearch",
     "WebFetch",
     "Bash(mp *)",             # store findings, check coverage, fetch pages (bin/mp)
+    "Bash(bin/mp *)",         # the same tool by path; an Oct 2 replay agent called it so and gave up
     "Bash(mcporter call *)",  # Exa semantic search
     "Bash(twitter *)",        # Twitter/X search (agent-reach's active backend)
     "Bash(yt-dlp *)",         # YouTube transcripts
@@ -151,12 +152,12 @@ _BASH_GRANT_RE = re.compile(r"^Bash\(\s*(\S+)")
 
 
 def granted_shell_binaries(allowed_tools: list[str] | None) -> set[str]:
-    """Binaries named by the `Bash(...)` rules in an --allowedTools list."""
+    """Binaries named by the `Bash(...)` rules in an --allowedTools list. `bin/mp` is `mp`."""
     binaries = set()
     for rule in allowed_tools or []:
         match = _BASH_GRANT_RE.match(str(rule))
         if match:
-            binaries.add(match.group(1))
+            binaries.add(match.group(1).rsplit("/", 1)[-1])
     return binaries
 
 

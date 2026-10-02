@@ -236,6 +236,16 @@ def test_the_prompt_examples_use_field_lines_the_contract_accepts(source, contra
     assert set(schema["required"]) <= set(fields), set(schema["required"]) - set(fields)
 
 
+def test_agents_may_call_mp_by_name_or_by_path():
+    """An Oct 2 replay agent called `bin/mp`, was refused twice, and stopped storing findings."""
+    from orchestrator import deep_dive
+    from orchestrator.agents import AGENT_ALLOWED_TOOLS, granted_shell_binaries
+
+    for grants in (AGENT_ALLOWED_TOOLS, deep_dive.TOOLS.allowed):
+        assert {"Bash(mp *)", "Bash(bin/mp *)"} <= set(grants)
+    assert granted_shell_binaries(["Bash(bin/mp *)", "Bash(mp *)", "WebSearch"]) == {"mp"}
+
+
 def test_fetch_reads_on_from_an_offset(tmp_path):
     page = "<html><body>" + "".join(f"<p>line {i:03d}</p>" for i in range(40)) + "</body></html>"
 
