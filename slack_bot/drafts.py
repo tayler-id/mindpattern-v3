@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -102,9 +103,11 @@ def _writer_skill_runner(platform: str):
     with `output_len=0` until 2026-08-23; the tips handler never hit it
     because it inlines voice.md instead of appending the skill.
 
-    So take the path `social/writers.py` already uses: same skill, same draft
-    file, same tool grant. If the skill file is missing there is no file
-    contract to honour, and stdout is correct.
+    So take the path `social/writers.py` already uses: same skill, same tool
+    grant, but a draft file of its own per call. The bot runs handlers on a
+    thread pool and the pipeline writes `{platform}-draft.md` too, so a shared
+    file would hand one thread another thread's post. If the skill file is
+    missing there is no file contract to honour, and stdout is correct.
     """
 
     def runner(prompt: str, system_prompt_file: str | None = None):
@@ -114,16 +117,23 @@ def _writer_skill_runner(platform: str):
             return agents_mod.run_claude_prompt(prompt, "social_revision")
 
         output_file = (
-            agents_mod.PROJECT_ROOT
-            / "data" / "social-drafts" / f"{platform.lower()}-draft.md"
+            agents_mod.SOCIAL_DRAFTS_DIR
+            / f"{platform.lower()}-revision-{uuid.uuid4().hex}.md"
         )
-        result = agents_mod.run_agent_with_files(
-            system_prompt_file=system_prompt_file,
-            prompt=prompt,
-            output_file=str(output_file),
-            allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
-            task_type="writer",
-        )
+        try:
+            result = agents_mod.run_agent_with_files(
+                system_prompt_file=system_prompt_file,
+                prompt=(
+                    f"{prompt}\n\nWrite the revised post to `{output_file}` "
+                    "with the Write tool. That path replaces the draft file "
+                    "your skill names."
+                ),
+                output_file=str(output_file),
+                allowed_tools=["Read", "Write", "Bash", "Glob", "Grep"],
+                task_type="writer",
+            )
+        finally:
+            output_file.unlink(missing_ok=True)
         text = (result or {}).get("text", "")
         return (text, 0) if text.strip() else ("", 1)
 
@@ -239,7 +249,11 @@ def handle_draft_revision(
         return True
 
     if policy_errors is not None:
-        policy_errors[revision.platform] = []
+        from social.critics import deterministic_validate
+
+        policy_errors[revision.platform] = deterministic_validate(
+            revision.platform, drafts[revision.platform]
+        )
     handler.reply(
         f"Revised {revision.platform} draft.\n\n{format_drafts(drafts)}",
         thread_ts=thread_ts,

@@ -330,7 +330,12 @@ def gate_repro_flips(
     post_output, post_exit = _run(repro_cmd, cwd=root, timeout=timeout, env=env)
 
     failures = []
-    if pre_exit == 0:
+    if pre_exit in (126, 127):
+        failures.append(
+            f"repro could not run on pre-fix tree ({base_ref}), exit "
+            f"{pre_exit}: {pre_output[-300:].strip()}"
+        )
+    elif pre_exit == 0:
         failures.append(
             f"repro PASSED on pre-fix tree ({base_ref}) — it does not "
             "demonstrate the bug"

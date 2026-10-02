@@ -85,7 +85,8 @@ if [ "$RUN_DEPLOY" = "1" ]; then
     echo "python3.11 not found; it is the gate for what Fly actually runs" >&2
     exit 4
   fi
-  find dashboard orchestrator slack_bot -name '*.py' -print0 2>/dev/null \
+  find dashboard orchestrator slack_bot social core memory policies agents \
+    -name '*.py' -print0 2>/dev/null \
     | xargs -0 python3.11 -m py_compile
   echo "ok"
 

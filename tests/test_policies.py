@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from policies.engine import PolicyEngine
+from policies.engine import PolicyEngine, _is_brand_url
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 POLICIES_DIR = PROJECT_ROOT / "policies"
@@ -506,3 +506,22 @@ class TestSourceUrlRequirement:
         content = "Something happened.\nhttps://www.mindpattern.ai/stories/mcp"
         errors = social_engine.validate_social_post("linkedin", content)
         assert any("source" in e.lower() for e in errors), errors
+
+
+class TestBrandUrlAtSentenceEnd:
+    """A link that closes a sentence carries the period; the host does not."""
+
+    def test_trailing_punctuation_does_not_make_a_brand_link_offsite(self):
+        for url in ("https://mindpattern.ai.", "https://mindpattern.ai).",
+                    "https://www.mindpattern.ai/stories/x,"):
+            assert _is_brand_url(url, ["mindpattern.ai"]), url
+
+    def test_a_brand_only_post_ending_in_a_period_still_needs_a_source(self, social_engine):
+        content = "Five SEP numbers, all from our tracker at https://mindpattern.ai."
+        errors = social_engine.validate_social_post("bluesky", content)
+        assert any("must link its source" in e for e in errors), errors
+
+    def test_an_offsite_link_ending_a_sentence_satisfies_the_rule(self, social_engine):
+        content = "Notes at https://simonwillison.net/2026/evals. Ours: https://mindpattern.ai"
+        errors = social_engine.validate_social_post("bluesky", content)
+        assert not any("must link its source" in e for e in errors), errors

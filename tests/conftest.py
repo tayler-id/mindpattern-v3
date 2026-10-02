@@ -12,8 +12,11 @@ letting it wait. Loopback stays open, because the FastAPI and dashboard tests
 talk to a local test server over a real socket.
 """
 
+import hashlib
+import re
 import socket
 
+import numpy as np
 import pytest
 
 _real_create_connection = socket.create_connection
@@ -56,6 +59,73 @@ def no_outbound_network(monkeypatch):
 
     monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+
+
+# ── Offline embeddings ───────────────────────────────────────────────────
+#
+# memory/embeddings.py loads BAAI/bge-small-en-v1.5 through fastembed on
+# first use, and fastembed fetches the model from huggingface.co when the
+# cache under HOME is empty. On a fresh CI runner that is every run, and the
+# guard above fails the test. The tests that hit this (trend detection, trend
+# history, the runner's trend-scan and research phases) exercise real
+# clustering and similarity thresholds, so the double below has to keep
+# topical texts close and unrelated texts apart rather than return noise.
+
+EMBEDDING_DIM = 384
+
+_STOP_WORDS = frozenset(
+    "a an the and or of to in on for with is are was be how why my i we our "
+    "this that it its by at from as has have here after new vs show showing".split()
+)
+
+
+def _term_direction(term: str) -> np.ndarray:
+    """A fixed unit vector per term; distinct terms are near-orthogonal at 384 dims."""
+    seed = int.from_bytes(hashlib.sha256(term.encode()).digest()[:4], "big")
+    vec = np.random.RandomState(seed).randn(EMBEDDING_DIM).astype(np.float32)
+    return vec / np.linalg.norm(vec)
+
+
+def deterministic_embedding(text: str) -> np.ndarray:
+    """Stand-in for the sentence model: a unit vector built from the text's terms.
+
+    A term's weight is its count squared, so a text that names its subject
+    more than once (preflight items repeat it in title and preview, findings
+    in title and summary) lands next to other texts about the same subject,
+    while texts that merely share a few words stay apart. Same text, same
+    vector, every process.
+    """
+    counts: dict[str, int] = {}
+    for term in re.findall(r"[a-z0-9]+", text.lower()):
+        if len(term) > 1 and term not in _STOP_WORDS:
+            counts[term] = counts.get(term, 0) + 1
+    if not counts:
+        return _term_direction("")
+    vec = np.zeros(EMBEDDING_DIM, dtype=np.float32)
+    for term, count in counts.items():
+        vec += (count * count) * _term_direction(term)
+    return vec / np.linalg.norm(vec)
+
+
+class _DeterministicTextEmbedding:
+    """The slice of fastembed.TextEmbedding that memory/embeddings.py uses."""
+
+    def embed(self, texts):
+        for text in texts:
+            yield deterministic_embedding(text)
+
+
+@pytest.fixture
+def offline_embeddings(monkeypatch):
+    """Serve embeddings from the deterministic double instead of the model.
+
+    Installs the double as the module singleton that embed_text/embed_texts
+    read, so every caller in memory/, preflight/ and orchestrator/ gets it
+    without a model load, a cache directory, or a download.
+    """
+    from memory import embeddings
+
+    monkeypatch.setattr(embeddings, "_model", _DeterministicTextEmbedding())
 
 
 @pytest.fixture(autouse=True)

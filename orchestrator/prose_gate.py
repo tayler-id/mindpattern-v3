@@ -135,9 +135,9 @@ def _split_protected(markdown: str) -> list[tuple[str, bool]]:
 # the em-dash budget: a fact a regex can check is corrected here, not asked for
 # in the prompt.
 _LENGTH_CLAIM = re.compile(
-    r"(?P<lead>\b(?:next|these|this|following|remaining)\s+)"
+    r"(?P<lead>\b(?:the\s+next|these|the\s+following|the\s+remaining)\s+)"
     r"(?P<count>\d{1,3}(?:,\d{3})+|\d{3,6})"
-    r"(?P<tail>[\s-]+words?\b)",
+    r"(?P<tail>\s+words\b)",
     re.IGNORECASE,
 )
 

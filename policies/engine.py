@@ -42,7 +42,7 @@ def _is_brand_url(url: str, brand_domains: list[str]) -> bool:
     mindpattern.ai/stories/x both read as ours.
     """
     host = re.sub(r"^https?://", "", url).split("/")[0].lower()
-    host = host.split(":")[0]
+    host = host.split(":")[0].rstrip(".,;:!?)")
     for domain in brand_domains:
         domain = domain.lower().strip()
         if host == domain or host.endswith("." + domain):

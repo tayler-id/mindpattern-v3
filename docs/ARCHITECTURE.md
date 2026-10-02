@@ -471,7 +471,7 @@ mindpattern-v3/
 │   │   └── mindpattern-eval/   # Pipeline evaluation skill
 │   └── handoffs/               # Session handoff documents
 │
-├── tests/                      # 58+ tests across 7 files
+├── tests/                      # pytest suite, tests/test_*.py
 ├── config.json                 # Global config
 ├── users.json                  # User definitions
 ├── social-config.json          # Social pipeline config

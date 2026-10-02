@@ -59,7 +59,7 @@
     {
       "term": "dropped a release",
       "tier": "ban",
-      "pattern": "\\b(?:dropped|drops)\\s+(?:a|an|the|its|their)?\\s*(?:new\\s+|updated\\s+)?(?:model|models|release|version|update|paper|repo|sdk|cli|api|feature|build|patch|preview|beta|v?\\d+\\.\\d)",
+      "pattern": "\\b(?:dropped|drops)\\s+(?:(?:a|an|the|its|their)?\\s*(?:new\\s+|updated\\s+)?(?:model|models|release|version|update|paper|repo|sdk|cli|api|build|patch|preview|beta|v\\d+\\.\\d)|(?:a|an)\\s+(?:new\\s+|updated\\s+)?feature|(?:the\\s+|its\\s+|their\\s+)?(?:new|updated)\\s+feature)",
       "instead": "\"released\", \"published\", \"posted\"",
       "example": "OpenAI dropped a new model on Tuesday.",
       "surfaces": [
