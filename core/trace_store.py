@@ -304,4 +304,3 @@ def over_budget(totals: dict, policy: ObservabilityPolicy) -> list[str]:
     if totals["api_price_usd"] > policy.budget_api_price_usd:
         reasons.append(f"${totals['api_price_usd']} at API prices (soft budget ${policy.budget_api_price_usd:g})")
     return reasons
-
