@@ -181,8 +181,42 @@ def test_the_launcher_stores_a_finding_from_a_quoted_heredoc(tmp_path):
     command = "\n".join([f"{ROOT / 'bin' / 'mp'} finding add <<'EOF'"] +
                         [f"{key}: {value}" for key, value in FINDING.items()] + ["EOF"])
     added = subprocess.run(["/bin/sh", "-c", command], env=env, capture_output=True, text=True)
-    assert (added.returncode, json.loads(added.stdout)) == (0, {"accepted": True, "stored": 1}), added.stderr
+    assert (added.returncode, json.loads(added.stdout)) == (0, {"accepted": 1, "rejected": [], "stored": 1}), \
+        added.stderr
     assert cli.read_findings(tmp_path / "f.jsonl") == [FINDING]
+
+
+def test_one_command_stores_several_findings_and_reports_each_rejection(tmp_path):
+    env = {**os.environ, "MP_PYTHON": sys.executable, "MP_FINDINGS_FILE": str(tmp_path / "f.jsonl"),
+           "MINDPATTERN_AGENT": "news-researcher", "MP_USER_ID": "nobody-here", "MP_RUN_DATE": "2026-10-02"}
+    second = {**FINDING, "title": "Beta opens its vector store to every team on the free plan",
+              "source_url": "https://beta.example.com/free"}
+    repeat = {**FINDING, "title": "A different headline over the same Acme post"}
+    blocks = ["\n".join(f"{key}: {value}" for key, value in record.items()) for record in (FINDING, second, repeat)]
+    command = f"{ROOT / 'bin' / 'mp'} finding add <<'EOF'\n" + "\n---\n".join(blocks) + "\nEOF"
+    added = subprocess.run(["/bin/sh", "-c", command], env=env, capture_output=True, text=True)
+    result = json.loads(added.stdout)
+    assert (added.returncode, result["accepted"], result["stored"]) == (2, 2, 2)
+    assert result["rejected"] == [{"record": "A different headline over the same Acme post",
+                                   "reasons": ["already stored this run: 'Acme ships Runtime 2.0 with a retrying "
+                                               "planner' has the same source_url"]}]
+    assert cli.read_findings(tmp_path / "f.jsonl") == [FINDING, second]
+
+
+def test_records_come_from_field_blocks_or_json():
+    assert cli.parse_records("title: a\n---\ntitle: b\n---\n") == [{"title": "a"}, {"title": "b"}]
+    assert cli.parse_records('[{"title": "a"}, {"title": "b"}]') == [{"title": "a"}, {"title": "b"}]
+    assert cli.parse_records('{"title": "a"}') == [{"title": "a"}]
+    with pytest.raises(cli.Rejected, match="no fields given"):
+        cli.parse_records("---\n\n")
+
+
+def test_seen_checks_several_leads_in_one_call(capsys, monkeypatch):
+    monkeypatch.setenv("MP_USER_ID", "nobody-here")
+    assert cli.main(["seen", "https://acme.example.com/a", "Acme ships a planner"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"results": [
+        {"query": "https://acme.example.com/a", "seen": False, "matches": []},
+        {"query": "Acme ships a planner", "seen": False, "matches": []}]}
 
 
 @pytest.mark.parametrize("source,contract", [

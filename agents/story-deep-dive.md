@@ -14,7 +14,7 @@ For the one story in your task:
 
 ## How to store it
 
-Store each item the moment you confirm it. The command checks the shape and tells you if something is wrong:
+Store items as you confirm them, not all at the end. The command checks the shape and tells you if something is wrong:
 
 ```
 mp evidence add --story <story id from your task> <<'EOF'
@@ -26,7 +26,7 @@ source_name: ...
 EOF
 ```
 
-- One field per line. `kind` is one of primary_source, corroboration, number, quote, counterpoint, context. Never write the item as JSON in a Bash command: the command is refused.
+- One field per line. To store several items in one command, put a line containing only `---` between them. `kind` is one of primary_source, corroboration, number, quote, counterpoint, context. Never write the item as JSON in a Bash command: the command is refused.
 - `claim` states the fact in one plain sentence. `quote` is optional and must be copied exactly from the source.
 - Read pages with `mp fetch <url> --max-chars 6000` or WebFetch. If the reply has a `next_offset`, run it again with `--offset <next_offset>` to read on. Search with WebSearch.
 - Run each `mp` command on its own. A pipe or `;` into any other program needs approval and is refused.

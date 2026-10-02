@@ -1,15 +1,16 @@
 """`mp`: deterministic tools the research agents (and Tayler) call instead of following prose rules.
 
-    mp finding add <<'EOF' ... EOF    validate, dedupe, and store one finding for this run
+    mp finding add <<'EOF' ... EOF    validate, dedupe, and store findings for this run
     mp findings list                  what this agent has stored so far
-    mp seen "<url or title>"          has this been covered in the last 180 days?
+    mp seen "<url or title>" ...      has each lead been covered in the last 180 days?
     mp fetch <url> [--max-chars N] [--offset N]   readable text of a page, a slice at a time
-    mp evidence add --story S <<'EOF' ... EOF     one evidence item for a deep-dive story
+    mp evidence add --story S <<'EOF' ... EOF     evidence items for a deep-dive story
     mp lint <file> [--surface S]      writing-policy violations in a draft
     mp tells [--since DAYS]           writing-policy rates across published issues
 
-The add commands read one `field: value` per line on stdin, or JSON with
---json. Agents use the quoted heredoc because Claude Code's Bash check refuses
+The add commands read one `field: value` per line on stdin, with a line of
+`---` between records, or JSON (an object or a list) with --json. Each call
+is a turn, so several records per call leave more turns for research. Agents use the quoted heredoc because Claude Code's Bash check refuses
 inline JSON (`{"` reads as expansion obfuscation), while a quoted heredoc passes
 apostrophes, `$`, and backticks through untouched.
 
@@ -176,6 +177,34 @@ def parse_fields(text: str) -> dict[str, str]:
     return record
 
 
+def parse_records(raw: str) -> list[object]:
+    """Records from JSON (an object or a list) or from field blocks separated by `---` lines."""
+    if raw.lstrip().startswith(("{", "[")):
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise Rejected([f"not valid JSON: {exc}"]) from exc
+        return data if isinstance(data, list) else [data]
+    blocks = [block for block in re.split(r"(?m)^---[ \t]*$", raw) if block.strip()]
+    if not blocks:
+        raise Rejected(["no fields given; pass one 'field: value' per line"])
+    return [parse_fields(block) for block in blocks]
+
+
+def add_records(records: list[object], add_one, store: Path) -> tuple[dict, int]:
+    """Add each record on its own; one rejection does not stop the rest."""
+    accepted, rejected = 0, []
+    for record in records:
+        try:
+            add_one(record)
+            accepted += 1
+        except Rejected as exc:
+            label = (record.get("title") or record.get("claim") or "") if isinstance(record, dict) else ""
+            rejected.append({"record": str(label)[:80], "reasons": exc.reasons})
+    result = {"accepted": accepted, "rejected": rejected, "stored": len(findings_store.read_rows(store))}
+    return result, 2 if rejected else 0
+
+
 def page_text(raw: str, content_type: str) -> str:
     if "html" not in content_type:
         return raw
@@ -246,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     findings = commands.add_parser("findings").add_subparsers(dest="action", required=True)
     findings.add_parser("list")
     seen = commands.add_parser("seen")
-    seen.add_argument("query")
+    seen.add_argument("query", nargs="+")
     fetch_cmd = commands.add_parser("fetch")
     fetch_cmd.add_argument("url")
     fetch_cmd.add_argument("--max-chars", type=int, default=DEFAULT_FETCH_CHARS)
@@ -264,30 +293,30 @@ def main(argv: list[str] | None = None) -> int:
     tells_cmd.add_argument("--reports", type=Path, help="issue folder (default reports/<user>)")
     args = parser.parse_args(argv)
 
-    def payload(text: str | None):
-        raw = text if text is not None else sys.stdin.read()
-        if text is None and not raw.lstrip().startswith("{"):
-            return parse_fields(raw)
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise Rejected([f"not valid JSON: {exc}"]) from exc
+    def records(text: str | None) -> list[object]:
+        if text is not None and not text.lstrip().startswith(("{", "[")):
+            raise Rejected(["--json takes a JSON object or list"])
+        return parse_records(text if text is not None else sys.stdin.read())
 
     try:
         if args.command == "finding":
             agent = os.environ.get("MINDPATTERN_AGENT") or "unknown"
-            return _out(add_finding(payload(args.json), store=_env_path("MP_FINDINGS_FILE"), agent=agent))
+            store = _env_path("MP_FINDINGS_FILE")
+            return _out(*add_records(records(args.json), lambda r: add_finding(r, store=store, agent=agent), store))
         if args.command == "findings":
             rows = read_findings(_env_path("MP_FINDINGS_FILE"))
             return _out({"count": len(rows), "findings": [{"title": r.get("title"), "source_url": r.get("source_url"),
                                                            "importance": r.get("importance")} for r in rows]})
         if args.command == "seen":
-            matches = history(args.query)
-            return _out({"seen": bool(matches), "matches": matches})
+            results = [{"query": query, "seen": bool(found), "matches": found}
+                       for query, found in ((query, history(query)) for query in args.query)]
+            return _out({"results": results})
         if args.command == "fetch":
             return _out(fetch(args.url, max_chars=args.max_chars, offset=args.offset))
         if args.command == "evidence":
-            return _out(add_evidence(payload(args.json), story=args.story, store=_env_path("MP_EVIDENCE_FILE")))
+            store = _env_path("MP_EVIDENCE_FILE")
+            return _out(*add_records(records(args.json), lambda r: add_evidence(r, story=args.story, store=store),
+                                     store))
         if args.command == "lint":
             from orchestrator import word_bank
 

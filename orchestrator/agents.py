@@ -267,7 +267,7 @@ def get_agent_skill_path(agent_name: str, user_id: str, vertical: str = "ai-tech
 # `mp fetch` keeps whole pages out of the context that every later turn
 # re-reads (52.6M cached tokens on Oct 1).
 STORE_FINDINGS_SECTION = """## Store each finding as you confirm it (REQUIRED)
-You have a limited number of turns. The moment a finding passes the Self-Critique Gate, store it:
+You have a limited number of turns, and every command uses one. Store findings as they pass the Self-Critique Gate, a few at a time, not all at the end:
 
 ```
 mp finding add <<'EOF'
@@ -280,9 +280,9 @@ source_name: ...
 EOF
 ```
 
-One field per line. `importance` is high, medium, or low. Never write the finding as JSON in a Bash command: the command is refused. The command checks the finding against the research policy and the last 180 days of coverage. If it rejects one, it says why: fix it or drop it. A stored finding counts even if you run out of turns.
+One field per line. To store several findings in one command, put a line containing only `---` between them. `importance` is high, medium, or low. Never write a finding as JSON in a Bash command: the command is refused. The command checks each finding against the research policy and the last 180 days of coverage, and says why it rejects one: fix it or drop it. A stored finding counts even if you run out of turns.
 
-- Before you research a lead, check it: `mp seen "<url or title>"`.
+- Before you research your leads, check them in one call: `mp seen "<url or title>" "<another>"`.
 - To read a page, prefer `mp fetch <url> --max-chars 6000` over loading the whole page. If the reply has a `next_offset`, run it again with `--offset <next_offset>` to read on.
 - `mp findings list` shows what you have stored so far.
 - Run each `mp` command on its own. A pipe or `;` into any other program needs approval and is refused.
