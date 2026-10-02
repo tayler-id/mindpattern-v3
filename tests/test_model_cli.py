@@ -190,3 +190,16 @@ def test_tests_record_model_calls_into_a_temp_folder(tmp_path):
     assert os.environ["MP_TRACE_ROOT"].startswith(str(tmp_path))
     assert traces_root("ramsay") == tmp_path / "model-traces"
     assert traces_db_path("ramsay") == tmp_path / "model-traces" / "traces.db"
+
+
+def test_a_trace_that_cannot_be_written_never_fails_the_call():
+    """Fly's Slack handlers call models too; a read-only disk there must not cost a draft."""
+    stream = fixture("claude_success.ndjson")
+
+    def recorder(*args):
+        raise OSError("read-only file system")
+
+    result = call_model(CallRequest(task="writer", prompt="draft"), route=CLAUDE, recorder=recorder,
+                        runner=lambda argv, **kw: ClaudeProcessResult(stream, "", 0))
+    assert (result.outcome, result.ok) == ("success", True)
+    assert result.text == parse_claude_stream(stream).text
