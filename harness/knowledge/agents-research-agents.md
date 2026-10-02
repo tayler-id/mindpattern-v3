@@ -4,6 +4,8 @@
 
 ## Agent Roster
 
+The 13 research agents, where each one looks, and what it looks for.
+
 | Agent | Signal Source | Key Focus |
 |-------|--------------|-----------|
 | ai-agents | Frameworks, tools, production patterns | LangChain, CrewAI, Claude Agent SDK. 40% security findings |

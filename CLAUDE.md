@@ -66,7 +66,7 @@ Behavior that changes without a code edit lives in files, checked when loaded:
 | Social/synthesis agent skills | `agents/*.md` |
 | Identity files | `data/ramsay/mindpattern/` (soul.md, user.md, voice.md, decisions.md) |
 | Harness tickets | `harness/tickets/*.json` |
-| Knowledge graph files | `harness/knowledge/*.md` (31 files) |
+| Knowledge graph files | `harness/knowledge/*.md` (41 files) |
 | Knowledge algorithms | `harness/knowledge_sections.py` |
 | Knowledge graph module | `harness/knowledge_graph.py` |
 | Tests | `tests/test_*.py` |
@@ -106,7 +106,7 @@ This repo has four different "graphs" — do not confuse them:
 | Graph | Built from | Who consumes it |
 |-------|-----------|-----------------|
 | `graphify-out/` | this repo's Python source | **coding agents (you)** |
-| `harness/knowledge/` | 33 hand-written `.md` files | harness self-improvement agents |
+| `harness/knowledge/` | 41 hand-written `.md` files | harness self-improvement agents |
 | `kg/` | research **findings** (newsletter content) | the pipeline (`MP_KG_BUILD_ENABLED=1`) |
 | `orchestrator/site_graph.py` | published stories | the public website |
 

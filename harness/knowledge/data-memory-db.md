@@ -5,6 +5,8 @@
 ## Core Table Groups
 
 ### Findings Pipeline
+What the research agents found, plus the indexes that search and deduplicate it.
+
 - `findings` — id, run_date, agent, title, summary, importance, category, source_url, source_name. FTS5 via `findings_fts`
 - `findings_embeddings` — finding_id -> BLOB vector
 - `sources` — url_domain (UNIQUE), display_name, hit_count, high_value_count, last_seen
@@ -12,11 +14,15 @@
 - `claimed_topics` — run_date, agent, topic_hash, url (UNIQUE run_date+topic_hash). Prevents duplicate coverage
 
 ### Skills & Learning
+Skills, agent notes, and the lessons the pipeline keeps between runs.
+
 - `skills` / `skills_embeddings` — domain, title, description, steps, difficulty, source_url
 - `agent_notes` / `agent_notes_embeddings` — run_date, agent, note_type, content. Full-text searchable
 - `validated_patterns` / `validated_patterns_embeddings` — pattern_key, distilled_rule, observation_count, status
 
 ### Editorial Pipeline
+Approval reviews and the items each one covers.
+
 - `approval_reviews` — pipeline, stage, status, token (UNIQUE)
 - `approval_items` — review_id (FK), platform, content, status, feedback
 - `social_posts` / `social_posts_embeddings` — date, platform, content, gate2_action, posted
@@ -24,12 +30,16 @@
 - `pending_posts` — platform, content, approved_at, post_after, posted
 
 ### User Interaction
+Reader feedback and the preferences learned from it.
+
 - `user_feedback` / `feedback_embeddings` — email processing
 - `user_preferences` — email, topic, weight (UNIQUE email+topic)
 - `engagements` — platform, engagement_type, target_post_url, our_reply, status
 - `social_metrics` — platform, platform_post_id, likes, comments, impressions
 
 ### Quality & Signals
+Cross-pipeline signals and the quality scores of each run.
+
 - `signals` — source_pipeline, signal_type, topic, strength (0-1), evidence, run_date
 - `run_quality` — run_date (UNIQUE), total_findings, unique_sources, overall_score, details_json
 - `agent_checks` — run_date, agent, prompt_hash, check_name, passed, value, expected

@@ -488,3 +488,17 @@ class TestFlattenSections:
         assert "test/file#A#B" in ids
         assert "test/file#C" in ids
         assert len(flat) == 3
+
+
+def test_every_knowledge_page_is_indexed_and_every_link_resolves():
+    """A page for a new top-level package (core/, mp/, policies/) must still map to its slug."""
+    from pathlib import Path
+
+    from harness import knowledge_graph as kg
+
+    assert kg._path_to_slug(Path("core-model-cli.md")) == "core/model-cli"
+    assert kg._path_to_slug(Path("dashboard-campaignos.md")) == "dashboard/campaignos"
+    result = kg.check()
+    assert result["broken"] == []
+    for name in ("refs", "index", "code_refs"):
+        assert result["results"][name]["pass"], (name, result["results"][name])

@@ -1,7 +1,7 @@
 # MindPattern Knowledge Graph
 
 > Auto-evolving codebase knowledge. Updated by harness after every run.
-> Last updated: 2026-04-02
+> Last updated: 2026-10-02
 
 ## Modules
 
@@ -16,12 +16,22 @@
 - [[orchestrator/prompt_tracker]] — Prompt change detection, regression check, auto-rollback
 - [[orchestrator/analyzer]] — Self-optimization: trace analysis, skill file diffs
 - [[orchestrator/router]] — Model routing, max turns, timeouts, pricing per task type
+- [[core/model_cli]]. One call path for Claude and Codex, with routes from config/models.json, fallback, and call recording
+- [[core/trace_store]]. Every model call, subagent, and tool step in traces.db, raw streams on disk, the trace CLI
+- [[mp/cli]]. The research agents' deterministic tools: store findings, check coverage, fetch pages, store evidence
+- [[orchestrator/deep_dive]]. One Sonnet 5.5 agent per Top story gathers evidence before the issue is written
+- [[orchestrator/newsletter_editor]]. Sol line edit of the issue, applied only where a code guard finds no fact changed
+- [[policies/files]]. Writing, editorial, research and observability policies, and the JSON contracts models answer in
+- [[tools/replay]]. Replay a past day on real data, compare two issues blind, report usage
+- [[dashboard/campaignos]]. Story revision ids, the one-file-per-slug rule, campaign attribution on reader events
 - [[orchestrator/sync]] — Fly.io sync: bundle DBs + reports, SFTP upload
 - [[social/pipeline]] — Social posting orchestration
 - [[social/writers]] — Draft generation per platform
 - [[social/approval]] — Gate 1 / Gate 2 / Expeditor approval chain
 - [[social/posting]] — Platform API posting (Bluesky, LinkedIn)
 - [[memory/findings]] — Findings CRUD, dedup, embeddings, FTS
+- [[memory/embeddings]]. Embedding model, vector math, and the offline double the tests use
+- [[memory/graph]]. Entity graph storage and traversal with SQLite recursive CTEs
 - [[memory/db]] — memory.db connection, schema init (37 tables)
 - [[slack_bot/main]] — Socket Mode daemon, channel handler pattern
 - [[harness/run]] — Harness orchestrator: scout, research, parallel fix, review, health report
