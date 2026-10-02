@@ -108,6 +108,13 @@ Use `pnpm dev --hostname 127.0.0.1 --port 3010` during normal interactive UI dev
 - Keep tests deterministic, offline, and independent of personal state.
 - Preserve public API response contracts used by the Rabbit Hole site.
 
+## Model calls, replays, and traces
+
+- Call models only through `core/model_cli.py` (`call_model` or `run_task_process`) with a task name from `config/models.json`. Never build a `claude` or `codex` argv by hand.
+- Tests run with fake `claude` and `codex` first on PATH (`tests/conftest.py`), so a test that reaches a real model fails fast. Give a test its own fake when it needs one.
+- `tools/replay_day.py` spends real model usage unless `--dry-run`. It reads the live state root read-only and writes only to a scratch workspace and `--out`.
+- Inspect runs with `python -m orchestrator.trace`. Raw traces hold fetched pages and identity files, so keep them local.
+
 ## Safety and ownership boundaries
 
 - Do not run the full live pipeline, send newsletters, post to social media, connect a live Slack bot, deploy Fly/Vercel, alter launchd, or enable live providers unless the task explicitly authorizes it.
