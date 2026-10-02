@@ -48,6 +48,19 @@ if [ "$HOUR" -lt 5 ] || [ "$HOUR" -ge 10 ]; then
     exit 0
 fi
 
+# A slot that fires in a dark wake on battery gets about two seconds before the
+# Mac sleeps again, and caffeinate -s only holds on AC power. Runs started that
+# way on 2026-09-28 and 09-29 crawled for 14 hours through DNS failures and
+# spent every retry. Skip them and let the next slot try.
+if ! pmset -g ps | grep -q "'AC Power'" && ! pmset -g systemstate | grep -q Graphics; then
+    log "SKIP: Dark wake on battery, the Mac is about to sleep again"
+    exit 0
+fi
+if ! curl -sS -m 10 -o /dev/null https://api.anthropic.com 2>/dev/null; then
+    log "SKIP: api.anthropic.com unreachable, next slot retries"
+    exit 0
+fi
+
 # Atomic lock acquisition via mkdir (atomic on all POSIX systems)
 LOCK_DIR="${LOCK}.d"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
