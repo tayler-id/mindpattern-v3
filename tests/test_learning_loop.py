@@ -125,9 +125,12 @@ class TestPromptRequestsNotes:
 
 class TestConsolidateSeesPromotedPatterns:
     def _add_note(self, db, agent, content, note_type="source_quality"):
+        from datetime import date
+
         from memory.patterns import store_note
 
-        return store_note(db, "2026-08-21", agent, note_type, content)
+        # consolidate() reads the last 30 days, so a fixed date expires (it did on 2026-09-20).
+        return store_note(db, date.today().isoformat(), agent, note_type, content)
 
     def test_matching_note_updates_promoted_pattern_instead_of_duplicating(
         self, db, monkeypatch
