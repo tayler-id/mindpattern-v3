@@ -170,3 +170,79 @@ class TestNoDriftFromTheOtherLists:
 
         voice = Path("data/ramsay/mindpattern/voice.md").read_text()
         assert word_bank.VOICE_SECTION_MARKER in voice
+
+
+class TestWritingPolicyFile:
+    """policies/writing.json is checked row by row when it loads."""
+
+    GOOD = {"term": "landed", "tier": "ban", "pattern": r"\blanded\b", "instead": "say released",
+            "example": "It landed today.", "surfaces": ["newsletter"]}
+
+    def _load(self, tmp_path, *rows):
+        import json
+        path = tmp_path / "writing.json"
+        path.write_text(json.dumps({"budgets": {"em_dash_per_issue": 6}, "lexicon": list(rows)}))
+        return word_bank.load_bank(path)
+
+    def test_a_valid_row_loads_with_its_provenance(self, tmp_path):
+        bank = self._load(tmp_path, {**self.GOOD, "models": ["claude-opus-5-5"], "review_by": "2027-01-02",
+                                     "counterexample": "The plane stayed up."})
+        assert bank[0].term == "landed"
+        assert bank[0].models == ("claude-opus-5-5",)
+        assert bank[0].review_by == "2027-01-02"
+
+    import pytest as _pytest
+
+    @_pytest.mark.parametrize("change,message", [
+        ({"example": "It shipped today."}, "misses its own example"),
+        ({"counterexample": "The deal landed."}, "matches its counterexample"),
+        ({"pattern": "(unclosed"}, "does not compile"),
+        ({"tier": "maybe"}, "tier must be ban or cap"),
+        ({"tier": "cap"}, "needs cap_per_10k above zero"),
+        ({"surfaces": ["podcast"]}, "unknown surfaces"),
+        ({"severity": "high"}, "unknown keys"),
+    ])
+    def test_a_broken_row_fails_the_load_with_its_reason(self, tmp_path, change, message):
+        import pytest
+        with pytest.raises(word_bank.WritingPolicyError, match=message):
+            self._load(tmp_path, {**self.GOOD, **change})
+
+    def test_the_shipped_policy_loads_and_sets_the_em_dash_budget(self):
+        from orchestrator import prose_gate
+        assert len(word_bank.load_bank()) == len(word_bank.BANK) >= 70
+        assert prose_gate.EM_DASH_BUDGET == word_bank.budgets()["em_dash_per_issue"] == 6
+
+
+class TestWriterPromptsFollowTheirOwnRules:
+    """The writer prompt's example and the pattern fixes must not model banned habits (2026-10-02 research)."""
+
+    def test_the_quality_bar_example_passes_the_newsletter_gate(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parent.parent / "agents" / "synthesis-writer.md").read_text()
+        example = text[text.index("## Quality Bar"):text.index("Notice the specific details")]
+        assert word_bank.violations(example, "newsletter") == []
+        assert "—" not in example
+
+    def test_no_example_fix_invents_a_first_person_experience(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        for name in ("agents/references/ai-writing-patterns.md", "agents/synthesis-writer.md"):
+            text = (root / name).read_text()
+            for invented in ("I've seen three teams", "I stopped batching", "My designer friends",
+                             "This caught me off guard", "I've been reading about this",
+                             "I spent 3 hours debugging"):
+                assert invented not in text, (name, invented)
+
+
+import pytest as _pytest_prompts
+
+WRITER_PROMPTS = ("agents/synthesis-writer.md", "agents/site-story-writer.md", "agents/synthesis-selector.md",
+                  "prompts/synthesis-pass2.md", "prompts/research-agent-system.md")
+
+
+@_pytest_prompts.mark.parametrize("name", WRITER_PROMPTS)
+def test_every_writer_prompt_passes_the_writing_policy(name):
+    """Models copy the style of their instructions, so the instructions follow the same rules."""
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent / name).read_text()
+    assert word_bank.violations(text, "newsletter") == []

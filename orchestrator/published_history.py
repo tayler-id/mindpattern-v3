@@ -18,6 +18,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from . import editorial
 from .evaluator import _jaccard, _story_words
 
 logger = logging.getLogger(__name__)
@@ -42,8 +43,8 @@ _MD_LINK_RE = re.compile(r"\((https?://[^)\s]+)\)")
 # (a changelog, a docs page) whose reappearance is release tracking, not a
 # re-reported story. 2026-08-18 calibration: the Claude Code changelog ran in
 # 11 issues in 30 days by design, while genuinely re-reported repos (caveman,
-# ai-memory, rakazo) had 1-3 prior appearances.
-TRACKER_URL_THRESHOLD = 5
+# ai-memory, rakazo) had 1-3 prior appearances. Set in policies/editorial.json.
+TRACKER_URL_THRESHOLD = editorial.load().tracker_url_threshold
 
 # Recurring-by-design sections whose entries repeat legitimately.
 _SKIP_SECTIONS = {

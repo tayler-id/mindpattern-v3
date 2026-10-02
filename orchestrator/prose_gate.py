@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 
 EM_DASH = "—"
 
-# Baseline measured from reports/ramsay/2026-07-17..24 (pre-Opus-5 issues):
-# 2 to 4 em-dashes per issue at 6,200-9,000 words. Generic tools are far looser
-# — deslop defaults to 14 per 500 words, which today's 2.3 per 500 would pass
-# while still reading as machine prose. Calibrate to the corpus, not to a tool.
-EM_DASH_BUDGET = 6
+# policies/writing.json budgets.em_dash_per_issue. The 6 set there came from
+# reports/ramsay/2026-07-17..24 (pre-Opus-5 issues): 2 to 4 em-dashes per issue
+# at 6,200-9,000 words. Generic tools are far looser (deslop defaults to 14 per
+# 500 words). Calibrate to the corpus, not to a tool.
+EM_DASH_BUDGET = int(word_bank.budgets()["em_dash_per_issue"])
 
 # Spans whose contents are never rewritten: fenced code, inline code, markdown
 # link/image targets, and bare URLs. An em-dash inside any of these is data.

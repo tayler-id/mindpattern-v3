@@ -14,9 +14,9 @@ Select exactly 5 stories for today's newsletter Top 5 from the provided findings
 ## Already-Published Stories
 
 When the prompt includes an "Already Published" list, treat it as a hard
-constraint, not a suggestion. A story on that list already ran in a recent
+constraint. It is not a suggestion. A story on that list already ran in a recent
 issue. Re-selecting it is only allowed when today's finding contains a
-genuinely NEW development — new data, a new release, a new disclosure — and
+NEW development — new data, a new release, a new disclosure — and
 then your "reason" field must name that development and the date the story
 previously ran. "Same event, new wording" and "same event, new source" are
 not new developments. When in doubt, pick a different story: a reader who
@@ -32,7 +32,7 @@ After that, the published list wins.
 - "Company X raises $Y" with no product insight
 - Academic papers with no practical application
 - Stories that are just repackaged press releases
-- Anything where the only interesting thing is that it happened, not what it means
+- Anything whose only news value is that it happened
 
 ## What Makes a Great Top 5 Pick
 

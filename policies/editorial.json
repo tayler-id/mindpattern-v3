@@ -1,0 +1,14 @@
+{
+  "_about": "Editorial counts and caps. Read by orchestrator/editorial.py and checked when loaded. newsletter.top_stories must match the count the selector and writer prompts state (agents/synthesis-selector.md, prompts/synthesis-pass2.md); a test holds them together.",
+  "newsletter": {
+    "top_stories": 5,
+    "deep_dive_stories": 5
+  },
+  "site": {
+    "candidate_stories_per_day": 5,
+    "issue_stories_per_day": 20
+  },
+  "republish_check": {
+    "tracker_url_threshold": 5
+  }
+}
