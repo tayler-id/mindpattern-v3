@@ -4,6 +4,7 @@ Public routes: read-only, no PII, paginated, date-filtered
 Private routes: require bearer token auth
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -2399,7 +2400,7 @@ def _story_from_structured_issue_slug(*, story_slug: str, user: str) -> dict | N
     return _story_from_issue(issue, story_slug)
 
 
-_STORY_FILE_INDEX: dict[str, tuple[float, list[Path], dict[str, Path]]] = {}
+_STORY_FILE_INDEX: dict[str, tuple[float, list[Path], dict[str, tuple[Path, ...]]]] = {}
 
 
 def _reset_story_file_index() -> None:
@@ -2407,7 +2408,24 @@ def _reset_story_file_index() -> None:
     _STORY_FILE_INDEX.clear()
 
 
-def _build_story_file_index(user: str) -> tuple[list[Path], dict[str, Path]]:
+def _story_file_identity(path: Path, base: Path) -> str | None:
+    """The slug a story file answers to: its stem without its own date folder's prefix.
+
+    `2026-07-12/2026-07-12-foo.json` and `2026-07-12/foo.json` are both `foo`,
+    so such a pair is one ambiguous story (CampaignOS spec 6.1). Only date
+    folders and the legacy flat layout hold public stories.
+    """
+    if path.parent == base:
+        return path.stem
+    if path.parent.parent != base or not _valid_run_date(path.parent.name):
+        return None
+    prefix = f"{path.parent.name}-"
+    if path.stem.startswith(prefix) and len(path.stem) > len(prefix):
+        return path.stem[len(prefix):]
+    return path.stem
+
+
+def _build_story_file_index(user: str) -> tuple[list[Path], dict[str, tuple[Path, ...]]]:
     base = (REPORTS_DIR / user / "site-stories").resolve()
     try:
         base.relative_to(REPORTS_DIR.resolve())
@@ -2420,14 +2438,15 @@ def _build_story_file_index(user: str) -> tuple[list[Path], dict[str, Path]]:
         key=lambda path: path.as_posix(),
         reverse=True,
     )
-    # First wins, matching the newest-first order the listing already promised.
-    by_slug: dict[str, Path] = {}
+    by_identity: dict[str, list[Path]] = {}
     for path in files:
-        by_slug.setdefault(path.stem, path)
-    return files, by_slug
+        identity = _story_file_identity(path, base)
+        if identity is not None:
+            by_identity.setdefault(identity, []).append(path)
+    return files, {identity: tuple(sorted(paths)) for identity, paths in by_identity.items()}
 
 
-def _story_file_entry(user: str) -> tuple[list[Path], dict[str, Path]]:
+def _story_file_entry(user: str) -> tuple[list[Path], dict[str, tuple[Path, ...]]]:
     """The story-file listing and its slug index, rebuilt once per publish.
 
     rglob over reports/<user>/site-stories walks 3,468 files locally and more
@@ -2445,9 +2464,9 @@ def _story_file_entry(user: str) -> tuple[list[Path], dict[str, Path]]:
     if cached is not None and cached[0] == fingerprint:
         return cached[1], cached[2]
 
-    files, by_slug = _build_story_file_index(safe_user)
-    _STORY_FILE_INDEX[safe_user] = (fingerprint, files, by_slug)
-    return files, by_slug
+    files, by_identity = _build_story_file_index(safe_user)
+    _STORY_FILE_INDEX[safe_user] = (fingerprint, files, by_identity)
+    return files, by_identity
 
 
 def _public_story_files(user: str) -> list[Path]:
@@ -2455,12 +2474,8 @@ def _public_story_files(user: str) -> list[Path]:
 
 
 def _story_file_for_slug(user: str, story_slug: str) -> Path | None:
-    """The file backing one slug, or None. O(1) against the memoized index."""
-    try:
-        normalized = normalize_slug(story_slug)
-    except ValueError:
-        return None
-    return _story_file_entry(user)[1].get(normalized)
+    """The one file backing a slug, or None when there is none or more than one."""
+    return _resolve_story_file(story_slug, user=user)[0]
 
 
 def _public_story_source_refs(items: list[dict]) -> list[dict]:
@@ -3404,6 +3419,47 @@ _STORY_RESPONSE_CACHE: dict[tuple[str, str], tuple[float, dict]] = {}
 _STORY_ENRICH_SEMAPHORE = asyncio.Semaphore(4)
 
 
+def _matching_story_files(story_slug: str, *, user: str) -> list[Path]:
+    """Every story file the public slug lookup could serve for this slug.
+
+    Bare-slug and date-prefixed filenames denote the same story, matched
+    across every archive date directory (plus the legacy undated layout with
+    files directly under site-stories/). The list is the slug's full identity:
+    more than one entry means the slug is ambiguous. One dict lookup against
+    the memoized index, never a walk of the tree.
+    """
+    try:
+        slug = normalize_slug(story_slug)
+    except ValueError:
+        return []
+    identities = {slug}
+    prefix_date = _story_date_from_slug(slug)
+    if prefix_date and slug.startswith(f"{prefix_date}-") and len(slug) > 11:
+        identities.add(slug[11:])
+    by_identity = _story_file_entry(user)[1]
+    return sorted({path for identity in identities for path in by_identity.get(identity, ())})
+
+
+def _resolve_story_file(story_slug: str, *, user: str) -> tuple[Path | None, list[Path]]:
+    """Deterministically resolve one story file for a public slug, or refuse.
+
+    Returns ``(path, matches)``. A slug matching more than one file — across
+    archive dates or within one date — is rejected outright (path is None and
+    the duplicates are logged), never served first-match. This is the same
+    resolution rule the CampaignOS pilot's seeding applies (spec 6.1).
+    """
+    matches = _matching_story_files(story_slug, user=user)
+    if len(matches) > 1:
+        logger.warning(
+            "story slug %r (user %r) matches %d files; rejecting until the "
+            "duplicates are removed: %s",
+            story_slug, user, len(matches),
+            ", ".join(str(path) for path in matches),
+        )
+        return None, matches
+    return (matches[0] if matches else None), matches
+
+
 def _resolve_story_response(
     story_slug: str, stories: list[dict], *, user: str, fingerprint: float
 ) -> dict | None:
@@ -3415,7 +3471,9 @@ def _resolve_story_response(
     memory-only and pay recompute after a restart."""
     story = None
     disk_key = None
-    source_path = _story_file_for_slug(user, story_slug)
+    source_path, matches = _resolve_story_file(story_slug, user=user)
+    if source_path is None and len(matches) > 1:
+        return None  # ambiguous slug: rejected and logged, never first-match
     if source_path is not None:
         # Key the envelope by the stat taken BEFORE the read. Story JSONs are
         # rewritten in place on the live box (sync.py uploads a tar the server
@@ -3500,6 +3558,60 @@ async def get_public_story(slug: str, user: str = Query("ramsay")):
     if enriched is None:
         return JSONResponse(status_code=404, content={"error": "Story not found"})
     return enriched
+
+
+def _story_revision_impl(story_slug: str, user: str) -> dict | JSONResponse:
+    path, matches = _resolve_story_file(story_slug, user=user)
+    if path is None and len(matches) > 1:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "Ambiguous story slug",
+                "reason": (
+                    f"slug '{story_slug}' resolves to {len(matches)} story files; "
+                    "refusing until the duplicates are removed"
+                ),
+                "matches": [f"{p.parent.name}/{p.name}" for p in matches],
+            },
+        )
+    not_found = JSONResponse(status_code=404, content={"error": "Story revision not found"})
+    if path is None or not _valid_run_date(path.parent.name):
+        # No file, or the legacy undated layout: no date-scoped revision identity.
+        return not_found
+    if _load_public_story_file(path) is None:
+        return not_found  # the public story route would not serve this file
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return not_found
+    return {
+        "kind": "story_revision",
+        "story_revision_sha256": hashlib.sha256(raw).hexdigest(),
+        "story_date": path.parent.name,
+        "story_slug": path.stem,
+        "story_filename": path.name,
+        "requested_slug": story_slug,
+    }
+
+
+@router.get("/api/stories/{slug}/revision")
+async def get_public_story_revision(slug: str, user: str = Query("ramsay")):
+    """Public: exact revision identity of the raw story file served at /s/<slug>.
+
+    Reports the SHA-256 of the raw bytes on disk — the file is never rewritten
+    or re-serialized — plus the story date and the canonical slug/filename the
+    hash belongs to. A slug matching no served file has no revision (404); a
+    slug matching more than one file (duplicate story files, cross- or
+    same-date) is an explicit 409, never a first-match answer, so clients can
+    classify the story as unverifiable rather than changed.
+    """
+    if _safe_user(user) is None:
+        return JSONResponse(status_code=404, content={"error": "Story revision not found"})
+    try:
+        story_slug = normalize_slug(slug)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"error": "Story revision not found"})
+    return await asyncio.to_thread(_story_revision_impl, story_slug, user)
 
 
 @router.get("/api/entities/{slug}/neighbors")

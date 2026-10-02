@@ -24,7 +24,7 @@ def story_tree(tmp_path, monkeypatch):
         d = stories / f"2026-08-{day + 1:02d}"
         d.mkdir(parents=True)
         for n in range(20):
-            slug = f"2026-08-{day + 1:02d}-story-{n}"
+            slug = f"2026-08-{day + 1:02d}-day{day + 1}-story-{n}"
             (d / f"{slug}.json").write_text(json.dumps({
                 "slug": slug, "title": f"Story {n}", "status": "published",
                 "issue_date": f"2026-08-{day + 1:02d}",
@@ -56,8 +56,8 @@ class TestStoryFileIndex:
         assert walks["n"] == 1, f"40 lookups walked the tree {walks['n']} times"
 
     def test_a_slug_resolves_without_scanning_every_file(self, story_tree):
-        path = api_mod._story_file_for_slug("ramsay", "2026-08-03-story-7")
-        assert path is not None and path.stem == "2026-08-03-story-7"
+        path = api_mod._story_file_for_slug("ramsay", "2026-08-03-day3-story-7")
+        assert path is not None and path.stem == "2026-08-03-day3-story-7"
 
     def test_an_unknown_slug_resolves_to_none_immediately(self, story_tree):
         assert api_mod._story_file_for_slug("ramsay", "no-such-story") is None
@@ -77,5 +77,43 @@ class TestStoryFileIndex:
         names = [p.as_posix() for p in files]
         assert names == sorted(names, reverse=True)
 
+    def test_one_slug_never_walks_the_tree_or_probes_date_folders(self, story_tree, monkeypatch):
+        """The CampaignOS duplicate check reads the same index (2026-10-02 merge of #26)."""
+        api_mod._public_story_files("ramsay")
+        import pathlib as _pl
+
+        def no_walk(self, *args):
+            raise AssertionError(f"walked {self}")
+
+        monkeypatch.setattr(_pl.Path, "rglob", no_walk)
+        monkeypatch.setattr(_pl.Path, "iterdir", no_walk)
+        for slug in ("day4-story-2", "2026-08-04-day4-story-2"):
+            assert [p.name for p in api_mod._matching_story_files(slug, user="ramsay")] == [
+                "2026-08-04-day4-story-2.json"]
+        assert api_mod._matching_story_files("day4-story-99", user="ramsay") == []
+
     def test_a_traversal_slug_is_refused(self, story_tree):
         assert api_mod._story_file_for_slug("ramsay", "../../etc/passwd") is None
+
+
+class TestDuplicateSlugsAreRefusedEverywhere:
+    """PR #26's rule covers the disk cache, the warm-up and the issue fallback too."""
+
+    @pytest.fixture
+    def duplicate_pair(self, story_tree):
+        day = story_tree / "ramsay" / "site-stories" / "2026-08-02"
+        for name in ("twin.json", "2026-08-02-twin.json"):
+            (day / name).write_text(json.dumps({"slug": "twin", "title": "Twin", "status": "published"}))
+        api_mod._reset_fingerprint_cache()
+        api_mod._reset_story_file_index()
+        return story_tree
+
+    def test_the_file_lookup_refuses_a_duplicate_pair(self, duplicate_pair):
+        assert len(api_mod._matching_story_files("twin", user="ramsay")) == 2
+        assert api_mod._story_file_for_slug("ramsay", "twin") is None
+        assert api_mod._story_file_for_slug("ramsay", "2026-08-02-twin") is None
+
+    def test_the_issue_fallback_cannot_serve_an_ambiguous_slug(self, duplicate_pair, monkeypatch):
+        monkeypatch.setattr(api_mod, "_story_from_structured_issue_slug",
+                            lambda **kw: {"slug": "twin", "title": "From the issue"})
+        assert api_mod._resolve_story_response("twin", [], user="ramsay", fingerprint=1.0) is None
