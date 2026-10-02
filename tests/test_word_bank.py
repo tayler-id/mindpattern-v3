@@ -237,7 +237,8 @@ class TestWriterPromptsFollowTheirOwnRules:
 import pytest as _pytest_prompts
 
 WRITER_PROMPTS = ("agents/synthesis-writer.md", "agents/site-story-writer.md", "agents/synthesis-selector.md",
-                  "agents/story-deep-dive.md", "prompts/synthesis-pass2.md", "prompts/research-agent-system.md")
+                  "agents/story-deep-dive.md", "agents/newsletter-editor.md", "prompts/synthesis-pass2.md",
+                  "prompts/research-agent-system.md")
 
 
 @_pytest_prompts.mark.parametrize("name", WRITER_PROMPTS)

@@ -19,12 +19,14 @@ from pathlib import Path
 import memory
 from . import agents as agent_dispatch
 from .arcs import format_arcs_for_synthesis, load_narrative_arcs
+from core import trace_store
+from core.trace_store import set_run_context
 from .checkpoint import Checkpoint
 from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
-from . import word_bank
+from . import deep_dive, editorial, newsletter_editor, word_bank
 from .prose_gate import sanitize as prose_sanitize
 from . import published_history
 from .traces_db import (
@@ -639,6 +641,8 @@ class ResearchPipeline:
             run_id=self.pipeline.run_id,
             status="running",
         )
+        # Every model call from here on is filed under this run (core.trace_store).
+        set_run_context(run_id=self.traces_run_id, run_date=self.date_str, user_id=self.user_id, phase=None)
 
     def run_sync_only(self) -> int:
         """Re-run only the Fly sync phase.
@@ -709,6 +713,7 @@ class ResearchPipeline:
                 )
         self.traces_run_id = resume_id
         self.pipeline.run_id = resume_id
+        set_run_context(run_id=resume_id)
         self.pipeline.current_phase = resume_phase
 
         # Rehydrate what completed-phase checkpoints can restore. Preflight
@@ -750,6 +755,7 @@ class ResearchPipeline:
                     if self.pipeline.current_phase != phase:
                         self.pipeline.transition(phase)
                     logger.info(f"Phase: {phase.value}")
+                    set_run_context(phase=phase.value)
 
                     # Log phase start to traces.db
                     log_event(self.traces_conn, self.traces_run_id,
@@ -1642,7 +1648,7 @@ class ResearchPipeline:
 
         # Pass 1: Story selection
         pass1_prompt = (
-            f"Select exactly 5 stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
+            f"Select exactly {editorial.load().top_stories} stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
@@ -1845,6 +1851,26 @@ class ResearchPipeline:
                 json.dumps({"error": f"{type(e).__name__}: {e}"}),
             )
 
+        # Deep dives on the picks (config task "story_deep_dive"): primary
+        # source, corroboration, numbers, and the strongest counterpoint for
+        # each, stored with `mp evidence add`. Fails open to the findings alone.
+        deep_dive_block = ""
+        dive_limit = editorial.load().deep_dive_stories
+        if dive_limit and not self.dry_run and os.environ.get("MP_DRY_RUN") != "1":
+            try:
+                stories = deep_dive.stories_from_selection(pass1_output, today_findings, dive_limit)
+                if stories:
+                    evidence_dir = PROJECT_ROOT / "data" / self.user_id / "runs" / self.traces_run_id / "deep-dive"
+                    stories = deep_dive.run_deep_dives(
+                        stories, evidence_dir=evidence_dir,
+                        env={"MP_USER_ID": self.user_id, "MP_RUN_DATE": self.date_str})
+                    deep_dive_block = deep_dive.evidence_block(stories)
+                    log_event(self.traces_conn, self.traces_run_id, "deep_dive",
+                              json.dumps(deep_dive.summary(stories)))
+                    logger.info("Deep dives: %s", deep_dive.summary(stories))
+            except Exception as e:
+                logger.warning(f"Deep dives failed open: {e}")
+
         # Rendered from the same rows the prose gate measures after the write,
         # so the writer is never marked down for a term nobody showed it.
         bank_block = word_bank.prompt_block("newsletter")
@@ -1868,6 +1894,7 @@ class ResearchPipeline:
             f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
             f"{fallback_mode_text}"
             f"## Story Selection\n{pass1_output}\n\n"
+            f"{deep_dive_block + chr(10) if deep_dive_block else ''}"
             f"{narrative_arcs_context}\n\n"
             + (
                 "## Section-Item Dedup\n"
@@ -1988,6 +2015,16 @@ class ResearchPipeline:
                               "reason": reason,
                           }))
                 break
+
+        # Line edits by a second model family (config task "newsletter_editor",
+        # GPT-6.1 Sol), applied under a fact guard. The writing-policy hits are
+        # its first targets. Fails open to the writer's text.
+        if self.newsletter_text.strip():
+            editor = newsletter_editor.edit_newsletter(self.newsletter_text)
+            self.newsletter_text = editor.text
+            log_event(self.traces_conn, self.traces_run_id, "newsletter_editor",
+                      json.dumps(editor.summary()))
+            logger.info("Newsletter editor: %s", editor.summary())
 
         # Deterministic prose gate, applied to whichever text the loop produced
         # (written or fallback) and before anything reads it. Style rules a
@@ -2268,11 +2305,7 @@ class ResearchPipeline:
                 "reason": "MP_SITE_CONTENT_DISABLED=1",
             }
 
-        try:
-            max_stories = int(os.environ.get("MP_SITE_CONTENT_MAX_STORIES", "5"))
-        except ValueError:
-            max_stories = 5
-        max_stories = max(1, min(max_stories, 10))
+        max_stories = editorial.load().candidate_stories_per_day
 
         try:
             from .site_content_engine import run_site_content_for_date
@@ -2309,10 +2342,7 @@ class ResearchPipeline:
                 # The writer->critic loop was 54% of a run's input tokens and
                 # 80% of its output at ~80 stories a day. Unwritten units stay
                 # on the site as newsletter-backed pages.
-                try:
-                    max_issue_stories = int(os.environ.get("MP_SITE_ISSUE_STORIES_MAX", "20"))
-                except ValueError:
-                    max_issue_stories = 20
+                max_issue_stories = editorial.load().issue_stories_per_day
                 issue_outcome = write_issue_stories_for_date(
                     date=self.date_str,
                     user=self.user_id,
@@ -2404,8 +2434,28 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning("KG build failed open: %s", e)
 
+    def _check_usage_and_prune_traces(self) -> None:
+        """Alert when this run's model usage passes the soft budget, then drop
+        raw traces past their retention (policies/observability.json). Never
+        blocks the run."""
+        try:
+            policy = trace_store.load_observability_policy()
+            totals = trace_store.run_totals(self.traces_run_id, user_id=self.user_id)
+            log_event(self.traces_conn, self.traces_run_id, "model_usage", json.dumps(totals))
+            over = trace_store.over_budget(totals, policy)
+            if over:
+                log_event(self.traces_conn, self.traces_run_id, "usage_over_budget", json.dumps(over))
+                self._send_alert(f":money_with_wings: Run {self.traces_run_id} went over its soft budget: "
+                                 + "; ".join(over) + f". See: python -m orchestrator.trace show {self.traces_run_id}")
+            removed = trace_store.prune_raw_traces(policy.raw_trace_days, user_id=self.user_id)
+            if removed:
+                logger.info("Pruned raw traces for %d day(s) past %d days", len(removed), policy.raw_trace_days)
+        except Exception as e:
+            logger.warning(f"Usage check and trace pruning failed (non-critical): {e}")
+
     def _phase_learn(self) -> dict:
         """Phase 6: Learn (Python + one Sonnet call)."""
+        self._check_usage_and_prune_traces()
         trending_topics = [t.get("topic", "") for t in self.trends] if self.trends else None
         quality = memory.evaluate_run(self.db, self.date_str, trending_topics=trending_topics)
         logger.info(f"Quality score: {quality.get('overall_score', 'N/A')}")
@@ -2882,6 +2932,11 @@ class ResearchPipeline:
 
         Never raises: a broken alert path must not take a run down.
         """
+        if os.environ.get("MP_DISABLE_OUTBOUND") == "1":
+            # Replays and dry runs must not page anyone (AGENTS.md: every
+            # outbound side effect honors the kill switch).
+            logger.warning("ALERT NOT SENT (MP_DISABLE_OUTBOUND=1): %s", message[:300])
+            return False
         channel = os.environ.get("MP_ALERT_SLACK_CHANNEL", "C0ALSRHAATH")
         try:
             result = subprocess.run(

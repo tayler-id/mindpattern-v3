@@ -20,8 +20,11 @@ def test_the_prompts_state_the_same_top_story_count():
     assert f"**Top {count}:**" in (ROOT / "prompts" / "synthesis-pass2.md").read_text()
 
 
-def test_the_republish_check_reads_the_policy():
+def test_the_runner_and_republish_check_read_the_policy():
     from orchestrator import published_history
+    source = (ROOT / "orchestrator" / "runner.py").read_text()
+    assert "Select exactly {editorial.load().top_stories} stories" in source
+    assert "MP_SITE_ISSUE_STORIES_MAX" not in source and "MP_SITE_CONTENT_MAX_STORIES" not in source
     assert published_history.TRACKER_URL_THRESHOLD == load().tracker_url_threshold
 
 

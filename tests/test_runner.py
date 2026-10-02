@@ -254,6 +254,7 @@ def pipeline(memory_db, traces_conn):
         p = ResearchPipeline.__new__(ResearchPipeline)
         p.user_id = "testuser"
         p.date_str = "2026-03-19"
+        p.dry_run = False
         p.user_config = {
             "id": "testuser", "email": "test@example.com",
             "newsletter_title": "Test Newsletter",
@@ -341,6 +342,10 @@ class TestPipelineInit:
         assert p.social_result == {}
         mock_date.assert_called_once_with("2026-03-19")
         mock_create.assert_called_once()
+        from core.trace_store import RunContext, clear_run_context, run_context
+        assert run_context() == RunContext(run_id=p.traces_run_id, run_date="2026-03-19",
+                                           phase=None, user_id="testuser")
+        clear_run_context()
 
         mem_db.close()
         traces.close()
@@ -2499,6 +2504,37 @@ class TestHelpers:
             pipeline._send_alert("test alert")
         mock_run.assert_called_once()
         mock_urlopen.assert_called_once()
+
+    def test_learn_alerts_when_a_run_passes_its_soft_budget_and_prunes_old_traces(self, pipeline, tmp_path,
+                                                                                    monkeypatch):
+        import sqlite3 as _sqlite3
+        from core import trace_store as ts
+        root = tmp_path / "trace-root"
+        monkeypatch.setenv("MP_TRACE_ROOT", str(root))
+        (root / "2026-01-01").mkdir(parents=True)
+        pipeline.traces_run_id = "research-2026-03-19-big"
+        conn = _sqlite3.connect(root / "traces.db")
+        ts.ensure_model_call_tables(conn)
+        conn.execute("INSERT INTO model_calls (id, run_id, task, provider, outcome, output_tokens, cost_usd) "
+                     "VALUES ('c1', 'research-2026-03-19-big', 'research_agent', 'claude', 'success', 3500000, 150)")
+        conn.commit()
+        conn.close()
+        pipeline._check_usage_and_prune_traces()
+        alert = pipeline._send_alert.call_args.args[0]
+        assert "went over its soft budget" in alert and "3,500,000 output tokens" in alert
+        assert not (root / "2026-01-01").exists()
+
+    def test_send_alert_sends_nothing_when_outbound_is_disabled(self, pipeline, monkeypatch):
+        from orchestrator.runner import ResearchPipeline
+        pipeline._send_alert = ResearchPipeline._send_alert.__get__(pipeline)
+        monkeypatch.setenv("MP_DISABLE_OUTBOUND", "1")
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
+            assert pipeline._send_alert("replay tripped the quality floor") is False
+        mock_run.assert_not_called()
+        mock_urlopen.assert_not_called()
 
     def test_close(self, pipeline):
         mock_db = MagicMock()
