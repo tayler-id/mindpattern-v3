@@ -20,14 +20,16 @@ import logging
 import math
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
 from core.claude_cli import ClaudeProcessResult, run_claude_process
+from core.config import route_for
+from core.model_cli import ToolPolicy, run_task_process
 from kg.extract import (
     build_extraction_prompt,
-    extraction_command,
+    KG_DISALLOWED_TOOLS,
     parse_extraction_output,
     validate_extraction,
 )
@@ -211,7 +213,16 @@ def _run_one_batch(
     findings = [dict(row) for row in batch]
     allowed_ids = {int(f["id"]) for f in findings}
     prompt = build_extraction_prompt(findings)
-    process = runner(extraction_command(prompt, model=model), timeout=timeout)
+    route = route_for("kg_extract")
+    route = replace(route, timeout_s=timeout, model=model or route.model)
+    process = run_task_process(
+        "kg_extract",
+        prompt=prompt,
+        tools=ToolPolicy(disallowed=KG_DISALLOWED_TOOLS),
+        unit=f"kg-batch-{min(allowed_ids)}",
+        route=route,
+        runner=runner,
+    )
     if process.returncode != 0 or process.timed_out:
         logger.warning(
             "kg batch failed rc=%s timed_out=%s err=%s",

@@ -102,24 +102,35 @@ def test_status_counts(pool):
 
 
 def test_cmd_provider_receives_prompt_on_stdin(monkeypatch):
+    from core.claude_cli import ClaudeProcessResult
     from orchestrator import site_writer as sw
 
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append((argv, kwargs.get("input_text")))
+        return ClaudeProcessResult("{}", "", 0)
+
     monkeypatch.setenv("MP_SITE_STORY_WRITER", "cmd:my-writer --flag")
-    cmd, stdin_text = sw.writer_command("PROMPT TEXT")
-    assert cmd == ["sh", "-c", "my-writer --flag"]
-    assert stdin_text == "PROMPT TEXT"
+    sw.run_writer("PROMPT TEXT", runner=runner)
+    argv, stdin_text = calls[-1]
+    assert argv == ["sh", "-c", "my-writer --flag"]
+    assert stdin_text.endswith("PROMPT TEXT")
     assert sw.writer_label() == "cmd"
 
     monkeypatch.setenv("MP_SITE_STORY_WRITER", "codex")
-    cmd, stdin_text = sw.writer_command("PROMPT TEXT")
-    assert cmd[0] == "codex" and cmd[1] == "exec"
+    sw.run_writer("PROMPT TEXT", runner=runner)
+    argv, _ = calls[-1]
+    assert argv[:2] == ["codex", "exec"]
+    assert argv[argv.index("-m") + 1] == "gpt-6.1-sol"
     assert sw.writer_label() == "codex"
 
     monkeypatch.setenv("MP_SITE_STORY_WRITER", "claude")
-    cmd, stdin_text = sw.writer_command("PROMPT TEXT")
-    assert cmd[0] == "claude"
+    sw.run_writer("PROMPT TEXT", runner=runner)
+    argv, _ = calls[-1]
+    assert argv[:3] == ["claude", "-p", "PROMPT TEXT"]
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5"
     assert sw.writer_label() == "claude-cli"
-
 
 def test_notebook_tracks_claims_and_outcomes(pool, monkeypatch):
     claim = bf.claim_batch(user="ramsay", reports_root=pool, size=3, agent="nb")

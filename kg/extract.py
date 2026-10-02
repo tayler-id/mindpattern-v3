@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any
 
@@ -22,8 +21,9 @@ from kg.schema import ENTITY_TYPES, FACT_TYPES, PREDICATES
 
 logger = logging.getLogger(__name__)
 
-KG_MODEL_ENV = "MP_KG_MODEL"
-DEFAULT_KG_MODEL = "claude-haiku-4-5-20251001"
+# Extraction reads the batch in the prompt and answers. It needs no tool at all.
+KG_DISALLOWED_TOOLS = ("Agent", "Bash", "Write", "Edit", "NotebookEdit", "Skill", "WebFetch", "WebSearch",
+                       "Read", "Grep", "Glob")
 
 MAX_ENTITIES_PER_FINDING = 8
 MAX_EDGES_PER_FINDING = 6
@@ -89,23 +89,6 @@ def build_extraction_prompt(findings: list[dict[str, Any]]) -> str:
         for f in findings
     ]
     return header + json.dumps(payload, ensure_ascii=False, indent=1)
-
-
-def extraction_command(prompt: str, *, model: str | None = None) -> list[str]:
-    """argv for one extraction call. Read-only: every tool disallowed."""
-    return [
-        "claude",
-        "-p",
-        prompt,
-        "--model",
-        model or os.environ.get(KG_MODEL_ENV, DEFAULT_KG_MODEL),
-        "--max-turns",
-        "1",
-        "--output-format",
-        "text",
-        "--disallowedTools",
-        "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch,Read,Grep,Glob",
-    ]
 
 
 def parse_extraction_output(stdout: str) -> list[dict[str, Any]]:

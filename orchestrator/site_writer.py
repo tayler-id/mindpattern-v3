@@ -11,6 +11,7 @@ newsletter pipeline is never touched.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import logging
 import os
@@ -21,6 +22,8 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 from core.claude_cli import run_claude_process
+from core.config import route_for
+from core.model_cli import ToolPolicy, run_task_process
 from orchestrator import word_bank
 from orchestrator.site_copy_lint import (
     BANNED_WORDS,
@@ -46,9 +49,9 @@ def violates_voice_guide(text: str) -> str | None:
     return first_voice_violation(text)
 
 SITE_WRITER_ENV = "MP_SITE_STORY_WRITER"
-SITE_WRITER_MODEL_ENV = "MP_SITE_STORY_WRITER_MODEL"
-DEFAULT_WRITER_MODEL = "claude-sonnet-5"
 DEFAULT_WRITER_TIMEOUT = 300
+# Drafting is prose from the evidence pack and nothing else: no tools at all.
+WRITER_DISALLOWED_TOOLS = ("Agent", "Bash", "Write", "Edit", "NotebookEdit", "Skill", "WebFetch", "WebSearch")
 
 _COPY_FIELDS = COPY_FIELDS
 _MAX_FIELD_CHARS = MAX_FIELD_CHARS
@@ -98,33 +101,50 @@ def writer_label() -> str:
     return "cmd"
 
 
-def writer_command(prompt: str, *, model: str | None = None) -> tuple[list[str], str | None]:
-    """(argv, stdin) for one drafting call under the current provider."""
+def writer_task() -> str:
+    """config/models.json task for the drafting provider MP_SITE_STORY_WRITER selects."""
+    return "site_story_writer_codex" if writer_provider() == "codex" else "site_story_writer"
+
+
+def run_writer(
+    prompt: str,
+    *,
+    runner: Callable[..., Any] = run_claude_process,
+    unit: str | None = None,
+    model: str | None = None,
+    timeout: int | None = None,
+) -> Any:
+    """One drafting call. Returns a process-like result whose stdout is the draft.
+
+    claude and codex go through core.model_cli (routed by config/models.json,
+    traced). A "cmd:" provider runs its own shell template with the prompt on
+    stdin and the system prompt inline.
+    """
     provider = writer_provider()
-    if provider == "codex":
-        return (
-            ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", prompt],
-            None,
-        )
     if provider.startswith("cmd:"):
-        return (["sh", "-c", provider[4:]], prompt)
-    return (
-        [
-            "claude",
-            "-p",
-            prompt,
-            "--model",
-            model or os.environ.get(SITE_WRITER_MODEL_ENV, DEFAULT_WRITER_MODEL),
-            "--max-turns",
-            "8",
-            "--output-format",
-            "text",
-            "--append-system-prompt-file",
-            str(WRITER_SYSTEM_PROMPT),
-            "--disallowedTools",
-            "Agent,Bash,Write,Edit,NotebookEdit,Skill,WebFetch,WebSearch",
-        ],
-        None,
+        try:
+            prompt = WRITER_SYSTEM_PROMPT.read_text() + "\n\n" + prompt
+        except OSError:
+            pass
+        argv = ["sh", "-c", provider[4:]]
+        try:
+            return runner(argv, timeout=timeout or DEFAULT_WRITER_TIMEOUT, cwd=PROJECT_ROOT, input_text=prompt)
+        except TypeError:
+            return runner(argv, timeout=timeout or DEFAULT_WRITER_TIMEOUT, cwd=PROJECT_ROOT)
+    route = route_for(writer_task())
+    if model:
+        route = replace(route, model=model)
+    if timeout:
+        route = replace(route, timeout_s=timeout)
+    return run_task_process(
+        route.task,
+        prompt=prompt,
+        system_prompt_file=WRITER_SYSTEM_PROMPT,
+        tools=ToolPolicy(disallowed=WRITER_DISALLOWED_TOOLS),
+        unit=unit,
+        cwd=PROJECT_ROOT,
+        route=route,
+        runner=runner,
     )
 
 
@@ -349,7 +369,7 @@ def write_story_copy_with_agent(
     *,
     voice_text: str | None = None,
     model: str | None = None,
-    timeout: int = DEFAULT_WRITER_TIMEOUT,
+    timeout: int | None = None,
     runner: Callable[..., Any] = run_claude_process,
 ) -> dict[str, str] | None:
     """Run the live writer once. Returns validated copy or None (fail closed)."""
@@ -359,20 +379,11 @@ def write_story_copy_with_agent(
         except OSError:
             voice_text = ""
     prompt = build_site_writer_prompt(graph_pack, expert_results, voice_text=voice_text)
-    if writer_provider() != "claude":
-        # Non-Claude providers get the system prompt inline.
-        try:
-            prompt = WRITER_SYSTEM_PROMPT.read_text() + "\n\n" + prompt
-        except OSError:
-            pass
-    cmd, stdin_text = writer_command(prompt, model=model)
     candidate = graph_pack.get("candidate_id", "story")
     process = None
     for attempt in (1, 2):
         try:
-            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT, input_text=stdin_text)
-        except TypeError:
-            process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+            process = run_writer(prompt, runner=runner, unit=candidate, model=model, timeout=timeout)
         except Exception as exc:
             logger.warning("site_writer %s: process exception %s", candidate, exc)
             return None
@@ -405,12 +416,8 @@ def write_story_copy_with_agent(
         retry_prompt = _gate_rejection_prompt(
             prompt, process.stdout or "", allowed_urls=allowed_urls
         )
-        cmd, stdin_text = writer_command(retry_prompt, model=model)
         try:
-            try:
-                process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT, input_text=stdin_text)
-            except TypeError:
-                process = runner(cmd, timeout=timeout, cwd=PROJECT_ROOT)
+            process = run_writer(retry_prompt, runner=runner, unit=candidate, model=model, timeout=timeout)
         except Exception as exc:
             logger.warning("site_writer %s: gate-rejection retry exception %s", candidate, exc)
             return None

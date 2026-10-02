@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from orchestrator.site_content_engine import build_graph_pack, load_fixture_cases
 from orchestrator.site_critic import (
     build_critic_prompt,
@@ -84,6 +86,20 @@ def test_critic_prompt_includes_revise_lint_evidence():
     )
     assert "body_word_count" in prompt
     assert "short body" in prompt
+
+
+@pytest.fixture(autouse=True)
+def claude_critic(monkeypatch):
+    """The review-loop tests drive Claude-shaped fakes; the Sol route has its own test below."""
+    from core.config import Route, route_for
+    from orchestrator import site_critic
+
+    def pinned(task):
+        if task == "site_story_critic":
+            return Route(task, "claude", "claude-sonnet-5-5", 300, effort="medium", max_turns=8)
+        return route_for(task)
+
+    monkeypatch.setattr(site_critic, "route_for", pinned)
 
 
 def test_review_passes_clean_draft_through():
@@ -198,3 +214,28 @@ def test_critic_system_prompt_exists():
     assert "score of 0" in text
     assert "NOT fabrication" in text
     assert '"verdict": "pass" | "revise"' in text
+
+
+def test_critic_runs_on_sol_with_its_contract_and_falls_back_to_a_fenced_sonnet(monkeypatch):
+    from core.claude_cli import ClaudeProcessResult
+    from core.config import route_for
+    from orchestrator import site_critic
+
+    monkeypatch.setattr(site_critic, "route_for", route_for)
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        if argv[0] == "codex":
+            return ClaudeProcessResult("", "", 1, timed_out=True, error="Timed out")
+        return ClaudeProcessResult('{"score": 9, "verdict": "pass", "issues": []}', "", 0)
+
+    verdict = site_critic.run_critic({"title": "t"}, _graph_pack(), rules_text="r", runner=runner)
+    assert verdict == {"score": 9.0, "verdict": "pass", "issues": []}
+    sol, sonnet = calls
+    assert sol[sol.index("-m") + 1] == "gpt-6.1-sol"
+    assert sol[sol.index("--output-schema") + 1].endswith("contracts/critic_verdict.schema.json")
+    assert sonnet[sonnet.index("--model") + 1] == route_for("site_story_critic").fallback.model
+    fenced = sonnet[sonnet.index("--disallowedTools") + 1].split(",")
+    for tool in ("Agent", "Bash", "Write", "Edit", "WebFetch", "WebSearch", "Skill"):
+        assert tool in fenced

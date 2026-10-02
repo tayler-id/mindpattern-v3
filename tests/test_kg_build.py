@@ -590,21 +590,26 @@ def test_apply_result_files_survives_malformed_result_file(conn, tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()[0] == 1
 
 
-def test_extraction_command_is_read_only_and_env_tunable(monkeypatch):
-    from kg.extract import DEFAULT_KG_MODEL, extraction_command
+def test_extraction_runs_read_only_on_the_configured_model():
+    from core.config import route_for
+    from kg.build import _run_one_batch
 
-    cmd = extraction_command("PROMPT")
-    assert cmd[:3] == ["claude", "-p", "PROMPT"]
-    assert cmd[cmd.index("--model") + 1] == DEFAULT_KG_MODEL
-    assert cmd[cmd.index("--max-turns") + 1] == "1"
-    disallowed = cmd[cmd.index("--disallowedTools") + 1]
-    for tool in ("Bash", "Write", "Edit", "WebFetch", "Agent"):
-        assert tool in disallowed
+    calls = []
 
-    monkeypatch.setenv("MP_KG_MODEL", "claude-test-model")
-    cmd = extraction_command("PROMPT")
-    assert cmd[cmd.index("--model") + 1] == "claude-test-model"
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        from core.claude_cli import ClaudeProcessResult
+        return ClaudeProcessResult("[]", "", 0)
 
+    _run_one_batch([{"id": 7, "title": "t", "summary": "s", "importance": "high", "source_url": "u",
+                     "source_name": "n", "run_date": "2026-10-01", "category": "c"}],
+                   model=None, timeout=120, runner=runner)
+    argv = calls[0]
+    assert argv[argv.index("--model") + 1] == route_for("kg_extract").model
+    assert argv[argv.index("--max-turns") + 1] == "1"
+    disallowed = argv[argv.index("--disallowedTools") + 1]
+    for tool in ("Bash", "Write", "Edit", "WebFetch", "Agent", "Read"):
+        assert tool in disallowed.split(",")
 
 def test_public_slug_matches_site_normalizer():
     from kg.resolve import public_slug

@@ -16,7 +16,6 @@ import pytest
 
 from core.claude_cli import ClaudeProcessResult
 from orchestrator.agents import (
-    _build_claude_command,
     _parse_findings,
     AGENT_ALLOWED_TOOLS,
     build_agent_prompt,
@@ -27,6 +26,19 @@ from orchestrator.agents import (
     AgentResult,
     RESEARCH_DISALLOWED_TOOLS,
 )
+
+
+def _build_claude_command(prompt, *, model, max_turns, allowed_tools=None, disallowed_tools=None,
+                          system_prompt_file=None):
+    """The argv core.model_cli builds for these inputs (the old builder moved there)."""
+    from core.config import Route
+    from core.model_cli import CallRequest, ToolPolicy, build_argv, disallowed
+
+    route = Route("test", "claude", model, 300, max_turns=max_turns)
+    request = CallRequest(task="test", prompt=prompt, system_prompt_file=system_prompt_file,
+                          tools=ToolPolicy(allowed=tuple(allowed_tools or ()),
+                                           disallowed=disallowed(disallowed_tools)))
+    return build_argv(route, request)[0]
 
 
 class TestParseFindingsWithTextBeforeJson:
@@ -343,12 +355,13 @@ class TestBuildClaudeCommand:
         assert cmd == [
             "claude", "-p", "test prompt",
             "--model", "sonnet",
+            "--output-format", "stream-json", "--verbose",
             "--max-turns", "10",
-            "--output-format", "text",
             "--append-system-prompt-file", "agents/eic.md",
             "--allowedTools", "Read",
             "--allowedTools", "Write",
             "--disallowedTools", "Agent",
+            "--setting-sources", "project,local", "--strict-mcp-config",
         ]
 
     def test_research_command_grants_web_tools_without_fence(self):
@@ -639,10 +652,11 @@ class TestRunClaudePromptLargePromptUsesStdin:
         call_kwargs = mock_run_process.call_args.kwargs
         assert call_kwargs["input_text"] == large_prompt
 
-        # Verify -p argument is "-" (stdin marker)
+        # No prompt argument at all: `claude -p -` made "-" the prompt's first
+        # line, which every stdin newsletter prompt carried until 2026-10-02.
         cmd = mock_run_process.call_args.args[0]
-        p_idx = cmd.index("-p")
-        assert cmd[p_idx + 1] == "-"
+        assert cmd[:3] == ["claude", "-p", "--model"]
+        assert "-" not in cmd
 
 
 @patch("orchestrator.agents.router")
@@ -843,7 +857,7 @@ class TestDispatchResearchAgentsPartialFailure:
 class TestBuildAgentPromptResearchBreadth:
     """Research prompts must preserve the rich source and subagent workflow."""
 
-    def test_preflight_exploration_allows_source_tools_and_subagents(self, tmp_path):
+    def test_preflight_exploration_allows_source_tools(self, tmp_path):
         soul_path = tmp_path / "SOUL.md"
         soul_path.write_text("Soul")
         skill_path = tmp_path / "agent.md"
@@ -876,12 +890,16 @@ class TestBuildAgentPromptResearchBreadth:
             # xreach was retired 2026-06-23; the installed CLI is `twitter`
             "twitter search",
             "yt-dlp",
-            "Subagent Delegation",
-            "Agent tool",
-            "Spawn subagents for parallel verification",
+            # Findings stored as they are confirmed survive the turn cap.
+            "mp finding add <<'EOF'",
+            'mp seen "<url or title>"',
+            "mp fetch <url> --max-chars 6000",
         )
         for fragment in expected_prompt_fragments:
             assert fragment in prompt
+        # Removed 2026-10-02: no research agent used it on Oct 1 (0 Agent calls
+        # in 752 tool calls), so it was dead weight in all thirteen prompts.
+        assert "Subagent Delegation" not in prompt
 
         assert "Do not use shell commands" not in prompt
         assert "Do not spawn subagents" not in prompt
@@ -1131,20 +1149,20 @@ class TestMissingGrantedBinaries:
     """Runtime PATH check — the guard that would have caught the xreach bug."""
 
     def test_reports_binary_absent_from_path(self, monkeypatch):
-        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        monkeypatch.setattr(_shutil, "which", lambda name, path=None: None)
         assert missing_granted_binaries(["Bash(xreach *)"]) == ["xreach"]
 
     def test_silent_when_all_present(self, monkeypatch):
-        monkeypatch.setattr(_shutil, "which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(_shutil, "which", lambda name, path=None: f"/usr/bin/{name}")
         assert missing_granted_binaries(["Bash(twitter *)", "Bash(yt-dlp *)"]) == []
 
     def test_ignores_non_bash_grants(self, monkeypatch):
-        monkeypatch.setattr(_shutil, "which", lambda name: None)
+        monkeypatch.setattr(_shutil, "which", lambda name, path=None: None)
         assert missing_granted_binaries(["WebSearch", "WebFetch"]) == []
 
     def test_reports_only_the_missing_ones(self, monkeypatch):
         monkeypatch.setattr(
-            _shutil, "which", lambda name: None if name == "mcporter" else "/usr/bin/x"
+            _shutil, "which", lambda name, path=None: None if name == "mcporter" else "/usr/bin/x"
         )
         assert missing_granted_binaries(
             ["Bash(mcporter call *)", "Bash(twitter *)"]
@@ -1345,3 +1363,42 @@ class TestCorrectiveRetryKeepsSystemPrompt:
         retry_cmd = mock_proc.call_args_list[1].args[0]
         assert "--append-system-prompt-file" in retry_cmd
         assert str(RESEARCH_SYSTEM_PROMPT) in retry_cmd
+
+
+class TestStoredFindingsSurviveTheTurnCap:
+    """Findings an agent stored with `mp finding add` count even when it never prints its JSON."""
+
+    def test_a_capped_agent_keeps_what_it_stored(self, tmp_path, monkeypatch):
+        import json as _json
+        from core.claude_cli import ClaudeProcessResult
+        from orchestrator import agents
+
+        store = tmp_path / "news-researcher.findings.jsonl"
+        stored = {"title": "Acme ships Runtime 2.0", "summary": "Acme released Runtime 2.0 on October 1.",
+                  "importance": "high", "source_url": "https://acme.example.com/r2", "source_name": "Acme"}
+        store.write_text(_json.dumps({**stored, "agent": "news-researcher", "stored_at": "x"}) + "\n")
+        monkeypatch.setattr(agents, "run_claude_process",
+                            lambda argv, **kw: ClaudeProcessResult("Error: Reached max turns (35)", "", 1))
+        result = agents._run_agent_attempt("news-researcher", "research_agent", "prompt", None,
+                                           {"MP_FINDINGS_FILE": str(store)}, 1800, 0.0)
+        assert result.classification == "success"
+        assert result.findings == [stored]
+
+    def test_printed_and_stored_findings_merge_by_source_url(self):
+        from orchestrator.agents import merge_findings
+        printed = [{"title": "A", "source_url": "https://x.example.com/a/"}]
+        stored = [{"title": "A again", "source_url": "https://X.example.com/a"},
+                  {"title": "B", "source_url": "https://x.example.com/b"}]
+        assert [f["title"] for f in merge_findings(printed, stored)] == ["A", "B"]
+
+    def test_research_agents_get_mp_on_their_path_and_a_findings_file(self):
+        from core.trace_store import clear_run_context, set_run_context
+        from orchestrator.agents import AGENT_ALLOWED_TOOLS, PROJECT_ROOT, _agent_env, build_agent_prompt
+        set_run_context(run_id="research-2026-10-02-abc", run_date="2026-10-02", user_id="ramsay")
+        try:
+            env = _agent_env("news-researcher")
+        finally:
+            clear_run_context()
+        assert env["PATH"].split(":")[0] == str(PROJECT_ROOT / "bin")
+        assert env["MP_FINDINGS_FILE"].endswith("data/ramsay/runs/research-2026-10-02-abc/news-researcher.findings.jsonl")
+        assert "Bash(mp *)" in AGENT_ALLOWED_TOOLS
