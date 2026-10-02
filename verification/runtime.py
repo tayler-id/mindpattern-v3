@@ -31,6 +31,8 @@ EXCLUDED_PARTS = {
     "node_modules",
     "research",
 }
+# JSON the code reads at import time, such as policies/writing.json in word_bank.
+RUNTIME_CONFIG_DIRS = {"config", "contracts", "policies"}
 
 
 @dataclass
@@ -52,6 +54,8 @@ def _included(relative: Path) -> bool:
         return False
     if relative.name == "users.json" or relative.name.startswith(".env"):
         return False
+    if relative.parts[0] in RUNTIME_CONFIG_DIRS and relative.suffix == ".json":
+        return True
     return relative.suffix == ".py" or relative.parts[:2] == ("dashboard", "templates")
 
 
