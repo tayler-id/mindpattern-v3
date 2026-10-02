@@ -113,3 +113,27 @@ def _clear_api_fingerprint_memos():
     yield
     _api._reset_fingerprint_cache()
     _api._reset_story_file_index()
+
+
+@pytest.fixture(autouse=True)
+def isolate_model_traces(tmp_path, monkeypatch):
+    """Model calls made by tests record into a temp folder, never into data/."""
+    monkeypatch.setenv("MP_TRACE_ROOT", str(tmp_path / "model-traces"))
+
+
+@pytest.fixture(autouse=True)
+def no_real_model_cli(tmp_path, monkeypatch):
+    """The real claude and codex CLIs are off limits in tests: a fake that fails
+    loudly sits first on PATH. A replay test that ran the pipeline in a
+    subprocess once reached the real Codex this way (2026-10-02), past the
+    socket guard above. A test that needs a CLI puts its own fake ahead of these.
+    """
+    import os
+
+    guard = tmp_path / "no-real-cli"
+    guard.mkdir()
+    for name in ("claude", "codex"):
+        script = guard / name
+        script.write_text(f"#!/bin/sh\necho 'tests must not run the real {name} CLI' >&2\nexit 97\n")
+        script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{guard}:{os.environ.get('PATH', '')}")

@@ -1,0 +1,11 @@
+{
+  "$comment": "The site story critic's answer. Codex enforces it with --output-schema; orchestrator/site_critic.parse_critic_output checks it again for every provider.",
+  "type": "object",
+  "properties": {
+    "score": {"type": "number", "minimum": 0, "maximum": 10},
+    "verdict": {"type": "string", "enum": ["pass", "revise"]},
+    "issues": {"type": "array", "items": {"type": "string"}, "maxItems": 20}
+  },
+  "required": ["score", "verdict", "issues"],
+  "additionalProperties": false
+}

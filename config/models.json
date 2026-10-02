@@ -1,0 +1,35 @@
+{
+  "_about": "Which provider and model runs each task. Validate with: .venv/bin/python3 -m core.config check. A task not listed here uses _default. Set effort on every Claude route except Haiku (Haiku 4.5 takes none): left unset, a call inherits the user's interactive Claude Code effort.",
+  "tasks": {
+    "_default":           {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 10, "timeout_s": 300},
+
+    "trend_scan":         {"provider": "claude", "model": "claude-haiku-4-5",  "max_turns": 5,  "timeout_s": 60},
+    "research_agent":     {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "high",   "max_turns": 35, "timeout_s": 1800},
+    "synthesis_pass1":    {"provider": "claude", "model": "claude-opus-5-5",   "effort": "high",   "max_turns": 10, "timeout_s": 600},
+    "synthesis_pass2":    {"provider": "claude", "model": "claude-opus-5-5",   "effort": "high",   "max_turns": 30, "timeout_s": 900},
+    "learnings_update":   {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "low",    "max_turns": 5,  "timeout_s": 120},
+    "identity":           {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "medium", "max_turns": 5,  "timeout_s": 300},
+    "evolve":             {"provider": "claude", "model": "claude-opus-5-5",   "effort": "high",   "max_turns": 10, "timeout_s": 600},
+
+    "site_story_writer":  {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "medium", "max_turns": 8,  "timeout_s": 300},
+    "site_story_critic":  {"provider": "codex", "model": "gpt-6.1-sol", "effort": "medium", "timeout_s": 300,
+                          "fallback": {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "medium", "max_turns": 8, "timeout_s": 300}},
+    "site_story_writer_codex": {"provider": "codex", "model": "gpt-6.1-sol",  "effort": "medium", "timeout_s": 300},
+    "story_deep_dive":    {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "medium", "max_turns": 15, "timeout_s": 600},
+    "newsletter_editor":  {"provider": "codex",  "model": "gpt-6.1-sol",       "effort": "medium", "timeout_s": 600,
+                          "fallback": {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "medium", "max_turns": 3, "timeout_s": 600}},
+    "kg_extract":         {"provider": "claude", "model": "claude-haiku-4-5",  "max_turns": 1,  "timeout_s": 300},
+    "knowledge_flush":    {"provider": "claude", "model": "claude-sonnet-5-5", "effort": "low",    "max_turns": 1,  "timeout_s": 120},
+
+    "eic":                {"provider": "claude", "model": "claude-opus-5-5",   "effort": "high",   "max_turns": 15, "timeout_s": 600},
+    "creative_brief":     {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 10, "timeout_s": 180},
+    "art_director":       {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 10, "timeout_s": 300},
+    "illustrator":        {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 5,  "timeout_s": 180},
+    "writer":             {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 15, "timeout_s": 300},
+    "critic":             {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 5,  "timeout_s": 300},
+    "expeditor":          {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 5,  "timeout_s": 360},
+    "humanizer":          {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 5,  "timeout_s": 240},
+    "engagement_finder":  {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 10, "timeout_s": 300},
+    "engagement_writer":  {"provider": "claude", "model": "sonnet",            "effort": "high",   "max_turns": 5,  "timeout_s": 120}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "_about": "How long raw model-call traces are kept, and the per-run usage that triggers an alert. Read by core/trace_store.py; the LEARN phase prunes and checks. The budget never blocks a run. Oct 1 2026 baseline: 1.56M output tokens, about $55 at API prices (tools/usage_report.py).",
+  "raw_trace_days": 90,
+  "soft_budget_per_run": {
+    "output_tokens": 3000000,
+    "api_price_usd": 120
+  }
+}

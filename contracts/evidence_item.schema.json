@@ -1,0 +1,13 @@
+{
+  "$comment": "One piece of evidence a deep-dive agent stores with `mp evidence add` for a selected story.",
+  "type": "object",
+  "properties": {
+    "kind": {"type": "string", "enum": ["primary_source", "corroboration", "number", "quote", "counterpoint", "context"]},
+    "claim": {"type": "string", "minLength": 10, "maxLength": 600},
+    "quote": {"type": "string", "maxLength": 600},
+    "source_url": {"type": "string", "minLength": 10, "maxLength": 2000},
+    "source_name": {"type": "string", "minLength": 1, "maxLength": 200}
+  },
+  "required": ["kind", "claim", "source_url", "source_name"],
+  "additionalProperties": false
+}

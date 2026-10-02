@@ -1,0 +1,15 @@
+{
+  "$comment": "One research finding, as `mp finding add` accepts it. Field rules beyond shape (age, banned entities, injection patterns) live in policies/research.json.",
+  "type": "object",
+  "properties": {
+    "title": {"type": "string", "minLength": 8, "maxLength": 300},
+    "summary": {"type": "string", "minLength": 20, "maxLength": 1000},
+    "importance": {"type": "string", "enum": ["high", "medium", "low"]},
+    "category": {"type": "string", "maxLength": 80},
+    "source_url": {"type": "string", "minLength": 10, "maxLength": 2000},
+    "source_name": {"type": "string", "minLength": 1, "maxLength": 200},
+    "date_found": {"type": "string", "maxLength": 10}
+  },
+  "required": ["title", "summary", "importance", "source_url", "source_name"],
+  "additionalProperties": false
+}
