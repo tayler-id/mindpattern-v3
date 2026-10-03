@@ -174,3 +174,28 @@ def test_stories_written_by_an_earlier_run_count_toward_the_cap(tmp_path):
     assert second["skipped"] == 1
     assert second["written"] == 1
     assert len(_written_slugs(tmp_path)) == 2
+
+
+def test_a_candidate_story_already_covering_the_unit_is_not_written_again(tmp_path):
+    """On 7 days from Jul 12 to Sep 21 2026 the candidate writer and this writer picked
+    the same finding, leaving `foo.json` and `<date>-foo.json` in one folder. The story
+    route treats both as one story and refuses the pair (PR #26), so both pages 404.
+    """
+    probe = tmp_path / "probe"
+    (probe / "ramsay").mkdir(parents=True)
+    (probe / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+    write_issue_stories_for_date(date="2026-07-02", user="ramsay", reports_root=probe,
+                                 story_copywriter=lambda p, e: _copy())
+    dated = sorted(f.stem for f in (probe / "ramsay" / "site-stories" / "2026-07-02").glob("*.json"))
+    assert all(stem.startswith("2026-07-02-") for stem in dated)
+    taken = dated[0].removeprefix("2026-07-02-")
+
+    day = tmp_path / "ramsay" / "site-stories" / "2026-07-02"
+    day.mkdir(parents=True)
+    (day / f"{taken}.json").write_text(json.dumps({"slug": taken, "status": "published"}))
+    (tmp_path / "ramsay" / "2026-07-02.md").write_text(ISSUE_MD)
+    outcome = write_issue_stories_for_date(date="2026-07-02", user="ramsay", reports_root=tmp_path,
+                                           story_copywriter=lambda p, e: _copy())
+
+    assert (outcome["written"], outcome["skipped"]) == (2, 1)
+    assert _written_slugs(tmp_path) == sorted([taken, *dated[1:]])

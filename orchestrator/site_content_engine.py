@@ -576,7 +576,13 @@ def write_issue_stories_for_date(
             )
         except ValueError:
             continue
-        if artifact_path.exists():
+        # A candidate story for the same finding sits in the same folder under
+        # the bare slug. The story route treats `foo` and `<date>-foo` as one
+        # story and refuses a pair, so a second file would 404 both.
+        prefix = f"{run_date}-"
+        candidate_path = (artifact_path.with_name(artifact_path.name[len(prefix):])
+                          if artifact_path.name.startswith(prefix) else None)
+        if artifact_path.exists() or (candidate_path is not None and candidate_path.exists()):
             outcome["skipped"] += 1
             continue
         pending.append(story)
