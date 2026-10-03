@@ -36,7 +36,7 @@
 
 These came out of the real replays and the merge of PRs #26, #27 and #33.
 
-- **Seven duplicate story pairs.** Each has a bare and a date-prefixed file in one date folder, so [[dashboard/campaignos]] refuses the slug and the story returns 404 until one file of each pair is removed.
+- **Seven duplicate story pairs, resolved 2026-10-02.** The candidate writer and the issue writer had picked the same finding, leaving a bare and a date-prefixed file in one folder. One file of each pair moved to `reports/ramsay/removed-duplicates-2026-10-02/` on the Mac and on the Fly volume, and the issue writer now skips a unit a candidate story already covers. The two Jul 12 stories have no take in either version and 404 regardless.
 - **Research on Sonnet 5.5 finds fewer stories.** Four Oct 2 replays found 8 to 14 new stories for two agents against 17 on Opus 5.5. See [[orchestrator/router]].
 - **`test_learning_loop::TestConsolidateSeesPromotedPatterns` fails.** It failed before the harness work and still does.
 - **launchd fires about three hours late** until the Mac restarts, because the agent kept a stale time zone. SIP blocks restarting the agent alone.

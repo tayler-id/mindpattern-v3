@@ -20,7 +20,7 @@ A slug that matches more than one file is refused everywhere: the story route, t
 
 ## Known Issues
 
-Seven stories had a same-date duplicate pair on 2026-10-02 and return 404 until one file of each pair is removed. See [[issues/open]].
+Seven stories had a same-date duplicate pair, written by both the candidate writer and the issue writer. One file of each moved aside on 2026-10-02, and `write_issue_stories_for_date` now skips a unit whose candidate story exists under the bare slug. See [[issues/open]].
 
 ## Last Updated
 
