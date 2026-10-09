@@ -376,7 +376,16 @@ Built 2026-10-02 on `feat/models-harness`. Full suite: 2,162 passed, 1 skipped, 
 | Sonnet 5.5, batched, run A | 9 | 4 (`hn-researcher` called `bin/mp`, refused) | 0 | $1.50 |
 | Sonnet 5.5, batched, run B | 13 | 6 (same) | 0 | $1.34 |
 
-  Sonnet 5.5 costs about 70% less per agent and finds about a third fewer new stories (mean 11 against 17). The agents stop on their own at 18 to 32 of 35 turns, so the turn cap is not the limit. `config/models.json` keeps research on Sonnet 5.5, as Tayler decided; moving `research_agent` back to `claude-opus-5-5` is one line. Success criterion 6 decides it on live runs. The `bin/mp` refusal is fixed (`Bash(bin/mp *)` is granted too).
+  Sonnet 5.5 costs about 70% less per agent and finds about a third fewer new stories (mean 11 against 17).
+
+  **Reversed 2026-10-09.** A week live on Sonnet 5.5 (Oct 3 to 9) stored 46 to 89 findings a day against 113 to 182 the week before, and the quality floor fired on Oct 4 at 46. Every agent found fewer, and a third of the raw findings duplicated another agent's. Two 13-agent replays of Oct 9, both with the new same-run check in `mp`:
+
+| Oct 9 replay, 13 agents | Findings | API price | Time |
+|---|---|---|---|
+| Sonnet 5.5 | 87 | $9.28 | 12 min |
+| Opus 5.5 | 133 | $22.94 | 24 min |
+
+  `research_agent` is back on Opus 5.5. A full day still costs about $30 to $40 at API prices against $55 on Oct 1. The agents stop on their own at 18 to 32 of 35 turns, so the turn cap is not the limit. `config/models.json` keeps research on Sonnet 5.5, as Tayler decided; moving `research_agent` back to `claude-opus-5-5` is one line. Success criterion 6 decides it on live runs. The `bin/mp` refusal is fixed (`Bash(bin/mp *)` is granted too).
 - [x] R4: deep-dive pass between story selection and the newsletter (`orchestrator/deep_dive.py`, task `story_deep_dive` on Sonnet 5.5). Sep 30 replay: five deep dives, 33 to 79 s each, 9 to 19 tool steps, $0.12 to $0.27 each. Four stored evidence (22 items). The fifth stored none, because Claude Code refused every inline-JSON `mp evidence add`; the other four found `--json '...'` after the same refusals. Fixed in `mp` the same day (see R1).
 
 ### Phase 4. Writing

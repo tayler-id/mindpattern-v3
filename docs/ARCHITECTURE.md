@@ -16,7 +16,7 @@ flowchart TD
         direction TB
         INIT["INIT<br/>Load prefs, feedback, failures"]
         TREND["TREND_SCAN<br/>Haiku: 5-8 trending topics"]
-        RESEARCH["RESEARCH<br/>Preflight + 13 Sonnet 5.5 agents<br/>findings stored with mp"]
+        RESEARCH["RESEARCH<br/>Preflight + 13 Opus 5.5 agents<br/>findings stored with mp"]
         SYNTH["SYNTHESIS<br/>Opus 5.5 picks, Sonnet 5.5 deep dives,<br/>Opus 5.5 writes, Sol edits"]
         DELIVER["DELIVER<br/>HTML email via Resend"]
         LEARN["LEARN<br/>Quality scoring + entity graph"]
@@ -487,12 +487,12 @@ mindpattern-v3/
 
 ## Model Routing
 
-Routes live in [`config/models.json`](../config/models.json), not in code. `python -m core.config check` validates the file and prints every route. As of 2026-10-02:
+Routes live in [`config/models.json`](../config/models.json), not in code. `python -m core.config check` validates the file and prints every route. As of 2026-10-09:
 
 | Task | Model | Effort | Max Turns | Timeout |
 |------|-------|--------|-----------|---------|
 | Trend scan, KG extraction | Haiku 4.5 | none | 5, 1 | 60s, 300s |
-| Research agents (13x) | Sonnet 5.5 | high | 35 | 1800s |
+| Research agents (13x) | Opus 5.5 | high | 35 | 1800s |
 | Story selection, newsletter | Opus 5.5 | high | 10, 30 | 600s, 900s |
 | Deep dives (one per Top story) | Sonnet 5.5 | medium | 15 | 600s |
 | Newsletter editor | GPT-6.1 Sol via Codex, Sonnet 5.5 fallback | medium | n/a | 600s |
