@@ -2624,3 +2624,22 @@ class TestSendAlertVerifiesDelivery:
         mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="xoxb\n", stderr="")
         mock_open.return_value = _io.BytesIO(b"<html>gateway timeout</html>")
         assert self._pipeline(tmp_path)._send_alert("x") is False
+
+
+def _crash():
+    raise RuntimeError("upload connection reset")
+
+
+@pytest.mark.parametrize("sync,status,exit_code", [
+    (lambda: {"success": True}, "completed", 0),
+    (lambda: {"success": False, "error": "upload failed"}, "failed", 1),
+    (_crash, "failed", 1),
+])
+def test_a_sync_only_run_closes_its_run_record(pipeline, sync, status, exit_code):
+    """On 2026-10-09 a sync-only retry left its pipeline_runs row at 'running' with no
+    events, which the dashboard and tools/health.py read as the day's run."""
+    pipeline._phase_sync = sync
+    assert pipeline.run_sync_only() == exit_code
+    row = pipeline.traces_conn.execute(
+        "SELECT status, completed_at FROM pipeline_runs WHERE id = ?", (pipeline.traces_run_id,)).fetchone()
+    assert row[0] == status and row[1]

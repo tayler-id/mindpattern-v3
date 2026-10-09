@@ -653,12 +653,19 @@ class ResearchPipeline:
         upload flake triggered a second full pipeline at 11:00).
         """
         logger.info(f"Sync-only run for {self.user_id} ({self.date_str})")
+        # The constructor opened a pipeline_runs row; close it, or the
+        # dashboard shows a run stuck at 'running' (2026-10-09).
         try:
             result = self._phase_sync()
         except Exception as e:
             logger.error(f"Sync-only run crashed: {e}", exc_info=True)
+            complete_pipeline_run(self.traces_conn, self.traces_run_id, status="failed",
+                                  error=json.dumps({"sync_only": True, "error": str(e)}))
             return 1
-        return 0 if result.get("success") else 1
+        ok = bool(result.get("success"))
+        complete_pipeline_run(self.traces_conn, self.traces_run_id, status="completed" if ok else "failed",
+                              error=None if ok else json.dumps({"sync_only": True, "error": result.get("error")}))
+        return 0 if ok else 1
 
     def run(self) -> int:
         """Execute the full pipeline. Returns exit code (0=success, 1=failure)."""
