@@ -35,6 +35,9 @@ Behavior that changes without a code edit lives in files, checked when loaded:
 - `tools/replay_day.py --date D --stage synthesis|research --state-root ~/Projects/mindpattern-v3 --out DIR`: rerun a stage on real data in a scratch copy. Real model calls; `--dry-run` makes none.
 - `tools/usage_report.py --date D`: usage by task and model from Claude transcripts.
 - `bin/mp`: the research agents' tools (`finding add`, `findings list`, `seen`, `fetch`, `evidence add`, `lint`, `tells`).
+- `tools/health.py --since 7`: one row per day (run, delivery, agents, findings, duplicates, eval, site stories, cost, Codex, failures) plus per-agent output and problems. Exits 1 on any problem.
+- `tools/mutate.py --file F --old X --new Y --test T` (or `--plan`): break a guard, run its tests, restore byte for byte. RED means a test caught it.
+- `tools/site_backfill.py --dates D1,D2 [--claude-critic]`: write the site stories past issues should have had.
 
 ## Code Conventions
 
