@@ -273,3 +273,33 @@ def test_fetch_reads_on_from_an_offset(tmp_path):
     assert (first["text"], first["next_offset"]) == ("line 000\nline 001\n", 18)
     assert second["text"] == "line 002\nline 003\n"
     assert (last["text"], last["next_offset"], last["truncated"]) == ("line 039", None, False)
+
+
+def test_a_story_another_agent_stored_this_run_is_turned_away(tmp_path, memory_db):
+    run = tmp_path / "runs" / "r1"
+    run.mkdir(parents=True)
+    cli.add_finding(FINDING, store=run / "news-researcher.findings.jsonl", agent="news-researcher",
+                    db=memory_db, today=TODAY)
+    mine = run / "hn-researcher.findings.jsonl"
+    for change in ({"title": "Different words entirely for the same Acme post"},
+                   {"source_url": "https://news.example.com/acme-runtime-2-retrying-planner"}):
+        with pytest.raises(cli.Rejected, match="news-researcher already stored this story this run"):
+            cli.add_finding({**FINDING, **change}, store=mine, agent="hn-researcher", db=memory_db, today=TODAY)
+    other = {**FINDING, "title": "Beta opens its vector store to every team on the free plan",
+             "source_url": "https://beta.example.com/free"}
+    assert cli.add_finding(other, store=mine, agent="hn-researcher", db=memory_db, today=TODAY)["accepted"]
+
+
+def test_seen_reports_what_other_agents_stored_this_run(tmp_path, capsys, monkeypatch):
+    run = tmp_path / "runs" / "r1"
+    run.mkdir(parents=True)
+    findings_store = __import__("core.findings_store", fromlist=["append"])
+    findings_store.append(run / "news-researcher.findings.jsonl", {**FINDING, "agent": "news-researcher"})
+    monkeypatch.setenv("MP_USER_ID", "nobody-here")
+    monkeypatch.setenv("MP_FINDINGS_FILE", str(run / "hn-researcher.findings.jsonl"))
+    assert cli.main(["seen", FINDING["source_url"], "Acme ships Runtime 2.0 with a retrying planner",
+                     "Gamma raises a round"]) == 0
+    results = json.loads(capsys.readouterr().out)["results"]
+    assert [(r["seen"], r["matches"][0]["agent"] if r["matches"] else None) for r in results] == [
+        (True, "news-researcher"), (True, "news-researcher"), (False, None)]
+    assert results[0]["matches"][0]["run_date"] == "this run"

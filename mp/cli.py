@@ -124,6 +124,27 @@ def history(query: str, *, db: Path | None = None, today: date | None = None) ->
     return sorted(matches, key=lambda m: m["run_date"], reverse=True)[:5]
 
 
+def same_run(query_url: str, query_title: str, *, store: Path) -> list[dict]:
+    """Findings other agents stored this run that share the URL or nearly the title.
+
+    Agents run in parallel, and on Oct 3-9 2026 a third of what they found was
+    the same story as another agent's, removed after the fact by the cross-agent
+    dedupe. Checking first sends an agent's remaining turns to new stories.
+    """
+    url = normalize_url(query_url) if query_url else ""
+    words = title_words(query_title) if query_title else set()
+    matches = []
+    for other in sorted(store.parent.glob("*.findings.jsonl")):
+        if other == store:
+            continue
+        for row in findings_store.read_rows(other):
+            if url and normalize_url(row.get("source_url", "")) == url:
+                matches.append({"agent": row.get("agent"), "title": row.get("title"), "match": "same url"})
+            elif words and _jaccard(words, title_words(row.get("title", ""))) >= 0.6:
+                matches.append({"agent": row.get("agent"), "title": row.get("title"), "match": "similar title"})
+    return matches
+
+
 def add_finding(finding: object, *, store: Path, agent: str, db: Path | None = None,
                 today: date | None = None) -> dict:
     """Validate and store one finding. Raises Rejected with every reason it fails."""
@@ -143,6 +164,10 @@ def add_finding(finding: object, *, store: Path, agent: str, db: Path | None = N
             raise Rejected([f"already stored this run: {row.get('title')!r} has the same source_url"])
         if _jaccard(words, title_words(row.get("title", ""))) >= 0.8:
             raise Rejected([f"already stored this run under a near-identical title: {row.get('title')!r}"])
+    taken = same_run(finding["source_url"], finding["title"], store=store)
+    if taken:
+        raise Rejected([f"{taken[0]['agent']} already stored this story this run: {taken[0]['title']!r}. "
+                        "Spend your turns on a story no other agent has."])
     today = today or _run_date()
     recent = [m for m in history(finding["source_url"], db=db, today=today)
               if m["run_date"] >= (today - timedelta(days=RECENT_DAYS)).isoformat()]
@@ -308,8 +333,18 @@ def main(argv: list[str] | None = None) -> int:
             return _out({"count": len(rows), "findings": [{"title": r.get("title"), "source_url": r.get("source_url"),
                                                            "importance": r.get("importance")} for r in rows]})
         if args.command == "seen":
+            store = Path(os.environ["MP_FINDINGS_FILE"]) if os.environ.get("MP_FINDINGS_FILE") else None
+
+            def lookup(query: str) -> list[dict]:
+                found = history(query)
+                if store is not None:
+                    is_url = query.strip().lower().startswith(("http://", "https://"))
+                    found = [{**m, "run_date": "this run"} for m in
+                             same_run(query if is_url else "", "" if is_url else query, store=store)] + found
+                return found
+
             results = [{"query": query, "seen": bool(found), "matches": found}
-                       for query, found in ((query, history(query)) for query in args.query)]
+                       for query, found in ((query, lookup(query)) for query in args.query)]
             return _out({"results": results})
         if args.command == "fetch":
             return _out(fetch(args.url, max_chars=args.max_chars, offset=args.offset))
