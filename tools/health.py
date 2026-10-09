@@ -81,9 +81,13 @@ def collect_days(root: Path, user: str, dates: list[str]) -> list[Day]:
     days = {d: Day(date=d) for d in dates}
     if traces is not None:
         with traces:
+            # A day can hold more than one run record: a sync-only retry opens
+            # its own with no events. The day's run is the one that recorded the most.
             runs = traces.execute(
-                "SELECT id, status, started_at, completed_at FROM pipeline_runs "
-                "WHERE pipeline_type='research' ORDER BY started_at").fetchall()
+                "SELECT r.id, r.status, r.started_at, r.completed_at, "
+                "(SELECT count(*) FROM events e WHERE e.pipeline_run_id = r.id) AS n_events "
+                "FROM pipeline_runs r WHERE r.pipeline_type='research' "
+                "ORDER BY n_events, r.started_at").fetchall()
             for run in runs:
                 match = _RUN_ID.match(run["id"] or "")
                 if not match or match.group(1) not in days:

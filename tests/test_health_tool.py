@@ -77,3 +77,16 @@ def test_the_cli_prints_the_table_and_exits_1_on_problems(tmp_path, capsys):
     assert "2026-10-09 completed    50  yes     12       46    24  0.83    3     2.00     1      1        1" in out
     assert "  2026-10-09  46 findings, floor 70" in out
     assert "Ambiguous story slugs (404 on the site): 1" in out
+
+
+def test_a_sync_only_retry_does_not_hide_the_days_run(tmp_path):
+    import sqlite3
+
+    root = _state(tmp_path)
+    conn = sqlite3.connect(root / "data" / "ramsay" / "traces.db")
+    conn.execute("INSERT INTO pipeline_runs (id, pipeline_type, status, started_at) VALUES "
+                 "('research-2026-10-09-zzz999', 'research', 'running', '2026-10-09T19:00:00+00:00')")
+    conn.commit()
+    conn.close()
+    today = health.report(root, "ramsay", 1, date(2026, 10, 9))["days"][-1]
+    assert (today["run_id"], today["status"], today["findings"]) == ("research-2026-10-09-abc123", "completed", 46)
