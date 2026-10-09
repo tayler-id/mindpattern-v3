@@ -169,6 +169,46 @@ def correct_length_claims(markdown: str) -> tuple[str, int]:
     return _LENGTH_CLAIM.sub(_fix, markdown), corrected
 
 
+_SECTION_WRAPPER = re.compile(r"^##\s+.*\bdeep dives?\b", re.IGNORECASE)
+_SECTION_HEADING = re.compile(r"^###\s+(?!\d+[.)]\s)\S")
+
+
+def unwrap_sections(markdown: str) -> tuple[str, int]:
+    """Drop a bare "## Section deep dives" wrapper and lift its sections to ##.
+
+    The site splits a ## section into one story per bold-led item but reads a
+    ### heading as one story. Opus 5.5 nests every section under such a
+    wrapper, which cut the site's issue stories from 20 a day to about 5
+    (Oct 3-9 2026). A wrapper with its own intro text, or one holding
+    numbered stories, is left alone. Returns (markdown, sections_lifted).
+    """
+    lines = markdown.split("\n")
+    out: list[str] = []
+    lifted = 0
+    inside = in_fence = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _FENCE.match(line):
+            in_fence = not in_fence
+        elif not in_fence and _SECTION_WRAPPER.match(line):
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines) and _SECTION_HEADING.match(lines[j]):
+                inside = True
+                i = j
+                continue
+        elif not in_fence and line.startswith("## "):
+            inside = False
+        elif not in_fence and inside and _SECTION_HEADING.match(line):
+            line = "## " + line[4:]
+            lifted += 1
+        out.append(line)
+        i += 1
+    return "\n".join(out), lifted
+
+
 def scan(markdown: str) -> dict:
     """Measure prose markers without changing anything.
 
@@ -223,6 +263,7 @@ def sanitize(markdown: str) -> tuple[str, dict]:
 
     clean = "\n".join(out_lines)
     clean, length_claims = correct_length_claims(clean)
+    clean, sections_unwrapped = unwrap_sections(clean)
     after = scan(clean)
 
     report = {
@@ -231,6 +272,7 @@ def sanitize(markdown: str) -> tuple[str, dict]:
         "em_dashes_after": after["em_dashes"],
         "replaced": replaced,
         "length_claims_corrected": length_claims,
+        "sections_unwrapped": sections_unwrapped,
         "remaining_over_budget": after["em_dashes"] > EM_DASH_BUDGET,
         "budget": EM_DASH_BUDGET,
         "per_500w_before": before["em_dashes_per_500w"],
