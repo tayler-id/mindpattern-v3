@@ -16,6 +16,12 @@ It restores the day's trends, sets `MP_DISABLE_OUTBOUND=1`, and sends traces to 
 
 `tools/usage_report.py --date D` totals Claude transcript usage by task and model, deduped by message and request id. Transcripts repeat usage across lines of one response, and an earlier hand count was 2.5 times too high for that reason.
 
+## Health, Mutation, Backfill
+
+`tools/health.py` reads traces.db, memory.db and the story folders and prints a row per day with the problems it finds, against the evaluator's floors and the editorial story target.
+
+`tools/mutate.py` breaks one line, runs the named tests, and restores the file byte for byte. `tools/site_backfill.py` writes missing site stories for past dates, optionally with the critic on Claude.
+
 ## Results Kept
 
 Replays live in `data/ramsay/replays/` (gitignored). The Sep 30 synthesis replays and the Oct 2 research replays are recorded in `docs/specs/2026-10-02-models-harness-policies-spec.md`.
