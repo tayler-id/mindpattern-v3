@@ -286,7 +286,7 @@ class TestRouter:
         assert get_model("trend_scan") == "claude-haiku-4-5"
 
     def test_get_model_research_agent(self):
-        assert get_model("research_agent") == "claude-sonnet-5-5"
+        assert get_model("research_agent") == "claude-opus-5-5"
 
     def test_get_model_synthesis(self):
         assert get_model("synthesis_pass1") == "claude-opus-5-5"

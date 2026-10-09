@@ -2034,6 +2034,7 @@ class ResearchPipeline:
         self.newsletter_text, prose_report = prose_sanitize(self.newsletter_text)
         if (prose_report["replaced"]
                 or prose_report["length_claims_corrected"]
+                or prose_report["sections_unwrapped"]
                 or prose_report["remaining_over_budget"]):
             log_event(self.traces_conn, self.traces_run_id,
                       "prose_gate", json.dumps(prose_report))

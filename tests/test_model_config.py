@@ -10,7 +10,7 @@ from core.config import ConfigError, Route, load_routes, main, parse_routes, rou
 # (model, max_turns, timeout_s, effort)
 ROUTING_DECIDED_2026_10_02 = {
     "trend_scan": ("claude-haiku-4-5", 5, 60, None),
-    "research_agent": ("claude-sonnet-5-5", 35, 1800, "high"),
+    "research_agent": ("claude-opus-5-5", 35, 1800, "high"),
     "synthesis_pass1": ("claude-opus-5-5", 10, 600, "high"),
     "synthesis_pass2": ("claude-opus-5-5", 30, 900, "high"),
     "learnings_update": ("claude-sonnet-5-5", 5, 120, "low"),

@@ -1,5 +1,6 @@
 """Tests for the deterministic prose gate."""
 
+import pytest
 from orchestrator.prose_gate import EM_DASH_BUDGET, sanitize, scan
 
 
@@ -223,3 +224,80 @@ class TestUnslopReachesEveryWriter:
         stub.write_text("# Voice\n\nNo pass here.\n")
         monkeypatch.setattr(eng, "_VOICE_GUIDE_PATH", stub)
         assert eng._unslop_section() == ""
+
+
+WRAPPED_ISSUE = """# Ramsay Research Agent — October 8, 2026
+
+## Top 5 stories today
+
+### 1. GPT-6 puts small apps inside ChatGPT answers
+
+**Weapons.** A sub-heading inside a top story stays where it is.
+
+Body of the first top story with a [source](https://openai.com/a).
+
+## Section deep dives
+
+### Security
+
+**CrowdStrike tied intrusions at South Korean banks to ARTEX.** [Report](https://crowdstrike.com/r) body.
+
+**LMCache's pickle RCE scores CVSS 9.8 and has no patched release yet.** [THN](https://thehackernews.com/x) body.
+
+### Agents
+
+**Parallel sub-agents moved coding pass rates between -11.9 and +2.3 points.** [Study](https://arxiv.org/abs/1) body.
+
+## Skills of the day
+
+1. A skill.
+"""
+
+
+def test_a_section_wrapper_is_lifted_so_each_section_is_a_section():
+    """Opus 5.5 nests sections under "## Section deep dives"; the site then reads
+    each as one story and wrote about 5 issue stories a day instead of 20 (Oct 3-9 2026)."""
+    from orchestrator.prose_gate import unwrap_sections
+
+    text, lifted = unwrap_sections(WRAPPED_ISSUE)
+    assert lifted == 2
+    assert "## Section deep dives" not in text
+    assert "\n## Security\n" in text and "\n## Agents\n" in text
+    assert "### 1. GPT-6 puts small apps inside ChatGPT answers" in text
+    assert text.replace("## Security", "### Security").replace("## Agents", "### Agents") == \
+        WRAPPED_ISSUE.replace("## Section deep dives\n\n", "")
+
+
+def test_unwrapping_gives_the_site_one_story_per_section_item():
+    from orchestrator.prose_gate import unwrap_sections
+    from orchestrator.site_content import build_structured_issue
+
+    def titles(markdown):
+        issue = build_structured_issue(date="2026-10-08", user="ramsay", title="t", content=markdown)
+        return [unit["title"] for unit in issue["story_units"]]
+
+    assert "Security" in titles(WRAPPED_ISSUE)
+    after = titles(unwrap_sections(WRAPPED_ISSUE)[0])
+    assert "Security" not in after
+    assert any(t.startswith("CrowdStrike tied intrusions") for t in after)
+    assert any(t.startswith("LMCache's pickle RCE") for t in after)
+    assert any(t.startswith("Parallel sub-agents") for t in after)
+
+
+@pytest.mark.parametrize("markdown", [
+    "## Security\n\n**A thing happened today in the world.** Body.\n",
+    "## Section deep dives\n\nAn intro paragraph that belongs to the wrapper.\n\n### Security\n\n**Item one.** Body.\n",
+    "## Section deep dives\n\n### 1. A numbered story stays a story\n\nBody.\n",
+])
+def test_an_issue_without_a_bare_wrapper_is_not_changed(markdown):
+    from orchestrator.prose_gate import unwrap_sections
+
+    text, lifted = unwrap_sections(markdown)
+    assert (text, lifted) == (markdown, 0)
+
+
+def test_sanitize_reports_the_lifted_sections():
+    from orchestrator.prose_gate import sanitize
+
+    clean, report = sanitize(WRAPPED_ISSUE)
+    assert report["sections_unwrapped"] == 2 and "\n## Security\n" in clean
