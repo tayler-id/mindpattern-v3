@@ -1,6 +1,6 @@
 # Spec: an agent-ready codebase
 
-Status: approved by the owner 2026-10-10. Step 1 in progress on `feat/agent-ready`.
+Status: approved by the owner 2026-10-10. Step 1 built on `feat/agent-ready` 2026-10-10.
 
 ## Objective
 
@@ -54,11 +54,11 @@ tools/          scripts the pipeline runs (unchanged)
 
 ### Step 1. One folder and one command for developer tools
 
-- [ ] Move the seven developer tools from `tools/` to `devtools/` with `git mv`. Every caller, test, and doc path is updated by a script that checks each file before writing it (the file still parses, and only the expected paths changed).
-- [ ] `bin/mpdev` with subcommands `replay`, `rerun`, `bakeoff`, `mutate`, `health`, `usage`, `site-backfill`, `check`, `doctor`.
-- [ ] `devtools/checks.json` and `mpdev check`. It runs every check in order, prints pass or fail with timings, and writes a receipt for the commit (`.scratch/checks/<sha>.json`, with the dirty flag). It exits 1 when any check fails. `--only ID` and `--list` work.
-- [ ] `mpdev doctor`, read-only. Python version, required packages, the `claude`, `codex` and `gh` CLIs, readable databases, a fresh code graph, and skip-worktree on `graphify-out/`. Each failure prints its fix. `--ci` skips what CI can't have (CLIs, live data).
-- [ ] Fix the 5 knowledge-check failures so the knowledge check can join `checks.json`.
+- [x] Move the seven developer tools from `tools/` to `devtools/` with `git mv`. Every caller, test, and doc path is updated by a script that checks each file before writing it (the file still parses, and only the expected paths changed).
+- [x] `bin/mpdev` with subcommands `replay`, `rerun`, `bakeoff`, `mutate`, `health`, `usage`, `site-backfill`, `check`, `doctor`.
+- [x] `devtools/checks.json` and `mpdev check`. It runs every check in order, prints pass or fail with timings, and writes a receipt for the commit (`.scratch/checks/<sha>.json`, with the dirty flag). It exits 1 when any check fails. `--only ID` and `--list` work.
+- [x] `mpdev doctor`, read-only. Python version, required packages, the `claude`, `codex` and `gh` CLIs, readable databases, a fresh code graph, and skip-worktree on `graphify-out/`. Each failure prints its fix. `--ci` skips what CI can't have (CLIs, live data).
+- [x] Fix the knowledge-check failures so the knowledge check can join `checks.json`. There were 34, not 5: the check prints only its first five.
 - Acceptance: `bin/mpdev check` passes on the branch. Breaking any one check makes `mpdev check` exit 1 and name it. `git grep` finds the old tool paths only in dated specs.
 
 ### Step 2. Static analysis with a ratchet

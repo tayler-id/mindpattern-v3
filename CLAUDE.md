@@ -31,16 +31,17 @@ Behavior that changes without a code edit lives in files, checked when loaded:
 
 ## Tools
 
-How each one works, with flow diagrams: [docs/tools.md](docs/tools.md).
+Every developer tool runs through `bin/mpdev`; `bin/mpdev help` lists them. The code is in `devtools/`, and [docs/tools.md](docs/tools.md) explains each one with flow diagrams. `tools/` holds only scripts the pipeline runs.
 
-- `python -m orchestrator.trace runs | show <run> --steps | call <id> --full | grep | usage`: what every agent did.
-- `tools/replay_day.py --date D --stage synthesis|research --state-root ~/Projects/mindpattern-v3 --out DIR`: rerun a stage on real data in a scratch copy. Real model calls; `--dry-run` makes none.
-- `tools/usage_report.py --date D`: usage by task and model from Claude transcripts.
+- `bin/mpdev check`: every gate in `devtools/checks.json` (doctor, config, layers, knowledge, tests). Run it before every commit. Writes a receipt to `.scratch/checks/<commit>.json`.
+- `bin/mpdev doctor [--ci]`: read-only, is this machine ready (Python, packages, CLIs, databases, a fresh code graph).
+- `bin/mpdev replay --date D --stage synthesis|research --state-root ~/Projects/mindpattern-v3 --out DIR`: rerun a stage on real data in a scratch copy. Real model calls; `--dry-run` makes none.
+- `bin/mpdev rerun --traces DIR --call ID --system-prompt F --out DIR [--runs N]`: rerun one traced model call with another system prompt on the same input, and print the issue's layout.
+- `bin/mpdev trace runs | show <run> --steps | call <id> --full | grep | usage`: what every agent did.
+- `bin/mpdev health --since 7`: one row per day (run, delivery, agents, findings, duplicates, eval, site stories, cost, Codex, failures) plus per-agent output and problems. Exits 1 on any problem.
+- `bin/mpdev mutate --file F --old X --new Y --test T` (or `--plan`): break a guard, run its tests, restore byte for byte. RED means a test caught it.
+- `bin/mpdev bakeoff`, `bin/mpdev usage --date D`, `bin/mpdev site-backfill --dates D1,D2`: blind issue comparison, usage from Claude transcripts, past issues' missing site stories.
 - `bin/mp`: the research agents' tools (`finding add`, `findings list`, `seen`, `fetch`, `evidence add`, `lint`, `tells`).
-- `tools/health.py --since 7`: one row per day (run, delivery, agents, findings, duplicates, eval, site stories, cost, Codex, failures) plus per-agent output and problems. Exits 1 on any problem.
-- `tools/mutate.py --file F --old X --new Y --test T` (or `--plan`): break a guard, run its tests, restore byte for byte. RED means a test caught it.
-- `tools/site_backfill.py --dates D1,D2 [--claude-critic]`: write the site stories past issues should have had.
-- `tools/rerun_call.py --traces DIR --call ID --system-prompt F --out DIR [--runs N]`: rerun one traced model call with another system prompt on the same input, and print the issue's layout (`orchestrator/issue_format.py`).
 
 ## Code Conventions
 
