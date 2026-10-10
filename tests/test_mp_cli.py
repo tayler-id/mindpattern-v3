@@ -303,3 +303,21 @@ def test_seen_reports_what_other_agents_stored_this_run(tmp_path, capsys, monkey
     assert [(r["seen"], r["matches"][0]["agent"] if r["matches"] else None) for r in results] == [
         (True, "news-researcher"), (True, "news-researcher"), (False, None)]
     assert results[0]["matches"][0]["run_date"] == "this run"
+
+
+def test_a_turned_away_duplicate_is_kept_as_corroboration(tmp_path, memory_db):
+    """On 2026-10-10 mp turned away 25 such stories and the selector never knew several agents had found them."""
+    from core import findings_store
+
+    run = tmp_path / "runs" / "r1"
+    run.mkdir(parents=True)
+    cli.add_finding(FINDING, store=run / "news-researcher.findings.jsonl", agent="news-researcher",
+                    db=memory_db, today=TODAY)
+    second = {**FINDING, "title": "Different words entirely for the same Acme post", "source_name": "Hacker News"}
+    with pytest.raises(cli.Rejected, match="Recorded as corroboration"):
+        cli.add_finding(second, store=run / "hn-researcher.findings.jsonl", agent="hn-researcher",
+                        db=memory_db, today=TODAY)
+    rows = findings_store.read_corroborations(run)
+    assert [(r["agent"], r["corroborates_agent"], r["corroborates_url"]) for r in rows] == [
+        ("hn-researcher", "news-researcher", FINDING["source_url"])]
+    assert findings_store.corroborators({**FINDING, "agent": "news-researcher"}, rows) == ["hn-researcher (Hacker News)"]
