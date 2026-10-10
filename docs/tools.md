@@ -270,7 +270,7 @@ bin/mpdev doctor --ci     # what CI can have: Python and packages
 bin/mpdev doctor --json
 ```
 
-Read-only. It checks the Python version, the installed packages from `requirements.txt` plus pytest, the `claude`, `codex` and `gh` CLIs, that `memory.db` and `traces.db` open read-only, and that the code graph in `graphify-out/` is newer than the last commit and kept out of `git status`. Every blocked probe prints its fix. In a worktree it reads the databases from the main checkout. CI mode is also on when `CI=true`.
+Read-only. It checks the Python version, the installed packages from `requirements.txt` plus pytest, the `claude`, `codex` and `gh` CLIs, that `memory.db` and `traces.db` open read-only, and that the code graph in `graphify-out/` is newer than the last commit to Python code and kept out of `git status`. Every failed probe prints its fix. A stale graph is a warning, not a failure, because the hooks rebuild it in the background after each code commit. In a worktree it reads the databases from the main checkout. CI mode is also on when `CI=true`.
 
 ## Where outputs go
 

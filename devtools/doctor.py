@@ -38,6 +38,7 @@ class Probe:
     ok: bool
     detail: str
     fix: str = ""
+    blocking: bool = True  # False: reported as a warning and never fails the doctor
 
 
 def _git(*args: str, cwd: Path = PROJECT_ROOT) -> str:
@@ -103,20 +104,22 @@ def probe_data(user: str, root: Path) -> Probe:
     return Probe("data", True, f"{' and '.join(opened)} readable in {root / 'data' / user}")
 
 
-def probe_graph(project_root: Path = PROJECT_ROOT, head_time: int | None = None) -> Probe:
+def probe_graph(project_root: Path = PROJECT_ROOT, code_time: int | None = None) -> Probe:
+    """Advisory. The hooks rebuild the graph in the background after a code commit, so it lags for a while."""
     graph = project_root / "graphify-out" / "graph.json"
     if not graph.exists():
-        return Probe("graph", False, "no graphify-out/graph.json", "graphify update .")
-    head = head_time if head_time is not None else int(_git("log", "-1", "--format=%ct", cwd=project_root) or 0)
-    if graph.stat().st_mtime + 1 < head:
-        return Probe("graph", False, "graphify-out/graph.json is older than the last commit",
-                     "graphify update .  (the post-commit hook normally does this)")
+        return Probe("graph", False, "no graphify-out/graph.json", "graphify update .", blocking=False)
+    if code_time is None:
+        code_time = int(_git("log", "-1", "--format=%ct", "--", "*.py", cwd=project_root) or 0)
+    if graph.stat().st_mtime + 1 < code_time:
+        return Probe("graph", False, "graphify-out/graph.json is older than the last commit to Python code",
+                     "graphify update .  (the post-commit hook does this in the background)", blocking=False)
     flags = _git("ls-files", "-v", "graphify-out", cwd=project_root).splitlines()
     tracked = [line for line in flags if line]
     if tracked and not all(line.startswith("S ") for line in tracked):
         return Probe("graph", False, "graphify-out/ is fresh but git shows its changes",
-                     "git ls-files graphify-out | xargs git update-index --skip-worktree")
-    return Probe("graph", True, "fresh, and kept out of git status")
+                     "git ls-files graphify-out | xargs git update-index --skip-worktree", blocking=False)
+    return Probe("graph", True, "fresh, and kept out of git status", blocking=False)
 
 
 def run(*, ci: bool, user: str) -> list[Probe]:
@@ -134,12 +137,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ci = args.ci or os.environ.get("CI") == "true"
     probes = run(ci=ci, user=args.user)
-    ok = all(p.ok for p in probes)
+    ok = all(p.ok for p in probes if p.blocking)
     if args.json:
         print(json.dumps({"outcome": "pass" if ok else "blocked", "ci": ci, "probes": [asdict(p) for p in probes]}))
     else:
         for p in probes:
-            print(f"{'ok' if p.ok else 'BLOCKED':<8} {p.id:<9} {p.detail}" + (f"\n         fix: {p.fix}" if p.fix else ""))
+            label = "ok" if p.ok else ("BLOCKED" if p.blocking else "warn")
+            print(f"{label:<8} {p.id:<9} {p.detail}" + (f"\n         fix: {p.fix}" if p.fix else ""))
         print(("pass" if ok else "blocked") + (" (CI mode)" if ci else ""))
     return 0 if ok else 1
 

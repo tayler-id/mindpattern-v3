@@ -16,7 +16,9 @@ The checks are data, so the CLI, CI, and the skills read one list. Today: doctor
 
 ## Doctor
 
-`devtools/doctor.py` is read-only. It probes Python, packages, the model and GitHub CLIs, the databases, and the code graph's freshness, and prints a fix for each blocked probe.
+`devtools/doctor.py` is read-only. It probes Python, packages, the model and GitHub CLIs, the databases, and the code graph, and prints a fix for each failed probe.
+
+A stale code graph only warns. The hooks rebuild it in the background after a code commit, so it lags for a while.
 
 `--ci`, or `CI=true`, keeps only the probes CI can pass: Python and packages.
 

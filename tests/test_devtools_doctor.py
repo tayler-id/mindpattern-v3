@@ -44,14 +44,18 @@ def test_the_databases_are_opened_read_only(tmp_path):
     assert doctor.state_root("someone", tmp_path) == tmp_path
 
 
-def test_a_graph_older_than_the_last_commit_is_stale(tmp_path):
+def test_a_graph_older_than_the_last_code_commit_is_a_warning_not_a_block(tmp_path, monkeypatch, capsys):
     graph = tmp_path / "graphify-out" / "graph.json"
     graph.parent.mkdir()
     graph.write_text("{}")
     built = int(graph.stat().st_mtime)
-    stale = doctor.probe_graph(tmp_path, head_time=built + 100)
-    assert (stale.ok, stale.fix.split()[0:2]) == (False, ["graphify", "update"])
-    assert doctor.probe_graph(tmp_path, head_time=built - 100).ok is True
+    stale = doctor.probe_graph(tmp_path, code_time=built + 100)
+    assert (stale.ok, stale.blocking, stale.fix.split()[0:2]) == (False, False, ["graphify", "update"])
+    assert doctor.probe_graph(tmp_path, code_time=built - 100).ok is True
+    monkeypatch.setattr(doctor, "run", lambda ci, user: [doctor.Probe("python", True, "3.14"), stale])
+    monkeypatch.delenv("CI", raising=False)
+    assert doctor.main([]) == 0
+    assert "warn     graph" in capsys.readouterr().out
 
 
 def test_ci_mode_runs_only_what_ci_can_have():
