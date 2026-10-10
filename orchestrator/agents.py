@@ -972,6 +972,7 @@ def _finding_quality_score(finding: dict) -> float:
 def dedup_cross_agent_findings(
     agent_results: list[AgentResult],
     threshold: float = 0.85,
+    corroborations: list[dict] | None = None,
 ) -> tuple[list[AgentResult], dict]:
     """Remove near-duplicate findings across different agents.
 
@@ -1010,6 +1011,17 @@ def dedup_cross_agent_findings(
     matrix = matrix / norms
     sim_matrix = matrix @ matrix.T
 
+    def corroborate(removed: int, kept: int) -> None:
+        if corroborations is None:
+            return
+        gone, stays = all_items[removed][2], all_items[kept][2]
+        corroborations.append({
+            "agent": agent_results[all_items[removed][0]].agent_name, "title": gone.get("title", ""),
+            "source_url": gone.get("source_url", ""), "source_name": gone.get("source_name", ""),
+            "corroborates_agent": agent_results[all_items[kept][0]].agent_name,
+            "corroborates_title": stays.get("title", ""), "corroborates_url": stays.get("source_url", ""),
+        })
+
     # Find duplicate pairs above threshold (only cross-agent, upper triangle)
     remove_set: set[int] = set()
     for i in range(total):
@@ -1026,11 +1038,13 @@ def dedup_cross_agent_findings(
                 score_j = _finding_quality_score(all_items[j][2])
                 if score_i >= score_j:
                     remove_set.add(j)
+                    corroborate(j, i)
                     # Tag the kept finding
                     all_items[i][2]["cross_agent_dedup"] = True
                     all_items[i][2]["dedup_kept_from"] = agent_results[all_items[j][0]].agent_name
                 else:
                     remove_set.add(i)
+                    corroborate(i, j)
                     all_items[j][2]["cross_agent_dedup"] = True
                     all_items[j][2]["dedup_kept_from"] = agent_results[all_items[i][0]].agent_name
                     break  # i is removed, stop comparing it

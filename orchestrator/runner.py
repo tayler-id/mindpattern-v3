@@ -19,7 +19,7 @@ from pathlib import Path
 import memory
 from . import agents as agent_dispatch
 from .arcs import format_arcs_for_synthesis, load_narrative_arcs
-from core import trace_store
+from core import findings_store, trace_store
 from core.trace_store import set_run_context
 from .checkpoint import Checkpoint
 from .evaluator import NewsletterEvaluator, assess_quality_floor
@@ -323,6 +323,16 @@ def _assess_agent_coverage(agent_results: list) -> dict:
         "failed_agents": failed,
         "reasons": reasons,
     }
+
+
+def _candidate_summary(finding: dict, covered: str, also_found_by: list[str]) -> str:
+    """One selector candidate. "Also found by" is the convergence signal the selector ranks on."""
+    source = (f"[{finding['source_name']}]({finding['source_url']})" if finding.get("source_url")
+              else finding.get("source_name") or "")
+    also = f"\n  Also found by: {', '.join(also_found_by)}" if also_found_by else ""
+    return (f"[{finding['agent']}] ({finding['importance']}) {covered}{finding['title']}\n"
+            f"  Source: {source}{also}\n"
+            f"  {finding['summary']}")
 
 
 def _balance_story_candidates(
@@ -1337,9 +1347,13 @@ class ResearchPipeline:
 
         # Cross-agent dedup: remove near-duplicate findings across agents
         try:
+            corroborations: list[dict] = []
             self.agent_results, dedup_summary = agent_dispatch.dedup_cross_agent_findings(
-                self.agent_results
+                self.agent_results, corroborations=corroborations,
             )
+            run_store = findings_store.path_for(self.user_id, self.traces_run_id, "cross-agent-dedup")
+            for row in corroborations:
+                findings_store.record_corroboration(run_store, row)
             log_event(self.traces_conn, self.traces_run_id,
                       "cross_agent_dedup", json.dumps(dedup_summary))
         except Exception as e:
@@ -1613,14 +1627,15 @@ class ResearchPipeline:
                 f"findings as already-covered by source URL"
             )
 
-        summaries = []
-        for f in story_findings:
-            source = f"[{f['source_name']}]({f['source_url']})" if f['source_url'] else f['source_name'] or ''
-            summaries.append(
-                f"[{f['agent']}] ({f['importance']}) {_covered(f)}{f['title']}\n"
-                f"  Source: {source}\n"
-                f"  {f['summary']}"
-            )
+        corroboration_rows = findings_store.read_corroborations(
+            findings_store.path_for(self.user_id, self.traces_run_id, "cross-agent-dedup").parent)
+        summaries = [
+            _candidate_summary(f, _covered(f), findings_store.corroborators(f, corroboration_rows))
+            for f in story_findings
+        ]
+        corroborated = sum(1 for s in summaries if "\n  Also found by: " in s)
+        if corroborated:
+            logger.info(f"{corroborated}/{len(summaries)} candidates were found by more than one agent")
 
         prefs = memory.list_preferences(self.db, effective=True)
         pref_text = "\n".join(

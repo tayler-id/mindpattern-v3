@@ -40,9 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 HISTORY_DAYS = 180
 RECENT_DAYS = 10
 DEFAULT_FETCH_CHARS = 6000
-_WORD = re.compile(r"[a-z0-9]+")
 _FIELD_LINE = re.compile(r"^([a-z_]+):[ \t]*(.*)$")
-_STOP = frozenset("a an and are as at be by for from has have in is it its of on or that the this to was were will with".split())
 
 
 class Rejected(Exception):
@@ -76,16 +74,8 @@ def _memory_db() -> Path:
     return PROJECT_ROOT / "data" / _user() / "memory.db"
 
 
-def normalize_url(url: str) -> str:
-    url = url.strip().lower()
-    url = re.sub(r"^https?://(www\.)?", "", url)
-    url = url.split("#", 1)[0].rstrip("/")
-    return url
-
-
-def title_words(title: str) -> set[str]:
-    """Content words of a title. Digits always count: Runtime 1.0 and 2.0 are different stories."""
-    return {w for w in _WORD.findall(title.lower()) if w not in _STOP and (len(w) > 1 or w.isdigit())}
+normalize_url = findings_store.normalize_url
+title_words = findings_store.title_words
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
@@ -166,8 +156,14 @@ def add_finding(finding: object, *, store: Path, agent: str, db: Path | None = N
             raise Rejected([f"already stored this run under a near-identical title: {row.get('title')!r}"])
     taken = same_run(finding["source_url"], finding["title"], store=store)
     if taken:
+        original = next((row for row in findings_store.read_rows(store.parent / f"{taken[0]['agent']}.findings.jsonl")
+                         if row.get("title") == taken[0]["title"]), {})
+        findings_store.record_corroboration(store, {
+            "agent": agent, "title": finding["title"], "source_url": finding["source_url"],
+            "source_name": finding["source_name"], "corroborates_agent": taken[0]["agent"],
+            "corroborates_title": taken[0]["title"], "corroborates_url": original.get("source_url", "")})
         raise Rejected([f"{taken[0]['agent']} already stored this story this run: {taken[0]['title']!r}. "
-                        "Spend your turns on a story no other agent has."])
+                        "Recorded as corroboration. Spend your turns on a story no other agent has."])
     today = today or _run_date()
     recent = [m for m in history(finding["source_url"], db=db, today=today)
               if m["run_date"] >= (today - timedelta(days=RECENT_DAYS)).isoformat()]

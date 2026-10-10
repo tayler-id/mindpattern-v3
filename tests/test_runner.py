@@ -802,6 +802,35 @@ class TestPhaseSynthesis:
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_the_selector_sees_which_other_agents_found_a_story(self, mock_claude, mock_prefs, mock_failures,
+                                                                 pipeline, tmp_path, monkeypatch):
+        """Convergence is a selection criterion; until 2026-10-10 the selector never saw it."""
+        from core import findings_store
+
+        monkeypatch.setattr(findings_store, "PROJECT_ROOT", tmp_path)
+        self._seed_findings(pipeline.db, pipeline.date_str)
+        store = findings_store.path_for(pipeline.user_id, pipeline.traces_run_id, "hn-researcher")
+        findings_store.record_corroboration(store, {
+            "agent": "hn-researcher", "title": "Same story, other words", "source_url": "https://news.ycombinator.com/x",
+            "source_name": "Hacker News", "corroborates_agent": "agent-3", "corroborates_title": "Title 3",
+            "corroborates_url": "https://source3.example/3"})
+        mock_claude.side_effect = [("Selected stories: 1, 2, 3", 0),
+                                   ("# Newsletter\n\nGreat content here.\n" + ("word " * 3500), 0)]
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path):
+            (tmp_path / "reports" / "testuser").mkdir(parents=True, exist_ok=True)
+            with patch("orchestrator.runner.NewsletterEvaluator") as mock_eval_cls:
+                mock_eval_cls.return_value.evaluate.return_value = {"overall": 0.85, "coverage": 0.9, "dedup": 0.95,
+                                                                    "sources": 0.8}
+                pipeline._phase_synthesis()
+
+        pass1_prompt = mock_claude.call_args_list[0][0][0]
+        assert "[agent-3] (medium) Title 3\n  Source: [Source 3](https://source3.example/3)\n" \
+               "  Also found by: hn-researcher (Hacker News)\n" in pass1_prompt
+        assert pass1_prompt.count("Also found by:") == 1
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
     def test_happy_path(self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path):
         self._seed_findings(pipeline.db, pipeline.date_str)
 
