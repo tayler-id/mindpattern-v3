@@ -4,7 +4,7 @@ change can be judged on real data without touching live state.
 
     # synthesis (lead stories, selection, deep dives, newsletter) for Sep 30 with this checkout's code
     # and the live checkout's data, into a fresh output folder:
-    .venv/bin/python3 tools/replay_day.py --date 2026-09-30 --stage synthesis \\
+    .venv/bin/python3 devtools/replay_day.py --date 2026-09-30 --stage synthesis \\
         --state-root ~/Projects/mindpattern-v3 --out /private/tmp/mp-replay/2026-09-30-a
 
     # the same day with another model table, for a bakeoff:

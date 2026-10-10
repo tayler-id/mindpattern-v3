@@ -22,7 +22,7 @@ The writer gets the rule as the Layout section of its task, rendered by `Layout.
 
 The editor gets every breach with the word-bank hits and folds extra lists and tables into prose under its fact guard. [[orchestrator/runner]] logs the event.
 
-`tools/rerun_call.py` reruns one traced call with another system prompt on the same input and prints this report, which is how the cause was found.
+`devtools/rerun_call.py` reruns one traced call with another system prompt on the same input and prints this report, which is how the cause was found.
 
 ## Depends On
 

@@ -1,4 +1,4 @@
-"""tools/usage_report.py totals one day of pipeline usage from session transcripts.
+"""devtools/usage_report.py totals one day of pipeline usage from session transcripts.
 
 A Claude Code transcript writes one API response as several lines that each
 repeat the response's usage. Summing lines counted Oct 1 2026 about 2.5 times
@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("usage_report", PROJECT_ROOT / "tools" / "usage_report.py")
+SPEC = importlib.util.spec_from_file_location("usage_report", PROJECT_ROOT / "devtools" / "usage_report.py")
 usage_report = importlib.util.module_from_spec(SPEC)
 sys.modules["usage_report"] = usage_report
 SPEC.loader.exec_module(usage_report)

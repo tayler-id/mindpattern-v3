@@ -1,10 +1,10 @@
-"""tools/site_backfill.py writes past issues' missing site stories, optionally with no Codex calls."""
+"""devtools/site_backfill.py writes past issues' missing site stories, optionally with no Codex calls."""
 import importlib.util
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("site_backfill_tool", ROOT / "tools" / "site_backfill.py")
+SPEC = importlib.util.spec_from_file_location("site_backfill_tool", ROOT / "devtools" / "site_backfill.py")
 tool = importlib.util.module_from_spec(SPEC)
 sys.modules["site_backfill_tool"] = tool
 SPEC.loader.exec_module(tool)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Break a guard on purpose, watch its tests fail, and put the file back byte for byte.
 
-    .venv/bin/python3 tools/mutate.py --file orchestrator/prose_gate.py \\
+    .venv/bin/python3 devtools/mutate.py --file orchestrator/prose_gate.py \\
         --old 'lifted += 1' --new 'pass' --test tests/test_prose_gate.py
-    .venv/bin/python3 tools/mutate.py --plan mutations.json
+    .venv/bin/python3 devtools/mutate.py --plan mutations.json
 
 A plan is a JSON list of {"file", "old", "new", "tests": [...], "k": optional}.
 Each mutation must match exactly once. RED means a test caught the break.

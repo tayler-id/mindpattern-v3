@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Write the site stories that past issues should have had, through the live writer and critic.
 
-    .venv/bin/python3 tools/site_backfill.py --dates 2026-10-03,2026-10-04
-    .venv/bin/python3 tools/site_backfill.py --dates 2026-10-03 --claude-critic
+    .venv/bin/python3 devtools/site_backfill.py --dates 2026-10-03,2026-10-04
+    .venv/bin/python3 devtools/site_backfill.py --dates 2026-10-03 --claude-critic
 
 Runs write_issue_stories_for_date for each date with the production
 copywriter, up to policies/editorial.json's issue_stories_per_day counting

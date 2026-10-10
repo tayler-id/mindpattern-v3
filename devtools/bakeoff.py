@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Blind side-by-side of two versions of the same issue, for judging a model or prompt change.
 
-    .venv/bin/python3 tools/bakeoff.py --a /tmp/mp-replays/day-opus5/newsletter.md \\
+    .venv/bin/python3 devtools/bakeoff.py --a /tmp/mp-replays/day-opus5/newsletter.md \\
         --b /tmp/mp-replays/day-opus55/newsletter.md --out /tmp/bakeoff/2026-09-30
     open /tmp/bakeoff/2026-09-30/compare.html      # read both, pick one
-    .venv/bin/python3 tools/bakeoff.py --reveal /tmp/bakeoff/2026-09-30
+    .venv/bin/python3 devtools/bakeoff.py --reveal /tmp/bakeoff/2026-09-30
 
 The page shows "Version 1" and "Version 2" in a random order with each one's
 writing-policy violation count, and never the source paths. The order is kept
@@ -40,7 +40,7 @@ pre {{ white-space: pre-wrap; word-wrap: break-word; font: inherit; margin: 0; }
 @media (max-width: 800px) {{ main {{ grid-template-columns: 1fr; }} }}
 </style></head><body>
 <header><strong>Blind bakeoff.</strong> Read both, decide which you would send, then run
-<code>tools/bakeoff.py --reveal {out}</code>.</header>
+<code>devtools/bakeoff.py --reveal {out}</code>.</header>
 <main>{columns}</main></body></html>
 """
 

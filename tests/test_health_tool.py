@@ -1,4 +1,4 @@
-"""tools/health.py turns what the pipeline records into one row per day and a list of problems."""
+"""devtools/health.py turns what the pipeline records into one row per day and a list of problems."""
 import importlib.util
 import json
 import sys
@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("health_tool", ROOT / "tools" / "health.py")
+SPEC = importlib.util.spec_from_file_location("health_tool", ROOT / "devtools" / "health.py")
 health = importlib.util.module_from_spec(SPEC)
 sys.modules["health_tool"] = health
 SPEC.loader.exec_module(health)

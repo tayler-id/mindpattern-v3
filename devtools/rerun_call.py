@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rerun one traced model call with a different system prompt, on exactly the same input.
 
-    .venv/bin/python3 tools/rerun_call.py --traces data/ramsay/replays/DAY/traces --call ID \\
+    .venv/bin/python3 devtools/rerun_call.py --traces data/ramsay/replays/DAY/traces --call ID \\
         --system-prompt agents/synthesis-writer.md --out /tmp/rerun/new-writer --runs 2
 
 Reads call ID's saved prompt and task from TRACES/traces.db and runs it through the

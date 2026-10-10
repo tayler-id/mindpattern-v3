@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """How the daily pipeline has been running: one row per day, per-agent output, and problems.
 
-    .venv/bin/python3 tools/health.py                # last 7 days
-    .venv/bin/python3 tools/health.py --since 14 --json
+    .venv/bin/python3 devtools/health.py                # last 7 days
+    .venv/bin/python3 devtools/health.py --since 14 --json
 
 Reads only what the pipeline records: traces.db (runs, events, model calls),
 memory.db (findings per agent), and the site story folders. Opens every

@@ -2722,7 +2722,7 @@ def _crash():
 ])
 def test_a_sync_only_run_closes_its_run_record(pipeline, sync, status, exit_code):
     """On 2026-10-09 a sync-only retry left its pipeline_runs row at 'running' with no
-    events, which the dashboard and tools/health.py read as the day's run."""
+    events, which the dashboard and devtools/health.py read as the day's run."""
     pipeline._phase_sync = sync
     assert pipeline.run_sync_only() == exit_code
     row = pipeline.traces_conn.execute(
