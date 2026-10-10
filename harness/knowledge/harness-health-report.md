@@ -4,6 +4,8 @@
 
 ## What It Reports
 
+One Slack message in seven parts.
+
 - **Pipeline status** — success/crashed/not started (checks marker file + stderr log)
 - **Harness run stats** — processed, PRs created, failures (parsed from harness log)
 - **Ticket backlog** — open count by priority (P1/P2/P3), by type (bug/improvement/feature/research)

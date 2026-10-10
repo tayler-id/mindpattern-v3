@@ -8,6 +8,8 @@ Builds prompt from agent traces + skill files + metrics + regression data. LLM p
 
 ## Key Functions
 
+Build the analyzer's prompt, parse its JSON answer, and apply the changes to skill files.
+
 - `build_analyzer_prompt(trace_dir, skill_files, date_str, metrics, regression_data, agent_history, agent_scorecards)` — assembles full context
 - `parse_analyzer_output(raw_output)` — extracts JSON from LLM output (tries direct parse, fences, braces)
 - `apply_analyzer_changes(changes, project_root, traced_files, prompt_tracker)` — applies diffs to files
@@ -20,6 +22,8 @@ Builds prompt from agent traces + skill files + metrics + regression data. LLM p
 [[orchestrator/prompt_tracker]], memory.vault.atomic_write. Modifies skill files in [[agents/research-agents]].
 
 ## Known Fragile Points
+
+Where the analyzer can apply the wrong change.
 
 - Path normalization is guesswork — tries known prefixes
 - traced_files validation optional — None = apply all changes blindly

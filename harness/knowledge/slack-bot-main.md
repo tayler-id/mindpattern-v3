@@ -8,6 +8,8 @@ Listens for Slack events via Socket Mode. Routes messages to handlers based on c
 
 ## Key Files
 
+The bot, its handlers, and the channel registry.
+
 - `bot.py` — SocketModeClient setup, event routing, threaded dispatch
 - `handlers/base.py` — BaseHandler with `read_url()` (Jina Reader + direct fallback), `reply()`, `react()`
 - `handlers/posts.py` — #mp-posts: URL → article → Creative Director → writers → critics → humanizer → expeditor

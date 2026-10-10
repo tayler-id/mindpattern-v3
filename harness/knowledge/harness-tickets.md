@@ -4,6 +4,8 @@
 
 ## Key Functions
 
+The ticket lifecycle, from pick to archive.
+
 - `list_tickets(status)` — list tickets by status
 - `pick()` — select next ticket to process (priority + age ordering)
 - `mark_in_progress(ticket_path)` — set status to in_progress
@@ -18,6 +20,8 @@
 - No `mark_open()` — can't reset tickets via CLI. Must edit JSON manually.
 
 ## Ticket Schema
+
+Each ticket is one JSON file in `harness/tickets/`.
 
 ```json
 {

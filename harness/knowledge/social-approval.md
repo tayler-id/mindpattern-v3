@@ -4,7 +4,9 @@
 
 ## What It Does
 
-Three-stage approval: Gate 1 (topic approval — can inject counter-narratives via 'custom' action), Gate 2 (content quality), Expeditor (distribution decision — post now, schedule, or hold). Polls for human approval with configurable timeout (default 4h).
+Three gates approve a post. Gate 1 approves the topic, Gate 2 the content, and the Expeditor decides to post now, schedule, or hold.
+
+Gate 1's 'custom' action can add a counter-narrative. Each gate polls for human approval with a configurable timeout, 4 hours by default.
 
 ## Known Patterns
 

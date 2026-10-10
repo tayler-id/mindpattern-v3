@@ -4,6 +4,8 @@
 
 ## API
 
+Store edges, then query an entity, a path, a neighborhood, or graph-wide stats.
+
 | Function | Purpose |
 |---|---|
 | `store_relationship(db, entity_a, relationship, entity_b, ...)` | Insert an edge into entity_graph. Returns row ID. |
@@ -22,6 +24,8 @@ All operations use the `entity_graph` table:
 
 ## Known Behaviors
 
+What a caller has to allow for.
+
 - **Duplicates allowed**: `store_relationship` does not deduplicate. Calling it twice with the same args creates two rows.
 - **Bidirectional queries**: `query_entity` and `related_entities` treat edges as undirected (UNION ALL on both directions).
 - **Path reconstruction**: `find_path` uses the `visited` column (pipe-delimited entity names) to reconstruct the full path, then looks up relationships per hop.
@@ -29,7 +33,9 @@ All operations use the `entity_graph` table:
 
 ## Test Coverage
 
-`tests/test_graph.py` — 16 tests covering:
+`tests/test_graph.py` has 16 tests.
+
+They cover:
 - Store relationship (basic insert, with finding_id, duplicate handling)
 - Query entity (both directions, empty graph, findings count)
 - Related entities (depth 1, depth 2, no neighbors)

@@ -18,7 +18,7 @@ All agents must print `KNOWLEDGE CHECK: Read N issues, N relevant: ...` after re
 
 ## Prompt Caching
 
-Fix agents use `--append-system-prompt` for the knowledge summary (ISSUES.md + INDEX + patterns). This is stable across all parallel agents in a round, so agents 2 and 3 get API-level cache hits on the system prompt prefix. Per-ticket content stays in the user prompt.
+Fix agents get the knowledge summary (ISSUES.md, INDEX, patterns) through `--append-system-prompt`. It's the same for every agent in a round, so agents 2 and 3 hit the cache on that prefix. Per-ticket content stays in the user prompt.
 
 ## Key Config (harness/config.json)
 

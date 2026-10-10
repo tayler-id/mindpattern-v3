@@ -8,6 +8,8 @@ SHA256 hashes skill files, compares against traces.db prompt_tracker table. If q
 
 ## Key Functions
 
+Hash prompt files, record versions, flag quality drops, and roll back.
+
 - `PromptTracker(traces_conn)` — init
 - `scan_for_changes()` — compare current hashes vs stored, returns changed files
 - `record_version(file_path, git_hash, quality_snapshot)` — store version
@@ -23,6 +25,8 @@ verticals/, agents/, verticals/ai-tech/agents/
 [[data/traces-db]] prompt_tracker table, quality_history/run_quality tables. Used by [[orchestrator/runner]] (INIT + LEARN phases) and [[orchestrator/analyzer]].
 
 ## Known Fragile Points
+
+Where a regression can be missed or misread.
 
 - Regression baseline detection fragile — falls back to traces tables that may have stale data
 - 15% threshold hardcoded, not configurable

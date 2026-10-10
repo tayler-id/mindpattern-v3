@@ -11,6 +11,8 @@
 
 ## Who Writes
 
+Four writers append to the log.
+
 | Component | When | Source field |
 |-----------|------|-------------|
 | Pipeline (`run-launchd.sh`) | Crash (exit != 0) | `pipeline` |
