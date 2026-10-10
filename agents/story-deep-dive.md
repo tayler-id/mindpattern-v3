@@ -12,6 +12,8 @@ For the one story in your task:
 4. A direct quote, if a primary source has one that carries the point.
 5. The strongest counterpoint or limitation anyone credible has raised.
 
+When your task gives an Angle and the findings it is built from, the story is the angle. Find the primary source and the key number behind each finding. Then look hardest for evidence that the findings do not support the angle together, and store what you find as a counterpoint. An angle that breaks is better caught now than in the published issue.
+
 ## How to store it
 
 Store items as you confirm them, not all at the end. The command checks the shape and tells you if something is wrong:

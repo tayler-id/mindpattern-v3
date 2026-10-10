@@ -10,6 +10,7 @@ As of 2026-10-09 (`python -m core.config check` prints the live file):
 |------|--------------------|--------|-------|---------|
 | trend_scan | claude-haiku-4-5 | none | 5 | 60s |
 | research_agent | claude-opus-5-5 | high | 35 | 1800s |
+| thread_finder | claude-opus-5-5 | high | 2 | 600s |
 | synthesis_pass1 | claude-opus-5-5 | high | 10 | 600s |
 | synthesis_pass2 | claude-opus-5-5 | high | 30 | 900s |
 | story_deep_dive | claude-sonnet-5-5 | medium | 15 | 600s |

@@ -4,7 +4,7 @@
     "top_stories": 5,
     "deep_dive_stories": 5,
     "length": {
-      "_about": "The issue the writer is asked for and the eval scores against. 10,000-14,000 words with 6-12 items per section matches the issues before 2026-10-03 (12,600-14,600 words, 104-133 items).",
+      "_about": "The issue the writer is asked for and the eval scores against. 10,000-14,000 words with 6-12 items per section matches the issues before 2026-10-03 (12,600-14,600 words, 104-133 items). lead_story_words sizes each lead story, an original piece built from 3-5 findings; a single-finding Top story stays 300-500 words.",
       "issue_words": {
         "min": 10000,
         "max": 14000
@@ -16,7 +16,26 @@
       "item_words": {
         "min": 80,
         "max": 160
+      },
+      "lead_story_words": {
+        "min": 600,
+        "max": 900
       }
+    },
+    "layout": {
+      "_about": "The issue's layout, counted by orchestrator/issue_format.py after the writer and again after the editor, which gets every breach to fold into prose. Chosen 2026-10-10 after a replay came back with 117 bullets and three tables: Top stories are prose and may close on one short list of what to do; section items are prose; no tables; the sections in list_sections may be one list.",
+      "top_story": {
+        "max_lists": 1,
+        "max_list_items": 4,
+        "max_tables": 0
+      },
+      "section": {
+        "max_lists": 0,
+        "max_tables": 0
+      },
+      "list_sections": [
+        "Skills of the day"
+      ]
     }
   },
   "site": {
@@ -25,5 +44,16 @@
   },
   "republish_check": {
     "tracker_url_threshold": 5
+  },
+  "threads": {
+    "_about": "Lead stories (orchestrator/threads.py). The thread_finder route reads all of today's findings and proposes up to `proposals` lead stories, each an angle several findings support together. Code keeps those with at least min_members findings not already published, from at least min_agents agents, one story per finding, strongest first, up to newsletter.top_stories. The selector fills any Top slot left. Earlier coverage is attached when a finding's embedding is at least `similarity` close to one from the last window_days and both name an entity that appears in at most max_entity_findings findings.",
+    "proposals": 7,
+    "min_members": 3,
+    "min_agents": 2,
+    "candidates": 30,
+    "window_days": 30,
+    "min_earlier_days": 1,
+    "similarity": 0.72,
+    "max_entity_findings": 150
   }
 }

@@ -26,7 +26,7 @@ from .evaluator import NewsletterEvaluator, assess_quality_floor
 from .observability import PipelineMonitor
 from .pipeline import Phase, PipelineRun, CRITICAL_PHASES
 from .prompt_tracker import PromptTracker
-from . import deep_dive, editorial, newsletter_editor, word_bank
+from . import deep_dive, editorial, newsletter_editor, threads, word_bank
 from .prose_gate import sanitize as prose_sanitize
 from . import published_history
 from .traces_db import (
@@ -325,6 +325,11 @@ def _assess_agent_coverage(agent_results: list) -> dict:
     }
 
 
+def _lead_marker(lead_story: int | None) -> str:
+    """Marks a finding the writer uses inside a lead story, so it doesn't run again as a section item."""
+    return f"[PART OF LEAD STORY {lead_story}, so no section item of its own] " if lead_story else ""
+
+
 def _candidate_summary(finding: dict, covered: str, also_found_by: list[str]) -> str:
     """One selector candidate. "Also found by" is the convergence signal the selector ranks on."""
     source = (f"[{finding['source_name']}]({finding['source_url']})" if finding.get("source_url")
@@ -493,9 +498,9 @@ def _fallback_ranked_findings(findings: list[dict], *, limit: int = 5) -> list[d
     return [finding for _, finding in selected]
 
 
-def _build_fallback_story_selection(findings: list[dict], *, reason: str) -> str:
+def _build_fallback_story_selection(findings: list[dict], *, reason: str, limit: int = 5) -> str:
     """Build an explicit story-selection block when the selector is unavailable."""
-    selected = _fallback_ranked_findings(findings)
+    selected = _fallback_ranked_findings(findings, limit=limit)
     lines = [
         "FALLBACK STORY SELECTION",
         f"Reason: {reason}",
@@ -1545,7 +1550,7 @@ class ResearchPipeline:
         Pass 2: Newsletter writing from full reports.
         """
         today_findings = self.db.execute(
-            "SELECT agent, title, summary, importance, source_url, source_name "
+            "SELECT id, agent, title, summary, importance, source_url, source_name "
             "FROM findings WHERE run_date = ?",
             (self.date_str,),
         ).fetchall()
@@ -1629,14 +1634,6 @@ class ResearchPipeline:
 
         corroboration_rows = findings_store.read_corroborations(
             findings_store.path_for(self.user_id, self.traces_run_id, "cross-agent-dedup").parent)
-        summaries = [
-            _candidate_summary(f, _covered(f), findings_store.corroborators(f, corroboration_rows))
-            for f in story_findings
-        ]
-        corroborated = sum(1 for s in summaries if "\n  Also found by: " in s)
-        if corroborated:
-            logger.info(f"{corroborated}/{len(summaries)} candidates were found by more than one agent")
-
         prefs = memory.list_preferences(self.db, effective=True)
         pref_text = "\n".join(
             f"- {p['topic']}: weight {p.get('effective_weight', p['weight'])}"
@@ -1668,9 +1665,42 @@ class ResearchPipeline:
         except Exception as e:
             logger.warning(f"Published-history load failed (non-critical): {e}")
 
+        # Lead stories: original stories built from several of today's findings
+        # that connect, proposed by the thread_finder route from every finding
+        # and held to the contract and policy in code. They fill the Top slots
+        # first; the selector picks the rest. Fails open to no lead stories.
+        top_stories = editorial.load().top_stories
+        leads: list = []
+        try:
+            if not self.dry_run and os.environ.get("MP_DRY_RUN") != "1":
+                notes = {}
+                for f in today_findings:
+                    also = findings_store.corroborators(f, corroboration_rows)
+                    notes[f["id"]] = " ".join(filter(None, [
+                        _covered(f), f"Also found by: {', '.join(also)}" if also else ""]))
+                leads = threads.find_threads(
+                    self.db, self.date_str, policy=threads.load_policy(), notes=notes,
+                    covered={f["id"] for f in today_findings if _covered(f)}, published=published_block)
+            threads.save(leads, date_str=self.date_str, user=self.user_id, reports_root=PROJECT_ROOT / "reports")
+            log_event(self.traces_conn, self.traces_run_id, "threads",
+                      json.dumps({"count": len(leads), "titles": [t.title for t in leads]}))
+            logger.info(f"Lead stories: {[t.title for t in leads]}")
+        except Exception as e:
+            logger.warning(f"Lead stories unavailable (non-critical): {e}")
+        lead_of = threads.lead_positions(leads)
+        picks_needed = top_stories - len(leads)
+
+        summaries = [
+            _candidate_summary(f, _covered(f), findings_store.corroborators(f, corroboration_rows))
+            for f in story_findings if f["id"] not in lead_of
+        ]
+        corroborated = sum(1 for s in summaries if "\n  Also found by: " in s)
+        if corroborated:
+            logger.info(f"{corroborated}/{len(summaries)} candidates were found by more than one agent")
+
         # Pass 1: Story selection
         pass1_prompt = (
-            f"Select exactly {editorial.load().top_stories} stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
+            f"Select exactly {picks_needed} stories from these {len(summaries)} balanced candidate findings for today's newsletter.\n\n"
             f"Date: {self.date_str}\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"## Trending Topics\n{trends_text}\n\n"
@@ -1685,7 +1715,8 @@ class ResearchPipeline:
         )
         pass1_output = ""
         pass1_degraded = False
-        pass1_max_attempts = 3
+        # Lead stories that fill every Top slot leave the selector nothing to pick.
+        pass1_max_attempts = 3 if picks_needed else 0
         republish_repick_done = False
         for attempt in range(1, pass1_max_attempts + 1):
             pass1_start = time.monotonic()
@@ -1791,8 +1822,9 @@ class ResearchPipeline:
                     f"last exit_code={exit_code}, output_len={output_len}"
                 )
                 pass1_output = _build_fallback_story_selection(
-                    story_findings,
+                    [f for f in story_findings if f["id"] not in lead_of],
                     reason=reason,
+                    limit=picks_needed,
                 )
                 logger.error(
                     "Synthesis pass 1 exhausted; using deterministic fallback "
@@ -1812,7 +1844,7 @@ class ResearchPipeline:
         for f in today_findings:
             source = _format_source(f.get("source_name"), f.get("source_url"))
             full_findings.append(
-                f"### [{f['agent']}] {_covered(f)}{f['title']} ({f['importance']})\n"
+                f"### [{f['agent']}] {_lead_marker(lead_of.get(f['id']))}{_covered(f)}{f['title']} ({f['importance']})\n"
                 f"Source: {source}\n{f['summary']}\n"
             )
 
@@ -1880,7 +1912,9 @@ class ResearchPipeline:
         dive_limit = editorial.load().deep_dive_stories
         if dive_limit and not self.dry_run and os.environ.get("MP_DRY_RUN") != "1":
             try:
-                stories = deep_dive.stories_from_selection(pass1_output, today_findings, dive_limit)
+                stories = (threads.deep_dives(leads)[:dive_limit]
+                           + deep_dive.stories_from_selection(pass1_output, today_findings,
+                                                              max(0, dive_limit - len(leads))))
                 if stories:
                     evidence_dir = PROJECT_ROOT / "data" / self.user_id / "runs" / self.traces_run_id / "deep-dive"
                     stories = deep_dive.run_deep_dives(
@@ -1915,7 +1949,8 @@ class ResearchPipeline:
             f"{voice_text}"
             f"You have {len(today_findings)} findings from {len(set(f['agent'] for f in today_findings))} agents.\n\n"
             f"{fallback_mode_text}"
-            f"## Story Selection\n{pass1_output}\n\n"
+            f"{threads.lead_block(leads) + chr(10) if leads else ''}"
+            f"{'## Story Selection' + chr(10) + pass1_output + chr(10) * 2 if pass1_output else ''}"
             f"{deep_dive_block + chr(10) if deep_dive_block else ''}"
             f"{narrative_arcs_context}\n\n"
             + (
@@ -1936,7 +1971,7 @@ class ResearchPipeline:
             f"{failure_text}"
             # Last, so the length the policy asks for is the final instruction
             # the writer reads (2026-10-10: issues ran 6-9k words against 13k).
-            f"\n{editorial.load().length_block()}"
+            f"\n{editorial.load().length_block(lead_stories=len(leads))}\n{editorial.load().layout.block()}"
         )
 
         logger.info(
@@ -2050,6 +2085,12 @@ class ResearchPipeline:
             log_event(self.traces_conn, self.traces_run_id, "newsletter_editor",
                       json.dumps(editor.summary()))
             logger.info("Newsletter editor: %s", editor.summary())
+            # The writer's layout swings from run to run (2026-10-10: 117, 10 and
+            # 60 bullets from one input), so what the editor left is recorded.
+            layout_left = [v for v in editor.violations_after if v.startswith("layout:")]
+            if layout_left:
+                log_event(self.traces_conn, self.traces_run_id, "layout_violations", json.dumps(layout_left))
+                logger.warning("Layout breaks the policy after the editor: %s", "; ".join(layout_left[:5]))
 
         # Deterministic prose gate, applied to whichever text the loop produced
         # (written or fallback) and before anything reads it. Style rules a

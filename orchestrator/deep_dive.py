@@ -1,10 +1,11 @@
-"""Deep-dive research on the stories the selector picked, before the newsletter is written.
+"""Deep-dive research on the Top stories, before the newsletter is written.
 
-One agent per picked story (config task "story_deep_dive", Sonnet 5.5) looks
-for the primary source, corroboration, the numbers, a quote, and the strongest
-counterpoint, and stores each item with `mp evidence add`. The writer gets the
-stored items as an evidence pack per story. Everything here fails open: a
-story without a pack is written from its finding, as before.
+One agent per Top story (config task "story_deep_dive", Sonnet 5.5) looks for
+the primary source, corroboration, the numbers, a quote, and the strongest
+counterpoint, and stores each item with `mp evidence add`. A lead story's agent
+gets its angle and every finding in it, and tests the angle. The writer gets
+the stored items as an evidence pack per story. Everything here fails open: a
+story without a pack is written from its findings, as before.
 """
 
 from __future__ import annotations
@@ -40,6 +41,8 @@ class DeepDive:
     finding: dict[str, Any] | None
     evidence: list[dict[str, Any]] = field(default_factory=list)
     outcome: str = "not run"
+    angle: str = ""
+    members: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _words(text: str) -> set[str]:
@@ -82,6 +85,9 @@ def stories_from_selection(pass1_output: str, findings: list[dict[str, Any]], li
 
 def build_prompt(story: DeepDive) -> str:
     lines = [f"Story id: {story.story_id}", f"Story: {story.title}"]
+    if story.angle:
+        lines += [f"Angle: {story.angle}", "Built from these findings:"]
+        lines += [f"- {m['title']} ({m['source_name']}, {m['source_url']}). {m['summary']}" for m in story.members]
     if story.finding:
         for key in ("summary", "source_url", "source_name"):
             if story.finding.get(key):

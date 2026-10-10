@@ -99,3 +99,15 @@ def test_an_ordinary_word_opening_a_sentence_is_not_a_name():
     assert ed.check_edit("Beyond that, log what the agent read.", "Log what the agent read as well.", text) is None
     assert ed.check_edit("Acme shipped Runtime 2.0 on May 2,", "The vendor shipped Runtime 2.0 on May 2,",
                          text) == "drops name 'Acme'"
+
+
+def test_a_list_the_layout_forbids_goes_to_the_editor_and_folding_it_into_prose_clears_it():
+    listed = ISSUE + "\nWhat changed:\n- Runtime 2.0 retries with a smaller model.\n- Failed tasks fell 40%.\n"
+    found = ed.policy_violations(listed)
+    assert 'layout: section "Agents" has 1 lists where 0 is allowed; fold the extra lists into prose' in found
+    assert found[-1] in ed.build_prompt(listed, found)
+    folded, applied, rejected = ed.apply_edits(listed, [{
+        "find": "What changed:\n- Runtime 2.0 retries with a smaller model.\n- Failed tasks fell 40%.\n",
+        "replace": "Runtime 2.0 retries with a smaller model, and failed tasks fell 40%.\n", "reason": "layout"}])
+    assert (len(applied), rejected) == (1, [])
+    assert not [v for v in ed.policy_violations(folded) if v.startswith("layout:")]

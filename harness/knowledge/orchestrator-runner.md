@@ -17,14 +17,14 @@ One method per phase, plus the run loop and its resume path.
 - `_execute_from(start_phase)` — loop through PHASE_ORDER, call handler per phase, save checkpoint
 - `_phase_init()` — load prefs, fetch feedback, detect prompt changes via [[orchestrator/prompt_tracker]]
 - `_phase_research()` — dispatch 13 parallel agents via [[orchestrator/agents]], store findings in [[data/memory-db]]
-- `_phase_synthesis()`: Pass 1 picks the Top stories (Opus 5.5), [[orchestrator/deep_dive]] gathers evidence for each, Pass 2 writes the issue (Opus 5.5), [[orchestrator/newsletter_editor]] edits it, then the prose gate runs
+- `_phase_synthesis()`: [[orchestrator/threads]] finds the lead stories (Opus 5.5), Pass 1 picks single stories for any Top slot left (Opus 5.5), [[orchestrator/deep_dive]] gathers evidence for each, Pass 2 writes the issue (Opus 5.5), [[orchestrator/newsletter_editor]] edits it, then the prose gate runs
 - `_phase_deliver()` — validate + send via [[orchestrator/newsletter]], score via [[orchestrator/evaluator]]
 - `_phase_learn()` checks the run's usage against the soft budget, prunes old raw traces ([[core/trace_store]]), checks for regressions, and runs [[orchestrator/analyzer]]
 - `_phase_social()` — approval chain via [[social/approval]], posting via [[social/posting]]
 
 ## Depends On
 
-[[orchestrator/agents]], [[core/trace_store]], [[orchestrator/deep_dive]], [[orchestrator/newsletter_editor]], [[orchestrator/checkpoint]], [[orchestrator/evaluator]], [[orchestrator/observability]], [[orchestrator/prompt_tracker]], [[orchestrator/traces_db]], [[memory/findings]], [[memory/db]]
+[[orchestrator/agents]], [[core/trace_store]], [[orchestrator/threads]], [[orchestrator/deep_dive]], [[orchestrator/newsletter_editor]], [[orchestrator/checkpoint]], [[orchestrator/evaluator]], [[orchestrator/observability]], [[orchestrator/prompt_tracker]], [[orchestrator/traces_db]], [[memory/findings]], [[memory/db]]
 
 ## Known Fragile Points
 

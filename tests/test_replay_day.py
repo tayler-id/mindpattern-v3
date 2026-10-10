@@ -147,9 +147,10 @@ def test_replay_writes_a_new_issue_traces_every_call_and_leaves_live_state_alone
     assert "Acme shipped version two" in (out / "newsletter.md").read_text()
     assert (out / "original.md").read_text() == "# What was published on Sep 30\n"
     assert {t["task"]: t["calls"] for t in summary["usage"]["tasks"]} == {
-        "synthesis_pass1": 1, "story_deep_dive": 1, "synthesis_pass2": 1, "newsletter_editor": 1}
-    assert summary["usage"]["cost_usd"] == 0.75
+        "thread_finder": 1, "synthesis_pass1": 1, "story_deep_dive": 1, "synthesis_pass2": 1, "newsletter_editor": 1}
+    assert summary["usage"]["cost_usd"] == 1.0  # four Claude calls at the fake's $0.25
     assert summary["routes"]["synthesis_pass2"]["model"] == "claude-opus-5-5"
+    assert summary["routes"]["thread_finder"]["model"] == "claude-opus-5-5"
 
     calls = sqlite3.connect(out / "traces" / "traces.db").execute(
         "SELECT task, phase, model, outcome, events_path FROM model_calls ORDER BY task").fetchall()
@@ -158,13 +159,14 @@ def test_replay_writes_a_new_issue_traces_every_call_and_leaves_live_state_alone
         ("story_deep_dive", "synthesis", "fake-opus", "success"),
         ("synthesis_pass1", "synthesis", "fake-opus", "success"),
         ("synthesis_pass2", "synthesis", "fake-opus", "success"),
+        ("thread_finder", "synthesis", "fake-opus", "success"),
     ]
     assert all(Path(path).exists() for *_, path in calls)
     assert json.loads((out / "replay.json").read_text())["date"] == DAY
 
     model_calls = [json.loads(line) for line in fake_claude.read_text().splitlines()]
-    assert [c["task"] for c in model_calls] == ["synthesis_pass1", "story_deep_dive", "synthesis_pass2",
-                                                "newsletter_editor"]
+    assert [c["task"] for c in model_calls] == ["thread_finder", "synthesis_pass1", "story_deep_dive",
+                                                "synthesis_pass2", "newsletter_editor"]
     assert [c["task"] for c in model_calls if c.get("evidence_in_prompt")] == ["synthesis_pass2"]
     assert {c["outbound"] for c in model_calls} == {"1"}
     assert {c["invoked_by"] for c in model_calls} == {"mindpattern"}

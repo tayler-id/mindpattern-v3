@@ -1,0 +1,49 @@
+{
+  "$comment": "The thread finder's answer: today's lead stories, each an angle several findings support together, by finding id.",
+  "type": "object",
+  "properties": {
+    "threads": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 120
+          },
+          "angle": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 1200
+          },
+          "finding_ids": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "strength": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        },
+        "required": [
+          "title",
+          "angle",
+          "finding_ids",
+          "strength"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "threads"
+  ],
+  "additionalProperties": false
+}
