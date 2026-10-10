@@ -1,0 +1,30 @@
+{
+  "_about": "Every check a change must pass, run in this order by `bin/mpdev check`. CI runs the same list (docs/specs/2026-10-10-agent-ready-codebase.md, step 3). {python} is the interpreter running mpdev. Add a check here, not in a script or a workflow, so the CLI, CI and the skills can't drift apart.",
+  "checks": [
+    {
+      "id": "doctor",
+      "command": ["{python}", "-m", "devtools.doctor"],
+      "about": "This machine has what the other checks need."
+    },
+    {
+      "id": "config",
+      "command": ["{python}", "-m", "core.config", "check"],
+      "about": "Every route in config/models.json loads."
+    },
+    {
+      "id": "layers",
+      "command": ["{python}", "-m", "harness.layers", "check"],
+      "about": "No cross-package import outside layers.toml."
+    },
+    {
+      "id": "knowledge",
+      "command": ["{python}", "-m", "harness.knowledge_graph", "check"],
+      "about": "Knowledge pages resolve their links, are all indexed, and keep section leads under 250 characters."
+    },
+    {
+      "id": "tests",
+      "command": ["{python}", "-m", "pytest", "tests/", "-q", "-p", "no:cacheprovider"],
+      "about": "The full test suite."
+    }
+  ]
+}

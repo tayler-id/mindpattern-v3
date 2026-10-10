@@ -113,3 +113,6 @@ skills-lock.json
 /ramsay-wal
 --preview
 data/kg-fanout/
+
+# mpdev check receipts and logs (devtools/check.py)
+.scratch/

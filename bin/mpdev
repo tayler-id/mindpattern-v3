@@ -1,0 +1,12 @@
+#!/bin/sh
+# Launcher for mpdev (devtools/cli.py), the developer CLI. `bin/mpdev help` lists the tools.
+# Python, in order: MP_PYTHON, this checkout's .venv, the main checkout's .venv when this is
+# a worktree, then python3 (CI).
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PY="${MP_PYTHON:-}"
+if [ -z "$PY" ] && [ -x "$ROOT/.venv/bin/python3" ]; then PY="$ROOT/.venv/bin/python3"; fi
+if [ -z "$PY" ]; then
+  COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  if [ -n "$COMMON" ] && [ -x "$(dirname "$COMMON")/.venv/bin/python3" ]; then PY="$(dirname "$COMMON")/.venv/bin/python3"; fi
+fi
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec "${PY:-python3}" -m devtools.cli "$@"

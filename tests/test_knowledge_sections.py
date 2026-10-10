@@ -498,6 +498,7 @@ def test_every_knowledge_page_is_indexed_and_every_link_resolves():
 
     assert kg._path_to_slug(Path("core-model-cli.md")) == "core/model-cli"
     assert kg._path_to_slug(Path("dashboard-campaignos.md")) == "dashboard/campaignos"
+    assert kg._path_to_slug(Path("devtools-cli.md")) == "devtools/cli"
     result = kg.check()
     assert result["broken"] == []
     for name in ("refs", "index", "code_refs"):

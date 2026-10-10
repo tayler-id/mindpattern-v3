@@ -56,7 +56,7 @@ def _path_to_slug(path: Path) -> str:
     name = path.stem
     for prefix in ("orchestrator", "social", "memory", "slack-bot", "slack_bot",
                     "harness", "data", "agents", "issues", "patterns", "runs",
-                    "core", "mp", "policies", "dashboard", "tools"):
+                    "core", "mp", "policies", "dashboard", "tools", "devtools"):
         if name.startswith(prefix + "-"):
             rest = name[len(prefix) + 1:]
             return f"{prefix}/{rest}"

@@ -24,6 +24,7 @@
 - [[orchestrator/issue_format]]. The issue's layout counted in code: lists and tables per story and section against the policy
 - [[orchestrator/newsletter_editor]]. Sol line edit of the issue, applied only where a code guard finds no fact changed
 - [[policies/files]]. Writing, editorial, research and observability policies, and the JSON contracts models answer in
+- [[devtools/cli]]. `bin/mpdev`: one command for every developer tool, the check runner, and the doctor
 - [[tools/replay]]. Replay a past day on real data, compare two issues blind, report usage
 - [[dashboard/campaignos]]. Story revision ids, the one-file-per-slug rule, campaign attribution on reader events
 - [[orchestrator/sync]] — Fly.io sync: bundle DBs + reports, SFTP upload
