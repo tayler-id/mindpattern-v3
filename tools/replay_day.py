@@ -2,7 +2,7 @@
 """Rerun a pipeline stage for a past day in a scratch copy, so a model or prompt
 change can be judged on real data without touching live state.
 
-    # synthesis (story selection + newsletter) for Sep 30 with this checkout's code
+    # synthesis (lead stories, selection, deep dives, newsletter) for Sep 30 with this checkout's code
     # and the live checkout's data, into a fresh output folder:
     .venv/bin/python3 tools/replay_day.py --date 2026-09-30 --stage synthesis \\
         --state-root ~/Projects/mindpattern-v3 --out /private/tmp/mp-replay/2026-09-30-a
@@ -224,7 +224,8 @@ def replay(*, day: date, stage: str, out: Path, state_root: Path, code_root: Pat
     try:
         built = build_workspace(code_root, state_root, workspace, user=user, day=day, models=models)
         routes = _routes(workspace, ("research_agent",) if stage == "research" else
-                         ("synthesis_pass1", "story_deep_dive", "synthesis_pass2", "newsletter_editor"))
+                         ("thread_finder", "synthesis_pass1", "story_deep_dive", "synthesis_pass2",
+                          "newsletter_editor"))
         # MP_PYTHON: the workspace has no .venv for bin/mp to find.
         env = {**os.environ, "PYTHONPATH": str(workspace), "MP_DISABLE_OUTBOUND": "1",
                "MP_TRACE_ROOT": str(out / "traces"), "MP_USER_ID": user, "MP_PYTHON": sys.executable}

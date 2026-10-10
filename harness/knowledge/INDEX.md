@@ -19,7 +19,9 @@
 - [[core/model_cli]]. One call path for Claude and Codex, with routes from config/models.json, fallback, and call recording
 - [[core/trace_store]]. Every model call, subagent, and tool step in traces.db, raw streams on disk, the trace CLI
 - [[mp/cli]]. The research agents' deterministic tools: store findings, check coverage, fetch pages, store evidence
+- [[orchestrator/threads]]. Lead stories, each built from three to five of the day's findings that connect, fill the Top slots first
 - [[orchestrator/deep_dive]]. One Sonnet 5.5 agent per Top story gathers evidence before the issue is written
+- [[orchestrator/issue_format]]. The issue's layout counted in code: lists and tables per story and section against the policy
 - [[orchestrator/newsletter_editor]]. Sol line edit of the issue, applied only where a code guard finds no fact changed
 - [[policies/files]]. Writing, editorial, research and observability policies, and the JSON contracts models answer in
 - [[tools/replay]]. Replay a past day on real data, compare two issues blind, report usage

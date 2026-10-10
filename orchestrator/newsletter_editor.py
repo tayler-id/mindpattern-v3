@@ -27,7 +27,7 @@ from core.claude_cli import run_claude_process
 from core.config import route_for
 from core.llm import extract_json
 from core.model_cli import CallRequest, call_model
-from orchestrator import word_bank
+from orchestrator import editorial, issue_format, word_bank
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ def build_prompt(text: str, violations: list[str]) -> str:
     listed = "\n".join(f"- {v}" for v in violations) or "- none"
     return (
         "Edit this newsletter for the tells listed in your instructions.\n\n"
-        "## Violations the deterministic writing policy found (fix these first)\n"
+        "## Violations the deterministic writing and layout policies found (fix these first)\n"
         f"{listed}\n\n"
         "## The writing policy, as the writer saw it\n"
         f"{word_bank.prompt_block('newsletter')}\n\n"
@@ -151,9 +151,14 @@ def build_prompt(text: str, violations: list[str]) -> str:
     )
 
 
+def policy_violations(text: str) -> list[str]:
+    """What the writing policy and the layout policy find in an issue. Deterministic."""
+    return word_bank.violations(text, "newsletter") + issue_format.violations(text, editorial.load().layout)
+
+
 def edit_newsletter(text: str, *, runner: Callable[..., Any] = run_claude_process) -> EditOutcome:
     """Run the editor and apply the edits that pass the guard. Never raises."""
-    before = word_bank.violations(text, "newsletter")
+    before = policy_violations(text)
     outcome = EditOutcome(text=text, violations_before=before, violations_after=before)
     if os.environ.get("MP_DRY_RUN") == "1":
         outcome.skipped = "dry run"
@@ -183,5 +188,5 @@ def edit_newsletter(text: str, *, runner: Callable[..., Any] = run_claude_proces
         return outcome
     outcome.text = edited
     outcome.applied, outcome.rejected = applied, rejected
-    outcome.violations_after = word_bank.violations(edited, "newsletter")
+    outcome.violations_after = policy_violations(edited)
     return outcome

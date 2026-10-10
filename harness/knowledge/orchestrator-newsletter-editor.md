@@ -4,9 +4,9 @@
 
 ## What It Does
 
-`edit_newsletter(text)` sends the issue and its word-bank hits to the `newsletter_editor` route (Codex, Sol, with a Sonnet 5.5 fallback). Sol answers with find-and-replace edits in the `editor_edits` contract, at most 40.
+`edit_newsletter(text)` sends the issue, its word-bank hits, and its layout breaches from [[orchestrator/issue_format]] to the `newsletter_editor` route (Codex, Sol, with a Sonnet 5.5 fallback). Sol answers with find-and-replace edits in the `editor_edits` contract, at most 40.
 
-`apply_edits` runs `check_edit` on each one and applies only those that pass. The runner logs a `newsletter_editor` event with counts and rejections.
+`apply_edits` runs `check_edit` on each one and applies only those that pass. A layout fix is one edit whose find is the whole extra list or table and whose replace is a prose paragraph with the same facts. The runner logs a `newsletter_editor` event with counts and rejections.
 
 ## The Guard
 
@@ -27,4 +27,4 @@ Runs after pass 2 and before the prose gate. Fails open. Skipped on dry runs. Se
 
 ## Last Updated
 
-2026-10-02. Created with the models harness.
+2026-10-10. Layout breaches added to its inputs.

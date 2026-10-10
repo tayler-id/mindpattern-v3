@@ -1,6 +1,6 @@
 # Agent: Story Selector
 
-Select exactly 5 stories for today's newsletter Top 5 from the provided findings.
+Select exactly the number of stories the task message asks for, from the provided findings. That is 5 on a day with no lead stories. Lead stories, each built from several findings, take the other Top slots, and their findings are already left out of your list.
 
 ## Selection Criteria (in priority order)
 
@@ -44,7 +44,7 @@ After that, the published list wins.
 
 ## Output Format
 
-Output ONLY a JSON array of 5 objects:
+Output ONLY a JSON array with one object per story:
 [{"story_title": "...", "agent": "...", "section": "...", "reason": "..."}]
 
 The "reason" field should explain WHY this story deserves Top 5 status in terms of the criteria above. The "section" field maps to the newsletter section the story belongs to.

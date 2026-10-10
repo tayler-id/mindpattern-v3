@@ -7,6 +7,7 @@ Start with the [repository navigation](../../README.md). This checkout has no `C
 - [Architecture](../ARCHITECTURE.md) and [system overview](../SYSTEM-OVERVIEW.md) describe the pipeline vocabulary and module relationships. Check current behavior against the source files they name.
 - [Specs](../specs/) record scoped product and architecture proposals. [Runbooks](../runbooks/) record implementation plans, checks, and handoffs. Read their dates and status before treating a proposal as implemented.
 - [v4 spec](../spec-v4.md) describes the v4 plan. The root `SPEC.md` and `V4-SPEC.md` are older documents, not substitutes for that plan or evidence of current runtime behavior.
+- [Developer tools](../tools.md) documents the replay, rerun, trace, health, mutation, and backfill tools.
 - [Harness guide](../../harness/CLAUDE.md) points to the harness's module documentation and workflows.
 - `graphify-out/GRAPH_REPORT.md` is generated code-navigation output, not a decision record. Follow the navigation guidance in [CLAUDE.md](../../CLAUDE.md).
 

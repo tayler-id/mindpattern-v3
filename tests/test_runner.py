@@ -828,6 +828,62 @@ class TestPhaseSynthesis:
                "  Also found by: hn-researcher (Hacker News)\n" in pass1_prompt
         assert pass1_prompt.count("Also found by:") == 1
 
+    def _lead(self, n, ids):
+        from orchestrator import threads
+
+        members = [threads.Episode(fid, "2026-03-12", f"agent-{fid - 1}", f"Title {fid - 1}", f"Summary {fid - 1}",
+                                   "Source", f"https://source.example/{fid}") for fid in ids]
+        return threads.Thread(f"Lead {n}", f"Findings {ids} show one shift together.", members, strength=4)
+
+    def _synthesize(self, pipeline, tmp_path, leads):
+        from orchestrator import threads
+
+        with patch("orchestrator.runner.PROJECT_ROOT", tmp_path), \
+                patch.object(threads, "find_threads", return_value=leads) as finder:
+            (tmp_path / "reports" / "testuser").mkdir(parents=True, exist_ok=True)
+            with patch("orchestrator.runner.NewsletterEvaluator") as mock_eval_cls:
+                mock_eval_cls.return_value.evaluate.return_value = {"overall": 0.85, "coverage": 0.9, "dedup": 0.95,
+                                                                    "sources": 0.8}
+                pipeline._phase_synthesis()
+        return finder
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_lead_stories_take_the_first_top_slots_and_the_selector_fills_the_rest(
+            self, mock_claude, mock_prefs, mock_failures, pipeline, tmp_path):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+        mock_claude.side_effect = [('[{"story_title": "Title 40", "agent": "agent-1"}]', 0),
+                                   ("# Newsletter\n\nGreat content here.\n" + ("word " * 3500), 0)]
+        finder = self._synthesize(pipeline, tmp_path, [self._lead(1, [1, 2, 3])])
+
+        assert finder.call_args.kwargs["notes"][1] == "" and finder.call_args.kwargs["covered"] == set()
+        pass1, pass2 = (call[0][0] for call in mock_claude.call_args_list[:2])
+        assert pass1.startswith("Select exactly 4 stories from these 77 balanced candidate findings")
+        assert "(high) Title 0\n" not in pass1 and "(medium) Title 3\n" in pass1
+        assert "## Lead stories\nThe Top stories open with these 1" in pass2
+        assert "Working title: Lead 1\nAngle: Findings [1, 2, 3] show one shift together." in pass2
+        assert pass2.index("## Lead stories") < pass2.index("## Story Selection\n[{\"story_title\": \"Title 40\"")
+        assert "### [agent-0] [PART OF LEAD STORY 1, so no section item of its own] Title 0 (high)" in pass2
+        assert "### [agent-3] Title 3 (medium)" in pass2
+        assert "Give each of the 1 lead stories 600 to 900 words and each of the other 4 Top stories" in pass2
+        saved = tmp_path / "reports" / "testuser" / "threads" / f"{pipeline.date_str}.json"
+        assert '"title": "Lead 1"' in saved.read_text()
+
+    @patch("orchestrator.runner.memory.recent_failures", return_value=[])
+    @patch("orchestrator.runner.memory.list_preferences", return_value=[])
+    @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")
+    def test_five_lead_stories_leave_the_selector_nothing_to_pick(self, mock_claude, mock_prefs, mock_failures,
+                                                                   pipeline, tmp_path):
+        self._seed_findings(pipeline.db, pipeline.date_str)
+        mock_claude.side_effect = [("# Newsletter\n\nGreat content here.\n" + ("word " * 3500), 0)]
+        self._synthesize(pipeline, tmp_path, [self._lead(n, [3 * n - 2, 3 * n - 1, 3 * n]) for n in range(1, 6)])
+
+        assert [call[0][1] for call in mock_claude.call_args_list] == ["synthesis_pass2"]
+        pass2 = mock_claude.call_args_list[0][0][0]
+        assert "### Lead story 5\nWorking title: Lead 5" in pass2 and "## Story Selection" not in pass2
+        assert "Give each of the 5 lead stories 600 to 900 words. Give every other section" in pass2
+
     @patch("orchestrator.runner.memory.recent_failures", return_value=[])
     @patch("orchestrator.runner.memory.list_preferences", return_value=[])
     @patch("orchestrator.runner.agent_dispatch.run_claude_prompt")

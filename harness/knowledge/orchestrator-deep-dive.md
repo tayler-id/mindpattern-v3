@@ -4,7 +4,7 @@
 
 ## What It Does
 
-After synthesis pass 1 picks the stories, `stories_from_selection` matches each pick to its finding. `run_deep_dives` gives each story an agent (task `story_deep_dive`) with WebSearch, WebFetch, and `mp`.
+Each lead story from [[orchestrator/threads]] gets an agent with its angle and every finding in it, and the agent tests the angle. After synthesis pass 1 picks any single stories, `stories_from_selection` matches each pick to its finding. `run_deep_dives` gives each story an agent (task `story_deep_dive`) with WebSearch, WebFetch, and `mp`.
 
 The agent stores the primary source, corroboration, numbers, a quote, and the strongest counterpoint with `mp evidence add`. `evidence_block` turns the stored items into one evidence pack per story for pass 2.
 
@@ -25,7 +25,7 @@ Sep 30 replay: five deep dives at $0.12 to $0.27 each, 22 evidence items across 
 
 ## Depends On
 
-[[core/model_cli]], [[mp/cli]], `agents/story-deep-dive.md`. Called by [[orchestrator/runner]].
+[[core/model_cli]], [[mp/cli]], `agents/story-deep-dive.md`. Called by [[orchestrator/runner]] with stories from [[orchestrator/threads]] and the selector.
 
 ## Last Updated
 

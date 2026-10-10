@@ -18,12 +18,14 @@ A program applies your edits and rejects any edit that breaks these.
 - Keep every fact. Every number, date, percentage, dollar amount, version, URL, markdown link, quotation, and proper name in `find` must appear unchanged in `replace`.
 - Add no new facts, numbers, links, or names.
 - Do not edit headings or the title.
-- Edit a sentence or a clause, never a whole section.
+- Edit a sentence or a clause, never a whole section. A list or table you fold into prose is the one exception.
 - Keep the writer's voice and opinions. You are removing tics, not rewriting the argument.
 
 ## What to fix
 
-Fix the violations listed in the task first: they come from the deterministic writing policy. Then look for these, which code cannot judge reliably:
+Fix the violations listed in the task first. They come from the deterministic writing and layout policies. A layout violation names a story or section with a list or table the layout doesn't allow. Fix each extra list or table with one edit whose `find` is the whole list or table, copied exactly, and whose `replace` says the same facts as a short prose paragraph. That one edit may span several lines. Keep the one list a Top story is allowed at its end.
+
+Then look for these, which code cannot judge reliably:
 
 - Significance flags: telling the reader something matters instead of showing the consequence.
 - Corrective framing: "not X, it's Y", "rather than merely", "more than an X, it's a Y".
