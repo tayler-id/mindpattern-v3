@@ -16,6 +16,8 @@ Platform API credentials from macOS Keychain. [[data/memory-db]] (pending_posts,
 
 ## Key Functions
 
+Image compression and the Bluesky upload.
+
 - `compress_image(path, max_bytes)` — Compresses images for Bluesky's 950KB limit. Uses `tempfile.NamedTemporaryFile(delete=False)` for safe temp file creation. Returns original path if already small enough, otherwise a new temp path. Caller must clean up if returned path differs from input.
 - `BlueskyClient._upload_blob(image_path)` — Uploads image to Bluesky. Compresses if needed, cleans up temp file in `finally` block regardless of success/failure.
 
@@ -25,6 +27,8 @@ Platform API credentials from macOS Keychain. [[data/memory-db]] (pending_posts,
 - LinkedIn API rate limits not handled gracefully
 
 ## Fixed Issues
+
+Bugs fixed on 2026-04-02.
 
 - `compress_image` used deprecated `tempfile.mktemp()` (race condition). Fixed 2026-04-02: replaced with `NamedTemporaryFile(delete=False)`.
 - `_upload_blob` never cleaned up compressed temp files (disk leak). Fixed 2026-04-02: added `finally` block that unlinks compressed file.

@@ -21,7 +21,8 @@ Rabbit Hole archive backfill is an explicit operator workflow, not the default r
 
 - `run.py`: single local pipeline entry point and concurrency guard.
 - `orchestrator/`: pipeline phases, agent dispatch, newsletter, sync, site content, backfill, media, and observability.
-- `preflight/` and `tools/`: source collection and normalization.
+- `preflight/` and `tools/`: source collection and normalization. `tools/` holds only scripts the pipeline runs.
+- `devtools/` and `bin/mpdev`: every tool for working on the codebase (check, doctor, replay, rerun, trace, health, mutate). See [docs/tools.md](docs/tools.md).
 - `core/`: shared database, migrations, time, LLM, and outbound-receipt helpers.
 - `memory/` and `kg/`: SQLite-backed memory and knowledge-graph logic.
 - `social/`: drafting, approvals, engagement, and posting.
@@ -47,6 +48,18 @@ Tests must run without API keys or network access. Mock Claude CLI subprocesses 
 A test whose code path reaches `memory.embeddings` requests the `offline_embeddings` fixture from `tests/conftest.py`; CI has no model cache, so a real model load trips the network guard.
 
 ## Backend commands
+
+Every gate, as one command (run before every commit):
+
+```sh
+bin/mpdev check
+```
+
+Is this machine ready to run them:
+
+```sh
+bin/mpdev doctor
+```
 
 Focused test:
 
@@ -113,7 +126,7 @@ Use `pnpm dev --hostname 127.0.0.1 --port 3010` during normal interactive UI dev
 
 - Call models only through `core/model_cli.py` (`call_model` or `run_task_process`) with a task name from `config/models.json`. Never build a `claude` or `codex` argv by hand.
 - Tests run with fake `claude` and `codex` first on PATH (`tests/conftest.py`), so a test that reaches a real model fails fast. Give a test its own fake when it needs one.
-- `tools/replay_day.py` spends real model usage unless `--dry-run`. It reads the live state root read-only and writes only to a scratch workspace and `--out`.
+- `bin/mpdev replay` (`devtools/replay_day.py`) spends real model usage unless `--dry-run`. It reads the live state root read-only and writes only to a scratch workspace and `--out`.
 - Inspect runs with `python -m orchestrator.trace`. Raw traces hold fetched pages and identity files, so keep them local.
 
 ## Safety and ownership boundaries
@@ -129,7 +142,7 @@ Use `pnpm dev --hostname 127.0.0.1 --port 3010` during normal interactive UI dev
 ## Verification
 
 - Run the smallest relevant tests while iterating.
-- Before commit or merge, run the full local suite unless a documented baseline failure prevents it.
+- Before commit or merge, run `bin/mpdev check`. It runs every gate, the full suite included, and writes a receipt for the commit.
 - For API/auth work, include the relevant contract and auth tests.
 - For public-site work, run lint, TypeScript checking, build, and a browser smoke against the local backend.
 - After Python code changes, run `graphify update .` and `graphify check-update .`.

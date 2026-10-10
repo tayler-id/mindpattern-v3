@@ -1,4 +1,4 @@
-"""tools/replay_day.py reruns a past day's synthesis in a scratch copy and leaves live state alone.
+"""devtools/replay_day.py reruns a past day's synthesis in a scratch copy and leaves live state alone.
 
 The test builds a small state root (users.json, memory.db with three findings,
 traces.db with the day's trend checkpoint, identity files, an earlier issue)
@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("replay_day", PROJECT_ROOT / "tools" / "replay_day.py")
+SPEC = importlib.util.spec_from_file_location("replay_day", PROJECT_ROOT / "devtools" / "replay_day.py")
 replay_day = importlib.util.module_from_spec(SPEC)
 sys.modules["replay_day"] = replay_day
 SPEC.loader.exec_module(replay_day)

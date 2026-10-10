@@ -6,8 +6,8 @@ Every `claude -p` the pipeline starts leaves a transcript under
 and prices it at API list rates from config/pricing.json. It is the baseline
 until traces.db model_calls records usage at call time.
 
-    .venv/bin/python3 tools/usage_report.py --date 2026-10-01
-    .venv/bin/python3 tools/usage_report.py --date 2026-10-01 --json
+    .venv/bin/python3 devtools/usage_report.py --date 2026-10-01
+    .venv/bin/python3 devtools/usage_report.py --date 2026-10-01 --json
 """
 
 from __future__ import annotations

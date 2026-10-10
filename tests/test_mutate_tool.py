@@ -1,4 +1,4 @@
-"""tools/mutate.py breaks code, runs its tests, and always restores the file exactly."""
+"""devtools/mutate.py breaks code, runs its tests, and always restores the file exactly."""
 import importlib.util
 import json
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("mutate_tool", ROOT / "tools" / "mutate.py")
+SPEC = importlib.util.spec_from_file_location("mutate_tool", ROOT / "devtools" / "mutate.py")
 mutate = importlib.util.module_from_spec(SPEC)
 sys.modules["mutate_tool"] = mutate
 SPEC.loader.exec_module(mutate)

@@ -8,6 +8,8 @@ Defines `Phase` enum (14 values), `PHASE_ORDER` list, `CRITICAL_PHASES`, `SKIPPA
 
 ## Key Facts
 
+Which phases stop the run when they fail, and which only log.
+
 - CRITICAL_PHASES = {RESEARCH, SYNTHESIS} — failure stops pipeline
 - SKIPPABLE_PHASES = everything else — failure logged as warning, continues
 - Forward-only transitions — can't go back, can jump to FAILED/COMPLETED

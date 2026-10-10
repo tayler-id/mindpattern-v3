@@ -4,6 +4,8 @@
 
 ## Key Functions
 
+Save, load, resume, find, and clear a run's phase checkpoints.
+
 - `Checkpoint(traces_conn)` — init checkpoints table
 - `save(pipeline_run_id, phase, state_data, user_id)` — upsert checkpoint
 - `load(pipeline_run_id)` — fetch last checkpoint
@@ -17,7 +19,9 @@
 
 ## Migration Pattern
 
-`_ensure_table()` handles both fresh DBs and existing ones:
+`_ensure_table()` handles fresh databases and existing ones.
+
+In order:
 1. `CREATE TABLE IF NOT EXISTS` — includes all columns for fresh DBs
 2. `ALTER TABLE ADD COLUMN` — adds missing columns for existing DBs
 3. `CREATE INDEX IF NOT EXISTS` — must come AFTER alter table
@@ -25,6 +29,8 @@
 **Critical:** Index creation on new columns must always come after the ALTER TABLE migration. Tests use in-memory SQLite (always fresh tables) so they cannot catch migration ordering bugs.
 
 ## Known Fragile Points
+
+Where resume can pick the wrong run or the table can grow.
 
 - Resume pattern uses LIKE `%-{run_date}-%` — fragile if ID format changes
 - No cleanup of old checkpoints — accumulates forever

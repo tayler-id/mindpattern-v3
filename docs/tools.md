@@ -1,8 +1,10 @@
 # Developer tools
 
-Commands for changing the pipeline and proving the change, without touching the live run. Each one answers a question you would otherwise answer by reading logs or querying databases by hand. Run them from the repository root with the project's Python, `.venv/bin/python3`.
+Commands for changing the pipeline and proving the change, without touching the live run. Each one answers a question you would otherwise answer by reading logs or querying databases by hand.
 
-Three of them make real model calls and spend plan usage: `tools/replay_day.py`, `tools/rerun_call.py`, and `tools/site_backfill.py`. Everything else only reads files and databases.
+Every tool runs through one command, `bin/mpdev`, from the repository root. `bin/mpdev help` lists them, and `bin/mpdev <command> --help` shows a command's flags. Their code lives in `devtools/`. `tools/` holds only the scripts the pipeline itself runs, such as the source fetchers.
+
+Three of them make real model calls and spend plan usage: `mpdev replay`, `mpdev rerun`, and `mpdev site-backfill`. Everything else only reads files and databases.
 
 ## The working loop
 
@@ -10,18 +12,18 @@ A change to a prompt, a model route, or pipeline code goes through the same step
 
 ```mermaid
 flowchart LR
-    change["Change code, a prompt,<br/>or a policy file"] --> tests["pytest<br/>full suite"]
-    tests --> mutate["tools/mutate.py<br/>break each new guard,<br/>watch a test fail"]
-    mutate --> replay["tools/replay_day.py<br/>rerun a real day<br/>in a scratch copy"]
+    change["Change code, a prompt,<br/>or a policy file"] --> tests["mpdev check<br/>every gate"]
+    tests --> mutate["mpdev mutate<br/>break each new guard,<br/>watch a test fail"]
+    mutate --> replay["mpdev replay<br/>rerun a real day<br/>in a scratch copy"]
     replay --> compare{"Better?"}
-    compare -->|"read both issues"| bakeoff["tools/bakeoff.py<br/>blind side by side"]
-    compare -->|"one call varies"| rerun["tools/rerun_call.py<br/>same input, other prompt"]
+    compare -->|"read both issues"| bakeoff["mpdev bakeoff<br/>blind side by side"]
+    compare -->|"one call varies"| rerun["mpdev rerun<br/>same input, other prompt"]
     compare -->|"what did agents do"| trace["orchestrator.trace<br/>every model call"]
     bakeoff --> merge["Merge to main"]
     rerun --> change
     trace --> change
     merge --> run["Next scheduled run"]
-    run --> health["tools/health.py<br/>did it work"]
+    run --> health["mpdev health<br/>did it work"]
     health -->|"problem"| change
 ```
 
@@ -29,24 +31,24 @@ flowchart LR
 
 | Tool | Answers | Model calls | Writes |
 |------|---------|-------------|--------|
-| `tools/replay_day.py` | What would a past day's issue look like with this code? | Yes, unless `--dry-run` | Only the `--out` folder |
-| `tools/rerun_call.py` | Does a different system prompt change one call's output? | Yes | Only the `--out` folder |
-| `tools/bakeoff.py` | Which of two issues reads better, judged blind? | No | Only the `--out` folder |
-| `python -m orchestrator.trace` | What did every agent do in a run, and what did it cost? | No | Nothing (`prune` deletes old raw traces) |
-| `tools/health.py` | How has the daily run gone, day by day? | No | Nothing |
-| `tools/mutate.py` | Does a test actually catch this guard breaking? | No | Restores the file byte for byte |
-| `tools/usage_report.py` | What did a day cost, by task and model, from Claude transcripts? | No | Nothing |
-| `tools/site_backfill.py` | Can past issues get the site stories they should have had? | Yes | Live `reports/<user>/site-stories/` |
+| `mpdev replay` | What would a past day's issue look like with this code? | Yes, unless `--dry-run` | Only the `--out` folder |
+| `mpdev rerun` | Does a different system prompt change one call's output? | Yes | Only the `--out` folder |
+| `mpdev bakeoff` | Which of two issues reads better, judged blind? | No | Only the `--out` folder |
+| `mpdev trace` | What did every agent do in a run, and what did it cost? | No | Nothing (`prune` deletes old raw traces) |
+| `mpdev health` | How has the daily run gone, day by day? | No | Nothing |
+| `mpdev mutate` | Does a test actually catch this guard breaking? | No | Restores the file byte for byte |
+| `mpdev usage` | What did a day cost, by task and model, from Claude transcripts? | No | Nothing |
+| `mpdev site-backfill` | Can past issues get the site stories they should have had? | Yes | Live `reports/<user>/site-stories/` |
 | `bin/mp` | The research agents' own commands for storing and checking findings | No | The run's findings and evidence files |
-| `python -m core.config check` | Is `config/models.json` valid? | No | Nothing |
-| `python -m harness.knowledge_graph check` | Do the knowledge pages link and index correctly? | No | Nothing |
+| `mpdev check` | Does this change pass every gate CI will run? | No | Logs and a receipt in `.scratch/checks/` |
+| `mpdev doctor` | Is this machine ready to work and run the checks? | No | Nothing |
 
-## Replay a day: `tools/replay_day.py`
+## Replay a day: `mpdev replay`
 
 Reruns one stage of the pipeline for a past day on that day's real data, with the code in your checkout, inside a throwaway copy. Use it to judge a model, prompt, or code change before it ships. The live checkout's databases, issues, and email list are never written to.
 
 ```bash
-.venv/bin/python3 tools/replay_day.py --date 2026-10-10 --stage synthesis \
+bin/mpdev replay --date 2026-10-10 --stage synthesis \
     --state-root ~/Projects/mindpattern-v3 \
     --out ~/Projects/mindpattern-v3/data/ramsay/replays/2026-10-10-my-change
 ```
@@ -127,12 +129,12 @@ A synthesis replay on 2026-10-10 took 14 minutes and made 8 model calls: the thr
 
 `tests/test_replay_day.py` hashes every file in a fake live checkout before and after a replay and requires them to match. It also checks that every call ran with outbound disabled and from the scratch copy, and that a dry run makes no model calls.
 
-## Rerun one call: `tools/rerun_call.py`
+## Rerun one call: `mpdev rerun`
 
 Takes one model call that a run or replay already traced, and runs its exact input again with a different system prompt. Use it to answer "was it the prompt, or chance?" for a single call, without rerunning the whole stage.
 
 ```bash
-.venv/bin/python3 tools/rerun_call.py \
+bin/mpdev rerun \
     --traces data/ramsay/replays/2026-10-10-synthesis-leads/traces --call 38d3cab90bfc4bfd \
     --system-prompt agents/synthesis-writer.md --out /tmp/rerun/writer-now --runs 2
 ```
@@ -151,17 +153,17 @@ It runs only that call. The editor and prose gate that follow the writer in a re
 
 On 2026-10-10 this found that the writer's layout was chance, not the prompt. The same writer input gave 117 bullets in the replay, 10 on a rerun with the same prompt, and 60 with the writer prompt from before the change. That's why the layout is now held by a code check (`orchestrator/issue_format.py`) instead of a prompt line.
 
-## Compare two issues blind: `tools/bakeoff.py`
+## Compare two issues blind: `mpdev bakeoff`
 
 ```bash
-.venv/bin/python3 tools/bakeoff.py --a <out-a>/newsletter.md --b <out-b>/newsletter.md --out /tmp/bakeoff/day
+bin/mpdev bakeoff --a <out-a>/newsletter.md --b <out-b>/newsletter.md --out /tmp/bakeoff/day
 open /tmp/bakeoff/day/compare.html
-.venv/bin/python3 tools/bakeoff.py --reveal /tmp/bakeoff/day
+bin/mpdev bakeoff --reveal /tmp/bakeoff/day
 ```
 
 The page shows "Version 1" and "Version 2" in random order, each with its writing-policy violation count, and never the file paths. The order stays in `answer-key.json` until `--reveal`, so you pick on the writing, not on which model you expected to win.
 
-## Read what agents did: `python -m orchestrator.trace`
+## Read what agents did: `mpdev trace`
 
 Every model call, Claude or Codex, is recorded at call time by `core/trace_store.py` in `traces.db` (`model_calls`, `model_call_steps`) with its raw event stream gzipped on disk.
 
@@ -174,22 +176,22 @@ Every model call, Claude or Codex, is recorded at call time by `core/trace_store
 | `usage --since 7 [--by task,model]` | Tokens and cost grouped |
 | `prune --keep-days 90` | Deletes raw event streams past the retention in `policies/observability.json` |
 
-Add `--db <out>/traces/traces.db` to read a replay's traces instead of the live ones.
+Add `--db <out>/traces/traces.db` to read a replay's traces instead of the live ones. `mpdev trace` runs `python -m orchestrator.trace`.
 
-## Check the daily run: `tools/health.py`
+## Check the daily run: `mpdev health`
 
 ```bash
-.venv/bin/python3 tools/health.py --since 7
+bin/mpdev health --since 7
 ```
 
 One row per day with the run, delivery, agents, findings, duplicates, eval, site stories, cost, Codex use, and failures, then per-agent output and a list of problems. It opens every database read-only. It exits 1 when any day has a problem, so a scheduler can alert on it. When a day has several runs, it reads the one with the most events, so a sync-only run doesn't hide the real one.
 
-## Prove a test catches a break: `tools/mutate.py`
+## Prove a test catches a break: `mpdev mutate`
 
 ```bash
-.venv/bin/python3 tools/mutate.py --file orchestrator/threads.py \
+bin/mpdev mutate --file orchestrator/threads.py \
     --old 'fid not in used]' --new ']' --test tests/test_threads.py
-.venv/bin/python3 tools/mutate.py --plan mutations.json
+bin/mpdev mutate --plan mutations.json
 ```
 
 ```mermaid
@@ -208,18 +210,18 @@ A passing test proves nothing until you've seen it fail. This tool breaks the gu
 
 A plan file is a JSON list of `{"file", "old", "new", "tests": [...], "k": "optional -k filter"}`.
 
-## Usage from transcripts: `tools/usage_report.py`
+## Usage from transcripts: `mpdev usage`
 
 ```bash
-.venv/bin/python3 tools/usage_report.py --date 2026-10-01 [--json]
+bin/mpdev usage --date 2026-10-01 [--json]
 ```
 
 Totals token use by task and model from the Claude Code transcripts every `claude -p` leaves under `~/.claude/projects/`, priced from `config/pricing.json`. It predates call-time usage in `traces.db`. For days after 2026-10-02, `python -m orchestrator.trace usage` reads the same numbers from the traces and also covers Codex.
 
-## Backfill site stories: `tools/site_backfill.py`
+## Backfill site stories: `mpdev site-backfill`
 
 ```bash
-.venv/bin/python3 tools/site_backfill.py --dates 2026-10-03,2026-10-04 [--claude-critic]
+bin/mpdev site-backfill --dates 2026-10-03,2026-10-04 [--claude-critic]
 ```
 
 Writes the site stories a past issue should have had, through the production writer and critic, up to `issue_stories_per_day` in `policies/editorial.json`. This one writes to the live `reports/<user>/site-stories/`, and the next sync publishes what it wrote. `--claude-critic` moves the critic to its Claude fallback so a large backfill doesn't use the Codex plan.
@@ -240,13 +242,35 @@ The research and deep-dive agents call these through the `Bash(mp *)` grant inst
 
 Records go in as `field: value` lines in a quoted heredoc, with `---` between records. Claude Code's Bash check refuses inline JSON, and a quoted heredoc passes apostrophes, `$`, and backticks through untouched.
 
-## Checks to run before a commit
+## Run every gate: `mpdev check`
 
-| Command | Checks |
-|---------|--------|
-| `.venv/bin/python3 -m pytest tests/ -q` | The full suite. Commit only when it's all green. |
-| `.venv/bin/python3 -m core.config check` | Every route in `config/models.json` loads |
-| `.venv/bin/python3 -m harness.knowledge_graph check` | Knowledge page links, sections, the index, and code references |
+```bash
+bin/mpdev check                     # every check, in order
+bin/mpdev check --only layers,tests
+bin/mpdev check --list
+```
+
+Runs every check in `devtools/checks.json`, in order, and exits 1 if any fails. A failed check prints its last 25 lines. Each check's full output goes to `.scratch/checks/<commit>/<id>.log`, and a receipt at `.scratch/checks/<commit>.json` records the commit, whether the tree was dirty, and each check's outcome and time. Run it before every commit.
+
+| Check | Fails when |
+|-------|-----------|
+| `doctor` | This machine is missing something the other checks need |
+| `config` | A route in `config/models.json` doesn't load |
+| `layers` | A package imports another that `layers.toml` doesn't allow |
+| `knowledge` | A knowledge page has a broken link, is missing from the index, or opens a section with more than 250 characters |
+| `tests` | Any test fails |
+
+The checks are data, so the CLI, CI, and the skills read one list. To add a check, add a row to `devtools/checks.json` with an `id`, a `command` (`{python}` stands for the interpreter running mpdev), and an `about` line.
+
+## Is this machine ready: `mpdev doctor`
+
+```bash
+bin/mpdev doctor          # every probe
+bin/mpdev doctor --ci     # what CI can have: Python and packages
+bin/mpdev doctor --json
+```
+
+Read-only. It checks the Python version, the installed packages from `requirements.txt` plus pytest, the `claude`, `codex` and `gh` CLIs, that `memory.db` and `traces.db` open read-only, and that the code graph in `graphify-out/` is newer than the last commit to Python code and kept out of `git status`. Every failed probe prints its fix. A stale graph is a warning, not a failure, because the hooks rebuild it in the background after each code commit. In a worktree it reads the databases from the main checkout. CI mode is also on when `CI=true`.
 
 ## Where outputs go
 
@@ -256,3 +280,4 @@ Records go in as `field: value` lines in a quoted heredoc, with `---` between re
 | Rerun and bakeoff results | The `--out` folder you pass | No |
 | Lead stories a run chose | `reports/<user>/threads/<date>.json` | No |
 | Live traces | `data/<user>/traces.db` and `data/<user>/traces/` | No |
+| Check receipts and logs | `.scratch/checks/` | No |

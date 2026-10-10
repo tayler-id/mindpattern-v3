@@ -8,6 +8,8 @@
 
 ## Key Functions
 
+Phase timing, per-agent metrics, and cost.
+
 - `start_phase(pipeline_run_id, phase_name)` — returns phase_id
 - `end_phase(phase_id, status, tokens_used, cost, error)` — complete phase
 - `record_agent_metrics(agent_name, run_date, findings_count, tokens_used, cost, duration_ms, model_used)` — upsert

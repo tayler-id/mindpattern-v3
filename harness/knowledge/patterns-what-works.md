@@ -4,6 +4,8 @@
 
 ## Pipeline
 
+Pipeline patterns that held across runs.
+
 - **13 parallel agents with specialization** — Each agent has a focused domain. Produces 230-254 findings per run consistently (Runs 14-19).
 - **TDD in harness fix agents** — Write failing tests first, then implement. Catches regressions before merge.
 - **Deterministic quality scoring** — [[orchestrator/evaluator]] catches issues without burning LLM tokens.
@@ -11,6 +13,8 @@
 - **Single-bundle sync** — [[orchestrator/sync]] reduced 30 connections to 1. Significant reliability improvement.
 
 ## Social
+
+Social patterns that passed the approval gates.
 
 - **Three-actor convergence** — When 3+ named actors publish same signal, topic passes Gate 1 cleanly.
 - **Counter-narrative injection** — Gate 1 'custom' behavior for compound narratives (e.g., AI labor displacement + counter-evidence).

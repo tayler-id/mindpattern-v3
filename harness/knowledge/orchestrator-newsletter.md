@@ -8,6 +8,8 @@ Strips junk lines from markdown reports, restores from .backup.md if report is t
 
 ## Key Functions
 
+Validate the report, render it to HTML, and send it.
+
 - `validate_report(report_path, traces_conn, pipeline_run_id)` — strips junk, restores backup if needed
 - `render_html(markdown_text)` — markdown2 with tables, fenced-code, header-ids
 - `send_newsletter(report_path, user_config, date_str, report_content, traces_conn, pipeline_run_id)` — Resend API with retry

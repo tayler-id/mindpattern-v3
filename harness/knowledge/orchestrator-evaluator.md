@@ -4,13 +4,15 @@
 
 ## Dimensions & Weights
 
+Six scores, weighted into `overall`.
+
 | Dimension | Weight | What It Checks |
 |-----------|--------|----------------|
 | coverage | 0.25 | High-importance findings represented (50% title word match) |
 | dedup | 0.20 | No duplicate sections (60% word overlap threshold) |
 | sources | 0.15 | All sections have URLs |
 | actionability | 0.15 | "Why it matters", action items, skills section |
-| length | 0.10 | 3000-5000 words (scales down outside) |
+| length | 0.10 | Inside `newsletter.length.issue_words` in `policies/editorial.json` (scales down outside) |
 | topic_balance | 0.15 | Matches user preference weights |
 
 ## Key Class
@@ -22,6 +24,8 @@
 Nothing external. Uses [[data/memory-db]] findings + preferences.
 
 ## Known Fragile Points
+
+Where a score can be wrong.
 
 - Coverage uses 50% word match — loose, can match wrong sections
 - Section splitting by ## or # — breaks on code blocks with # characters

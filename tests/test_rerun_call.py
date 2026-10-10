@@ -1,13 +1,11 @@
-"""tools/rerun_call.py reruns a traced call's saved prompt with another system prompt."""
+"""devtools/rerun_call.py reruns a traced call's saved prompt with another system prompt."""
 import gzip
 import sqlite3
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-import rerun_call  # noqa: E402
+from devtools import rerun_call
 
 
 @pytest.fixture

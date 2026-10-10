@@ -507,7 +507,7 @@ Every call, Claude or Codex, goes through `core/model_cli.py`. It runs the CLI w
 
 Each call is a row in `traces.db` (`model_calls`, one child row per subagent, `model_call_steps` per tool call), and its raw stream is kept in `data/<user>/traces/` for 90 days. `python -m orchestrator.trace show <run> --steps` shows what every agent did. LEARN alerts on a run past the soft budget in `policies/observability.json`.
 
-`tools/replay_day.py` reruns a past day's synthesis or research on real data in a scratch copy, and `tools/bakeoff.py` puts two issues side by side, blind.
+`devtools/replay_day.py` reruns a past day's synthesis or research on real data in a scratch copy, and `devtools/bakeoff.py` puts two issues side by side, blind.
 
 ---
 

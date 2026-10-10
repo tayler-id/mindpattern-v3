@@ -1,4 +1,4 @@
-"""tools/bakeoff.py hides which version is which until --reveal."""
+"""devtools/bakeoff.py hides which version is which until --reveal."""
 import importlib.util
 import json
 import random
@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SPEC = importlib.util.spec_from_file_location("bakeoff", ROOT / "tools" / "bakeoff.py")
+SPEC = importlib.util.spec_from_file_location("bakeoff", ROOT / "devtools" / "bakeoff.py")
 bakeoff = importlib.util.module_from_spec(SPEC)
 sys.modules["bakeoff"] = bakeoff
 SPEC.loader.exec_module(bakeoff)

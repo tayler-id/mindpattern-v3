@@ -8,6 +8,8 @@ WAL checkpoint both DBs, create tar.gz bundle, upload single file via SFTP, extr
 
 ## Key Functions
 
+Bundle, upload with flyctl sftp, and restart the Fly app.
+
 - `sync_to_fly(user_id, data_dir, app_name, traces_conn)` — orchestrate full sync
 - `create_bundle(user_id, data_dir, reports_dir, date_str)` — tar.gz with mirrored dirs
 - `upload_bundle(bundle_path, remote_path, app_name)` — flyctl sftp, 5 min timeout
@@ -18,6 +20,8 @@ WAL checkpoint both DBs, create tar.gz bundle, upload single file via SFTP, extr
 flyctl CLI, subprocess. Called by [[orchestrator/runner]] _phase_sync.
 
 ## Known Fragile Points
+
+Where a sync can fail or run slowly.
 
 - SFTP error detection checks "bytes written" substring — fragile across flyctl versions
 - Falls back to per-file SFTP on extraction failure — slow, defeats bundling
