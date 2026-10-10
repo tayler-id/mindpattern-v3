@@ -18,6 +18,8 @@ Earlier coverage of a story's findings is attached from embeddings and knowledge
 
 ## Key Functions
 
+Find and check the lead stories, then hand them to the writer and the deep dives.
+
 - `find_threads(conn, today, policy, notes, covered, published, runner)` returns the checked lead stories.
 - `lead_block(leads)` is the writer's Lead stories section with each angle, the findings with links, and earlier coverage.
 - `lead_positions(leads)` maps finding ids to their lead story. The runner marks those findings in All Findings so they get no section item.
