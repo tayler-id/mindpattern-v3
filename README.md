@@ -7,6 +7,7 @@ Contributor and operator documentation for the Python research pipeline, FastAPI
 - [Development guide](AGENTS.md): environment setup, tests, repository map, and safety boundaries.
 - [Agent reference](CLAUDE.md): code conventions and navigation commands.
 - [Architecture](docs/ARCHITECTURE.md): module and pipeline diagrams.
+- [Developer tools](docs/tools.md): replay a day, rerun one call, read traces, check health, mutation-test a guard. How each works, with flow diagrams.
 - [System overview](docs/SYSTEM-OVERVIEW.md): broader workflow descriptions. Check implementation details against the source before operating the system.
 - [Domain documentation](docs/agents/domain.md): where to find vocabulary, specs, and decision history.
 - [Specs](docs/specs/) and [runbooks](docs/runbooks/): scoped plans and implementation records. Dated plans are not proof that a feature is implemented or enabled.

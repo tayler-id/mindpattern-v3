@@ -31,6 +31,8 @@ Behavior that changes without a code edit lives in files, checked when loaded:
 
 ## Tools
 
+How each one works, with flow diagrams: [docs/tools.md](docs/tools.md).
+
 - `python -m orchestrator.trace runs | show <run> --steps | call <id> --full | grep | usage`: what every agent did.
 - `tools/replay_day.py --date D --stage synthesis|research --state-root ~/Projects/mindpattern-v3 --out DIR`: rerun a stage on real data in a scratch copy. Real model calls; `--dry-run` makes none.
 - `tools/usage_report.py --date D`: usage by task and model from Claude transcripts.
@@ -38,6 +40,7 @@ Behavior that changes without a code edit lives in files, checked when loaded:
 - `tools/health.py --since 7`: one row per day (run, delivery, agents, findings, duplicates, eval, site stories, cost, Codex, failures) plus per-agent output and problems. Exits 1 on any problem.
 - `tools/mutate.py --file F --old X --new Y --test T` (or `--plan`): break a guard, run its tests, restore byte for byte. RED means a test caught it.
 - `tools/site_backfill.py --dates D1,D2 [--claude-critic]`: write the site stories past issues should have had.
+- `tools/rerun_call.py --traces DIR --call ID --system-prompt F --out DIR [--runs N]`: rerun one traced model call with another system prompt on the same input, and print the issue's layout (`orchestrator/issue_format.py`).
 
 ## Code Conventions
 
