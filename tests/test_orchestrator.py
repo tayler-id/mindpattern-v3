@@ -494,33 +494,40 @@ class TestEvaluatorLength:
         db.row_factory = sqlite3.Row
         return NewsletterEvaluator(db)
 
-    def test_in_range_returns_1(self, evaluator):
-        text = "word " * 4000  # 4000 words
+    @pytest.fixture()
+    def words(self):
+        """The range lives in policies/editorial.json, not in these tests."""
+        from orchestrator import editorial
+        policy = editorial.load()
+        return policy.issue_words_min, policy.issue_words_max
+
+    def test_in_range_returns_1(self, evaluator, words):
+        text = "word " * ((words[0] + words[1]) // 2)
         assert evaluator._check_length(text) == 1.0
 
-    def test_at_lower_bound_returns_1(self, evaluator):
-        text = "word " * 3000
+    def test_at_lower_bound_returns_1(self, evaluator, words):
+        text = "word " * words[0]
         assert evaluator._check_length(text) == 1.0
 
-    def test_at_upper_bound_returns_1(self, evaluator):
-        text = "word " * 5000
+    def test_at_upper_bound_returns_1(self, evaluator, words):
+        text = "word " * words[1]
         assert evaluator._check_length(text) == 1.0
 
-    def test_below_range_returns_less_than_1(self, evaluator):
-        text = "word " * 1500
+    def test_below_range_returns_less_than_1(self, evaluator, words):
+        text = "word " * (words[0] // 2)
         score = evaluator._check_length(text)
         assert score < 1.0
         assert score >= 0.1
 
-    def test_above_range_returns_less_than_1(self, evaluator):
-        text = "word " * 7000
+    def test_above_range_returns_less_than_1(self, evaluator, words):
+        text = "word " * (words[1] + 3000)
         score = evaluator._check_length(text)
         assert score < 1.0
         assert score >= 0.1
 
     def test_empty_text_returns_minimum(self, evaluator):
         score = evaluator._check_length("")
-        assert score == 0.1  # max(0.1, 0/3000) = 0.1 since split on "" gives [""]
+        assert score == 0.1  # the floor: an empty issue scores 0.1, never 0
 
 
 class TestEvaluatorDedup:

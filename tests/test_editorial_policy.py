@@ -41,3 +41,30 @@ def test_an_out_of_range_value_fails_the_load(tmp_path, change, message):
     path.write_text(json.dumps(data))
     with pytest.raises(EditorialPolicyError, match=message):
         load(path)
+
+
+def test_the_newsletter_length_comes_from_the_policy():
+    policy = load()
+    assert (policy.issue_words_min, policy.issue_words_max) == (10000, 14000)
+    assert (policy.section_items_min, policy.section_items_max) == (6, 12)
+    assert (policy.item_words_min, policy.item_words_max) == (80, 160)
+    block = policy.length_block()
+    assert "10,000 to 14,000 words" in block
+    assert "6 to 12 items" in block and "80 to 160 words" in block
+
+
+def test_the_writer_reads_its_length_from_the_policy_and_nowhere_else():
+    runner = (ROOT / "orchestrator" / "runner.py").read_text()
+    assert "editorial.load().length_block()" in runner
+    writer = (ROOT / "agents" / "synthesis-writer.md").read_text()
+    for stale in ("4000-5000 words", "100-200 words per finding"):
+        assert stale not in writer, stale
+
+
+def test_a_length_range_that_runs_backwards_fails_the_load(tmp_path):
+    data = json.loads((ROOT / "policies" / "editorial.json").read_text())
+    data["newsletter"]["length"]["issue_words"] = {"min": 15000, "max": 10000}
+    path = tmp_path / "editorial.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(EditorialPolicyError, match="newsletter.length.issue_words"):
+        load(path)

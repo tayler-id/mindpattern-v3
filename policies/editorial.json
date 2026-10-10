@@ -2,7 +2,22 @@
   "_about": "Editorial counts and caps. Read by orchestrator/editorial.py and checked when loaded. newsletter.top_stories must match the count the selector and writer prompts state (agents/synthesis-selector.md, prompts/synthesis-pass2.md); a test holds them together.",
   "newsletter": {
     "top_stories": 5,
-    "deep_dive_stories": 5
+    "deep_dive_stories": 5,
+    "length": {
+      "_about": "The issue the writer is asked for and the eval scores against. 10,000-14,000 words with 6-12 items per section matches the issues before 2026-10-03 (12,600-14,600 words, 104-133 items).",
+      "issue_words": {
+        "min": 10000,
+        "max": 14000
+      },
+      "section_items": {
+        "min": 6,
+        "max": 12
+      },
+      "item_words": {
+        "min": 80,
+        "max": 160
+      }
+    }
   },
   "site": {
     "candidate_stories_per_day": 5,

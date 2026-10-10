@@ -24,12 +24,20 @@ def test_check_length_penalizes_short_newsletter():
     assert 0.0 < score < 0.5, f"Short newsletter should be penalized, got {score}"
 
 
-def test_check_length_rewards_ideal_length():
-    """A newsletter in the 3000-5000 word sweet spot should score 1.0."""
+def test_check_length_scores_against_the_editorial_policy():
+    """The target is policies/editorial.json's issue length, not a number in this file.
+
+    Until 2026-10-10 it was 3000-5000 words here and in the writer prompt, so
+    the 13,000-word issues readers had scored 0.1 and the shorter Opus 5.5
+    issues looked better while carrying a third of the stories.
+    """
+    from orchestrator import editorial
+
+    policy = editorial.load()
     ev = _make_evaluator()
-    ideal_text = "word " * 4000  # 4000 words, within [3000, 5000]
-    score = ev._check_length(ideal_text)
-    assert score == 1.0, f"Ideal-length newsletter should score 1.0, got {score}"
+    assert ev._check_length("word " * policy.issue_words_min) == 1.0
+    assert ev._check_length("word " * policy.issue_words_max) == 1.0
+    assert ev._check_length("word " * 6000) < 1.0
 
 
 # ── Dedup check ──────────────────────────────────────────────────────────

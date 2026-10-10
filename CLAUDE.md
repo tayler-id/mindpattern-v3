@@ -24,7 +24,7 @@ Behavior that changes without a code edit lives in files, checked when loaded:
 |------|-------|
 | `config/models.json` | Provider, model, effort, turns, timeout, and fallback per task. `python -m core.config check` validates it. |
 | `policies/writing.json` | Banned and capped phrases, budgets. Feeds the gates and the writer prompts. |
-| `policies/editorial.json` | Story counts and caps. |
+| `policies/editorial.json` | Story counts and caps, and the newsletter length the writer is asked for and the eval scores against. |
 | `policies/research.json` | Finding fields, age, injection patterns. |
 | `policies/observability.json` | Trace retention and the per-run soft budget. |
 | `contracts/*.schema.json` | The JSON shape a model must answer in. Codex enforces it; `core/contracts.py` checks it for every provider. |

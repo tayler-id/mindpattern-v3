@@ -435,25 +435,17 @@ class NewsletterEvaluator:
         return min(score, 1.0)
 
     def _check_length(self, newsletter: str) -> float:
-        """Is the newsletter 3000-5000 words? 1.0 if in range, scaled down outside.
+        """1.0 inside policies/editorial.json's issue length, scaled down outside, never below 0.1."""
+        from orchestrator import editorial
 
-        Returns:
-            1.0 if word count is in [3000, 5000]
-            Linearly scaled toward 0.0 outside that range
-            Minimum 0.1 to avoid zeroing out the score entirely
-        """
+        policy = editorial.load()
+        low, high = policy.issue_words_min, policy.issue_words_max
         word_count = len(newsletter.split())
-
-        if 3000 <= word_count <= 5000:
+        if low <= word_count <= high:
             return 1.0
-
-        if word_count < 3000:
-            # Scale from 0.1 at 0 words to 1.0 at 3000 words
-            return max(0.1, word_count / 3000)
-
-        # word_count > 5000: scale down, reaching 0.5 at 8000 words
-        overage = word_count - 5000
-        return max(0.1, 1.0 - (overage / 6000))
+        if word_count < low:
+            return max(0.1, word_count / low)
+        return max(0.1, 1.0 - (word_count - high) / (high * 1.2))
 
     def _check_balance(self, newsletter: str, preferences: list[dict]) -> float:
         """Does coverage match user preferences? Score 0.0-1.0.
