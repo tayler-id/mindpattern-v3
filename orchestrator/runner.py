@@ -1919,6 +1919,9 @@ class ResearchPipeline:
             + f"## All Findings\n" + "\n".join(full_findings) + "\n\n"
             f"## User Preferences\n{pref_text}\n\n"
             f"{failure_text}"
+            # Last, so the length the policy asks for is the final instruction
+            # the writer reads (2026-10-10: issues ran 6-9k words against 13k).
+            f"\n{editorial.load().length_block()}"
         )
 
         logger.info(
