@@ -534,8 +534,9 @@ Additional requirements:
 
 The sources of truth are [`deploy/com.mindpattern.pipeline.plist`](../deploy/com.mindpattern.pipeline.plist) and [`run-launchd.sh`](../run-launchd.sh), not the example lifecycle times elsewhere in older docs.
 
-- The plist names `com.mindpattern.pipeline`, requests triggers every 15 minutes from 05:00 through 09:45 in the host's local time, and sets `RunAtLoad` to false.
+- The plist names `com.mindpattern.pipeline`, requests triggers every 15 minutes from 05:00 through 09:45 and hourly at five past from 10:05 through 22:05 in the host's local time, and sets `RunAtLoad` to false.
 - The wrapper admits starts only from 05:00 through 09:59. This is a start window, not a completion deadline; a running pipeline can continue after 10:00.
+- A run that hits the Claude usage limit in synthesis is held, not sent. It writes `mindpattern-retry-after-<date>` (the reset time plus two minutes, as epoch seconds) next to the delivery marker and alerts Slack. Until that time every slot skips; after it, the first slot resumes the run from its checkpoint at any hour that day and removes the marker. The hourly afternoon slots exist for this. On 2026-10-13 the limit hit at 1:43 PM and a fallback brief went to subscribers.
 - Delivery and sync markers determine whether work is needed. Both present means skip. Delivery present without sync means `--sync-only`; missing delivery permits another pipeline attempt. The wrapper does not mark delivery merely because the process exited.
 - The wrapper skips a slot when the Mac is on battery without a full wake, or when api.anthropic.com does not answer, and the next slot tries again. On 2026-09-28 and 09-29 runs started in a two-second dark wake crawled through DNS failures for 14 hours.
 - An atomic directory lock prevents concurrent wrapper runs; the wrapper reclaims stale locks when the recorded PID is no longer alive. These guards permit retries, not a guarantee of exactly one invocation per day.

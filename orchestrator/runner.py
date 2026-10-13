@@ -784,6 +784,34 @@ class ResearchPipeline:
         logger.warning(f"Claude login probe failed for another reason, continuing: {said[:200]}")
         return None
 
+    def _hold_for_usage_limit(self, phase: Phase, exc: "agent_dispatch.UsageLimitReached") -> int:
+        """Stop before anything is sent and leave a retry-after marker the launcher honors after the reset.
+
+        2026-10-13: the writer hit the usage limit, the run fell back to a
+        796-word source list, and that went to subscribers.
+        """
+        from datetime import timedelta, timezone
+
+        resets_at = exc.resets_at or datetime.now(timezone.utc) + timedelta(hours=1)
+        retry_at = resets_at + timedelta(minutes=2)
+        marker = Path(os.environ.get("MP_RAN_MARKER_DIR", "/tmp"), f"mindpattern-retry-after-{self.date_str}")
+        try:
+            marker.write_text(f"{int(retry_at.timestamp())}\n")
+        except OSError as err:
+            logger.error(f"Could not write the retry-after marker {marker}: {err}")
+        shown = retry_at.astimezone().strftime("%-I:%M %p")
+        error_msg = f"{phase.value}: Claude usage limit, held until {shown}"
+        logger.error(f"{error_msg} ({exc.detail})")
+        log_event(self.traces_conn, self.traces_run_id, "usage_limit_hold",
+                  json.dumps({"phase": phase.value, "retry_at": retry_at.isoformat(), "detail": exc.detail[:300]}))
+        self.pipeline.fail(error_msg)
+        complete_pipeline_run(self.traces_conn, self.traces_run_id, status="failed", error=error_msg)
+        self._send_alert(
+            f":hourglass_flowing_sand: Newsletter {self.date_str} is on hold: the Claude usage limit ran out during "
+            f"{phase.value}. Nothing was sent. The launcher resumes the run from its checkpoint after {shown}."
+        )
+        return 1
+
     def _execute_from(self, start_phase: Phase) -> int:
         """Execute phases starting from the given phase."""
         from .pipeline import PHASE_ORDER
@@ -874,6 +902,8 @@ class ResearchPipeline:
                         except Exception as me:
                             logger.warning(f"Monitor end_phase (failed) failed: {me}")
 
+                    if isinstance(e, agent_dispatch.UsageLimitReached):
+                        return self._hold_for_usage_limit(phase, e)
                     if phase in CRITICAL_PHASES:
                         self.pipeline.fail(error_msg)
                         complete_pipeline_run(self.traces_conn, self.traces_run_id,
@@ -1764,6 +1794,7 @@ class ResearchPipeline:
             pass1_output, exit_code = agent_dispatch.run_claude_prompt(
                 pass1_prompt, "synthesis_pass1",
                 system_prompt_file="agents/synthesis-selector.md",
+                raise_on_usage_limit=True,
             )
             pass1_duration = time.monotonic() - pass1_start
             output_len = len(pass1_output) if pass1_output else 0
@@ -2028,6 +2059,7 @@ class ResearchPipeline:
             self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(
                 pass2_prompt, "synthesis_pass2",
                 system_prompt_file="agents/synthesis-writer.md",
+                raise_on_usage_limit=True,
             )
             attempt_duration = time.monotonic() - attempt_start
             output_len = len(self.newsletter_text) if self.newsletter_text else 0

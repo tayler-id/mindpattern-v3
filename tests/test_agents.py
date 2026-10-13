@@ -1408,3 +1408,39 @@ class TestStoredFindingsSurviveTheTurnCap:
         assert env["PATH"].split(":")[0] == str(PROJECT_ROOT / "bin")
         assert env["MP_FINDINGS_FILE"].endswith("data/ramsay/runs/research-2026-10-02-abc/news-researcher.findings.jsonl")
         assert "Bash(mp *)" in AGENT_ALLOWED_TOOLS
+
+
+LIMIT_SAID = "You've hit your session limit · resets 3:20pm (America/New_York)"
+
+
+class TestUsageLimit:
+    """2026-10-13: the writer hit the usage limit and a fallback brief went out. The run must hold instead."""
+
+    def test_the_cli_message_is_a_usage_limit_with_its_reset_time(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from orchestrator.agents import usage_limit_resets_at
+
+        ny = ZoneInfo("America/New_York")
+        assert classify_agent_failure(1, LIMIT_SAID, "") == "usage_limit"
+        assert usage_limit_resets_at(LIMIT_SAID, datetime(2026, 10, 13, 13, 43, tzinfo=ny)) == datetime(
+            2026, 10, 13, 15, 20, tzinfo=ny)
+        assert usage_limit_resets_at(LIMIT_SAID, datetime(2026, 10, 13, 16, 0, tzinfo=ny)) == datetime(
+            2026, 10, 14, 15, 20, tzinfo=ny)
+        assert usage_limit_resets_at("You've hit your session limit") is None
+
+    @patch("orchestrator.agents.router")
+    @patch("orchestrator.agents.run_claude_process")
+    def test_only_a_caller_that_opts_in_gets_the_error(self, mock_run_process, mock_router):
+        from orchestrator.agents import UsageLimitReached
+
+        mock_router.get_model.return_value = "opus"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+        mock_run_process.return_value = ClaudeProcessResult(stdout=LIMIT_SAID, stderr="", returncode=1)
+        assert run_claude_prompt("p", "synthesis_pass2", _sleep=lambda s: None) == ("", 1)
+        with pytest.raises(UsageLimitReached) as raised:
+            run_claude_prompt("p", "synthesis_pass2", _sleep=lambda s: None, raise_on_usage_limit=True)
+        assert raised.value.resets_at is not None and raised.value.resets_at.hour == 15
+        assert mock_run_process.call_count == 2  # not retried: waiting is the only fix

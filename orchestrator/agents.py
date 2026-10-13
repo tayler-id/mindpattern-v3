@@ -14,8 +14,9 @@ import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from core import findings_store
 from core.model_cli import ToolPolicy, disallowed as as_disallowed, run_task_process
@@ -555,10 +556,42 @@ AUTH_FAILURE_SIGNS = ("failed to authenticate", "authentication_error", "oauth s
                       "not logged in", "please run /login", "invalid api key")
 
 
+# What the claude CLI prints when the subscription's usage limit is spent. Waiting
+# for the reset is the only fix (2026-10-13: the writer hit it and a 796-word
+# fallback brief went to subscribers).
+USAGE_LIMIT_SIGNS = ("hit your session limit", "hit your usage limit", "you've hit your limit", "usage limit reached")
+_RESETS = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s*(?:\(([^)]+)\))?", re.IGNORECASE)
+
+
+class UsageLimitReached(RuntimeError):
+    """The Claude usage limit is spent; a retry before `resets_at` can't succeed."""
+
+    def __init__(self, detail: str, resets_at: datetime | None):
+        super().__init__(detail)
+        self.detail = detail
+        self.resets_at = resets_at
+
+
+def usage_limit_resets_at(text: str, now: datetime | None = None) -> datetime | None:
+    """When the limit resets, from "resets 3:20pm (America/New_York)"; None when the text doesn't say."""
+    match = _RESETS.search(text or "")
+    if not match:
+        return None
+    hour, minute, meridiem, zone = match.groups()
+    try:
+        tz = ZoneInfo(zone) if zone else None
+    except ZoneInfoNotFoundError:
+        tz = None
+    now = (now or datetime.now(tz)).astimezone(tz)
+    reset = now.replace(hour=int(hour) % 12 + (12 if meridiem.lower() == "pm" else 0), minute=int(minute or 0),
+                        second=0, microsecond=0)
+    return reset if reset > now else reset + timedelta(days=1)
+
+
 def classify_agent_failure(exit_code: int, stdout: str, stderr: str) -> str:
     """Classify why an agent produced no findings.
 
-    Returns one of: auth | overloaded | rate_limit | server_error | parse_error | other.
+    Returns one of: auth | usage_limit | overloaded | rate_limit | server_error | parse_error | other.
     The claude CLI surfaces API errors as text on stdout (e.g.
     "API Error: 529 Overloaded ...") with a non-zero exit and empty stderr, so we
     inspect both streams — the old code recorded a useless "Non-zero exit code".
@@ -567,6 +600,8 @@ def classify_agent_failure(exit_code: int, stdout: str, stderr: str) -> str:
     blob = f"{stdout}\n{stderr}".lower()
     if any(sign in blob for sign in AUTH_FAILURE_SIGNS):
         return "auth"
+    if any(sign in blob for sign in USAGE_LIMIT_SIGNS):
+        return "usage_limit"
     if "overloaded" in blob or "529" in blob:
         return "overloaded"
     if "rate limit" in blob or "rate_limit" in blob or "429" in blob:
@@ -1315,8 +1350,13 @@ def run_claude_prompt(
     max_delay: float = 30.0,
     _sleep=time.sleep,
     _rng: random.Random | None = None,
+    raise_on_usage_limit: bool = False,
 ) -> tuple[str, int]:
     """Run a single claude -p call for non-agent tasks (synthesis, trends, etc.).
+
+    raise_on_usage_limit: raise UsageLimitReached instead of returning ("", 1)
+    when the usage limit is spent, so a caller that must not fail open (the
+    newsletter writer) can hold the run until the reset.
 
     For large prompts (>100K chars), writes to a temp file and pipes via stdin
     to avoid OS argument length limits.
@@ -1418,6 +1458,8 @@ def run_claude_prompt(
             f"classification={classification}, attempts={attempt + 1}, "
             f"duration={call_duration:.1f}s, detail={detail}"
         )
+        if raise_on_usage_limit and classification == "usage_limit":
+            raise UsageLimitReached(detail, usage_limit_resets_at(detail))
         return "", 1
 
     return "", 1
