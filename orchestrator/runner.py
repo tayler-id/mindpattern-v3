@@ -758,11 +758,52 @@ class ResearchPipeline:
         )
         return resume_phase
 
+    def _claude_login_problem(self) -> str | None:
+        """The CLI's own words when Claude is signed out, or None when it can run (or the probe can't tell).
+
+        2026-10-13: an expired OAuth session failed all 104 research calls in under
+        a second each, on four launch windows, before anyone saw why. One Haiku
+        call up front names the problem while there's still time to sign in.
+        """
+        if self.dry_run or os.environ.get("MP_DRY_RUN") == "1":
+            return None
+        from core.model_cli import CallRequest, ToolPolicy, call_model
+
+        try:
+            result = call_model(CallRequest(task="auth_probe", prompt="Reply with the word ok.", unit="auth_probe",
+                                            tools=ToolPolicy(allowed=(), disallowed=("Bash", "Read", "Write", "Edit",
+                                                                                     "WebFetch", "WebSearch", "Agent"))))
+        except Exception as exc:
+            logger.warning(f"Claude login probe could not run (non-critical): {exc}")
+            return None
+        if result.ok:
+            return None
+        said = " ".join(filter(None, [result.error, result.text, result.stderr])).strip()
+        if agent_dispatch.classify_agent_failure(result.exit_code, said, "") == "auth":
+            return said[:200]
+        logger.warning(f"Claude login probe failed for another reason, continuing: {said[:200]}")
+        return None
+
     def _execute_from(self, start_phase: Phase) -> int:
         """Execute phases starting from the given phase."""
         from .pipeline import PHASE_ORDER
 
         start_idx = PHASE_ORDER.index(start_phase) if start_phase in PHASE_ORDER else 0
+
+        login_problem = self._claude_login_problem()
+        if login_problem:
+            error_msg = f"claude login: {login_problem}"
+            logger.error(error_msg)
+            log_event(self.traces_conn, self.traces_run_id, "claude_login_failed",
+                      json.dumps({"detail": login_problem}))
+            self.pipeline.fail(error_msg)
+            complete_pipeline_run(self.traces_conn, self.traces_run_id, status="failed", error=error_msg)
+            self._send_alert(
+                f":lock: Newsletter {self.date_str} can't run: the Claude CLI on the Mac is signed out "
+                f"(\"{login_problem}\"). Open Terminal, run `claude`, and sign in. The launcher retries every "
+                "15 minutes until 9:45."
+            )
+            return 1
 
         try:
             for phase in PHASE_ORDER[start_idx:]:

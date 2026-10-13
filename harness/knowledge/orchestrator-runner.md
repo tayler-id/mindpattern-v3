@@ -15,6 +15,7 @@ One method per phase, plus the run loop and its resume path.
 - `ResearchPipeline.__init__(user_id, date_str)` — opens memory.db + traces.db, creates pipeline_run
 - `run() -> int` — entry point; checks for resumable run, else starts from INIT
 - `_execute_from(start_phase)` — loop through PHASE_ORDER, call handler per phase, save checkpoint
+- `_claude_login_problem()`: one Haiku call (route `auth_probe`) before the first phase. A signed-out Claude CLI stops the run in seconds, records `claude login: ...` as the run's error, and tells Slack to run `claude` and sign in
 - `_phase_init()` — load prefs, fetch feedback, detect prompt changes via [[orchestrator/prompt_tracker]]
 - `_phase_research()` — dispatch 13 parallel agents via [[orchestrator/agents]], store findings in [[data/memory-db]]
 - `_phase_synthesis()`: [[orchestrator/threads]] finds the lead stories (Opus 5.5), Pass 1 picks single stories for any Top slot left (Opus 5.5), [[orchestrator/deep_dive]] gathers evidence for each, Pass 2 writes the issue (Opus 5.5), [[orchestrator/newsletter_editor]] edits it, then the prose gate runs
