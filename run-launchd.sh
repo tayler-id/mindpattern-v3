@@ -41,9 +41,23 @@ if [ -f "$MARKER" ] && [ ! -f "$SYNC_MARKER" ]; then
     SYNC_ONLY=1
 fi
 
-# Only run between 5 AM and 10 AM (prevents midnight/late-night triggers)
+# Only run between 5 AM and 10 AM (prevents midnight/late-night triggers).
+# Exception: a run the pipeline held for the Claude usage limit leaves a
+# retry-after marker holding the reset time (epoch seconds). Until then every
+# slot skips; after it, one slot resumes the run at any hour that day and
+# removes the marker (2026-10-13: the limit hit at 1:43 PM and a fallback
+# brief went out instead of waiting for the 3:20 PM reset).
 HOUR=$(date +%H)
-if [ "$HOUR" -lt 5 ] || [ "$HOUR" -ge 10 ]; then
+RETRY_MARKER="${MARKER_DIR}/mindpattern-retry-after-${TODAY}"
+if [ -f "$RETRY_MARKER" ]; then
+    RETRY_AT=$(tr -cd '0-9' < "$RETRY_MARKER")
+    if [ "$(date +%s)" -lt "${RETRY_AT:-0}" ]; then
+        log "SKIP: Held for the Claude usage limit until $(date -r "$RETRY_AT" +%H:%M)"
+        exit 0
+    fi
+    log "Usage limit reset has passed; resuming the held run"
+    rm -f "$RETRY_MARKER"
+elif [ "$HOUR" -lt 5 ] || [ "$HOUR" -ge 10 ]; then
     log "SKIP: Outside run window (hour=$HOUR, allowed=05-09)"
     exit 0
 fi

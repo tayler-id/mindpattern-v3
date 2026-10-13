@@ -24,7 +24,8 @@ def _exe(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
-def _run(tmp_path: Path, *, power: str, capabilities: str, curl_exit: int) -> str:
+def _run(tmp_path: Path, *, power: str, capabilities: str, curl_exit: int, hour: str = "08",
+         retry_at: int | None = None) -> str:
     work = tmp_path / "repo"
     (work / "reports").mkdir(parents=True)
     (work / ".venv" / "bin").mkdir(parents=True)
@@ -37,7 +38,10 @@ def _run(tmp_path: Path, *, power: str, capabilities: str, curl_exit: int) -> st
   systemstate) echo "Current System Capabilities are: {capabilities}" ;;
 esac""")
     _exe(fakes / "curl", f"exit {curl_exit}")
-    _exe(fakes / "date", '[ "$1" = "+%H" ] && echo 08 || /bin/date "$@"')
+    _exe(fakes / "date", f'[ "$1" = "+%H" ] && echo {hour} || /bin/date "$@"')
+    if retry_at is not None:
+        today = __import__("datetime").date.today().isoformat()
+        (tmp_path / f"mindpattern-retry-after-{today}").write_text(f"{retry_at}\n")
     _exe(fakes / "git", "echo test-branch")
     _exe(fakes / "caffeinate", "exit 0")
 
@@ -72,3 +76,35 @@ def test_skips_a_run_it_cannot_finish(tmp_path, power, capabilities, curl_exit, 
 def test_starts_when_the_mac_stays_up(tmp_path, power, capabilities):
     out = _run(tmp_path, power=power, capabilities=capabilities, curl_exit=0)
     assert "PIPELINE STARTED" in out
+
+
+def test_a_run_held_for_the_usage_limit_waits_for_the_reset_then_runs_once_at_any_hour(tmp_path):
+    import time
+
+    held = tmp_path / "held"
+    held.mkdir()
+    out = _run(held, power="AC Power", capabilities="CPU Graphics", curl_exit=0, hour="15",
+               retry_at=int(time.time()) + 3600)
+    assert "SKIP: Held for the Claude usage limit until" in out and "PIPELINE STARTED" not in out
+
+    reset = tmp_path / "reset"
+    reset.mkdir()
+    out = _run(reset, power="AC Power", capabilities="CPU Graphics", curl_exit=0, hour="15",
+               retry_at=int(time.time()) - 60)
+    assert "resuming the held run" in out and "PIPELINE STARTED" in out
+    assert not list(reset.glob("mindpattern-retry-after-*"))
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    out = _run(plain, power="AC Power", capabilities="CPU Graphics", curl_exit=0, hour="15")
+    assert "SKIP: Outside run window (hour=15" in out
+
+
+def test_the_schedule_covers_the_window_and_hourly_retries_for_a_held_run():
+    import plistlib
+
+    plist = plistlib.loads((REPO / "deploy" / "com.mindpattern.pipeline.plist").read_bytes())
+    slots = {(t["Hour"], t["Minute"]) for t in plist["StartCalendarInterval"]}
+    assert {(h, m) for h in range(5, 10) for m in (0, 15, 30, 45)} <= slots
+    assert {(h, 5) for h in range(10, 23)} <= slots
+    assert len(slots) == 20 + 13
