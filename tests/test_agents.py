@@ -926,6 +926,12 @@ class TestClassifyAgentFailure:
     def test_overloaded_529(self):
         assert classify_agent_failure(1, OVERLOAD_MSG, "") == "overloaded"
 
+    def test_a_signed_out_cli_is_auth_and_not_retried(self):
+        """2026-10-13: every research call failed with this, and retries couldn't help."""
+        said = "Failed to authenticate: OAuth session expired and could not be refreshed"
+        assert classify_agent_failure(1, said, "") == "auth"
+        assert classify_agent_failure(1, "", "Not logged in. Please run /login") == "auth"
+
     def test_rate_limit_429(self):
         assert classify_agent_failure(1, "API Error: 429 rate limit exceeded", "") == "rate_limit"
 

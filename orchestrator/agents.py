@@ -550,15 +550,23 @@ CRITICAL REMINDER: Output ONLY the JSON object. "findings" is required;
 _TRANSIENT_CLASSIFICATIONS = frozenset({"overloaded", "rate_limit", "server_error"})
 
 
+# What the claude CLI prints when it is signed out or its session can't refresh.
+AUTH_FAILURE_SIGNS = ("failed to authenticate", "authentication_error", "oauth session expired",
+                      "not logged in", "please run /login", "invalid api key")
+
+
 def classify_agent_failure(exit_code: int, stdout: str, stderr: str) -> str:
     """Classify why an agent produced no findings.
 
-    Returns one of: overloaded | rate_limit | server_error | parse_error | other.
+    Returns one of: auth | overloaded | rate_limit | server_error | parse_error | other.
     The claude CLI surfaces API errors as text on stdout (e.g.
     "API Error: 529 Overloaded ...") with a non-zero exit and empty stderr, so we
     inspect both streams — the old code recorded a useless "Non-zero exit code".
+    "auth" means the CLI is signed out; retrying can't fix it (2026-10-13).
     """
     blob = f"{stdout}\n{stderr}".lower()
+    if any(sign in blob for sign in AUTH_FAILURE_SIGNS):
+        return "auth"
     if "overloaded" in blob or "529" in blob:
         return "overloaded"
     if "rate limit" in blob or "rate_limit" in blob or "429" in blob:

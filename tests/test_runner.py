@@ -2728,3 +2728,46 @@ def test_a_sync_only_run_closes_its_run_record(pipeline, sync, status, exit_code
     row = pipeline.traces_conn.execute(
         "SELECT status, completed_at FROM pipeline_runs WHERE id = ?", (pipeline.traces_run_id,)).fetchone()
     assert row[0] == status and row[1]
+
+
+def _probe_result(*, outcome="success", exit_code=0, error=None, text="ok"):
+    from core.model_cli import ModelResult, Usage
+
+    return ModelResult(call_id="c", task="auth_probe", provider="claude", model="claude-haiku-4-5", text=text,
+                       exit_code=exit_code, stderr="", timed_out=False, outcome=outcome, usage=Usage(), turns=1,
+                       duration_ms=900, error=error)
+
+
+class TestClaudeLoginCheck:
+    """A signed-out Claude CLI stops the run before any phase, with a message that says how to fix it."""
+
+    SIGNED_OUT = "Failed to authenticate: OAuth session expired and could not be refreshed"
+
+    def test_a_signed_out_cli_stops_the_run_before_any_phase(self, pipeline):
+        from orchestrator.pipeline import Phase
+
+        handler = MagicMock()
+        with patch("core.model_cli.call_model",
+                   return_value=_probe_result(outcome="error", exit_code=1, error=self.SIGNED_OUT, text="")), \
+                patch.object(pipeline, "_get_phase_handler", return_value=handler):
+            assert pipeline._execute_from(Phase.INIT) == 1
+        handler.assert_not_called()
+        (alert,) = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert "the Claude CLI on the Mac is signed out" in alert and "run `claude`, and sign in" in alert
+        status, error = pipeline.traces_conn.execute(
+            "SELECT status, error FROM pipeline_runs WHERE id = 'test-run-001'").fetchone()
+        assert (status, error) == ("failed", f"claude login: {self.SIGNED_OUT}")
+
+    @pytest.mark.parametrize("result", [
+        _probe_result(),
+        _probe_result(outcome="error", exit_code=1, error="Connection reset by peer", text=""),
+    ], ids=["signed in", "some other failure"])
+    def test_anything_but_a_sign_in_problem_lets_the_run_go_on(self, pipeline, result):
+        with patch("core.model_cli.call_model", return_value=result):
+            assert pipeline._claude_login_problem() is None
+
+    def test_a_dry_run_makes_no_probe_call(self, pipeline):
+        pipeline.dry_run = True
+        with patch("core.model_cli.call_model") as call:
+            assert pipeline._claude_login_problem() is None
+        call.assert_not_called()
