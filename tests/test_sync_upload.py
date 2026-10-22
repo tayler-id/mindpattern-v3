@@ -77,6 +77,20 @@ def test_happy_path_extracts_and_cleans_wal(client):
     assert not (root / "ramsay" / "memory.db-wal").exists()
 
 
+def test_a_landed_sync_drops_cache_entries_keyed_to_the_old_data(client):
+    _, root = client
+    cache = root / "ramsay" / "site-cache"
+    for kind in ("entities", "findings", "related", "stories"):
+        (cache / kind).mkdir(parents=True)
+        (cache / kind / "x.json").write_text("{}")
+
+    response = _post(client, _bundle({"ramsay/memory.db": b"db"}))
+
+    assert response.status_code == 200
+    assert sorted(p.name for p in cache.iterdir()) == ["stories"]
+    assert (cache / "stories" / "x.json").read_text() == "{}"
+
+
 def test_flushes_to_disk_before_reporting_success(client, monkeypatch):
     """The pipeline restarts the machine seconds after this response; an
     unflushed extract is lost and served as empty files (2026-08-04)."""

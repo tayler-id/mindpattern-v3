@@ -24,6 +24,7 @@ the previous file intact. Zero-byte artifacts have shipped twice before
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -39,6 +40,18 @@ SCHEMA_VERSION = 1
 MAX_BODY_BYTES = 2 * 1024 * 1024
 
 KINDS = ("stories", "entities", "findings", "related")
+
+# These kinds are keyed by the global data fingerprint in dashboard/routes/api.py,
+# which every sync moves, so a landed sync turns every one of their files into
+# a permanent miss. Stories key on their own source file and survive.
+SYNC_INVALIDATED_KINDS = ("entities", "findings", "related")
+
+# Room the sync needs on the volume. The upload handler spools the bundle
+# (300 MB cap) to /data before extracting, and the SFTP fallback holds its
+# chunks and the reassembled bundle at once. When crawler-driven entries ate
+# the last of the 3 GB volume, six days of syncs (2026-10-17 to 10-22) could
+# not land memory.db.
+MIN_FREE_BYTES = 1024 * 1024 * 1024
 
 
 def file_key(source: Path) -> str | None:
@@ -123,6 +136,13 @@ def write_body(path: Path, key: str, body: dict) -> bool:
     tmp_name: str | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        if shutil.disk_usage(path.parent).free - len(blob) < MIN_FREE_BYTES:
+            logger.warning(
+                "site-cache: not caching %s, the volume is down to its %d byte sync reserve",
+                path.stem,
+                MIN_FREE_BYTES,
+            )
+            return False
         fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
         with os.fdopen(fd, "wb") as handle:
             handle.write(blob)
@@ -140,3 +160,9 @@ def write_body(path: Path, key: str, body: dict) -> bool:
                 os.unlink(tmp_name)
             except OSError:
                 pass
+
+
+def drop_sync_invalidated(root: Path) -> None:
+    """Delete the kinds a landed sync just invalidated. Never raises."""
+    for kind in SYNC_INVALIDATED_KINDS:
+        shutil.rmtree(root / kind, ignore_errors=True)

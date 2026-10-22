@@ -355,3 +355,27 @@ class TestSiteCacheModule:
             assert site_cache.write_body(path, "k", body) is False
         assert not path.exists()
         assert any("giant-story" in record.message for record in caplog.records)
+
+    def test_a_write_that_would_eat_the_sync_reserve_is_refused(self, tmp_path, monkeypatch, caplog):
+        """2026-10-17 to 10-22: crawler-driven cache entries filled the 3 GB
+        Fly volume, and six days of syncs could not land memory.db."""
+        import logging
+        import shutil
+
+        from dashboard import site_cache
+
+        path = tmp_path / "findings" / "123.json"
+        usage = shutil.disk_usage(tmp_path)
+
+        def free_bytes(n):
+            return lambda _p: usage._replace(free=n)
+
+        monkeypatch.setattr(site_cache.shutil, "disk_usage", free_bytes(site_cache.MIN_FREE_BYTES))
+        with caplog.at_level(logging.WARNING):
+            assert site_cache.write_body(path, "k", {"id": 123}) is False
+        assert not path.exists()
+        assert any("123" in record.message for record in caplog.records)
+
+        monkeypatch.setattr(site_cache.shutil, "disk_usage", free_bytes(site_cache.MIN_FREE_BYTES + 10_000_000))
+        assert site_cache.write_body(path, "k", {"id": 123}) is True
+        assert site_cache.read_body(path, "k") == {"id": 123}
