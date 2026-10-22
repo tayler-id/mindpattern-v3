@@ -19,6 +19,7 @@ Bundle, upload, restart and warm.
 - `restart_app(app_name)` restarts the machine so the dashboard reopens the new DB files
 - `warm_public_site(date, scope)` purges and crawls the site after a publish or deploy
 - `write_synced_marker(date_str)` writes `/tmp/mindpattern-synced-<date>`, which stops the launchd retries
+- `record_landed_sync(state_file, date_str)` and `missed_sync_dates(today, ...)` keep the last landed date in `data/<user>/last-synced` and list the days a recovered sync also has to warm
 
 ## Depends On
 
@@ -30,7 +31,7 @@ Where a sync can fail or run slowly.
 
 - A full Fly volume breaks every path at once. HTTPS dies with `BrokenPipeError` because the app spools the bundle to `/data` first, and SFTP stops memory.db at the old file's exact byte count. Check `df -h /data` before anything else. This cost six days of syncs, 2026-10-17 to 10-22.
 - `dashboard/site_cache.py` refuses cache writes that would leave less than 1 GiB free, and a landed HTTPS sync deletes the entity, finding and related cache entries it just invalidated. The SFTP path does not delete them.
-- `warm_public_site` after a sync covers only that day's paths. A sync that lands after missed days leaves the missed days' pages unwarmed.
+- After a landed sync the runner warms today, then up to seven missed days newest first. It finds them from `data/<user>/last-synced`, so a lost record means only today gets warmed.
 - WAL checkpoint failures log a warning and the sync continues
 - Hardcoded timeouts (600s HTTPS, 300s SFTP upload, 60s SSH)
 

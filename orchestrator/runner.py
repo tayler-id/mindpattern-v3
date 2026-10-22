@@ -2968,9 +2968,18 @@ class ResearchPipeline:
 
         Bundle memory.db + reports → upload → dashboard gets fresh data.
         """
-        from .sync import restart_app, sync_to_fly, warm_public_site, write_synced_marker
+        from .sync import (
+            missed_sync_dates,
+            record_landed_sync,
+            restart_app,
+            sync_to_fly,
+            warm_public_site,
+            write_synced_marker,
+        )
 
         data_dir = PROJECT_ROOT / "data"
+        reports_dir = data_dir.parent / "reports" / self.user_id
+        sync_record = data_dir / self.user_id / "last-synced"
         result = sync_to_fly(
             self.user_id, data_dir,
             app_name="mindpattern",
@@ -2985,18 +2994,26 @@ class ResearchPipeline:
             restart = restart_app("mindpattern")
             if restart.get("success"):
                 logger.info("Fly app restarted to pick up synced data")
+                missed = missed_sync_dates(
+                    self.date_str, state_file=sync_record, reports_root=reports_dir
+                )
                 write_synced_marker(self.date_str)
+                record_landed_sync(sync_record, self.date_str)
                 # Phase 3 (precompute at publish): the restart wiped the
                 # dashboard caches, so wait for its warm-up and seed the
                 # public site's CDN before the morning's first readers.
                 # Ordering is load-bearing: restart first, then
                 # warm_public_site (which waits on the backend warm-up before
-                # it purges and crawls). Do not reorder.
-                try:
-                    warm = warm_public_site(date=self.date_str)
-                    logger.info(f"Public site warm-up: {warm}")
-                except Exception as exc:
-                    logger.warning(f"Public site warm-up failed (non-fatal): {exc}")
+                # it purges and crawls). Do not reorder. Days this sync
+                # carried after earlier ones failed go after today's.
+                for warm_date in [self.date_str, *missed]:
+                    try:
+                        warm = warm_public_site(date=warm_date)
+                        logger.info(f"Public site warm-up {warm_date}: {warm}")
+                    except Exception as exc:
+                        logger.warning(
+                            f"Public site warm-up {warm_date} failed (non-fatal): {exc}"
+                        )
                 # The backend keeps backfilling story files to its volume
                 # after its warm-up reports done, so ask where coverage
                 # stands and put the answer in the phase result the
@@ -3010,7 +3027,6 @@ class ResearchPipeline:
         else:
             err = result.get("error") or "unknown error"
             logger.warning(f"Sync failed: {err}")
-            reports_dir = data_dir.parent / "reports" / self.user_id
             unsynced = sorted(reports_dir.glob("????-??-??.md")) if reports_dir.exists() else []
             latest = unsynced[-1].stem if unsynced else "n/a"
             self._send_alert(
