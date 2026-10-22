@@ -1367,6 +1367,62 @@ def write_synced_marker(date_str: str) -> None:
         log.warning("Could not write synced-marker: %s", e)
 
 
+# Each missed day's warm can spend the full CRAWL_BUDGET_MINUTES, so a long
+# outage warms only its newest days.
+MISSED_WARM_MAX_DAYS = 7
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def missed_sync_dates(
+    today: str,
+    *,
+    state_file: Path,
+    reports_root: Path,
+    max_days: int = MISSED_WARM_MAX_DAYS,
+) -> list[str]:
+    """Issue dates after the last landed sync and before ``today``, newest first.
+
+    A sync that lands after failed days carries those days' stories too. If
+    only ``today`` is warmed, the missed days render cold, and a 404 a reader
+    pinned into the ISR cache while the sync was failing stays for a day
+    (2026-10-17 to 10-22). With no record, no gap is known.
+    """
+    try:
+        last = state_file.read_text().strip()
+    except OSError:
+        return []
+    story_root = reports_root / "site-stories"
+    if not _ISO_DATE_RE.fullmatch(last) or not story_root.is_dir():
+        return []
+    missed = sorted(
+        (
+            entry.name
+            for entry in story_root.iterdir()
+            if entry.is_dir() and _ISO_DATE_RE.fullmatch(entry.name) and last < entry.name < today
+        ),
+        reverse=True,
+    )
+    return missed[: max(0, max_days)]
+
+
+def record_landed_sync(state_file: Path, date_str: str) -> None:
+    """Keep the newest date whose sync landed, for ``missed_sync_dates``.
+
+    A run for an older date must not move it back, or the next sync would warm
+    days that already landed. Never raises.
+    """
+    try:
+        previous = state_file.read_text().strip()
+    except OSError:
+        previous = ""
+    if _ISO_DATE_RE.fullmatch(previous) and previous >= date_str:
+        return
+    try:
+        state_file.write_text(f"{date_str}\n")
+    except OSError as e:
+        log.warning("Could not record the landed sync: %s", e)
+
+
 # ── Private helpers ──────────────────────────────────────────────────────
 
 

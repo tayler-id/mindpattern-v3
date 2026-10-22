@@ -16,6 +16,8 @@ data/*/traces.db
 # Raw model-call streams and replays: full prompts and tool output, local only
 data/*/traces/
 data/*/replays/
+# Newest date whose Fly sync landed (orchestrator/sync.py record_landed_sync)
+data/*/last-synced
 *.db
 *.db.*
 users.json

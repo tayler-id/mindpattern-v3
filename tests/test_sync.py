@@ -20,6 +20,8 @@ from orchestrator.sync import (
     _put_and_verify,
     _wal_checkpoint,
     create_bundle,
+    missed_sync_dates,
+    record_landed_sync,
     restart_app,
     sync_to_fly,
     upload_bundle,
@@ -882,6 +884,52 @@ def test_write_synced_marker_uses_configured_marker_dir(tmp_path, monkeypatch):
     write_synced_marker("2026-06-23")
 
     assert (tmp_path / "mindpattern-synced-2026-06-23").exists()
+
+
+class TestMissedSyncDates:
+    def _issue_days(self, reports_root, *dates):
+        for date in dates:
+            (reports_root / "site-stories" / date).mkdir(parents=True)
+
+    def test_the_days_between_the_last_landed_sync_and_today_newest_first(self, tmp_path):
+        state = tmp_path / "last-synced"
+        state.write_text("2026-10-16\n")
+        self._issue_days(tmp_path, "2026-10-15", "2026-10-16", "2026-10-17",
+                         "2026-10-19", "2026-10-22", "2026-10-23")
+        (tmp_path / "site-stories" / "drafts").mkdir()
+
+        missed = missed_sync_dates("2026-10-22", state_file=state, reports_root=tmp_path)
+
+        assert missed == ["2026-10-19", "2026-10-17"]
+
+    def test_without_a_record_no_gap_is_known(self, tmp_path):
+        self._issue_days(tmp_path, "2026-10-17")
+
+        missed = missed_sync_dates(
+            "2026-10-22", state_file=tmp_path / "last-synced", reports_root=tmp_path
+        )
+
+        assert missed == []
+
+    def test_a_long_outage_warms_only_its_newest_days(self, tmp_path):
+        state = tmp_path / "last-synced"
+        state.write_text("2026-10-01")
+        self._issue_days(tmp_path, "2026-10-02", "2026-10-03", "2026-10-04")
+
+        missed = missed_sync_dates(
+            "2026-10-22", state_file=state, reports_root=tmp_path, max_days=2
+        )
+
+        assert missed == ["2026-10-04", "2026-10-03"]
+
+
+def test_the_landed_sync_record_never_moves_back(tmp_path):
+    state = tmp_path / "last-synced"
+
+    record_landed_sync(state, "2026-10-22")
+    record_landed_sync(state, "2026-10-20")
+
+    assert state.read_text() == "2026-10-22\n"
 
 
 class TestBundleSiteArtifacts:

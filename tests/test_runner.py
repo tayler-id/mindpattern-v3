@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
 
@@ -1815,6 +1815,33 @@ class TestPhaseSync:
         # No snapshot, no key: the log must not carry an empty summary.
         assert "warmup_backfill" not in result
 
+    def test_a_sync_after_failed_days_warms_those_days_too(self, pipeline, tmp_path):
+        """2026-10-22: six failed days landed in one sync, and only that
+        day's pages were warmed. The missed days come after today's own."""
+        state = tmp_path / "data" / pipeline.user_id / "last-synced"
+        state.parent.mkdir(parents=True)
+        state.write_text("2026-03-16\n")
+        stories = tmp_path / "reports" / pipeline.user_id / "site-stories"
+        for date in ("2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19"):
+            (stories / date).mkdir(parents=True)
+        with (
+            patch("orchestrator.runner.PROJECT_ROOT", tmp_path),
+            patch("orchestrator.sync.sync_to_fly",
+                  return_value={"success": True, "bytes_uploaded": 1024}),
+            patch("orchestrator.sync.restart_app", return_value={"success": True}),
+            patch("orchestrator.sync.write_synced_marker"),
+            patch("orchestrator.sync.warm_public_site",
+                  return_value={"crawled": 4, "failed": 0}) as mock_warm,
+            patch.object(pipeline, "_warmup_backfill_snapshot", return_value=None),
+            patch.object(pipeline, "_send_alert"),
+        ):
+            pipeline._phase_sync()
+
+        assert mock_warm.call_args_list == [
+            call(date="2026-03-19"), call(date="2026-03-18"), call(date="2026-03-17"),
+        ]
+        assert state.read_text() == "2026-03-19\n"
+
     def test_warm_up_is_never_reached_over_the_network(self, pipeline, tmp_path):
         """The suite must not talk to Fly, and this test proved why.
 
@@ -1946,6 +1973,9 @@ class TestPhaseSync:
         assert "Connection refused" in message
         assert "2026-05-01" in message
         assert "2" in message  # newsletter count
+        assert 'df -h /data' in message
+        assert "docs/runbooks/fly-sync-and-site-cache.md" in message
+        assert "auth login" not in message
 
 
 class TestDryRunPhases:

@@ -35,7 +35,7 @@ The story disk backfill at boot is off (`MP_WARMUP_BACKFILL_MINUTES=0` in fly.to
 
 On success the runner restarts the app, which empties the memory cache, then calls `warm_public_site(scope="changed")`. That purges and re-crawls up to 200 of the day's paths (stories, sources, arcs, entities, findings) in waves of 10 with a 10-minute budget. On 2026-10-22 it warmed 126 paths in four minutes with none failing.
 
-The warm covers the current day only. A sync that lands after missed days leaves the missed days' new pages for readers to render cold. To warm one by hand, run this once per missed date, never two at once:
+The runner keeps the newest date whose sync landed in `data/<user>/last-synced`. When a sync lands after failed days, it warms today first, then each missed day that has stories, newest first, up to seven days. With no record, as on the first run after this shipped, it warms today only. To warm a day by hand, run this once per date, never two at once:
 
 ```sh
 .venv/bin/python3 -m orchestrator.sync warm --date 2026-10-20
@@ -63,7 +63,7 @@ Crawlers decide how fast the cache grows. By Oct 22, requests had reached 28,635
 
 ## When the sync fails
 
-The Slack alert reads `Fly sync failed for ramsay` followed by the last error. Check free space first. Every path fails on a full volume, and the errors don't say so.
+The Slack alert reads `Fly sync failed for ramsay`, then the last error, the `df` command below, and a link to this page. Check free space first. Every path fails on a full volume, and the errors don't say so.
 
 ```sh
 flyctl ssh console -a mindpattern -C "df -h /data"
