@@ -57,6 +57,12 @@ Set the same value in two places:
 Unset, the pipeline logs a warning, skips the purge, and the site falls back
 to its hour-long TTL. The publish still succeeds; readers just wait.
 
+## Sync failures and the Fly volume
+
+The daily sync, the four cache layers behind a reader's click, the volume's
+space budget, and the recovery steps for a full volume or a spinning page are
+in [docs/runbooks/fly-sync-and-site-cache.md](../docs/runbooks/fly-sync-and-site-cache.md).
+
 ## launchd agents (macOS)
 
 The checked-in plists describe host launchd configurations, not proof that either
