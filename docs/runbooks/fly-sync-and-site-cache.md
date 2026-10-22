@@ -63,7 +63,7 @@ Crawlers decide how fast the cache grows. By Oct 22, requests had reached 28,635
 
 ## When the sync fails
 
-The Slack alert reads `Fly sync failed for ramsay` followed by the last error. Check free space first. Every path fails on a full volume, and the errors don't say so.
+The Slack alert reads `Fly sync failed for ramsay`, then the last error, the `df` command below, and a link to this page. Check free space first. Every path fails on a full volume, and the errors don't say so.
 
 ```sh
 flyctl ssh console -a mindpattern -C "df -h /data"

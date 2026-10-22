@@ -3029,11 +3029,15 @@ class ResearchPipeline:
             logger.warning(f"Sync failed: {err}")
             unsynced = sorted(reports_dir.glob("????-??-??.md")) if reports_dir.exists() else []
             latest = unsynced[-1].stem if unsynced else "n/a"
+            # Six days of these (2026-10-17 to 10-22) were a full volume, and
+            # the old hint sent the reader to `flyctl auth login`.
             self._send_alert(
                 f":rotating_light: Fly sync failed for `{self.user_id}` — {err}\n"
                 f"Local newsletters present: {len(unsynced)} (latest `{latest}`). "
                 f"Dashboard at mindpattern.ai is stale until this is fixed. "
-                f"Run `flyctl auth login` if it's an auth error."
+                f"A full volume fails every path, so check "
+                f"`flyctl ssh console -a mindpattern -C \"df -h /data\"` first. "
+                f"Runbook: docs/runbooks/fly-sync-and-site-cache.md"
             )
 
         return result

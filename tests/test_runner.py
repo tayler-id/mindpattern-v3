@@ -1973,6 +1973,9 @@ class TestPhaseSync:
         assert "Connection refused" in message
         assert "2026-05-01" in message
         assert "2" in message  # newsletter count
+        assert 'df -h /data' in message
+        assert "docs/runbooks/fly-sync-and-site-cache.md" in message
+        assert "auth login" not in message
 
 
 class TestDryRunPhases:
