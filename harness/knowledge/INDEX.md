@@ -27,7 +27,7 @@
 - [[devtools/cli]]. `bin/mpdev`: one command for every developer tool, the check runner, and the doctor
 - [[tools/replay]]. Replay a past day on real data, compare two issues blind, report usage
 - [[dashboard/campaignos]]. Story revision ids, the one-file-per-slug rule, campaign attribution on reader events
-- [[orchestrator/sync]] — Fly.io sync: bundle DBs + reports, SFTP upload
+- [[orchestrator/sync]] — Fly.io sync: bundle DBs + reports, HTTPS upload with SFTP fallback
 - [[social/pipeline]] — Social posting orchestration
 - [[social/writers]] — Draft generation per platform
 - [[social/approval]] — Gate 1 / Gate 2 / Expeditor approval chain

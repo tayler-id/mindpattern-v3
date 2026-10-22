@@ -20,6 +20,8 @@ from pathlib import Path
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import JSONResponse
 
+from dashboard import site_cache
+
 router = APIRouter()
 
 MAX_BUNDLE_BYTES = 300 * 1024 * 1024
@@ -113,6 +115,7 @@ async def receive_sync_bundle(
                     (root / user / f"{db}{suffix}").unlink(missing_ok=True)
             bundle.extractall(root, filter="data")
             extracted = len(bundle.getnames())
+        site_cache.drop_sync_invalidated(root / user / "site-cache")
 
         # Push the extracted tree to stable storage BEFORE reporting success.
         # The pipeline restarts this machine ~20s after reading the response,
