@@ -859,8 +859,8 @@ class TestPhaseSynthesis:
 
         assert finder.call_args.kwargs["notes"][1] == "" and finder.call_args.kwargs["covered"] == set()
         pass1, pass2 = (call[0][0] for call in mock_claude.call_args_list[:2])
-        # Both writer calls hold the run on a usage limit instead of failing open (2026-10-13).
-        assert [c.kwargs.get("raise_on_usage_limit") for c in mock_claude.call_args_list[:2]] == [True, True]
+        # Both writer calls hold the run on a usage limit or a Cloudflare block instead of failing open.
+        assert [c.kwargs.get("raise_when_unavailable") for c in mock_claude.call_args_list[:2]] == [True, True]
         assert pass1.startswith("Select exactly 4 stories from these 77 balanced candidate findings")
         assert "(high) Title 0\n" not in pass1 and "(medium) Title 3\n" in pass1
         assert "## Lead stories\nThe Top stories open with these 1" in pass2
@@ -2799,3 +2799,45 @@ class TestUsageLimitHold:
         status, error = pipeline.traces_conn.execute(
             "SELECT status, error FROM pipeline_runs WHERE id = 'test-run-001'").fetchone()
         assert status == "failed" and error.startswith("synthesis: Claude usage limit, held until ")
+
+    def test_a_cloudflare_block_holds_the_run_for_a_quarter_hour(self, pipeline, tmp_path, monkeypatch):
+        """2026-11-13: a three-minute block outlasted the writer's retries and a 680-word brief went out."""
+        from orchestrator import agents
+        from orchestrator.pipeline import Phase
+
+        monkeypatch.setenv("MP_RAN_MARKER_DIR", str(tmp_path))
+        pipeline.pipeline.current_phase = Phase.SYNTHESIS
+        blocked = agents.CloudflareBlocked(CLOUDFLARE_SAID)
+        handler = MagicMock(side_effect=blocked)
+        with patch.object(pipeline, "_claude_login_problem", return_value=None), \
+                patch.object(pipeline, "_get_phase_handler", return_value=handler):
+            assert pipeline._execute_from(Phase.SYNTHESIS) == 1
+        marker = tmp_path / f"mindpattern-retry-after-{pipeline.date_str}"
+        assert int(marker.read_text()) == int(blocked.resets_at.timestamp()) + 120
+        (alert,) = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert "is on hold: Cloudflare refused calls to the Claude API during synthesis. Nothing was sent." in alert
+        status, error = pipeline.traces_conn.execute(
+            "SELECT status, error FROM pipeline_runs WHERE id = 'test-run-001'").fetchone()
+        assert status == "failed" and error.startswith("synthesis: Cloudflare block, held until ")
+
+
+CLOUDFLARE_SAID = "Failed to authenticate. API Error: 403 Attention Required! | Cloudflare"
+
+
+class TestCloudflareBlockAtStart:
+    """A Cloudflare block at the login probe holds the run before research, and doesn't call it a sign-out."""
+
+    def test_the_probe_holds_the_run_before_any_phase(self, pipeline, tmp_path, monkeypatch):
+        from orchestrator.pipeline import Phase
+
+        monkeypatch.setenv("MP_RAN_MARKER_DIR", str(tmp_path))
+        handler = MagicMock()
+        with patch("core.model_cli.call_model",
+                   return_value=_probe_result(outcome="error", exit_code=1, error=CLOUDFLARE_SAID, text="")), \
+                patch.object(pipeline, "_get_phase_handler", return_value=handler):
+            assert pipeline._execute_from(Phase.INIT) == 1
+        handler.assert_not_called()
+        assert (tmp_path / f"mindpattern-retry-after-{pipeline.date_str}").exists()
+        (alert,) = [c.args[0] for c in pipeline._send_alert.call_args_list]
+        assert "is on hold: Cloudflare refused calls to the Claude API during init." in alert
+        assert "signed out" not in alert

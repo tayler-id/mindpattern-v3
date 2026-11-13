@@ -14,7 +14,7 @@ import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -548,12 +548,20 @@ CRITICAL REMINDER: Output ONLY the JSON object. "findings" is required;
 # (overloaded_error), 429 (rate_limit_error), or 5xx is recoverable — Anthropic
 # marks them retryable — so we re-invoke the same claude CLI call (staying on
 # Tayler's subscription, NOT the paid API) with backoff + full jitter.
-_TRANSIENT_CLASSIFICATIONS = frozenset({"overloaded", "rate_limit", "server_error"})
+_TRANSIENT_CLASSIFICATIONS = frozenset({"overloaded", "rate_limit", "server_error", "cloudflare_block"})
 
 
 # What the claude CLI prints when it is signed out or its session can't refresh.
 AUTH_FAILURE_SIGNS = ("failed to authenticate", "authentication_error", "oauth session expired",
                       "not logged in", "please run /login", "invalid api key")
+
+
+# Cloudflare's block page, as the claude CLI reports it: "Failed to authenticate.
+# API Error: 403 Attention Required! | Cloudflare". The login is fine and the block
+# clears without a sign-in. 2026-11-13: it refused every call from 5:17 to 5:20 AM,
+# the writer spent its retries in 30 seconds, and a 680-word brief went out.
+CLOUDFLARE_BLOCK_SIGNS = ("attention required! | cloudflare",)
+CLOUDFLARE_BLOCK_WAIT = timedelta(minutes=15)
 
 
 # What the claude CLI prints when the subscription's usage limit is spent. Waiting
@@ -563,13 +571,36 @@ USAGE_LIMIT_SIGNS = ("hit your session limit", "hit your usage limit", "you've h
 _RESETS = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s*(?:\(([^)]+)\))?", re.IGNORECASE)
 
 
-class UsageLimitReached(RuntimeError):
-    """The Claude usage limit is spent; a retry before `resets_at` can't succeed."""
+class ClaudeUnavailable(RuntimeError):
+    """Claude can't answer before `resets_at`, so the run holds instead of sending a fallback brief."""
+
+    reason = "Claude was unavailable"
+    short = "Claude unavailable"
+    event = "claude_unavailable_hold"
 
     def __init__(self, detail: str, resets_at: datetime | None):
         super().__init__(detail)
         self.detail = detail
         self.resets_at = resets_at
+
+
+class UsageLimitReached(ClaudeUnavailable):
+    """The Claude usage limit is spent; a retry before `resets_at` can't succeed."""
+
+    reason = "the Claude usage limit ran out"
+    short = "Claude usage limit"
+    event = "usage_limit_hold"
+
+
+class CloudflareBlocked(ClaudeUnavailable):
+    """Cloudflare refused the call. The run tries again after CLOUDFLARE_BLOCK_WAIT."""
+
+    reason = "Cloudflare refused calls to the Claude API"
+    short = "Cloudflare block"
+    event = "cloudflare_block_hold"
+
+    def __init__(self, detail: str):
+        super().__init__(detail, datetime.now(timezone.utc) + CLOUDFLARE_BLOCK_WAIT)
 
 
 def usage_limit_resets_at(text: str, now: datetime | None = None) -> datetime | None:
@@ -591,13 +622,16 @@ def usage_limit_resets_at(text: str, now: datetime | None = None) -> datetime | 
 def classify_agent_failure(exit_code: int, stdout: str, stderr: str) -> str:
     """Classify why an agent produced no findings.
 
-    Returns one of: auth | usage_limit | overloaded | rate_limit | server_error | parse_error | other.
+    Returns one of: cloudflare_block | auth | usage_limit | overloaded | rate_limit | server_error |
+    parse_error | other.
     The claude CLI surfaces API errors as text on stdout (e.g.
     "API Error: 529 Overloaded ...") with a non-zero exit and empty stderr, so we
     inspect both streams — the old code recorded a useless "Non-zero exit code".
     "auth" means the CLI is signed out; retrying can't fix it (2026-10-13).
     """
     blob = f"{stdout}\n{stderr}".lower()
+    if any(sign in blob for sign in CLOUDFLARE_BLOCK_SIGNS):
+        return "cloudflare_block"  # before auth: the block page also says "Failed to authenticate"
     if any(sign in blob for sign in AUTH_FAILURE_SIGNS):
         return "auth"
     if any(sign in blob for sign in USAGE_LIMIT_SIGNS):
@@ -1350,13 +1384,13 @@ def run_claude_prompt(
     max_delay: float = 30.0,
     _sleep=time.sleep,
     _rng: random.Random | None = None,
-    raise_on_usage_limit: bool = False,
+    raise_when_unavailable: bool = False,
 ) -> tuple[str, int]:
     """Run a single claude -p call for non-agent tasks (synthesis, trends, etc.).
 
-    raise_on_usage_limit: raise UsageLimitReached instead of returning ("", 1)
-    when the usage limit is spent, so a caller that must not fail open (the
-    newsletter writer) can hold the run until the reset.
+    raise_when_unavailable: raise UsageLimitReached or CloudflareBlocked instead
+    of returning ("", 1), so a caller that must not fail open (the newsletter
+    writer) can hold the run until Claude answers again.
 
     For large prompts (>100K chars), writes to a temp file and pipes via stdin
     to avoid OS argument length limits.
@@ -1458,8 +1492,10 @@ def run_claude_prompt(
             f"classification={classification}, attempts={attempt + 1}, "
             f"duration={call_duration:.1f}s, detail={detail}"
         )
-        if raise_on_usage_limit and classification == "usage_limit":
+        if raise_when_unavailable and classification == "usage_limit":
             raise UsageLimitReached(detail, usage_limit_resets_at(detail))
+        if raise_when_unavailable and classification == "cloudflare_block":
+            raise CloudflareBlocked(detail)
         return "", 1
 
     return "", 1
