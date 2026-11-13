@@ -764,6 +764,8 @@ class ResearchPipeline:
         2026-10-13: an expired OAuth session failed all 104 research calls in under
         a second each, on four launch windows, before anyone saw why. One Haiku
         call up front names the problem while there's still time to sign in.
+        Raises CloudflareBlocked when Cloudflare refuses the probe, so the run
+        holds before research instead of reporting a sign-out.
         """
         if self.dry_run or os.environ.get("MP_DRY_RUN") == "1":
             return None
@@ -779,16 +781,20 @@ class ResearchPipeline:
         if result.ok:
             return None
         said = " ".join(filter(None, [result.error, result.text, result.stderr])).strip()
-        if agent_dispatch.classify_agent_failure(result.exit_code, said, "") == "auth":
+        kind = agent_dispatch.classify_agent_failure(result.exit_code, said, "")
+        if kind == "cloudflare_block":
+            raise agent_dispatch.CloudflareBlocked(said[:200])
+        if kind == "auth":
             return said[:200]
         logger.warning(f"Claude login probe failed for another reason, continuing: {said[:200]}")
         return None
 
-    def _hold_for_usage_limit(self, phase: Phase, exc: "agent_dispatch.UsageLimitReached") -> int:
-        """Stop before anything is sent and leave a retry-after marker the launcher honors after the reset.
+    def _hold(self, phase: Phase, exc: "agent_dispatch.ClaudeUnavailable") -> int:
+        """Stop before anything is sent and leave a retry-after marker the launcher honors after exc.resets_at.
 
         2026-10-13: the writer hit the usage limit, the run fell back to a
-        796-word source list, and that went to subscribers.
+        796-word source list, and that went to subscribers. 2026-11-13: a
+        three-minute Cloudflare block did the same with a 680-word brief.
         """
         from datetime import timedelta, timezone
 
@@ -800,14 +806,14 @@ class ResearchPipeline:
         except OSError as err:
             logger.error(f"Could not write the retry-after marker {marker}: {err}")
         shown = retry_at.astimezone().strftime("%-I:%M %p")
-        error_msg = f"{phase.value}: Claude usage limit, held until {shown}"
+        error_msg = f"{phase.value}: {exc.short}, held until {shown}"
         logger.error(f"{error_msg} ({exc.detail})")
-        log_event(self.traces_conn, self.traces_run_id, "usage_limit_hold",
+        log_event(self.traces_conn, self.traces_run_id, exc.event,
                   json.dumps({"phase": phase.value, "retry_at": retry_at.isoformat(), "detail": exc.detail[:300]}))
         self.pipeline.fail(error_msg)
         complete_pipeline_run(self.traces_conn, self.traces_run_id, status="failed", error=error_msg)
         self._send_alert(
-            f":hourglass_flowing_sand: Newsletter {self.date_str} is on hold: the Claude usage limit ran out during "
+            f":hourglass_flowing_sand: Newsletter {self.date_str} is on hold: {exc.reason} during "
             f"{phase.value}. Nothing was sent. The launcher resumes the run from its checkpoint after {shown}."
         )
         return 1
@@ -818,7 +824,10 @@ class ResearchPipeline:
 
         start_idx = PHASE_ORDER.index(start_phase) if start_phase in PHASE_ORDER else 0
 
-        login_problem = self._claude_login_problem()
+        try:
+            login_problem = self._claude_login_problem()
+        except agent_dispatch.ClaudeUnavailable as exc:
+            return self._hold(Phase.INIT, exc)
         if login_problem:
             error_msg = f"claude login: {login_problem}"
             logger.error(error_msg)
@@ -902,8 +911,8 @@ class ResearchPipeline:
                         except Exception as me:
                             logger.warning(f"Monitor end_phase (failed) failed: {me}")
 
-                    if isinstance(e, agent_dispatch.UsageLimitReached):
-                        return self._hold_for_usage_limit(phase, e)
+                    if isinstance(e, agent_dispatch.ClaudeUnavailable):
+                        return self._hold(phase, e)
                     if phase in CRITICAL_PHASES:
                         self.pipeline.fail(error_msg)
                         complete_pipeline_run(self.traces_conn, self.traces_run_id,
@@ -1794,7 +1803,7 @@ class ResearchPipeline:
             pass1_output, exit_code = agent_dispatch.run_claude_prompt(
                 pass1_prompt, "synthesis_pass1",
                 system_prompt_file="agents/synthesis-selector.md",
-                raise_on_usage_limit=True,
+                raise_when_unavailable=True,
             )
             pass1_duration = time.monotonic() - pass1_start
             output_len = len(pass1_output) if pass1_output else 0
@@ -2059,7 +2068,7 @@ class ResearchPipeline:
             self.newsletter_text, exit_code = agent_dispatch.run_claude_prompt(
                 pass2_prompt, "synthesis_pass2",
                 system_prompt_file="agents/synthesis-writer.md",
-                raise_on_usage_limit=True,
+                raise_when_unavailable=True,
             )
             attempt_duration = time.monotonic() - attempt_start
             output_len = len(self.newsletter_text) if self.newsletter_text else 0

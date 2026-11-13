@@ -932,6 +932,10 @@ class TestClassifyAgentFailure:
         assert classify_agent_failure(1, said, "") == "auth"
         assert classify_agent_failure(1, "", "Not logged in. Please run /login") == "auth"
 
+    def test_a_cloudflare_block_is_not_a_sign_out(self):
+        """2026-11-13: this read as "auth", so the writer gave up in 30 seconds on a block that lasted three minutes."""
+        assert classify_agent_failure(1, CLOUDFLARE_SAID, "") == "cloudflare_block"
+
     def test_rate_limit_429(self):
         assert classify_agent_failure(1, "API Error: 429 rate limit exceeded", "") == "rate_limit"
 
@@ -1441,6 +1445,32 @@ class TestUsageLimit:
         mock_run_process.return_value = ClaudeProcessResult(stdout=LIMIT_SAID, stderr="", returncode=1)
         assert run_claude_prompt("p", "synthesis_pass2", _sleep=lambda s: None) == ("", 1)
         with pytest.raises(UsageLimitReached) as raised:
-            run_claude_prompt("p", "synthesis_pass2", _sleep=lambda s: None, raise_on_usage_limit=True)
+            run_claude_prompt("p", "synthesis_pass2", _sleep=lambda s: None, raise_when_unavailable=True)
         assert raised.value.resets_at is not None and raised.value.resets_at.hour == 15
         assert mock_run_process.call_count == 2  # not retried: waiting is the only fix
+
+
+CLOUDFLARE_SAID = "Failed to authenticate. API Error: 403 Attention Required! | Cloudflare"
+
+
+class TestCloudflareBlock:
+    """2026-11-13: Cloudflare refused every Claude call for three minutes and a 680-word brief went out."""
+
+    @patch("orchestrator.agents.router")
+    @patch("orchestrator.agents.run_claude_process")
+    def test_the_call_is_retried_and_then_the_writer_is_told_to_wait(self, mock_run_process, mock_router):
+        from datetime import datetime, timedelta, timezone
+
+        from orchestrator.agents import CloudflareBlocked
+
+        mock_router.get_model.return_value = "opus"
+        mock_router.get_max_turns.return_value = 10
+        mock_router.get_timeout.return_value = 300
+        mock_run_process.return_value = ClaudeProcessResult(stdout=CLOUDFLARE_SAID, stderr="", returncode=1)
+        assert run_claude_prompt("p", "site_story_writer", _sleep=lambda s: None) == ("", 1)
+        assert mock_run_process.call_count == 3
+        before = datetime.now(timezone.utc)
+        with pytest.raises(CloudflareBlocked) as raised:
+            run_claude_prompt("p", "synthesis_pass2", _sleep=lambda s: None, raise_when_unavailable=True)
+        assert mock_run_process.call_count == 6
+        assert timedelta(minutes=14) < raised.value.resets_at - before <= timedelta(minutes=16)

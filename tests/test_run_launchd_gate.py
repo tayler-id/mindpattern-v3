@@ -85,7 +85,7 @@ def test_a_run_held_for_the_usage_limit_waits_for_the_reset_then_runs_once_at_an
     held.mkdir()
     out = _run(held, power="AC Power", capabilities="CPU Graphics", curl_exit=0, hour="15",
                retry_at=int(time.time()) + 3600)
-    assert "SKIP: Held for the Claude usage limit until" in out and "PIPELINE STARTED" not in out
+    assert "SKIP: Run on hold until" in out and "PIPELINE STARTED" not in out
 
     reset = tmp_path / "reset"
     reset.mkdir()
